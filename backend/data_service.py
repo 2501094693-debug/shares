@@ -585,5 +585,83 @@ class IndustryService:
         return results
 
 
+    def get_stock_profile(
+        self, code: str, industry_code: str = "", name: str = ""
+    ) -> dict[str, Any]:
+        """Resolve a stock's metrics + industry meta for the company detail page."""
+        code = (code or "").strip()
+        if not code:
+            raise ValueError("缺少公司代码")
+
+        industry_code = (industry_code or "").strip()
+        name = (name or "").strip()
+        index_hit: dict[str, Any] | None = None
+
+        if not self._stock_index:
+            self._rebuild_index_from_cons_cache()
+
+        code_l = code.lower()
+        for item in self._stock_index:
+            hay = f"{item.get('code', '')}{item.get('full_code', '')}".lower()
+            if code_l == str(item.get("code", "")).lower() or code_l in hay:
+                index_hit = item
+                break
+
+        if not industry_code and index_hit:
+            industry_code = str(index_hit.get("l3_code") or "").strip()
+
+        industry_meta = self.get_l3_meta(industry_code) if industry_code else None
+        stock: dict[str, Any] | None = None
+
+        if industry_code:
+            try:
+                data = self.get_constituents(industry_code, force_refresh=False)
+            except KeyError:
+                data = None
+            if data:
+                for s in data.get("stocks") or []:
+                    if (
+                        str(s.get("code", "")).lower() == code_l
+                        or str(s.get("full_code", "")).lower() == code_l
+                        or code_l in str(s.get("full_code", "")).lower()
+                    ):
+                        stock = dict(s)
+                        break
+                if industry_meta is None:
+                    industry_meta = data.get("industry")
+
+        if stock is None and index_hit:
+            stock = {
+                "code": index_hit.get("code") or code,
+                "full_code": index_hit.get("full_code") or "",
+                "name": index_hit.get("name") or name or code,
+                "include_date": index_hit.get("include_date") or "",
+                "l1_name": index_hit.get("l1_name") or "",
+                "l2_name": index_hit.get("l2_name") or "",
+                "l3_name": index_hit.get("l3_name") or "",
+                "l3_code": index_hit.get("l3_code") or industry_code,
+            }
+
+        if stock is None:
+            stock = {
+                "code": code,
+                "full_code": "",
+                "name": name or code,
+            }
+
+        if industry_meta is None and index_hit:
+            industry_meta = {
+                "code": index_hit.get("l3_code") or "",
+                "name": index_hit.get("l3_name") or "",
+                "l1_name": index_hit.get("l1_name") or "",
+                "l2_name": index_hit.get("l2_name") or "",
+            }
+
+        return {
+            "stock": stock,
+            "industry": industry_meta or {},
+        }
+
+
 # 进程内单例：Flask 路由与启动预热均 import 此对象
 service = IndustryService()

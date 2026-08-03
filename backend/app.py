@@ -38,6 +38,12 @@ def index():
     return send_from_directory(FRONTEND, "index.html")
 
 
+@app.get("/company")
+@app.get("/company.html")
+def company_page():
+    return send_from_directory(FRONTEND, "company.html")
+
+
 @app.get("/api/health")
 def health():
     return jsonify({"ok": True, "service": "sw-industry"})
@@ -103,6 +109,22 @@ def industry_stocks(code: str):
         return jsonify({"ok": True, "data": data})
     except KeyError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 404
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.get("/api/stocks/profile")
+def stocks_profile():
+    code = request.args.get("code", "").strip()
+    industry = request.args.get("industry", "").strip()
+    name = request.args.get("name", "").strip()
+    if not code:
+        return jsonify({"ok": False, "error": "缺少参数 code"}), 400
+    try:
+        data = service.get_stock_profile(code, industry_code=industry, name=name)
+        return jsonify({"ok": True, "data": data})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
         return jsonify({"ok": False, "error": str(exc)}), 500
 

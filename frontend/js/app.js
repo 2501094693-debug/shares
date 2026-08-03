@@ -5,16 +5,11 @@ const state = {
   nameFilter: "",
   codeFilter: "",
   highlightCode: "",
-  expandedCode: "",
   page: 1,
   pageSize: 20,
-  newsCode: "",
-  newsName: "",
-  newsLoading: false,
-  newsRequestId: 0,
 };
 
-const MAIN_COL_COUNT = 9;
+const MAIN_COL_COUNT = 8;
 
 const els = {
   tree: document.getElementById("tree"),
@@ -43,12 +38,6 @@ const els = {
   pageInfo: document.getElementById("pageInfo"),
   loading: document.getElementById("loading"),
   errorBox: document.getElementById("errorBox"),
-  newsPanel: document.getElementById("newsPanel"),
-  newsPanelTitle: document.getElementById("newsPanelTitle"),
-  newsPanelMeta: document.getElementById("newsPanelMeta"),
-  newsPanelBody: document.getElementById("newsPanelBody"),
-  refreshNewsBtn: document.getElementById("refreshNewsBtn"),
-  closeNewsPanel: document.getElementById("closeNewsPanel"),
 };
 
 async function api(path, options = {}) {
@@ -161,6 +150,53 @@ function totalPages(total) {
   return Math.max(1, Math.ceil(total / state.pageSize));
 }
 
+function displayValue(v) {
+  if (v == null || String(v).trim() === "") return "-";
+  return String(v).trim();
+}
+
+function changeClass(v) {
+  const text = displayValue(v);
+  if (text === "-") return "";
+  const num = parseFloat(String(text).replace(/%/g, "").replace(/,/g, ""));
+  if (!Number.isFinite(num)) return "";
+  if (num > 0) return "change-up";
+  if (num < 0) return "change-down";
+  return "";
+}
+
+function changeCellHtml(v) {
+  const text = displayValue(v);
+  const cls = changeClass(text);
+  return `<td class="${cls}">${escapeHtml(text)}</td>`;
+}
+
+function stockKey(s) {
+  return s.code || s.full_code || "";
+}
+
+function openCompanyPage(stock) {
+  const code = stock.code || "";
+  if (!code) return;
+  try {
+    sessionStorage.setItem(
+      `stock:${code}`,
+      JSON.stringify({
+        ...stock,
+        l3_code: state.selectedCode || stock.l3_code || "",
+      })
+    );
+  } catch {
+    /* ignore */
+  }
+  const qs = new URLSearchParams({
+    code,
+    name: stock.name || "",
+  });
+  if (state.selectedCode) qs.set("industry", state.selectedCode);
+  window.location.href = `/company.html?${qs.toString()}`;
+}
+
 async function selectIndustry(code, rowEl = null, options = {}) {
   state.selectedCode = code;
   clearActive();
@@ -190,7 +226,6 @@ async function selectIndustry(code, rowEl = null, options = {}) {
     state.nameFilter = els.nameFilter.value;
     state.codeFilter = els.codeFilter.value;
     state.page = 1;
-    state.expandedCode = state.highlightCode || "";
 
     if (state.highlightCode) {
       const rows = filteredStocks();
@@ -207,186 +242,15 @@ async function selectIndustry(code, rowEl = null, options = {}) {
       const target = els.stockBody.querySelector("tr.highlight");
       if (target) target.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("industry", code);
+    window.history.replaceState({}, "", url);
   } catch (err) {
     setError(err.message || String(err));
   } finally {
     setLoading(false);
   }
-}
-
-function displayValue(v) {
-  if (v == null || String(v).trim() === "") return "-";
-  return String(v).trim();
-}
-
-function changeClass(v) {
-  const text = displayValue(v);
-  if (text === "-") return "";
-  const num = parseFloat(String(text).replace(/%/g, "").replace(/,/g, ""));
-  if (!Number.isFinite(num)) return "";
-  if (num > 0) return "change-up";
-  if (num < 0) return "change-down";
-  return "";
-}
-
-function changeCellHtml(v) {
-  const text = displayValue(v);
-  const cls = changeClass(text);
-  return `<td class="${cls}">${escapeHtml(text)}</td>`;
-}
-
-function stockKey(s) {
-  return s.code || s.full_code || "";
-}
-
-function detailItems(s) {
-  return [
-    ["完整代码", s.full_code],
-    ["纳入时间", s.include_date],
-    ["市盈率", s.pe],
-    ["PE(TTM)", s.pe_ttm],
-    ["市净率", s.pb],
-    ["ROE", s.roe],
-    ["股息率", s.dividend_yield],
-    ["净利增速", s.profit_growth],
-    ["营收增速", s.revenue_growth],
-  ];
-}
-
-function renderDetailRow(s) {
-  const tr = document.createElement("tr");
-  tr.className = "detail-row";
-  const items = detailItems(s)
-    .map(
-      ([label, value]) => `
-      <div class="detail-item">
-        <span class="detail-label">${escapeHtml(label)}</span>
-        <span class="detail-value">${escapeHtml(displayValue(value))}</span>
-      </div>`
-    )
-    .join("");
-  tr.innerHTML = `
-    <td colspan="${MAIN_COL_COUNT}">
-      <div class="stock-detail">
-        ${items}
-        <div class="detail-actions-row">
-          <button type="button" class="btn ghost news-btn">重要新闻</button>
-        </div>
-      </div>
-    </td>
-  `;
-  const newsBtn = tr.querySelector(".news-btn");
-  newsBtn?.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    openNewsPanel(s.code, s.name);
-  });
-  return tr;
-}
-
-function truncateText(text, max = 120) {
-  const s = String(text || "").trim();
-  if (s.length <= max) return s;
-  return `${s.slice(0, max)}…`;
-}
-
-function renderNewsItems(items) {
-  if (!items.length) {
-    els.newsPanelBody.innerHTML = `<p class="muted">暂无筛选出的重要新闻</p>`;
-    return;
-  }
-  els.newsPanelBody.innerHTML = items
-    .map((item) => {
-      const title = escapeHtml(item.title || "无标题");
-      const url = String(item.url || "").trim();
-      const titleHtml = url
-        ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${title}</a>`
-        : `<span>${title}</span>`;
-      const kindLabel = item.kind === "notice" ? "公告" : "新闻";
-      return `
-        <article class="news-item">
-          <div class="news-item-meta">
-            <time>${escapeHtml(item.published_at || "-")}</time>
-            <span class="news-kind">${kindLabel}</span>
-            <span>${escapeHtml(item.source || "-")}</span>
-            ${item.why ? `<span class="news-why">${escapeHtml(item.why)}</span>` : ""}
-          </div>
-          <h3>${titleHtml}</h3>
-          <p>${escapeHtml(truncateText(item.summary || ""))}</p>
-        </article>
-      `;
-    })
-    .join("");
-}
-
-async function loadCompanyNews({ refresh = false } = {}) {
-  if (!state.newsCode || !els.newsPanel || !els.newsPanelBody) return;
-  if (state.newsLoading && !refresh) return;
-
-  const requestId = ++state.newsRequestId;
-  const code = state.newsCode;
-  const name = state.newsName;
-  state.newsLoading = true;
-  els.newsPanelTitle.textContent = `${name || "公司"}（${code}）重要新闻`;
-  els.newsPanelMeta.textContent = refresh ? "正在重新拉取…" : "正在收集新闻…";
-    els.newsPanelBody.innerHTML = `<p class="muted">正在收集近 1–2 年公司公告与相关新闻，请稍候…</p>`;
-  if (els.refreshNewsBtn) els.refreshNewsBtn.disabled = true;
-
-  try {
-    const params = new URLSearchParams({
-      code,
-      name: name || "",
-    });
-    if (refresh) params.set("refresh", "1");
-    const json = await api(`/api/stocks/news?${params.toString()}`);
-    if (requestId !== state.newsRequestId) return;
-    const data = json.data || {};
-    const modeLabel = data.mode === "llm" ? "LLM 筛选" : "启发式筛选";
-    const span =
-      data.span_from && data.span_to ? `${data.span_from} ~ ${data.span_to}` : "近1–2年";
-    els.newsPanelMeta.textContent = `${modeLabel} · ${span} · 共 ${(data.items || []).length} 条 · 更新于 ${data.updated_at || "-"}`;
-    renderNewsItems(data.items || []);
-    els.newsPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  } catch (err) {
-    if (requestId !== state.newsRequestId) return;
-    els.newsPanelMeta.textContent = "加载失败";
-    els.newsPanelBody.innerHTML = `<p class="news-error">${escapeHtml(err.message || String(err))}</p>`;
-  } finally {
-    if (requestId === state.newsRequestId) {
-      state.newsLoading = false;
-      if (els.refreshNewsBtn) els.refreshNewsBtn.disabled = false;
-    }
-  }
-}
-
-function openNewsPanel(code, name) {
-  if (!els.newsPanel) return;
-  const nextCode = code || "";
-  const nextName = name || "";
-  const sameCompany = state.newsCode === nextCode && !els.newsPanel.classList.contains("hidden");
-  state.newsCode = nextCode;
-  state.newsName = nextName;
-  els.newsPanel.classList.remove("hidden");
-  els.emptyState.classList.add("hidden");
-  els.newsPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  if (sameCompany && !state.newsLoading) {
-    // 已打开同一公司时不再重复请求
-    return;
-  }
-  loadCompanyNews({ refresh: false });
-}
-
-function closeNewsPanel() {
-  if (!els.newsPanel) return;
-  els.newsPanel.classList.add("hidden");
-  state.newsRequestId += 1;
-  state.newsLoading = false;
-  if (els.refreshNewsBtn) els.refreshNewsBtn.disabled = false;
-}
-
-function toggleStockDetail(code) {
-  state.expandedCode = state.expandedCode === code ? "" : code;
-  renderStocks();
 }
 
 function renderStocks() {
@@ -410,18 +274,15 @@ function renderStocks() {
   }
 
   pageRows.forEach((s, idx) => {
-    const key = stockKey(s);
-    const expanded = state.expandedCode && state.expandedCode === key;
     const tr = document.createElement("tr");
     tr.className = "stock-row";
-    if (expanded) tr.classList.add("expanded");
     const isHighlight =
       state.highlightCode &&
       (s.code === state.highlightCode || s.full_code === state.highlightCode);
     if (isHighlight) tr.classList.add("highlight");
-    tr.dataset.code = key;
+    tr.dataset.code = stockKey(s);
+    tr.title = "点击查看详情与新闻";
     tr.innerHTML = `
-      <td class="col-expand"><span class="row-chevron${expanded ? " open" : ""}">▸</span></td>
       <td>${start + idx + 1}</td>
       <td class="code">${escapeHtml(s.code)}</td>
       <td>${escapeHtml(s.name)}</td>
@@ -431,11 +292,8 @@ function renderStocks() {
       ${changeCellHtml(s.change_ytd)}
       <td>${escapeHtml(displayValue(s.market_cap))}</td>
     `;
-    tr.addEventListener("click", () => toggleStockDetail(key));
+    tr.addEventListener("click", () => openCompanyPage(s));
     els.stockBody.appendChild(tr);
-    if (expanded) {
-      els.stockBody.appendChild(renderDetailRow(s));
-    }
   });
 
   els.pageInfo.textContent = `第 ${state.page} / ${pages} 页 · 共 ${rows.length} 家`;
@@ -495,15 +353,18 @@ async function runCompanySearch() {
         <strong>${escapeHtml(item.name)} · ${escapeHtml(item.code)}</strong>
         <span>${escapeHtml(item.l1_name)} / ${escapeHtml(item.l2_name)} / ${escapeHtml(item.l3_name)}</span>
       `;
-      btn.addEventListener("click", async () => {
-        if (!item.l3_code) return;
-        expandToIndustryCode(item.l3_code);
-        await selectIndustry(item.l3_code, null, {
-          highlightCode: item.code,
-          nameFilter: "",
-          codeFilter: "",
+      btn.addEventListener("click", () => {
+        const qs = new URLSearchParams({
+          code: item.code || "",
+          name: item.name || "",
         });
-        els.companySearchPanel.classList.add("hidden");
+        if (item.l3_code) qs.set("industry", item.l3_code);
+        try {
+          sessionStorage.setItem(`stock:${item.code}`, JSON.stringify(item));
+        } catch {
+          /* ignore */
+        }
+        window.location.href = `/company.html?${qs.toString()}`;
       });
       els.companySearchResults.appendChild(btn);
     }
@@ -571,7 +432,7 @@ els.searchInput.addEventListener("input", () => {
           els.searchInput.value = "";
           els.searchResults.classList.add("hidden");
           els.tree.classList.remove("hidden");
-          expandToCode(item);
+          expandToIndustryCode(item.code);
           selectIndustry(item.code);
         });
         els.searchResults.appendChild(btn);
@@ -593,19 +454,6 @@ els.companyCodeSearch.addEventListener("input", scheduleCompanySearch);
 els.closeCompanySearch.addEventListener("click", () => {
   els.companySearchPanel.classList.add("hidden");
 });
-
-els.closeNewsPanel?.addEventListener("click", () => {
-  closeNewsPanel();
-});
-
-els.refreshNewsBtn?.addEventListener("click", () => {
-  if (state.newsLoading) return;
-  loadCompanyNews({ refresh: true });
-});
-
-function expandToCode(item) {
-  expandToIndustryCode(item.code);
-}
 
 els.refreshBtn.addEventListener("click", () => loadTree(true));
 els.reloadStocksBtn.addEventListener("click", async () => {
@@ -658,4 +506,11 @@ els.nextPage.addEventListener("click", () => {
   renderStocks();
 });
 
-loadTree();
+(async () => {
+  await loadTree();
+  const bootIndustry = new URLSearchParams(window.location.search).get("industry");
+  if (bootIndustry) {
+    expandToIndustryCode(bootIndustry);
+    await selectIndustry(bootIndustry);
+  }
+})();

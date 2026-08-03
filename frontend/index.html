@@ -55,25 +55,9 @@
       </aside>
 
       <section class="content">
-        <div id="newsPanel" class="news-panel hidden" aria-live="polite">
-          <div class="news-panel-head">
-            <div>
-              <strong id="newsPanelTitle">重要新闻</strong>
-              <p id="newsPanelMeta" class="muted"></p>
-            </div>
-            <div class="news-panel-actions">
-              <button id="refreshNewsBtn" class="btn ghost" type="button">刷新</button>
-              <button id="closeNewsPanel" class="btn ghost" type="button">关闭</button>
-            </div>
-          </div>
-          <div id="newsPanelBody" class="news-panel-body">
-            <p class="muted">选择公司后查看重要新闻</p>
-          </div>
-        </div>
-
         <div id="emptyState" class="empty">
           <h2>选择一个三级行业</h2>
-          <p>从左侧展开一级 → 二级 → 三级，点击细分行业查看全部上市公司。也可用顶部按公司名称或代码搜索。</p>
+          <p>从左侧展开一级 → 二级 → 三级，点击细分行业查看上市公司列表。点击公司行可进入详情与新闻页。</p>
         </div>
 
         <div id="detail" class="detail hidden">
@@ -98,7 +82,6 @@
             <table class="stock-table">
               <thead>
                 <tr>
-                  <th class="col-expand"></th>
                   <th class="col-idx">#</th>
                   <th class="col-code">公司代码</th>
                   <th class="col-name">公司简称</th>

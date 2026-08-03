@@ -566,10 +566,6 @@ table.stock-table {
   table-layout: fixed;
 }
 
-.stock-table .col-expand {
-  width: 2.2rem;
-}
-
 .stock-table .col-idx {
   width: 3.5rem;
 }
@@ -607,37 +603,73 @@ thead th {
   cursor: pointer;
 }
 
-.stock-row.expanded {
+.stock-row:hover {
   background: rgba(15, 110, 86, 0.08);
 }
 
-.row-chevron {
-  display: inline-block;
-  color: var(--muted);
-  transition: transform 0.15s ease;
+.company-page .company-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  padding: 18px 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
 
-.row-chevron.open {
-  transform: rotate(90deg);
-  color: var(--accent);
+.company-page .company-hero h2 {
+  margin: 0;
+  font-size: 1.4rem;
 }
 
-.detail-row td {
-  padding: 0;
-  white-space: normal;
-  overflow: visible;
-  background: #f7f2e8;
-  border-bottom: 1px solid var(--line);
+.quote-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(72px, 1fr));
+  gap: 10px;
+  min-width: min(420px, 100%);
 }
 
-.stock-detail {
+.quote-item {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.company-section {
+  margin-bottom: 16px;
+  padding: 16px 18px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.section-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.company-metrics {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 10px 14px;
-  padding: 14px 16px 16px;
 }
 
-.detail-item {
+.stock-detail .detail-item,
+.company-metrics .detail-item,
+.quote-item {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -653,6 +685,32 @@ thead th {
   font-family: var(--mono);
   font-size: 0.9rem;
   font-weight: 500;
+}
+
+.company-news-body {
+  max-height: none;
+}
+
+.news-kind {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+@media (max-width: 960px) {
+  .company-page .company-hero {
+    flex-direction: column;
+  }
+
+  .quote-strip {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .pager {
