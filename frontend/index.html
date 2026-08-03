@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>申万三级行业浏览器</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">SW</span>
+        <div>
+          <h1>申万三级行业浏览器</h1>
+          <p>浏览一/二/三级行业划分，查看细分行业上市公司与代码</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <label class="search-box">
+          <span class="sr-only">搜索行业</span>
+          <input id="searchInput" type="search" placeholder="搜索行业名称或代码…" autocomplete="off" />
+        </label>
+        <label class="search-box">
+          <span class="sr-only">公司名称</span>
+          <input id="companyNameSearch" type="search" placeholder="公司名称搜索…" autocomplete="off" />
+        </label>
+        <label class="search-box">
+          <span class="sr-only">公司代码</span>
+          <input id="companyCodeSearch" type="search" placeholder="公司代码搜索…" autocomplete="off" />
+        </label>
+        <button id="refreshBtn" class="btn ghost" type="button" title="刷新行业树">刷新</button>
+      </div>
+    </header>
+    <div id="companySearchPanel" class="company-search-panel hidden">
+      <div class="company-search-head">
+        <strong>公司搜索结果</strong>
+        <span id="indexStatus" class="muted"></span>
+        <button id="closeCompanySearch" class="btn ghost" type="button">关闭</button>
+      </div>
+      <div id="companySearchResults" class="company-search-results"></div>
+    </div>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <h2>行业树</h2>
+          <span id="treeMeta" class="muted">加载中…</span>
+        </div>
+        <div id="tree" class="tree" role="tree"></div>
+        <div id="searchResults" class="search-results hidden"></div>
+      </aside>
+
+      <section class="content">
+        <div id="newsPanel" class="news-panel hidden" aria-live="polite">
+          <div class="news-panel-head">
+            <div>
+              <strong id="newsPanelTitle">重要新闻</strong>
+              <p id="newsPanelMeta" class="muted"></p>
+            </div>
+            <div class="news-panel-actions">
+              <button id="refreshNewsBtn" class="btn ghost" type="button">刷新</button>
+              <button id="closeNewsPanel" class="btn ghost" type="button">关闭</button>
+            </div>
+          </div>
+          <div id="newsPanelBody" class="news-panel-body">
+            <p class="muted">选择公司后查看重要新闻</p>
+          </div>
+        </div>
+
+        <div id="emptyState" class="empty">
+          <h2>选择一个三级行业</h2>
+          <p>从左侧展开一级 → 二级 → 三级，点击细分行业查看全部上市公司。也可用顶部按公司名称或代码搜索。</p>
+        </div>
+
+        <div id="detail" class="detail hidden">
+          <div class="detail-head">
+            <div>
+              <p id="breadcrumb" class="breadcrumb"></p>
+              <h2 id="industryTitle"></h2>
+              <p id="industryMeta" class="muted"></p>
+            </div>
+            <div class="detail-actions">
+              <label class="filter-box">
+                <input id="nameFilter" type="search" placeholder="筛选名称…" />
+              </label>
+              <label class="filter-box">
+                <input id="codeFilter" type="search" placeholder="筛选代码…" />
+              </label>
+              <button id="reloadStocksBtn" class="btn ghost" type="button">重新拉取</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="stock-table">
+              <thead>
+                <tr>
+                  <th class="col-expand"></th>
+                  <th class="col-idx">#</th>
+                  <th class="col-code">公司代码</th>
+                  <th class="col-name">公司简称</th>
+                  <th class="col-num">价格</th>
+                  <th class="col-num">近1日</th>
+                  <th class="col-num">近5日</th>
+                  <th class="col-num">今年以来</th>
+                  <th class="col-num">市值(亿)</th>
+                </tr>
+              </thead>
+              <tbody id="stockBody"></tbody>
+            </table>
+          </div>
+
+          <div class="pager">
+            <label class="page-size">
+              每页
+              <select id="pageSize">
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+            <button id="prevPage" class="btn ghost" type="button">上一页</button>
+            <span id="pageInfo" class="muted"></span>
+            <button id="nextPage" class="btn ghost" type="button">下一页</button>
+          </div>
+        </div>
+
+        <div id="loading" class="loading hidden">正在加载成分股…</div>
+        <div id="errorBox" class="error hidden"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
