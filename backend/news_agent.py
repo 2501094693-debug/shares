@@ -22,13 +22,18 @@ except ImportError:  # pragma: no cover
 
 CACHE_DIR = Path(__file__).resolve().parent / "cache" / "news"
 CACHE_TTL_SEC = 30 * 60
-CACHE_VERSION = 2  # bump to invalidate short-window caches
+CACHE_VERSION = 6  # bump: keep all related media news
 LOOKBACK_YEARS = 2
 MAX_CANDIDATES = 160
-MAX_RESULT = 100
+MAX_RESULT = 80
+MAX_PER_GROUP = 60
+MAX_NOTICES = 500  # full announcement list within lookback
+MAX_REPORTS = 2000  # full research-report list within lookback
+MAX_NEWS = 2000  # keep all fetched media news within lookback
 NEWS_PAGE_SIZE = 100
 NEWS_MAX_PAGES = 10  # East Money hard-stops around 1000 hits
 REQUEST_PAUSE_SEC = 0.25
+EM_REPORT_URL = "https://reportapi.eastmoney.com/report/list"
 
 EM_NEWS_URL = "https://search-api-web.eastmoney.com/search/jsonp"
 EM_NEWS_CB = "jQuery35101792940631092459_1700000000000"
@@ -381,11 +386,139 @@ def _fetch_media_news(keyword: str, lookback_start: datetime) -> list[dict[str, 
     return [x for x in collected if _within_lookback(x, lookback_start)]
 
 
+def _fetch_research_reports(code: str, lookback_start: datetime) -> list[dict[str, Any]]:
+    """Fetch all institutional research reports in the lookback window."""
+    code = (code or "").strip()
+    if not code:
+        return []
+
+    begin = lookback_start.date().strftime("%Y-%m-%d")
+    end = (date.today().replace(year=date.today().year + 1)).strftime("%Y-01-01")
+    page_size = 100
+    page_no = 1
+    total_pages = 1
+    items: list[dict[str, Any]] = []
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://data.eastmoney.com/report/stock.jshtml",
+        "Accept": "application/json, text/plain, */*",
+    }
+
+    while page_no <= total_pages and page_no <= 50:
+        params = {
+            "industryCode": "*",
+            "pageSize": str(page_size),
+            "industry": "*",
+            "rating": "*",
+            "ratingChange": "*",
+            "beginTime": begin,
+            "endTime": end,
+            "pageNo": str(page_no),
+            "fields": "",
+            "qType": "0",
+            "orgCode": "",
+            "code": code,
+            "rcode": "",
+            "p": str(page_no),
+            "pageNum": str(page_no),
+            "pageNumber": str(page_no),
+        }
+        try:
+            resp = _http_get(EM_REPORT_URL, params=params, headers=headers, timeout=30)
+            resp.raise_for_status()
+            payload = resp.json()
+        except Exception:  # noqa: BLE001
+            break
+
+        rows = payload.get("data") or []
+        if not isinstance(rows, list) or not rows:
+            break
+
+        hits = int(payload.get("hits") or 0)
+        total_pages = int(payload.get("TotalPage") or math.ceil(hits / page_size) or 1)
+
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            title = _safe_str(row.get("title"))
+            if not title:
+                continue
+            org = _safe_str(row.get("orgSName") or row.get("orgName"))
+            rating = _safe_str(row.get("emRatingName") or row.get("sRatingName"))
+            info_code = _safe_str(row.get("infoCode"))
+            url = ""
+            if info_code:
+                url = f"https://pdf.dfcfw.com/pdf/H3_{info_code}_1.pdf"
+            published = _safe_str(row.get("publishDate"))
+            # publishDate sometimes like "2026-07-23 00:00:00"
+            why_parts = [p for p in (org, rating) if p]
+            items.append(
+                {
+                    "title": title,
+                    "summary": " · ".join(why_parts) if why_parts else "\u673a\u6784\u7814\u62a5",
+                    "source": org or "\u673a\u6784\u7814\u62a5",
+                    "url": url,
+                    "published_at": published,
+                    "kind": "report",
+                    "why": rating or "\u7814\u62a5",
+                    "org": org,
+                    "rating": rating,
+                }
+            )
+
+        page_no += 1
+        if page_no <= total_pages:
+            time.sleep(REQUEST_PAUSE_SEC)
+
+    if items:
+        return [x for x in items if _within_lookback(x, lookback_start)]
+
+    # Fallback to akshare if direct API returned nothing.
+    try:
+        df = ak.stock_research_report_em(symbol=code)
+    except Exception:  # noqa: BLE001
+        return []
+    if df is None or df.empty:
+        return []
+
+    fallback: list[dict[str, Any]] = []
+    for _, row in df.iterrows():
+        title = _safe_str(row.get("\u62a5\u544a\u540d\u79f0"))
+        if not title:
+            continue
+        org = _safe_str(row.get("\u673a\u6784"))
+        rating = _safe_str(row.get("\u4e1c\u8d22\u8bc4\u7ea7"))
+        published = row.get("\u65e5\u671f")
+        why_parts = [p for p in (org, rating) if p]
+        fallback.append(
+            {
+                "title": title,
+                "summary": " · ".join(why_parts) if why_parts else "\u673a\u6784\u7814\u62a5",
+                "source": org or "\u673a\u6784\u7814\u62a5",
+                "url": _safe_str(row.get("\u62a5\u544aPDF\u94fe\u63a5")),
+                "published_at": _safe_str(published),
+                "kind": "report",
+                "why": rating or "\u7814\u62a5",
+                "org": org,
+                "rating": rating,
+            }
+        )
+    return [x for x in fallback if _within_lookback(x, lookback_start)]
+
+
 def _dedupe(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     seen: set[str] = set()
     out: list[dict[str, Any]] = []
     # Prefer notices when colliding with news.
-    ordered = sorted(items, key=lambda x: 0 if x.get("kind") == "notice" else 1)
+    ordered = sorted(
+        items,
+        key=lambda x: {"notice": 0, "report": 1, "news": 2}.get(x.get("kind") or "news", 2),
+    )
     for item in ordered:
         key = item.get("url") or item.get("title") or ""
         key = key.strip().lower()
@@ -429,6 +562,61 @@ def _heuristic_filter(items: list[dict[str, Any]], company_name: str) -> list[di
     # Fallback: newest notices + news so the panel is never empty.
     fallback = sorted(items, key=_sort_key)[: min(30, MAX_RESULT)]
     return [dict(x, why=x.get("why") or "\u8fd1\u671f\u76f8\u5173") for x in fallback]
+
+
+def _filter_notices(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep all announcements in the lookback window (no keyword culling)."""
+    kept = []
+    for item in items:
+        row = dict(item)
+        row["kind"] = "notice"
+        if not row.get("why"):
+            row["why"] = row.get("summary") or "\u516c\u544a"
+        kept.append(row)
+    return sorted(kept, key=_sort_key)[:MAX_NOTICES]
+
+
+def _filter_news(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep all media news in the lookback window (no keyword culling)."""
+    kept = []
+    for item in items:
+        row = dict(item)
+        row["kind"] = "news"
+        if not row.get("why"):
+            row["why"] = "\u65b0\u95fb"
+        kept.append(row)
+    return sorted(kept, key=_sort_key)[:MAX_NEWS]
+
+
+def _filter_reports(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep all research reports in the lookback window (no 60-item cap)."""
+    kept = []
+    for item in items:
+        row = dict(item)
+        row["kind"] = "report"
+        if not row.get("why"):
+            row["why"] = row.get("rating") or "\u7814\u62a5"
+        kept.append(row)
+    return sorted(kept, key=_sort_key)[:MAX_REPORTS]
+
+
+def _split_groups(items: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    notices: list[dict[str, Any]] = []
+    news: list[dict[str, Any]] = []
+    reports: list[dict[str, Any]] = []
+    for item in items:
+        kind = item.get("kind") or "news"
+        if kind == "notice":
+            notices.append(item)
+        elif kind == "report":
+            reports.append(item)
+        else:
+            news.append(item)
+    return {
+        "notices": sorted(notices, key=_sort_key)[:MAX_PER_GROUP],
+        "news": sorted(news, key=_sort_key)[:MAX_PER_GROUP],
+        "reports": sorted(reports, key=_sort_key)[:MAX_PER_GROUP],
+    }
 
 
 def _llm_enabled() -> bool:
@@ -564,7 +752,7 @@ def collect_important_news(
     *,
     force_refresh: bool = False,
 ) -> dict[str, Any]:
-    """Collect important company news/announcements for ~2 years, newest first."""
+    """Collect notices / media news / research reports for ~2 years, newest first."""
     code = (code or "").strip()
     name = (name or "").strip()
     if not code:
@@ -572,36 +760,38 @@ def collect_important_news(
 
     if not force_refresh:
         cached = _load_cache(code)
-        if cached is not None:
+        if cached is not None and isinstance(cached.get("groups"), dict):
             return cached
 
     lookback_start = _lookback_start()
-    raw: list[dict[str, Any]] = []
-    # Announcements are the 1–2 year backbone; media search only covers months.
-    notices = _fetch_notices(code)
-    raw.extend(notices)
-    raw.extend(_fetch_media_news(code, lookback_start))
-    # Name search is denser and hits the 1000-cap sooner; use only if notices are thin.
-    if name and name != code and len(notices) < 20:
-        raw.extend(_fetch_media_news(name, lookback_start))
+    notices_raw = _fetch_notices(code)
+    # Always search by code and company name, then merge/dedupe for fuller coverage.
+    news_raw: list[dict[str, Any]] = []
+    news_raw.extend(_fetch_media_news(code, lookback_start))
+    if name and name != code:
+        news_raw.extend(_fetch_media_news(name, lookback_start))
+    reports_raw = _fetch_research_reports(code, lookback_start)
 
-    candidates = [
-        x for x in _dedupe(raw) if _within_lookback(x, lookback_start)
-    ]
-    candidates.sort(key=_sort_key)
+    notices_raw = [x for x in _dedupe(notices_raw) if _within_lookback(x, lookback_start)]
+    news_raw = [x for x in _dedupe(news_raw) if _within_lookback(x, lookback_start)]
+    reports_raw = [x for x in _dedupe(reports_raw) if _within_lookback(x, lookback_start)]
 
-    mode = "heuristic"
-    if _llm_enabled():
-        llm_items = _llm_filter(candidates, code=code, name=name)
-        if llm_items is not None:
-            items = llm_items
-            mode = "llm"
-        else:
-            items = _heuristic_filter(candidates, name)
-    else:
-        items = _heuristic_filter(candidates, name)
+    # Keep full lists for all three groups (sorted newest-first).
+    notices = _filter_notices(notices_raw)
+    news_only = _filter_news(news_raw)
+    reports = _filter_reports(reports_raw)
+    mode = "full"
 
-    items = sorted(items, key=_sort_key)
+    groups = {
+        "notices": notices,
+        "news": news_only,
+        "reports": reports,
+    }
+
+    items = sorted(
+        groups["notices"] + groups["news"] + groups["reports"],
+        key=_sort_key,
+    )
     span = _span_meta(items)
     data = {
         "code": code,
@@ -610,8 +800,14 @@ def collect_important_news(
         "lookback_years": LOOKBACK_YEARS,
         "span_from": span["from"],
         "span_to": span["to"],
-        "candidate_count": len(candidates),
+        "candidate_count": len(notices_raw) + len(news_raw) + len(reports_raw),
+        "counts": {
+            "notices": len(groups["notices"]),
+            "news": len(groups["news"]),
+            "reports": len(groups["reports"]),
+        },
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "groups": groups,
         "items": items,
     }
     _save_cache(code, data)

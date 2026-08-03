@@ -118,32 +118,72 @@ function renderMetrics(stock) {
     .join("");
 }
 
-function renderNewsItems(items) {
+function renderNewsList(items, emptyText) {
   if (!items.length) {
-    els.newsBody.innerHTML = `<p class="muted">暂无筛选出的重要新闻</p>`;
-    return;
+    return `<p class="muted">${escapeHtml(emptyText)}</p>`;
   }
-  els.newsBody.innerHTML = items
+  return items
     .map((item) => {
       const title = escapeHtml(item.title || "无标题");
       const url = String(item.url || "").trim();
       const titleHtml = url
         ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${title}</a>`
         : `<span>${title}</span>`;
-      const kindLabel = item.kind === "notice" ? "公告" : "新闻";
+      const extra =
+        item.kind === "report" && item.rating
+          ? `<span class="news-why">${escapeHtml(item.rating)}</span>`
+          : item.why
+            ? `<span class="news-why">${escapeHtml(item.why)}</span>`
+            : "";
       return `
         <article class="news-item">
           <div class="news-item-meta">
             <time>${escapeHtml(item.published_at || "-")}</time>
-            <span class="news-kind">${kindLabel}</span>
             <span>${escapeHtml(item.source || "-")}</span>
-            ${item.why ? `<span class="news-why">${escapeHtml(item.why)}</span>` : ""}
+            ${extra}
           </div>
           <h3>${titleHtml}</h3>
           <p>${escapeHtml(truncateText(item.summary || ""))}</p>
         </article>
       `;
     })
+    .join("");
+}
+
+function renderNewsGroups(groups) {
+  const sections = [
+    {
+      key: "notices",
+      title: "公司公告",
+      empty: "暂无公司公告",
+      items: groups.notices || [],
+    },
+    {
+      key: "news",
+      title: "外部新闻",
+      empty: "暂无相关外部新闻",
+      items: groups.news || [],
+    },
+    {
+      key: "reports",
+      title: "机构研报",
+      empty: "暂无机构研报",
+      items: groups.reports || [],
+    },
+  ];
+  els.newsBody.innerHTML = sections
+    .map(
+      (sec) => `
+      <div class="news-group" data-kind="${sec.key}">
+        <div class="news-group-head">
+          <h4>${sec.title}</h4>
+          <span class="muted">${sec.items.length} 条</span>
+        </div>
+        <div class="news-panel-body company-news-body">
+          ${renderNewsList(sec.items, sec.empty)}
+        </div>
+      </div>`
+    )
     .join("");
 }
 
@@ -208,7 +248,7 @@ async function loadProfile() {
 
 async function loadNews({ refresh = false } = {}) {
   if (!code) return;
-  els.newsMeta.textContent = refresh ? "正在重新拉取…" : "正在收集近 1–2 年公告与新闻…";
+  els.newsMeta.textContent = refresh ? "正在重新拉取…" : "正在收集近 1–2 年公告、新闻与研报…";
   els.newsBody.innerHTML = `<p class="muted">请稍候…</p>`;
   els.refreshNewsBtn.disabled = true;
   try {
@@ -219,11 +259,21 @@ async function loadNews({ refresh = false } = {}) {
     if (refresh) qs.set("refresh", "1");
     const json = await api(`/api/stocks/news?${qs.toString()}`);
     const data = json.data || {};
-    const modeLabel = data.mode === "llm" ? "LLM 筛选" : "启发式筛选";
+    const modeLabel =
+      data.mode === "llm" ? "LLM 筛选" : data.mode === "full" ? "全量采集" : "启发式筛选";
     const span =
       data.span_from && data.span_to ? `${data.span_from} ~ ${data.span_to}` : "近1–2年";
-    els.newsMeta.textContent = `${modeLabel} · ${span} · 共 ${(data.items || []).length} 条 · 更新于 ${data.updated_at || "-"}`;
-    renderNewsItems(data.items || []);
+    const counts = data.counts || {};
+    const total =
+      (counts.notices || 0) + (counts.news || 0) + (counts.reports || 0) ||
+      (data.items || []).length;
+    els.newsMeta.textContent = `${modeLabel} · ${span} · 公告 ${counts.notices || 0} / 新闻 ${counts.news || 0} / 研报 ${counts.reports || 0}（共 ${total}） · 更新于 ${data.updated_at || "-"}`;
+    const groups = data.groups || {
+      notices: (data.items || []).filter((x) => x.kind === "notice"),
+      news: (data.items || []).filter((x) => x.kind !== "notice" && x.kind !== "report"),
+      reports: (data.items || []).filter((x) => x.kind === "report"),
+    };
+    renderNewsGroups(groups);
   } catch (err) {
     els.newsMeta.textContent = "加载失败";
     els.newsBody.innerHTML = `<p class="news-error">${escapeHtml(err.message || String(err))}</p>`;

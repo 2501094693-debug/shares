@@ -688,7 +688,34 @@ thead th {
 }
 
 .company-news-body {
-  max-height: none;
+  max-height: min(420px, 46vh);
+  overflow: auto;
+}
+
+.company-news-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.news-group {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px 14px;
+}
+
+.news-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.news-group-head h4 {
+  margin: 0;
+  font-size: 0.98rem;
 }
 
 .news-kind {
@@ -761,12 +788,14 @@ td.code {
 }
 
 /* A股惯例：红涨绿跌 */
-td.change-up {
+td.change-up,
+.change-up {
   color: #d32f2f;
   font-weight: 600;
 }
 
-td.change-down {
+td.change-down,
+.change-down {
   color: #2e7d32;
   font-weight: 600;
 }
