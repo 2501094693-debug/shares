@@ -1,9 +1,9 @@
-"""全局股票索引：持久化、增量合并、高效检索。
+"""成分股缓存 + 全局股票索引（同一类）。
 
-检索结构：
-- by_code: 短码 / 完整码 → 条目下标（O(1) 精确）
-- code_prefixes: 数字前缀倒排，加速代码前缀/子串候选
-- name_chars: 名称字符倒排，缩小名称子串扫描范围
+职责：
+1. 按三级行业拉取 / 缓存成分股；
+2. 维护全局扁平索引与倒排，支持名称 / 代码检索；
+3. 浏览行业时增量合并，后台可全量重建。
 """
 
 from __future__ import annotations
@@ -13,27 +13,102 @@ import threading
 import time
 from typing import Any, Callable
 
-from paths import STOCK_INDEX_CACHE, ensure_cache_dirs
+import pandas as pd
+
+from cons_fetcher import fetch_third_cons
+from paths import (
+    CONS_CACHE_DIR,
+    CONS_TTL,
+    STOCK_INDEX_CACHE,
+    cons_cache_path,
+    ensure_cache_dirs,
+)
 from stock_schema import (
     has_price,
     make_index_entry,
     merge_metrics,
     stock_key,
 )
-from constituents import build_code_lookup, iter_cons_cache_files, read_cons_cache
 
-GetConstituents = Callable[..., dict[str, Any]]
+GetL3Meta = Callable[[str], dict[str, Any] | None]
 GetL3Codes = Callable[[], list[str]]
 
 
-class StockIndex:
-    """内存股票库 + 磁盘快照 + 后台全量构建。"""
+def _cell(row: Any, key: str) -> str:
+    val = row.get(key, "")
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return ""
+    text = str(val).strip()
+    return "" if text in {"nan", "None", "—", "-", "<NA>"} else text
+
+
+def _normalize_row(row: Any, meta: dict[str, Any]) -> dict[str, Any]:
+    stock_code = _cell(row, "股票代码")
+    short_code = stock_code.split(".")[0] if stock_code else ""
+    return {
+        "code": short_code,
+        "full_code": stock_code,
+        "name": _cell(row, "股票简称"),
+        "l1": meta.get("l1_name", ""),
+        "l2": meta.get("l2_name", ""),
+        "l3": _cell(row, "申万3级") or meta.get("name", ""),
+        "include_date": _cell(row, "纳入时间"),
+        "price": _cell(row, "价格"),
+        "pe": _cell(row, "市盈率"),
+        "pe_ttm": _cell(row, "市盈率ttm"),
+        "pb": _cell(row, "市净率"),
+        "roe": _cell(row, "ROE"),
+        "dividend_yield": _cell(row, "股息率"),
+        "market_cap": _cell(row, "市值"),
+        "change_1d": _cell(row, "近1日涨幅"),
+        "change_5d": _cell(row, "近5日涨幅"),
+        "change_ytd": _cell(row, "今年以来涨幅"),
+        "profit_growth": _cell(row, "净利润增速"),
+        "revenue_growth": _cell(row, "营收增速"),
+    }
+
+
+def _read_cons_cache(l3_code: str) -> dict[str, Any] | None:
+    path = cons_cache_path(l3_code)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _write_cons_cache(l3_code: str, payload: dict[str, Any]) -> None:
+    ensure_cache_dirs()
+    cons_cache_path(l3_code).write_text(
+        json.dumps(payload, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def _build_code_lookup(stocks: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    lookup: dict[str, dict[str, Any]] = {}
+    for s in stocks:
+        full = str(s.get("full_code") or "").strip().lower()
+        short = str(s.get("code") or "").strip().lower()
+        if full:
+            lookup[full] = s
+        if short:
+            lookup[short] = s
+    return lookup
+
+
+class StockStore:
+    """成分股仓库 + 全局搜索索引。"""
 
     def __init__(
         self,
-        get_constituents: GetConstituents | None = None,
-        get_l3_codes: GetL3Codes | None = None,
+        get_l3_meta: GetL3Meta,
+        get_l3_codes: GetL3Codes,
     ) -> None:
+        self._get_l3_meta = get_l3_meta
+        self._get_l3_codes = get_l3_codes
+
         self._lock = threading.RLock()
         self._stocks: list[dict[str, Any]] = []
         self._by_code: dict[str, int] = {}
@@ -45,15 +120,70 @@ class StockIndex:
         self.error = ""
         self.progress = {"done": 0, "total": 0}
 
-        self._get_constituents = get_constituents
-        self._get_l3_codes = get_l3_codes
-
         ensure_cache_dirs()
-        self.load()
+        self.load_index()
 
-    # ------------------------------------------------------------------
-    # 状态
-    # ------------------------------------------------------------------
+    # ==================================================================
+    # 成分股
+    # ==================================================================
+
+    def get_constituents(
+        self,
+        code: str,
+        force_refresh: bool = False,
+        update_index: bool = True,
+    ) -> dict[str, Any]:
+        """获取三级行业成分股；可选同步进全局索引。"""
+        code = code.strip()
+        meta = self._get_l3_meta(code)
+        if meta is None:
+            raise KeyError(f"未找到三级行业: {code}")
+
+        if not force_refresh:
+            cached = _read_cons_cache(code)
+            if cached and time.time() - cached.get("fetched_at", 0) < CONS_TTL:
+                if update_index:
+                    self.upsert_industry(meta, cached.get("stocks") or [])
+                return cached
+
+        df = fetch_third_cons(code)
+        stocks = [_normalize_row(row, meta) for _, row in df.iterrows()]
+        payload = {
+            "industry": meta,
+            "count": len(stocks),
+            "stocks": stocks,
+            "fetched_at": time.time(),
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        _write_cons_cache(code, payload)
+        if update_index:
+            self.upsert_industry(meta, stocks)
+        return payload
+
+    def find_stock_in_industry(
+        self, industry_code: str, code: str
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """在指定行业成分股中查找股票 → (stock, industry_meta)。"""
+        try:
+            data = self.get_constituents(
+                industry_code, force_refresh=False, update_index=True
+            )
+        except KeyError:
+            return None, None
+        code_l = code.strip().lower()
+        lookup = _build_code_lookup(data.get("stocks") or [])
+        hit = lookup.get(code_l)
+        if hit is None:
+            for s in data.get("stocks") or []:
+                full = str(s.get("full_code") or "").lower()
+                if code_l == str(s.get("code") or "").lower() or code_l in full:
+                    hit = s
+                    break
+        return (dict(hit) if hit else None), (data.get("industry") or None)
+
+    # ==================================================================
+    # 索引：状态 / 加载 / 保存
+    # ==================================================================
 
     def status(self) -> dict[str, Any]:
         with self._lock:
@@ -68,11 +198,7 @@ class StockIndex:
     def __len__(self) -> int:
         return len(self._stocks)
 
-    # ------------------------------------------------------------------
-    # 加载 / 保存 / 重建内存倒排
-    # ------------------------------------------------------------------
-
-    def load(self) -> None:
+    def load_index(self) -> None:
         if not STOCK_INDEX_CACHE.exists():
             self.rebuild_from_cons_cache()
             return
@@ -84,14 +210,12 @@ class StockIndex:
         if not stocks:
             self.rebuild_from_cons_cache()
             return
-        # 旧快照缺行情时，用 cons 缓存补一轮
         if stocks and not any(has_price(s) for s in stocks[:50]):
-            enriched = self._enrich_from_cons(stocks)
-            self.replace_all(enriched, persist=True)
+            self.replace_all(self._enrich_from_cons(stocks), persist=True)
         else:
             self.replace_all(stocks, persist=False)
 
-    def save(self) -> None:
+    def save_index(self) -> None:
         with self._lock:
             payload = {
                 "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -109,13 +233,14 @@ class StockIndex:
             self._rebuild_lookups()
             self.ready = len(self._stocks) > 0
         if persist and self._stocks:
-            self.save()
+            self.save_index()
 
     def rebuild_from_cons_cache(self) -> None:
         """扫描 cons/*.json 拼出索引（启动兜底）。"""
         collected: list[dict[str, Any]] = []
         seen: set[str] = set()
-        for path in iter_cons_cache_files():
+        ensure_cache_dirs()
+        for path in CONS_CACHE_DIR.glob("*.json"):
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except Exception:  # noqa: BLE001
@@ -143,7 +268,7 @@ class StockIndex:
             self._stocks = list(by_key.values())
             self._rebuild_lookups()
             self.ready = True
-        self.save()
+        self.save_index()
 
     def _rebuild_lookups(self) -> None:
         by_code: dict[str, int] = {}
@@ -158,11 +283,9 @@ class StockIndex:
                     code_prefixes.setdefault(short[:i], set()).add(idx)
             if full:
                 by_code[full] = idx
-                # 完整码也挂短前缀（取代码主体）
                 body = full.split(".", 1)[0]
                 for i in range(1, len(body) + 1):
                     code_prefixes.setdefault(body[:i], set()).add(idx)
-
             name = str(item.get("name") or "").strip().lower()
             for ch in set(name):
                 if ch.isspace():
@@ -172,12 +295,11 @@ class StockIndex:
         self._name_chars = name_chars
         self._code_prefixes = code_prefixes
 
-    # ------------------------------------------------------------------
-    # 检索
-    # ------------------------------------------------------------------
+    # ==================================================================
+    # 索引：检索
+    # ==================================================================
 
     def get_by_code(self, code: str) -> dict[str, Any] | None:
-        """精确匹配短码或完整码。"""
         code_l = (code or "").strip().lower()
         if not code_l:
             return None
@@ -187,15 +309,18 @@ class StockIndex:
             idx = self._by_code.get(code_l)
             if idx is not None:
                 return dict(self._stocks[idx])
-            # 宽松：完整码包含
             for item in self._stocks:
                 full = str(item.get("full_code") or "").lower()
                 short = str(item.get("code") or "").lower()
-                if code_l == short or code_l == full or (code_l in full and len(code_l) >= 4):
+                if code_l == short or code_l == full or (
+                    code_l in full and len(code_l) >= 4
+                ):
                     return dict(item)
         return None
 
-    def search(self, name: str = "", code: str = "", limit: int = 6000) -> list[dict[str, Any]]:
+    def search(
+        self, name: str = "", code: str = "", limit: int = 80
+    ) -> list[dict[str, Any]]:
         name_kw = name.strip().lower()
         code_kw = code.strip().lower()
         if not name_kw and not code_kw:
@@ -208,16 +333,13 @@ class StockIndex:
             candidates: set[int] | None = None
 
             if code_kw:
-                # 精确命中优先
                 exact = self._by_code.get(code_kw)
                 if exact is not None and not name_kw:
                     return [dict(self._stocks[exact])][:limit]
-                # 前缀倒排：无前缀表时退回全量
                 pref = self._code_prefixes.get(code_kw)
                 if pref is not None:
                     candidates = set(pref)
                 else:
-                    # 非纯前缀（中间匹配）时扫 code 键
                     candidates = {
                         idx
                         for key, idx in self._by_code.items()
@@ -225,16 +347,14 @@ class StockIndex:
                     }
 
             if name_kw:
-                # 取关键词中出现次数最少的字符集合做候选，再做子串确认
                 char_sets = [
                     self._name_chars[ch]
                     for ch in set(name_kw)
                     if ch in self._name_chars and not ch.isspace()
                 ]
-                if not char_sets:
-                    name_hits: set[int] = set()
-                else:
-                    name_hits = set.intersection(*char_sets)
+                name_hits: set[int] = (
+                    set.intersection(*char_sets) if char_sets else set()
+                )
                 candidates = (
                     name_hits
                     if candidates is None
@@ -245,7 +365,6 @@ class StockIndex:
                 return []
 
             results: list[dict[str, Any]] = []
-            # 按名称稳定排序，避免 set 遍历顺序抖动
             ordered = sorted(
                 candidates,
                 key=lambda i: (
@@ -267,7 +386,6 @@ class StockIndex:
             return results
 
     def ensure_populated(self) -> None:
-        """索引为空时从 cons 兜底；过少时触发后台全量。"""
         with self._lock:
             empty = not self._stocks
             small = len(self._stocks) < 1000
@@ -277,17 +395,15 @@ class StockIndex:
         if small and not building:
             self.start_build(force=False)
 
-    # ------------------------------------------------------------------
-    # 全量构建
-    # ------------------------------------------------------------------
+    # ==================================================================
+    # 索引：全量构建（直接调本类 get_constituents，无需注入）
+    # ==================================================================
 
     def start_build(self, force: bool = False) -> dict[str, Any]:
         with self._lock:
             if self.building:
                 return self.status()
             if self.ready and not force and len(self._stocks) > 1000:
-                return self.status()
-            if self._get_constituents is None or self._get_l3_codes is None:
                 return self.status()
 
         def worker() -> None:
@@ -300,8 +416,8 @@ class StockIndex:
                 seen: set[str] = set()
                 for code in codes:
                     try:
-                        data = self._get_constituents(
-                            code, force_refresh=False, notify_index=False
+                        data = self.get_constituents(
+                            code, force_refresh=False, update_index=False
                         )
                         meta = data.get("industry") or {}
                         for s in data.get("stocks") or []:
@@ -325,10 +441,6 @@ class StockIndex:
         threading.Thread(target=worker, daemon=True).start()
         return self.status()
 
-    # ------------------------------------------------------------------
-    # 行情补全（启动迁移 / 兜底）
-    # ------------------------------------------------------------------
-
     def _enrich_from_cons(
         self, items: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
@@ -340,9 +452,9 @@ class StockIndex:
                 continue
             l3 = str(item.get("l3_code") or "").strip()
             if l3 not in cache_by_l3:
-                payload = read_cons_cache(l3) if l3 else None
+                payload = _read_cons_cache(l3) if l3 else None
                 stocks = (payload or {}).get("stocks") or []
-                cache_by_l3[l3] = build_code_lookup(stocks)
+                cache_by_l3[l3] = _build_code_lookup(stocks)
             lookup = cache_by_l3.get(l3) or {}
             hit = lookup.get(str(item.get("full_code") or "").lower()) or lookup.get(
                 str(item.get("code") or "").lower()

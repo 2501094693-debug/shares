@@ -54,7 +54,7 @@ class IndustryTree:
             item
             for item in self._flat_l3.values()
             if kw
-            in f"{item['name']}{item['l1_name']}{item['l2_name']}{item['code']}".lower()
+            in f"{item['l1_name']}{item['l2_name']}{item['name']}{item['code']}".lower()
         ]
         results.sort(key=lambda x: (x["l1_name"], x["l2_name"], x["name"]))
         return results[:limit]

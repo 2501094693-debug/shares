@@ -1,22 +1,20 @@
-"""数据层门面：对外保持原有 IndustryService API，内部按职责拆分。
+"""数据层门面：对外保持原有 IndustryService API。
 
 模块分工：
-- paths          缓存路径
-- stock_schema   索引字段规范
-- industry_tree  行业树 / 行业搜索
-- constituents   成分股拉取与缓存
-- stock_index    全局股票索引与高效检索
+- paths         缓存路径
+- stock_schema  索引字段规范
+- industry_tree 行业树 / 行业搜索
+- stock_store   成分股 + 全局股票索引
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from stock_schema import METRIC_KEYS
-from constituents import ConstituentsRepo
 from industry_tree import IndustryTree
 from paths import ensure_cache_dirs
-from stock_index import StockIndex
+from stock_schema import METRIC_KEYS
+from stock_store import StockStore
 
 
 class IndustryService:
@@ -25,14 +23,10 @@ class IndustryService:
     def __init__(self) -> None:
         ensure_cache_dirs()
         self.tree = IndustryTree()
-        self.index = StockIndex()
-        self.cons = ConstituentsRepo(
+        self.stocks = StockStore(
             get_l3_meta=self.tree.get_l3_meta,
-            on_updated=self.index.upsert_industry,
+            get_l3_codes=self.tree.l3_codes,
         )
-        # 全量构建依赖成分股与行业代码列表（延迟注入，避免循环构造）
-        self.index._get_constituents = self.cons.get
-        self.index._get_l3_codes = self.tree.l3_codes
 
     # ----- 行业树 -----
 
@@ -45,7 +39,7 @@ class IndustryService:
     def search(self, keyword: str) -> list[dict[str, Any]]:
         return self.tree.search(keyword)
 
-    # ----- 成分股 -----
+    # ----- 成分股 / 索引（同一 StockStore） -----
 
     def get_constituents(
         self,
@@ -53,25 +47,23 @@ class IndustryService:
         force_refresh: bool = False,
         update_index: bool = True,
     ) -> dict[str, Any]:
-        return self.cons.get(
+        return self.stocks.get_constituents(
             code,
             force_refresh=force_refresh,
-            notify_index=update_index,
+            update_index=update_index,
         )
 
-    # ----- 股票索引 -----
-
     def get_index_status(self) -> dict[str, Any]:
-        return self.index.status()
+        return self.stocks.status()
 
     def start_build_stock_index(self, force: bool = False) -> dict[str, Any]:
-        return self.index.start_build(force=force)
+        return self.stocks.start_build(force=force)
 
     def search_stocks(
         self, name: str = "", code: str = "", limit: int = 80
     ) -> list[dict[str, Any]]:
-        self.index.ensure_populated()
-        return self.index.search(name=name, code=code, limit=limit)
+        self.stocks.ensure_populated()
+        return self.stocks.search(name=name, code=code, limit=limit)
 
     def get_stock_profile(
         self, code: str, industry_code: str = "", name: str = ""
@@ -84,8 +76,8 @@ class IndustryService:
         industry_code = (industry_code or "").strip()
         name = (name or "").strip()
 
-        self.index.ensure_populated()
-        index_hit = self.index.get_by_code(code)
+        self.stocks.ensure_populated()
+        index_hit = self.stocks.get_by_code(code)
 
         if not industry_code and index_hit:
             industry_code = str(index_hit.get("l3_code") or "").strip()
@@ -94,7 +86,9 @@ class IndustryService:
         stock: dict[str, Any] | None = None
 
         if industry_code:
-            stock, cons_industry = self.cons.find_stock_in_industry(industry_code, code)
+            stock, cons_industry = self.stocks.find_stock_in_industry(
+                industry_code, code
+            )
             if industry_meta is None and cons_industry:
                 industry_meta = cons_industry
 
