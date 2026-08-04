@@ -494,7 +494,12 @@ tr.highlight {
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 100px);
+  min-height: 420px;
   overflow: hidden;
+}
+
+.content.is-loading {
+  min-height: min(560px, calc(100vh - 100px));
 }
 
 .detail:not(.hidden) {
@@ -804,11 +809,18 @@ td.change-down,
 .error {
   position: absolute;
   inset: 18px;
+  z-index: 10;
   display: grid;
   place-items: center;
   border-radius: 12px;
   background: rgba(255, 253, 248, 0.92);
   font-size: 1rem;
+  pointer-events: auto;
+}
+
+.content.is-loading .detail {
+  pointer-events: none;
+  opacity: 0.45;
 }
 
 .error {

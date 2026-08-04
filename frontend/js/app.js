@@ -25,6 +25,7 @@ const els = {
   refreshBtn: document.getElementById("refreshBtn"),
   emptyState: document.getElementById("emptyState"),
   detail: document.getElementById("detail"),
+  content: document.querySelector(".content"),
   breadcrumb: document.getElementById("breadcrumb"),
   industryTitle: document.getElementById("industryTitle"),
   industryMeta: document.getElementById("industryMeta"),
@@ -61,6 +62,10 @@ function setError(message) {
 
 function setLoading(on) {
   els.loading.classList.toggle("hidden", !on);
+  els.content?.classList.toggle("is-loading", on);
+  if (on) {
+    els.errorBox.classList.add("hidden");
+  }
 }
 
 function countL3(tree) {
@@ -208,8 +213,17 @@ async function selectIndustry(code, rowEl = null, options = {}) {
   }
 
   els.emptyState.classList.add("hidden");
-  els.detail.classList.add("hidden");
+  els.detail.classList.remove("hidden");
   setError("");
+  state.stocks = [];
+  state.page = 1;
+  els.breadcrumb.textContent = "加载中…";
+  els.industryTitle.textContent = code;
+  els.industryMeta.textContent = "正在拉取成分股列表…";
+  els.stockBody.innerHTML = `<tr><td colspan="${MAIN_COL_COUNT}" class="muted">正在加载成分股…</td></tr>`;
+  els.pageInfo.textContent = "";
+  els.prevPage.disabled = true;
+  els.nextPage.disabled = true;
   setLoading(true);
 
   try {
@@ -236,7 +250,6 @@ async function selectIndustry(code, rowEl = null, options = {}) {
     }
 
     renderStocks();
-    els.detail.classList.remove("hidden");
 
     if (state.highlightCode) {
       const target = els.stockBody.querySelector("tr.highlight");
@@ -247,6 +260,8 @@ async function selectIndustry(code, rowEl = null, options = {}) {
     url.searchParams.set("industry", code);
     window.history.replaceState({}, "", url);
   } catch (err) {
+    state.stocks = [];
+    els.stockBody.innerHTML = `<tr><td colspan="${MAIN_COL_COUNT}" class="muted">加载失败</td></tr>`;
     setError(err.message || String(err));
   } finally {
     setLoading(false);
@@ -458,8 +473,9 @@ els.closeCompanySearch.addEventListener("click", () => {
 els.refreshBtn.addEventListener("click", () => loadTree(true));
 els.reloadStocksBtn.addEventListener("click", async () => {
   if (!state.selectedCode) return;
-  setLoading(true);
   setError("");
+  els.stockBody.innerHTML = `<tr><td colspan="${MAIN_COL_COUNT}" class="muted">正在重新拉取…</td></tr>`;
+  setLoading(true);
   try {
     const json = await api(
       `/api/industries/${encodeURIComponent(state.selectedCode)}/stocks?refresh=1`

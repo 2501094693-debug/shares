@@ -1,0 +1,14 @@
+﻿C:\Users\Administrator\Desktop\test\.venv\Scripts\python.exe : Traceback (most recent call last):
+所在位置 C:\Users\Administrator\AppData\Local\Temp\ps-script-6cb401f3-3b53-40d8-9c7f-994fe2f34b69.ps1:7 字符: 1
++ C:\Users\Administrator\Desktop\test\.venv\Scripts\python.exe -c "from ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<string>", line 1, in <module>
+    from app import app; print('routes', len(app.routes)); print([getattr(r,'path',None) for r in app.routes if getattr
+(r,'path',None)])
+    ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\Desktop\test\backend\app.py", line 10, in <module>
+    import uvicorn
+ModuleNotFoundError: No module named 'uvicorn'

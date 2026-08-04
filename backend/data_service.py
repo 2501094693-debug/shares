@@ -1,6 +1,6 @@
 """申万三级行业数据服务：拉取并缓存行业树与成分股。
 
-本模块是后端的数据层核心，对 Flask API（app.py）屏蔽外部数据源细节。
+本模块是后端的数据层核心，对 FastAPI（app.py）屏蔽外部数据源细节。
 主要职责：
 1. 构建 / 缓存申万一级 → 二级 → 三级行业树；
 2. 按三级行业代码拉取并缓存成分股列表；
@@ -538,7 +538,7 @@ class IndustryService:
             finally:
                 self._index_building = False
 
-        # daemon=True：主进程退出时不阻塞；适合开发态 Flask debug
+        # daemon=True：主进程退出时不阻塞；适合开发态 uvicorn
         threading.Thread(target=worker, daemon=True).start()
         return self.get_index_status()
 
@@ -663,5 +663,5 @@ class IndustryService:
         }
 
 
-# 进程内单例：Flask 路由与启动预热均 import 此对象
+# 进程内单例：FastAPI 路由与启动预热均 import 此对象
 service = IndustryService()

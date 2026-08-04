@@ -1,0 +1,35 @@
+﻿SSH key regeneration diag — 2026-08-04 09:22:42
+============================================================
+
+Backup:
+  id_ed25519.bak-20260804092216
+  id_ed25519.pub.bak-20260804092216
+
+New key:
+  Path: C:\Users\Administrator\.ssh\id_ed25519
+  Comment: 2501094693-debug@github
+  Passphrase: EMPTY (unencrypted; OpenSSH header shows "none")
+  Private key first lines:
+-----BEGIN OPENSSH PRIVATE KEY----- b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+
+Public key (add this to GitHub → Settings → SSH and GPG keys):
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID52JJk4t8wMgtmHp2VPJ8baRnalvvA4fxRJ1+ETh0Zi 2501094693-debug@github
+
+Fingerprint:
+256 SHA256:tftAyesHF0XE+M4duS14f7tW+uPW+b4LFq6+EVpAVhk 2501094693-debug@github (ED25519)
+
+ssh-agent: Running (Manual)
+ssh-add: OK (no passphrase prompt), exit 0
+
+SSH config (C:\Users\Administrator\.ssh\config):
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+
+ssh -o BatchMode=yes -T git@github.com:
+  git@github.com: Permission denied (publickey).
+  Expected until this public key is added on GitHub.
+
+Push: NOT performed (per instructions).
