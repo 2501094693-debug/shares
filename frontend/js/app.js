@@ -2,11 +2,10 @@ const state = {
   tree: [],
   selectedCode: null,
   stocks: [],
-  nameFilter: "",
-  codeFilter: "",
   highlightCode: "",
   page: 1,
   pageSize: 20,
+  searchMode: false,
 };
 
 const MAIN_COL_COUNT = 8;
@@ -30,8 +29,6 @@ const els = {
   industryTitle: document.getElementById("industryTitle"),
   industryMeta: document.getElementById("industryMeta"),
   stockBody: document.getElementById("stockBody"),
-  nameFilter: document.getElementById("nameFilter"),
-  codeFilter: document.getElementById("codeFilter"),
   reloadStocksBtn: document.getElementById("reloadStocksBtn"),
   pageSize: document.getElementById("pageSize"),
   prevPage: document.getElementById("prevPage"),
@@ -137,18 +134,7 @@ function clearActive() {
 }
 
 function filteredStocks() {
-  const nameKw = state.nameFilter.trim().toLowerCase();
-  const codeKw = state.codeFilter.trim().toLowerCase();
-  return state.stocks.filter((s) => {
-    if (nameKw && !String(s.name || "").toLowerCase().includes(nameKw)) {
-      return false;
-    }
-    if (codeKw) {
-      const hay = `${s.code || ""}${s.full_code || ""}`.toLowerCase();
-      if (!hay.includes(codeKw)) return false;
-    }
-    return true;
-  });
+  return state.stocks;
 }
 
 function totalPages(total) {
@@ -183,12 +169,13 @@ function stockKey(s) {
 function openCompanyPage(stock) {
   const code = stock.code || "";
   if (!code) return;
+  const industry = state.selectedCode || stock.l3_code || "";
   try {
     sessionStorage.setItem(
       `stock:${code}`,
       JSON.stringify({
         ...stock,
-        l3_code: state.selectedCode || stock.l3_code || "",
+        l3_code: industry,
       })
     );
   } catch {
@@ -198,11 +185,12 @@ function openCompanyPage(stock) {
     code,
     name: stock.name || "",
   });
-  if (state.selectedCode) qs.set("industry", state.selectedCode);
+  if (industry) qs.set("industry", industry);
   window.location.href = `/company.html?${qs.toString()}`;
 }
 
 async function selectIndustry(code, rowEl = null, options = {}) {
+  state.searchMode = false;
   state.selectedCode = code;
   clearActive();
   if (rowEl) {
@@ -235,10 +223,6 @@ async function selectIndustry(code, rowEl = null, options = {}) {
     els.breadcrumb.textContent = `${ind.l1_name || "-"} / ${ind.l2_name || "-"}`;
     els.industryTitle.textContent = ind.name || code;
     els.industryMeta.textContent = `行业代码 ${ind.code || code} · 共 ${data.count ?? state.stocks.length} 家上市公司 · 更新于 ${data.updated_at || "-"}`;
-    els.nameFilter.value = options.nameFilter || "";
-    els.codeFilter.value = options.codeFilter || "";
-    state.nameFilter = els.nameFilter.value;
-    state.codeFilter = els.codeFilter.value;
     state.page = 1;
 
     if (state.highlightCode) {
@@ -334,11 +318,67 @@ function formatIndexStatus(index) {
   return "公司库未就绪，首次搜索将自动同步";
 }
 
+function showSearchResults(results, meta = {}) {
+  state.searchMode = true;
+  state.selectedCode = null;
+  state.stocks = results;
+  state.highlightCode = "";
+  state.page = 1;
+  clearActive();
+
+  els.companySearchPanel.classList.add("hidden");
+  els.emptyState.classList.add("hidden");
+  els.detail.classList.remove("hidden");
+
+  const parts = [];
+  if (els.companyNameSearch.value.trim()) {
+    parts.push(`名称「${els.companyNameSearch.value.trim()}」`);
+  }
+  if (els.companyCodeSearch.value.trim()) {
+    parts.push(`代码「${els.companyCodeSearch.value.trim()}」`);
+  }
+  els.breadcrumb.textContent = "公司搜索";
+  els.industryTitle.textContent = parts.length ? parts.join(" · ") : "公司搜索结果";
+  const status = formatIndexStatus(meta.index);
+  els.industryMeta.textContent = [
+    `共 ${results.length} 家匹配公司`,
+    status,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  renderStocks();
+}
+
+async function clearCompanySearchView() {
+  state.searchMode = false;
+  els.companySearchPanel.classList.add("hidden");
+  if (els.indexStatus) els.indexStatus.textContent = "";
+
+  const bootIndustry = new URLSearchParams(window.location.search).get("industry");
+  if (bootIndustry) {
+    expandToIndustryCode(bootIndustry);
+    await selectIndustry(bootIndustry);
+    return;
+  }
+
+  state.selectedCode = null;
+  state.stocks = [];
+  els.detail.classList.add("hidden");
+  els.emptyState.classList.remove("hidden");
+  els.stockBody.innerHTML = "";
+  els.breadcrumb.textContent = "";
+  els.industryTitle.textContent = "";
+  els.industryMeta.textContent = "";
+  els.pageInfo.textContent = "";
+}
+
 async function runCompanySearch() {
   const name = els.companyNameSearch.value.trim();
   const code = els.companyCodeSearch.value.trim();
   if (!name && !code) {
-    els.companySearchPanel.classList.add("hidden");
+    if (state.searchMode) await clearCompanySearchView();
+    else els.companySearchPanel.classList.add("hidden");
     return;
   }
 
@@ -348,41 +388,22 @@ async function runCompanySearch() {
     if (code) params.set("code", code);
     const json = await api(`/api/stocks/search?${params.toString()}`);
     const results = json.data || [];
-    els.indexStatus.textContent = formatIndexStatus(json.index);
-    els.companySearchPanel.classList.remove("hidden");
-    els.companySearchResults.innerHTML = "";
+    if (els.indexStatus) els.indexStatus.textContent = formatIndexStatus(json.index);
+    setError("");
 
     if (!results.length) {
       const tip = json.index?.building
         ? "暂无结果，公司库同步中，请稍后再试"
         : "未找到匹配公司";
-      els.companySearchResults.innerHTML = `<p class="muted" style="padding:8px">${tip}</p>`;
+      showSearchResults([], { index: json.index });
+      els.stockBody.innerHTML = `<tr><td colspan="${MAIN_COL_COUNT}" class="muted">${tip}</td></tr>`;
+      els.pageInfo.textContent = "0 / 0";
+      els.prevPage.disabled = true;
+      els.nextPage.disabled = true;
       return;
     }
 
-    for (const item of results) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "company-result";
-      btn.innerHTML = `
-        <strong>${escapeHtml(item.name)} · ${escapeHtml(item.code)}</strong>
-        <span>${escapeHtml(item.l1_name)} / ${escapeHtml(item.l2_name)} / ${escapeHtml(item.l3_name)}</span>
-      `;
-      btn.addEventListener("click", () => {
-        const qs = new URLSearchParams({
-          code: item.code || "",
-          name: item.name || "",
-        });
-        if (item.l3_code) qs.set("industry", item.l3_code);
-        try {
-          sessionStorage.setItem(`stock:${item.code}`, JSON.stringify(item));
-        } catch {
-          /* ignore */
-        }
-        window.location.href = `/company.html?${qs.toString()}`;
-      });
-      els.companySearchResults.appendChild(btn);
-    }
+    showSearchResults(results, { index: json.index });
   } catch (err) {
     setError(err.message);
   }
@@ -466,8 +487,10 @@ function scheduleCompanySearch() {
 
 els.companyNameSearch.addEventListener("input", scheduleCompanySearch);
 els.companyCodeSearch.addEventListener("input", scheduleCompanySearch);
-els.closeCompanySearch.addEventListener("click", () => {
-  els.companySearchPanel.classList.add("hidden");
+els.closeCompanySearch?.addEventListener("click", () => {
+  els.companyNameSearch.value = "";
+  els.companyCodeSearch.value = "";
+  clearCompanySearchView();
 });
 
 els.refreshBtn.addEventListener("click", () => loadTree(true));
@@ -489,18 +512,6 @@ els.reloadStocksBtn.addEventListener("click", async () => {
   } finally {
     setLoading(false);
   }
-});
-
-els.nameFilter.addEventListener("input", () => {
-  state.nameFilter = els.nameFilter.value;
-  state.page = 1;
-  renderStocks();
-});
-
-els.codeFilter.addEventListener("input", () => {
-  state.codeFilter = els.codeFilter.value;
-  state.page = 1;
-  renderStocks();
 });
 
 els.pageSize.addEventListener("change", () => {

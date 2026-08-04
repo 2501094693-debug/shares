@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>申万三级行业浏览器</title>
+  <title>申万上市公司分类</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -15,7 +15,7 @@
       <div class="brand">
         <span class="brand-mark">SW</span>
         <div>
-          <h1>申万三级行业浏览器</h1>
+          <h1>申万上市公司分类</h1>
           <p>浏览一/二/三级行业划分，查看细分行业上市公司与代码</p>
         </div>
       </div>
@@ -26,11 +26,11 @@
         </label>
         <label class="search-box">
           <span class="sr-only">公司名称</span>
-          <input id="companyNameSearch" type="search" placeholder="公司名称搜索…" autocomplete="off" />
+          <input id="companyNameSearch" type="search" placeholder="搜索公司名称…" autocomplete="off" />
         </label>
         <label class="search-box">
           <span class="sr-only">公司代码</span>
-          <input id="companyCodeSearch" type="search" placeholder="公司代码搜索…" autocomplete="off" />
+          <input id="companyCodeSearch" type="search" placeholder="搜索公司代码…" autocomplete="off" />
         </label>
         <button id="refreshBtn" class="btn ghost" type="button" title="刷新行业树">刷新</button>
       </div>
@@ -68,12 +68,6 @@
               <p id="industryMeta" class="muted"></p>
             </div>
             <div class="detail-actions">
-              <label class="filter-box">
-                <input id="nameFilter" type="search" placeholder="筛选名称…" />
-              </label>
-              <label class="filter-box">
-                <input id="codeFilter" type="search" placeholder="筛选代码…" />
-              </label>
               <button id="reloadStocksBtn" class="btn ghost" type="button">重新拉取</button>
             </div>
           </div>
