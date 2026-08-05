@@ -1,9 +1,22 @@
-﻿import json
+﻿"""调试：直接请求东方财富新闻搜索 JSONP，检查接口是否可用。
+
+用法（在 backend 目录下）::
+
+    python -m news.scripts.run_eastmoney_news
+
+只打印状态、命中数、本页日期范围，方便对照 agent 里的解析逻辑。
+"""
+
+from __future__ import annotations
+
+import json
 import sys
 
-inner_param = {
+KEYWORD = "600719"
+
+INNER_PARAM = {
     "uid": "",
-    "keyword": "600719",
+    "keyword": KEYWORD,
     "type": ["cmsArticleWebOld"],
     "client": "web",
     "clientType": "web",
@@ -20,40 +33,31 @@ inner_param = {
     },
 }
 
-url = "https://search-api-web.eastmoney.com/search/jsonp"
-params = {
+URL = "https://search-api-web.eastmoney.com/search/jsonp"
+PARAMS = {
     "cb": "jQuery_cb",
-    "param": json.dumps(inner_param, ensure_ascii=False),
+    "param": json.dumps(INNER_PARAM, ensure_ascii=False),
     "_": "1764599530176",
 }
-headers = {
-    "referer": "https://so.eastmoney.com/news/s?keyword=600719",
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+HEADERS = {
+    "referer": f"https://so.eastmoney.com/news/s?keyword={KEYWORD}",
+    "user-agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/142.0.0.0 Safari/537.36"
+    ),
 }
 
-def parse_jsonp(text):
+
+def parse_jsonp(text: str) -> dict:
+    """从 callback({...}) 中抽出 JSON 对象。"""
     start = text.find("(")
     end = text.rfind(")")
     return json.loads(text[start + 1 : end])
 
-try:
-    from curl_cffi import requests as req
-    print("HTTP_LIB curl_cffi")
-    r = req.get(url, params=params, headers=headers, impersonate="chrome")
-except ImportError:
-    import requests as req
-    print("HTTP_LIB requests")
-    r = req.get(url, params=params, headers=headers)
 
-print("STATUS", r.status_code)
-print("RAW_PREFIX", r.text[:200])
-data = parse_jsonp(r.text)
-print("TOP_KEYS", list(data.keys()))
-result = data.get("result") or {}
-print("RESULT_KEYS", list(result.keys()) if isinstance(result, dict) else type(result))
-
-# print hitsTotal wherever it appears
-def find_key(obj, key, path=""):
+def find_key(obj, key: str, path: str = "") -> None:
+    """递归打印某个字段出现的位置（用于排查 hitsTotal 等）。"""
     if isinstance(obj, dict):
         for k, v in obj.items():
             p = f"{path}.{k}" if path else k
@@ -64,22 +68,49 @@ def find_key(obj, key, path=""):
         for i, item in enumerate(obj):
             find_key(item, key, f"{path}[{i}]")
 
-find_key(data, "hitsTotal")
 
-cms = result.get("cmsArticleWebOld") if isinstance(result, dict) else None
-if isinstance(cms, list) and cms:
-    dates = [str(x.get("date", x)) for x in cms if isinstance(x, dict)]
-    print("LIST_LEN", len(cms))
-    if dates:
-        print("FIRST_DATE", dates[0])
-        print("LAST_DATE", dates[-1])
-elif isinstance(cms, dict):
-    print("CMS_DICT_KEYS", list(cms.keys()))
-    items = cms.get("list") or cms.get("data") or []
-    if items:
-        dates = [str(x.get("date")) for x in items if isinstance(x, dict)]
-        print("LIST_LEN", len(items))
-        print("FIRST_DATE", dates[0] if dates else None)
-        print("LAST_DATE", dates[-1] if dates else None)
-else:
-    print("CMS_TYPE", type(cms))
+def main() -> int:
+    try:
+        from curl_cffi import requests as req
+
+        print("HTTP_LIB curl_cffi")
+        resp = req.get(URL, params=PARAMS, headers=HEADERS, impersonate="chrome")
+    except ImportError:
+        import requests as req
+
+        print("HTTP_LIB requests")
+        resp = req.get(URL, params=PARAMS, headers=HEADERS)
+
+    print("STATUS", resp.status_code)
+    print("RAW_PREFIX", resp.text[:200])
+
+    data = parse_jsonp(resp.text)
+    print("TOP_KEYS", list(data.keys()))
+
+    result = data.get("result") or {}
+    print("RESULT_KEYS", list(result.keys()) if isinstance(result, dict) else type(result))
+    find_key(data, "hitsTotal")
+
+    cms = result.get("cmsArticleWebOld") if isinstance(result, dict) else None
+    if isinstance(cms, list) and cms:
+        dates = [str(x.get("date", x)) for x in cms if isinstance(x, dict)]
+        print("LIST_LEN", len(cms))
+        if dates:
+            print("FIRST_DATE", dates[0])
+            print("LAST_DATE", dates[-1])
+    elif isinstance(cms, dict):
+        print("CMS_DICT_KEYS", list(cms.keys()))
+        items = cms.get("list") or cms.get("data") or []
+        if items:
+            dates = [str(x.get("date")) for x in items if isinstance(x, dict)]
+            print("LIST_LEN", len(items))
+            print("FIRST_DATE", dates[0] if dates else None)
+            print("LAST_DATE", dates[-1] if dates else None)
+    else:
+        print("CMS_TYPE", type(cms))
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
