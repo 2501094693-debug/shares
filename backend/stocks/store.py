@@ -15,20 +15,15 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from cons_fetcher import fetch_third_cons
-from paths import (
+from core.paths import (
     CONS_CACHE_DIR,
     CONS_TTL,
     STOCK_INDEX_CACHE,
     cons_cache_path,
     ensure_cache_dirs,
 )
-from stock_schema import (
-    has_price,
-    make_index_entry,
-    merge_metrics,
-    stock_key,
-)
+from stocks.cons_fetcher import fetch_third_cons
+from stocks.schema import make_index_entry, stock_key
 
 GetL3Meta = Callable[[str], dict[str, Any] | None]
 GetL3Codes = Callable[[], list[str]]
@@ -210,10 +205,7 @@ class StockStore:
         if not stocks:
             self.rebuild_from_cons_cache()
             return
-        if stocks and not any(has_price(s) for s in stocks[:50]):
-            self.replace_all(self._enrich_from_cons(stocks), persist=True)
-        else:
-            self.replace_all(stocks, persist=False)
+        self.replace_all(stocks, persist=False)
 
     def save_index(self) -> None:
         with self._lock:
@@ -319,7 +311,7 @@ class StockStore:
         return None
 
     def search(
-        self, name: str = "", code: str = "", limit: int = 80
+        self, name: str = "", code: str = "", limit: int = 6000
     ) -> list[dict[str, Any]]:
         name_kw = name.strip().lower()
         code_kw = code.strip().lower()
@@ -368,8 +360,8 @@ class StockStore:
             ordered = sorted(
                 candidates,
                 key=lambda i: (
-                    str(self._stocks[i].get("name") or ""),
                     str(self._stocks[i].get("code") or ""),
+                    str(self._stocks[i].get("name") or ""),
                 ),
             )
             for idx in ordered:
@@ -440,24 +432,3 @@ class StockStore:
 
         threading.Thread(target=worker, daemon=True).start()
         return self.status()
-
-    def _enrich_from_cons(
-        self, items: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        cache_by_l3: dict[str, dict[str, dict[str, Any]]] = {}
-        out: list[dict[str, Any]] = []
-        for item in items:
-            if has_price(item):
-                out.append(item)
-                continue
-            l3 = str(item.get("l3_code") or "").strip()
-            if l3 not in cache_by_l3:
-                payload = _read_cons_cache(l3) if l3 else None
-                stocks = (payload or {}).get("stocks") or []
-                cache_by_l3[l3] = _build_code_lookup(stocks)
-            lookup = cache_by_l3.get(l3) or {}
-            hit = lookup.get(str(item.get("full_code") or "").lower()) or lookup.get(
-                str(item.get("code") or "").lower()
-            )
-            out.append(merge_metrics(item, hit) if hit else item)
-        return out

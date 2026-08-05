@@ -1,20 +1,20 @@
 """数据层门面：对外保持原有 IndustryService API。
 
 模块分工：
-- paths         缓存路径
-- stock_schema  索引字段规范
-- industry_tree 行业树 / 行业搜索
-- stock_store   成分股 + 全局股票索引
+- core.paths       缓存路径
+- stocks.schema    索引字段规范
+- industry.tree    行业树 / 行业搜索
+- stocks.store     成分股 + 全局股票索引
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from industry_tree import IndustryTree
-from paths import ensure_cache_dirs
-from stock_schema import METRIC_KEYS
-from stock_store import StockStore
+from core.paths import ensure_cache_dirs
+from industry.tree import IndustryTree
+from stocks.schema import METRIC_KEYS
+from stocks.store import StockStore
 
 
 class IndustryService:

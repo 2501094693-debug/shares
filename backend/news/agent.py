@@ -20,7 +20,9 @@ try:
 except ImportError:  # pragma: no cover
     curl_requests = None
 
-CACHE_DIR = Path(__file__).resolve().parent / "cache" / "news"
+from core.paths import NEWS_CACHE_DIR, ensure_cache_dirs
+
+CACHE_DIR = NEWS_CACHE_DIR
 CACHE_TTL_SEC = 30 * 60
 CACHE_VERSION = 6  # bump: keep all related media news
 LOOKBACK_YEARS = 2
@@ -201,7 +203,7 @@ def _load_cache(code: str) -> dict[str, Any] | None:
 
 
 def _save_cache(code: str, data: dict[str, Any]) -> None:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_cache_dirs()
     path = _cache_path(code)
     path.write_text(
         json.dumps(

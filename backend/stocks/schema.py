@@ -44,16 +44,3 @@ def make_index_entry(
     for key in METRIC_KEYS:
         entry[key] = stock.get(key, "")
     return entry
-
-
-def merge_metrics(base: dict[str, Any], rich: dict[str, Any]) -> dict[str, Any]:
-    """用 rich 补全 base 中空的行情字段。"""
-    out = dict(base)
-    for key in METRIC_KEYS:
-        if not str(out.get(key) or "").strip() and rich.get(key) is not None:
-            out[key] = rich.get(key, "")
-    return out
-
-
-def has_price(stock: dict[str, Any]) -> bool:
-    return bool(str(stock.get("price") or "").strip())

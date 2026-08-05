@@ -1,7 +1,7 @@
 ﻿import json, sys
 sys.path.insert(0, r"C:\Users\Administrator\Desktop\test\backend")
 import akshare as ak
-from news_agent import _fetch_notices, _is_important_notice
+from news.agent import _fetch_notices, _is_important_notice
 
 out = {}
 for code in ("600519", "600719"):

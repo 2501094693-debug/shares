@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-CACHE_DIR = Path(__file__).resolve().parent / "cache"
+# backend/cache（本文件在 backend/core/）
+CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
 TREE_CACHE = CACHE_DIR / "industry_tree.json"
 CONS_CACHE_DIR = CACHE_DIR / "cons"
 STOCK_INDEX_CACHE = CACHE_DIR / "stocks_index.json"
+NEWS_CACHE_DIR = CACHE_DIR / "news"
 
 # 成分股缓存有效期（秒）
 CONS_TTL = 6 * 60 * 60
@@ -16,6 +18,7 @@ CONS_TTL = 6 * 60 * 60
 def ensure_cache_dirs() -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     CONS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    NEWS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def cons_cache_path(l3_code: str) -> Path:

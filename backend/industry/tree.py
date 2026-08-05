@@ -10,7 +10,38 @@ from typing import Any
 import akshare as ak
 import pandas as pd
 
-from paths import TREE_CACHE, ensure_cache_dirs
+from core.paths import TREE_CACHE, ensure_cache_dirs
+
+_FETCH_RETRIES = 3
+_FETCH_RETRY_SLEEP_SEC = 2.0
+
+
+def _fetch_sw_frames() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """从乐咕乐股拉取申万一/二/三级表；站点过载时 HTML 无节点会触发 AttributeError。"""
+    last_exc: BaseException | None = None
+    for attempt in range(1, _FETCH_RETRIES + 1):
+        try:
+            l1_df = ak.sw_index_first_info()
+            l2_df = ak.sw_index_second_info()
+            l3_df = ak.sw_index_third_info()
+            if l1_df is None or l1_df.empty or l2_df is None or l2_df.empty or l3_df is None or l3_df.empty:
+                raise RuntimeError("申万行业接口返回空表")
+            return l1_df, l2_df, l3_df
+        except AttributeError as exc:
+            # soup.find(...)=None 后再 .find_all → 'NoneType' has no attribute 'find_all'
+            last_exc = exc
+            msg = (
+                "乐咕乐股申万行业页暂不可用或页面结构变化"
+                "（未找到 level1/2/3Items 节点）"
+            )
+            if attempt >= _FETCH_RETRIES:
+                raise RuntimeError(msg) from exc
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt >= _FETCH_RETRIES:
+                raise RuntimeError(f"拉取申万行业分类失败: {exc}") from exc
+        time.sleep(_FETCH_RETRY_SLEEP_SEC * attempt)
+    raise RuntimeError(f"拉取申万行业分类失败: {last_exc}")
 
 
 class IndustryTree:
@@ -61,9 +92,7 @@ class IndustryTree:
 
     def _build_tree(self) -> list[dict[str, Any]]:
         ensure_cache_dirs()
-        l1_df = ak.sw_index_first_info()
-        l2_df = ak.sw_index_second_info()
-        l3_df = ak.sw_index_third_info()
+        l1_df, l2_df, l3_df = _fetch_sw_frames()
         for df in (l1_df, l2_df, l3_df):
             df.columns = [str(c).strip() for c in df.columns]
 

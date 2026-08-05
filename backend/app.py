@@ -7,16 +7,21 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+# 保证从仓库根目录启动 / PyCharm 调试时也能解析 core、news 等包
+_BACKEND_DIR = Path(__file__).resolve().parent
+if str(_BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_DIR))
+
 import uvicorn
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from data_service import service
-from news_agent import collect_important_news
+from news.agent import collect_important_news
+from services.data_service import service
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = _BACKEND_DIR.parent
 FRONTEND = ROOT / "frontend"
 
 
@@ -183,18 +188,29 @@ def stocks_news(
 
 @app.get("/")
 def index():
-    return FileResponse(FRONTEND / "index.html")
+    return FileResponse(FRONTEND / "industry" / "index.html")
 
 
 @app.get("/company")
 @app.get("/company.html")
 def company_page():
-    return FileResponse(FRONTEND / "company.html")
+    return FileResponse(FRONTEND / "company" / "company.html")
+
+
+@app.get("/js/app.js")
+def js_app():
+    return FileResponse(FRONTEND / "industry" / "app.js", media_type="application/javascript")
+
+
+@app.get("/js/company.js")
+def js_company():
+    return FileResponse(
+        FRONTEND / "company" / "company.js", media_type="application/javascript"
+    )
 
 
 # Static assets after API / page routes.
-app.mount("/css", StaticFiles(directory=str(FRONTEND / "css")), name="css")
-app.mount("/js", StaticFiles(directory=str(FRONTEND / "js")), name="js")
+app.mount("/css", StaticFiles(directory=str(FRONTEND / "shared" / "css")), name="css")
 
 
 if __name__ == "__main__":
