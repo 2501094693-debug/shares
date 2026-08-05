@@ -697,6 +697,16 @@ thead th {
   overflow: auto;
 }
 
+.news-section-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.news-section .section-head {
+  align-items: baseline;
+}
+
 .company-news-groups {
   display: flex;
   flex-direction: column;

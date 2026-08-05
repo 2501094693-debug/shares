@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from news.constants import MAX_NEWS, MAX_NOTICES, MAX_REPORTS
-from news.utils import parse_time, sort_key
+from .constants import MAX_NEWS, MAX_NOTICES, MAX_REPORTS
+from .utils import parse_time, sort_key
 
 
 # 去重时的优先级：公告 > 研报 > 新闻（同 URL/标题时保留优先级高的）

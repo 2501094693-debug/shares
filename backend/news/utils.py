@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 
-from news.constants import LOOKBACK_YEARS
+from .constants import LOOKBACK_YEARS
 
 
 def safe_str(value: Any) -> str:
@@ -57,19 +57,34 @@ def sort_key(item: dict[str, Any]) -> tuple[int, float]:
     return (0, -dt.timestamp())
 
 
-def lookback_start() -> datetime:
-    """回溯窗口起点（约 LOOKBACK_YEARS 年，再多留几天容差）。"""
-    return datetime.now() - timedelta(days=365 * LOOKBACK_YEARS + 5)
+def lookback_start(days: int | None = None) -> datetime:
+    """回溯窗口起点。
+
+    days 为 None 时使用 LOOKBACK_YEARS（约两年）；否则用指定天数。
+    """
+    if days is None:
+        days = 365 * LOOKBACK_YEARS + 5
+    return datetime.now() - timedelta(days=max(1, int(days)))
 
 
-def within_lookback(item: dict[str, Any], start: datetime) -> bool:
+def full_lookback_days() -> int:
+    return 365 * LOOKBACK_YEARS + 5
+
+
+def within_lookback(
+    item: dict[str, Any],
+    start: datetime,
+    *,
+    require_time: bool = False,
+) -> bool:
     """条目是否落在回溯窗口内。
 
-    没有发布时间时默认保留（避免因缺字段丢数据）。
+    require_time=False（默认）：无发布时间时保留。
+    require_time=True（短窗口如近 3 天）：无发布时间则丢弃，避免脏数据。
     """
     dt = parse_time(item.get("published_at", ""))
     if dt is None:
-        return True
+        return not require_time
     return dt >= start
 
 

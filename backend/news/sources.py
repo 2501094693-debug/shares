@@ -16,7 +16,7 @@ from urllib.parse import quote
 import akshare as ak
 import requests
 
-from news.constants import (
+from .constants import (
     EM_NEWS_CB,
     EM_NEWS_URL,
     EM_REPORT_URL,
@@ -25,7 +25,7 @@ from news.constants import (
     NEWS_PAGE_SIZE,
     REQUEST_PAUSE_SEC,
 )
-from news.utils import parse_time, safe_str, strip_em_tags, within_lookback
+from .utils import parse_time, safe_str, strip_em_tags, within_lookback
 
 # curl_cffi 可伪装成 Chrome，东方财富搜索接口对普通 requests 经常拦截
 try:
@@ -63,10 +63,13 @@ def http_get(
 # ---------------------------------------------------------------------------
 
 
-def fetch_notices(code: str) -> list[dict[str, Any]]:
-    """拉取个股近 LOOKBACK_YEARS 年的全部公告。"""
+def fetch_notices(code: str, start: datetime | None = None) -> list[dict[str, Any]]:
+    """拉取个股公告；start 为空时默认回溯 LOOKBACK_YEARS 年。"""
     end = date.today()
-    begin = (datetime.now() - timedelta(days=365 * LOOKBACK_YEARS)).date()
+    if start is None:
+        begin = (datetime.now() - timedelta(days=365 * LOOKBACK_YEARS)).date()
+    else:
+        begin = start.date() if isinstance(start, datetime) else start
     # akshare 该接口要求 YYYYMMDD
     begin_s = begin.strftime("%Y%m%d")
     end_s = end.strftime("%Y%m%d")

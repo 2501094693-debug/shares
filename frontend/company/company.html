@@ -21,7 +21,7 @@
       </div>
       <div class="top-actions">
         <a id="backLink" class="btn ghost" href="/">返回列表</a>
-        <button id="refreshNewsBtn" class="btn ghost" type="button">刷新资讯</button>
+        <button id="refreshNewsBtn" class="btn ghost" type="button">刷新近三日</button>
       </div>
     </header>
 
@@ -41,13 +41,42 @@
       <div id="metricsGrid" class="stock-detail company-metrics"></div>
     </section>
 
-    <section class="company-section">
+    <section class="company-section news-section" data-kind="notices">
       <div class="section-head">
-        <h3>资讯与研报</h3>
-        <p id="newsMeta" class="muted"></p>
+        <h3>公司公告</h3>
+        <p class="muted news-section-meta" data-meta="notices"></p>
       </div>
-      <div id="newsBody" class="company-news-groups">
-        <p class="muted">正在加载…</p>
+      <div class="company-news-body" data-body="notices">
+        <p class="muted">正在加载近 3 天…</p>
+      </div>
+      <div class="news-section-actions">
+        <button class="btn ghost load-older-btn" type="button" data-kind="notices">加载更早公告</button>
+      </div>
+    </section>
+
+    <section class="company-section news-section" data-kind="news">
+      <div class="section-head">
+        <h3>外部新闻</h3>
+        <p class="muted news-section-meta" data-meta="news"></p>
+      </div>
+      <div class="company-news-body" data-body="news">
+        <p class="muted">正在加载近 3 天…</p>
+      </div>
+      <div class="news-section-actions">
+        <button class="btn ghost load-older-btn" type="button" data-kind="news">加载更早新闻</button>
+      </div>
+    </section>
+
+    <section class="company-section news-section" data-kind="reports">
+      <div class="section-head">
+        <h3>机构研报</h3>
+        <p class="muted news-section-meta" data-meta="reports"></p>
+      </div>
+      <div class="company-news-body" data-body="reports">
+        <p class="muted">正在加载近 3 天…</p>
+      </div>
+      <div class="news-section-actions">
+        <button class="btn ghost load-older-btn" type="button" data-kind="reports">加载更早研报</button>
       </div>
     </section>
 

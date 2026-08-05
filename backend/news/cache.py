@@ -9,18 +9,19 @@ from pathlib import Path
 from typing import Any
 
 from core.paths import ensure_cache_dirs
-from news.constants import CACHE_DIR, CACHE_TTL_SEC, CACHE_VERSION
+from .constants import CACHE_DIR, CACHE_TTL_SEC, CACHE_VERSION
 
 
-def cache_path(code: str) -> Path:
-    """股票代码 → 缓存文件路径（非法字符替换为下划线）。"""
+def cache_path(code: str, days: int, kind: str = "") -> Path:
+    """股票代码 → 缓存文件路径（含天数窗口与可选类型）。"""
     safe = re.sub(r"[^\w.-]+", "_", code.strip()) or "unknown"
-    return CACHE_DIR / f"{safe}.json"
+    kind_part = f"_{kind}" if kind else ""
+    return CACHE_DIR / f"{safe}_d{int(days)}{kind_part}.json"
 
 
-def load_cache(code: str) -> dict[str, Any] | None:
+def load_cache(code: str, days: int, kind: str = "") -> dict[str, Any] | None:
     """读取有效缓存；版本不对或过期则返回 None。"""
-    path = cache_path(code)
+    path = cache_path(code, days, kind)
     if not path.exists():
         return None
 
@@ -41,10 +42,10 @@ def load_cache(code: str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def save_cache(code: str, data: dict[str, Any]) -> None:
+def save_cache(code: str, data: dict[str, Any], days: int, kind: str = "") -> None:
     """把采集结果写入磁盘（含版本号与写入时间）。"""
     ensure_cache_dirs()
-    path = cache_path(code)
+    path = cache_path(code, days, kind)
     path.write_text(
         json.dumps(
             {

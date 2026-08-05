@@ -3,6 +3,22 @@ const code = (params.get("code") || "").trim();
 const nameHint = (params.get("name") || "").trim();
 const industry = (params.get("industry") || "").trim();
 
+const DEFAULT_DAYS = 3;
+const FULL_DAYS = 730;
+
+const KINDS = [
+  { key: "notices", title: "公司公告", empty: "近窗口内暂无公司公告" },
+  { key: "news", title: "外部新闻", empty: "近窗口内暂无相关外部新闻" },
+  { key: "reports", title: "机构研报", empty: "近窗口内暂无机构研报" },
+];
+
+/** @type {Record<string, number>} */
+const sectionDays = {
+  notices: DEFAULT_DAYS,
+  news: DEFAULT_DAYS,
+  reports: DEFAULT_DAYS,
+};
+
 const els = {
   pageTitle: document.getElementById("pageTitle"),
   pageSub: document.getElementById("pageSub"),
@@ -12,8 +28,6 @@ const els = {
   companyMeta: document.getElementById("companyMeta"),
   quoteStrip: document.getElementById("quoteStrip"),
   metricsGrid: document.getElementById("metricsGrid"),
-  newsMeta: document.getElementById("newsMeta"),
-  newsBody: document.getElementById("newsBody"),
   refreshNewsBtn: document.getElementById("refreshNewsBtn"),
   errorBox: document.getElementById("errorBox"),
 };
@@ -74,6 +88,14 @@ function setError(message) {
   }
   els.errorBox.textContent = message;
   els.errorBox.classList.remove("hidden");
+}
+
+function sectionEls(kind) {
+  return {
+    meta: document.querySelector(`[data-meta="${kind}"]`),
+    body: document.querySelector(`[data-body="${kind}"]`),
+    olderBtn: document.querySelector(`.load-older-btn[data-kind="${kind}"]`),
+  };
 }
 
 function renderQuote(stock) {
@@ -150,41 +172,10 @@ function renderNewsList(items, emptyText) {
     .join("");
 }
 
-function renderNewsGroups(groups) {
-  const sections = [
-    {
-      key: "notices",
-      title: "公司公告",
-      empty: "暂无公司公告",
-      items: groups.notices || [],
-    },
-    {
-      key: "news",
-      title: "外部新闻",
-      empty: "暂无相关外部新闻",
-      items: groups.news || [],
-    },
-    {
-      key: "reports",
-      title: "机构研报",
-      empty: "暂无机构研报",
-      items: groups.reports || [],
-    },
-  ];
-  els.newsBody.innerHTML = sections
-    .map(
-      (sec) => `
-      <div class="news-group" data-kind="${sec.key}">
-        <div class="news-group-head">
-          <h4>${sec.title}</h4>
-          <span class="muted">${sec.items.length} 条</span>
-        </div>
-        <div class="news-panel-body company-news-body">
-          ${renderNewsList(sec.items, sec.empty)}
-        </div>
-      </div>`
-    )
-    .join("");
+function daysLabel(days) {
+  if (days <= DEFAULT_DAYS) return `近 ${days} 天`;
+  if (days >= 360) return `近约 ${Math.round(days / 365)} 年`;
+  return `近 ${days} 天`;
 }
 
 function applyStock(stock, industryMeta = {}) {
@@ -246,40 +237,66 @@ async function loadProfile() {
   }
 }
 
-async function loadNews({ refresh = false } = {}) {
-  if (!code) return;
-  els.newsMeta.textContent = refresh ? "正在重新拉取…" : "正在收集近 1–2 年公告、新闻与研报…";
-  els.newsBody.innerHTML = `<p class="muted">请稍候…</p>`;
-  els.refreshNewsBtn.disabled = true;
+async function loadNewsKind(kind, days, { refresh = false } = {}) {
+  const ui = sectionEls(kind);
+  const conf = KINDS.find((k) => k.key === kind);
+  if (!ui.body || !conf) return;
+
+  const older = days > DEFAULT_DAYS;
+  ui.meta.textContent = older
+    ? `正在加载${daysLabel(days)}…`
+    : "正在加载近 3 天…";
+  ui.body.innerHTML = `<p class="muted">请稍候…</p>`;
+  if (ui.olderBtn) ui.olderBtn.disabled = true;
+
   try {
     const qs = new URLSearchParams({
       code,
       name: nameHint || els.companyName.textContent || "",
+      days: String(days),
+      kind,
     });
     if (refresh) qs.set("refresh", "1");
     const json = await api(`/api/stocks/news?${qs.toString()}`);
     const data = json.data || {};
-    const modeLabel =
-      data.mode === "llm" ? "LLM 筛选" : data.mode === "full" ? "全量采集" : "启发式筛选";
+    const groups = data.groups || {};
+    const items = groups[kind] || [];
     const span =
-      data.span_from && data.span_to ? `${data.span_from} ~ ${data.span_to}` : "近1–2年";
-    const counts = data.counts || {};
-    const total =
-      (counts.notices || 0) + (counts.news || 0) + (counts.reports || 0) ||
-      (data.items || []).length;
-    els.newsMeta.textContent = `${modeLabel} · ${span} · 公告 ${counts.notices || 0} / 新闻 ${counts.news || 0} / 研报 ${counts.reports || 0}（共 ${total}） · 更新于 ${data.updated_at || "-"}`;
-    const groups = data.groups || {
-      notices: (data.items || []).filter((x) => x.kind === "notice"),
-      news: (data.items || []).filter((x) => x.kind !== "notice" && x.kind !== "report"),
-      reports: (data.items || []).filter((x) => x.kind === "report"),
-    };
-    renderNewsGroups(groups);
+      data.span_from && data.span_to
+        ? `${data.span_from} ~ ${data.span_to}`
+        : daysLabel(days);
+    const fullDays = Number(data.full_days) || FULL_DAYS;
+
+    sectionDays[kind] = Number(data.days) || days;
+    ui.meta.textContent = `${daysLabel(sectionDays[kind])} · ${span} · ${items.length} 条 · 更新于 ${data.updated_at || "-"}`;
+    ui.body.innerHTML = renderNewsList(items, conf.empty);
+
+    if (ui.olderBtn) {
+      const atFull = sectionDays[kind] >= fullDays - 5;
+      ui.olderBtn.hidden = atFull;
+      ui.olderBtn.disabled = false;
+      ui.olderBtn.dataset.fullDays = String(fullDays);
+      ui.olderBtn.textContent = atFull
+        ? "已是全部可查区间"
+        : `加载更早（${daysLabel(fullDays)}）`;
+    }
   } catch (err) {
-    els.newsMeta.textContent = "加载失败";
-    els.newsBody.innerHTML = `<p class="news-error">${escapeHtml(err.message || String(err))}</p>`;
-  } finally {
-    els.refreshNewsBtn.disabled = false;
+    ui.meta.textContent = "加载失败";
+    ui.body.innerHTML = `<p class="news-error">${escapeHtml(err.message || String(err))}</p>`;
+    if (ui.olderBtn) ui.olderBtn.disabled = false;
   }
+}
+
+async function loadAllNews({ refresh = false, days = DEFAULT_DAYS } = {}) {
+  if (!code) return;
+  els.refreshNewsBtn.disabled = true;
+  await Promise.all(
+    KINDS.map(({ key }) => {
+      sectionDays[key] = days;
+      return loadNewsKind(key, days, { refresh });
+    })
+  );
+  els.refreshNewsBtn.disabled = false;
 }
 
 function setupBackLink() {
@@ -290,10 +307,21 @@ function setupBackLink() {
   }
 }
 
-els.refreshNewsBtn.addEventListener("click", () => loadNews({ refresh: true }));
+els.refreshNewsBtn.addEventListener("click", () =>
+  loadAllNews({ refresh: true, days: DEFAULT_DAYS })
+);
+
+document.querySelectorAll(".load-older-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const kind = btn.getAttribute("data-kind");
+    if (!kind) return;
+    const fullDays = Number(btn.dataset.fullDays) || FULL_DAYS;
+    loadNewsKind(kind, fullDays, { refresh: false });
+  });
+});
 
 setupBackLink();
 (async () => {
   await loadProfile();
-  await loadNews({ refresh: false });
+  await loadAllNews({ refresh: false, days: DEFAULT_DAYS });
 })();

@@ -171,6 +171,8 @@ def stocks_news(
     code: str = Query(""),
     name: str = Query(""),
     refresh: str = Query("0"),
+    days: int = Query(3, ge=1, le=800),
+    kind: str = Query(""),
 ):
     code = code.strip()
     name = name.strip()
@@ -178,7 +180,13 @@ def stocks_news(
     if not code:
         return _err("缺少参数 code", 400)
     try:
-        data = collect_important_news(code, name, force_refresh=force)
+        data = collect_important_news(
+            code,
+            name,
+            force_refresh=force,
+            days=days,
+            kind=kind,
+        )
         return _ok(data)
     except ValueError as exc:
         return _err(str(exc), 400)
