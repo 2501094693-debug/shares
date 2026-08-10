@@ -112,8 +112,13 @@ class StockStore:
 
         self.ready = False
         self.building = False
+        self.complete = False
         self.error = ""
         self.progress = {"done": 0, "total": 0}
+        self._covered_l3: set[str] = set()
+        self.l3_covered = 0
+        self.l3_total = 0
+        self._last_build_finished_at = 0.0
 
         ensure_cache_dirs()
         self.load_index()
@@ -185,13 +190,54 @@ class StockStore:
             return {
                 "ready": self.ready,
                 "building": self.building,
+                "complete": self.complete,
                 "count": len(self._stocks),
+                "l3_covered": self.l3_covered,
+                "l3_total": self.l3_total,
                 "progress": dict(self.progress),
                 "error": self.error,
             }
 
     def __len__(self) -> int:
         return len(self._stocks)
+
+    def _sync_complete_unlocked(self, covered: set[str] | None = None) -> None:
+        """根据已覆盖三级行业数判断索引是否完整（须持锁）。"""
+        if covered is not None:
+            self._covered_l3 = {str(c).strip() for c in covered if str(c).strip()}
+        try:
+            total_codes = {
+                str(c).strip() for c in (self._get_l3_codes() or []) if str(c).strip()
+            }
+        except Exception:  # noqa: BLE001
+            total_codes = set()
+        self.l3_total = len(total_codes)
+        if total_codes:
+            self.l3_covered = len(self._covered_l3 & total_codes)
+            self.complete = self.l3_covered >= len(total_codes)
+        else:
+            self.l3_covered = len(self._covered_l3)
+            # 行业树尚未就绪时，不把半成品标成 complete
+            self.complete = False
+
+    def replace_all(
+        self,
+        stocks: list[dict[str, Any]],
+        persist: bool = True,
+        covered_l3: set[str] | None = None,
+    ) -> None:
+        with self._lock:
+            self._stocks = list(stocks)
+            self._rebuild_lookups()
+            self.ready = len(self._stocks) > 0
+            covered = (
+                set(covered_l3)
+                if covered_l3 is not None
+                else self._covered_from_stocks(self._stocks)
+            )
+            self._sync_complete_unlocked(covered)
+        if persist and self._stocks:
+            self.save_index()
 
     def load_index(self) -> None:
         if not STOCK_INDEX_CACHE.exists():
@@ -202,16 +248,27 @@ class StockStore:
             stocks = data.get("stocks") or []
         except Exception:  # noqa: BLE001
             stocks = []
+            data = {}
         if not stocks:
             self.rebuild_from_cons_cache()
             return
-        self.replace_all(stocks, persist=False)
+        covered_raw = data.get("covered_l3")
+        covered = (
+            {str(c).strip() for c in covered_raw if str(c).strip()}
+            if isinstance(covered_raw, list)
+            else self._covered_from_stocks(stocks)
+        )
+        self.replace_all(stocks, persist=False, covered_l3=covered)
 
     def save_index(self) -> None:
         with self._lock:
             payload = {
                 "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "count": len(self._stocks),
+                "complete": self.complete,
+                "l3_covered": self.l3_covered,
+                "l3_total": self.l3_total,
+                "covered_l3": sorted(self._covered_l3),
                 "stocks": self._stocks,
             }
         STOCK_INDEX_CACHE.write_text(
@@ -219,13 +276,13 @@ class StockStore:
             encoding="utf-8",
         )
 
-    def replace_all(self, stocks: list[dict[str, Any]], persist: bool = True) -> None:
-        with self._lock:
-            self._stocks = list(stocks)
-            self._rebuild_lookups()
-            self.ready = len(self._stocks) > 0
-        if persist and self._stocks:
-            self.save_index()
+    def _covered_from_stocks(self, stocks: list[dict[str, Any]]) -> set[str]:
+        out: set[str] = set()
+        for s in stocks:
+            code = str(s.get("l3_code") or "").strip()
+            if code:
+                out.add(code)
+        return out
 
     def rebuild_from_cons_cache(self) -> None:
         """扫描 cons/*.json 拼出索引（启动兜底）。"""
@@ -250,6 +307,7 @@ class StockStore:
         self, meta: dict[str, Any], stocks: list[dict[str, Any]]
     ) -> None:
         """增量合并某行业成分股并落盘。"""
+        l3_code = str(meta.get("code") or "").strip()
         with self._lock:
             by_key = {stock_key(s): s for s in self._stocks if stock_key(s)}
             for s in stocks:
@@ -260,7 +318,89 @@ class StockStore:
             self._stocks = list(by_key.values())
             self._rebuild_lookups()
             self.ready = True
+            if l3_code:
+                self._covered_l3.add(l3_code)
+            self._sync_complete_unlocked()
         self.save_index()
+
+    def needs_full_build(self) -> bool:
+        """索引未覆盖全部三级行业时需要全量重建。"""
+        with self._lock:
+            if self.building:
+                return False
+            # 先按当前行业树刷新完整度（启动时树可能尚未加载）
+            self._sync_complete_unlocked()
+            if not self._stocks:
+                return True
+            if self.complete:
+                return False
+            # 全量跑完仍缺行业时，避免因个别拉取失败而疯狂重试
+            if (
+                self._last_build_finished_at
+                and time.time() - self._last_build_finished_at < 300
+            ):
+                return False
+            return True
+
+    def ensure_populated(self) -> None:
+        with self._lock:
+            empty = not self._stocks
+            building = self.building
+        if empty:
+            self.rebuild_from_cons_cache()
+        if self.needs_full_build() and not building:
+            self.start_build(force=False)
+
+    # ==================================================================
+    # 索引：全量构建（直接调本类 get_constituents，无需注入）
+    # ==================================================================
+
+    def start_build(self, force: bool = False) -> dict[str, Any]:
+        with self._lock:
+            if self.building:
+                return self.status()
+            if not force:
+                self._sync_complete_unlocked()
+                if self.complete and self._stocks:
+                    return self.status()
+
+        def worker() -> None:
+            self.building = True
+            self.error = ""
+            try:
+                codes = self._get_l3_codes()
+                self.progress = {"done": 0, "total": len(codes)}
+                collected: list[dict[str, Any]] = []
+                seen: set[str] = set()
+                covered: set[str] = set()
+                for code in codes:
+                    try:
+                        data = self.get_constituents(
+                            code, force_refresh=False, update_index=False
+                        )
+                        meta = data.get("industry") or {}
+                        covered.add(str(code).strip())
+                        for s in data.get("stocks") or []:
+                            key = stock_key(s)
+                            if not key or key in seen:
+                                continue
+                            seen.add(key)
+                            entry = make_index_entry(s, meta)
+                            if not entry.get("l3_code"):
+                                entry["l3_code"] = code
+                            collected.append(entry)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self.progress["done"] += 1
+                self.replace_all(collected, persist=True, covered_l3=covered)
+            except Exception as exc:  # noqa: BLE001
+                self.error = str(exc)
+            finally:
+                self._last_build_finished_at = time.time()
+                self.building = False
+
+        threading.Thread(target=worker, daemon=True).start()
+        return self.status()
 
     def _rebuild_lookups(self) -> None:
         by_code: dict[str, int] = {}
@@ -376,59 +516,3 @@ class StockStore:
                 if len(results) >= limit:
                     break
             return results
-
-    def ensure_populated(self) -> None:
-        with self._lock:
-            empty = not self._stocks
-            small = len(self._stocks) < 1000
-            building = self.building
-        if empty:
-            self.rebuild_from_cons_cache()
-        if small and not building:
-            self.start_build(force=False)
-
-    # ==================================================================
-    # 索引：全量构建（直接调本类 get_constituents，无需注入）
-    # ==================================================================
-
-    def start_build(self, force: bool = False) -> dict[str, Any]:
-        with self._lock:
-            if self.building:
-                return self.status()
-            if self.ready and not force and len(self._stocks) > 1000:
-                return self.status()
-
-        def worker() -> None:
-            self.building = True
-            self.error = ""
-            try:
-                codes = self._get_l3_codes()
-                self.progress = {"done": 0, "total": len(codes)}
-                collected: list[dict[str, Any]] = []
-                seen: set[str] = set()
-                for code in codes:
-                    try:
-                        data = self.get_constituents(
-                            code, force_refresh=False, update_index=False
-                        )
-                        meta = data.get("industry") or {}
-                        for s in data.get("stocks") or []:
-                            key = stock_key(s)
-                            if not key or key in seen:
-                                continue
-                            seen.add(key)
-                            entry = make_index_entry(s, meta)
-                            if not entry.get("l3_code"):
-                                entry["l3_code"] = code
-                            collected.append(entry)
-                    except Exception:  # noqa: BLE001
-                        pass
-                    self.progress["done"] += 1
-                self.replace_all(collected, persist=True)
-            except Exception as exc:  # noqa: BLE001
-                self.error = str(exc)
-            finally:
-                self.building = False
-
-        threading.Thread(target=worker, daemon=True).start()
-        return self.status()

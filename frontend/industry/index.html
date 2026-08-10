@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="map-app-root">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,58 +9,112 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
-<body>
-  <div class="app">
-    <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark">SW</span>
-        <div>
-          <h1>申万上市公司分类</h1>
-          <p>浏览一/二/三级行业划分，查看细分行业上市公司与代码</p>
+<body class="map-app">
+  <div id="regMap" class="map-stage" role="application" aria-label="注册地地图"></div>
+
+  <div class="hud">
+    <section id="hudSearch" class="hud-search hud-panel" data-hud-panel="search">
+      <div class="hud-panel-head">
+        <div class="hud-panel-title">
+          <h2>搜索</h2>
+          <span class="muted hud-panel-sub">行业 / 公司</span>
+        </div>
+        <div class="hud-search-tools">
+          <button id="mapBackBtn" class="btn ghost hidden" type="button">返回全国</button>
+          <span id="mapStatus" class="muted"></span>
+          <span id="mapUnknown" class="map-unknown muted"></span>
+          <button
+            type="button"
+            class="btn ghost hud-collapse-btn"
+            data-collapse="search"
+            aria-expanded="true"
+            title="收起搜索"
+          >收起</button>
         </div>
       </div>
-      <div class="top-actions">
-        <label class="search-box">
-          <span class="sr-only">搜索行业</span>
-          <input id="searchInput" type="search" placeholder="搜索行业名称或代码…" autocomplete="off" />
-        </label>
-        <label class="search-box">
-          <span class="sr-only">公司名称</span>
-          <input id="companyNameSearch" type="search" placeholder="搜索公司名称…" autocomplete="off" />
-        </label>
-        <label class="search-box">
-          <span class="sr-only">公司代码</span>
-          <input id="companyCodeSearch" type="search" placeholder="搜索公司代码…" autocomplete="off" />
-        </label>
-        <button id="refreshBtn" class="btn ghost" type="button" title="刷新行业树">刷新</button>
+      <div class="hud-panel-body">
+        <div class="hud-search-grid">
+          <label class="search-box">
+            <span class="sr-only">搜索行业</span>
+            <input id="searchInput" type="search" placeholder="搜索行业名称或代码…" autocomplete="off" />
+          </label>
+          <label class="search-box">
+            <span class="sr-only">公司名称</span>
+            <input id="companyNameSearch" type="search" placeholder="搜索公司名称…" autocomplete="off" />
+          </label>
+          <label class="search-box">
+            <span class="sr-only">公司代码</span>
+            <input id="companyCodeSearch" type="search" placeholder="搜索公司代码…" autocomplete="off" />
+          </label>
+          <button id="refreshBtn" class="btn ghost" type="button" title="刷新行业树">刷新</button>
+        </div>
+        <div id="indexStatus" class="muted hud-index-status"></div>
       </div>
-    </header>
+    </section>
+    <button
+      type="button"
+      id="expandSearch"
+      class="hud-rail-btn hud-rail-search"
+      data-expand="search"
+      title="展开搜索"
+    >搜索</button>
+
     <div id="companySearchPanel" class="company-search-panel hidden">
       <div class="company-search-head">
         <strong>公司搜索结果</strong>
-        <span id="indexStatus" class="muted"></span>
         <button id="closeCompanySearch" class="btn ghost" type="button">关闭</button>
       </div>
       <div id="companySearchResults" class="company-search-results"></div>
     </div>
 
-    <main class="layout">
-      <aside class="sidebar">
-        <div class="sidebar-head">
+    <aside id="hudTree" class="hud-left hud-panel" data-hud-panel="tree">
+      <div class="hud-panel-head">
+        <div class="hud-panel-title">
           <h2>行业树</h2>
           <span id="treeMeta" class="muted">加载中…</span>
         </div>
+        <button
+          type="button"
+          class="btn ghost hud-collapse-btn"
+          data-collapse="tree"
+          aria-expanded="true"
+          title="收起行业树"
+        >收起</button>
+      </div>
+      <div class="hud-panel-body">
         <div id="tree" class="tree" role="tree"></div>
         <div id="searchResults" class="search-results hidden"></div>
-      </aside>
+      </div>
+    </aside>
+    <button
+      type="button"
+      id="expandTree"
+      class="hud-rail-btn hud-rail-tree"
+      data-expand="tree"
+      title="展开行业树"
+    >行业</button>
 
-      <section class="content">
-        <div id="emptyState" class="empty">
+    <section id="hudList" class="hud-right hud-panel" data-hud-panel="list">
+      <div class="hud-panel-head">
+        <div class="hud-panel-title">
+          <h2>公司列表</h2>
+          <span class="muted hud-panel-sub">点击定位地图</span>
+        </div>
+        <button
+          type="button"
+          class="btn ghost hud-collapse-btn"
+          data-collapse="list"
+          aria-expanded="true"
+          title="收起公司列表"
+        >收起</button>
+      </div>
+      <div class="hud-panel-body">
+        <div id="emptyState" class="empty-float">
           <h2>选择一个三级行业</h2>
-          <p>从左侧展开一级 → 二级 → 三级，点击细分行业查看上市公司列表。点击公司行可进入详情与新闻页。</p>
+          <p>从左侧展开行业树，或顶部搜索公司。点击列表中的公司，地图将跳转到其注册地。</p>
         </div>
 
-        <div id="detail" class="detail hidden">
+        <div id="detail" class="detail-float hidden">
           <div class="detail-head">
             <div>
               <p id="breadcrumb" class="breadcrumb"></p>
@@ -72,43 +126,38 @@
             </div>
           </div>
 
-          <div class="table-wrap">
-            <table class="stock-table">
-              <thead>
-                <tr>
-                  <th class="col-idx">#</th>
-                  <th class="col-code">公司代码</th>
-                  <th class="col-name">公司简称</th>
-                  <th class="col-num">价格</th>
-                  <th class="col-num">近1日</th>
-                  <th class="col-num">近5日</th>
-                  <th class="col-num">今年以来</th>
-                  <th class="col-num">市值(亿)</th>
-                </tr>
-              </thead>
-              <tbody id="stockBody"></tbody>
-            </table>
-          </div>
+          <div id="listView" class="list-view">
+            <div id="stockList" class="stock-list" role="list" aria-label="公司列表"></div>
 
-          <div class="pager">
-            <label class="page-size">
-              每页
-              <select id="pageSize">
-                <option value="20" selected>20</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-            </label>
-            <button id="prevPage" class="btn ghost" type="button">上一页</button>
-            <span id="pageInfo" class="muted"></span>
-            <button id="nextPage" class="btn ghost" type="button">下一页</button>
+            <div class="pager">
+              <label class="page-size">
+                每页
+                <select id="pageSize">
+                  <option value="20" selected>20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </label>
+              <div class="pager-nav">
+                <button id="prevPage" class="btn ghost" type="button">上一页</button>
+                <span id="pageInfo" class="muted"></span>
+                <button id="nextPage" class="btn ghost" type="button">下一页</button>
+              </div>
+            </div>
           </div>
         </div>
 
         <div id="loading" class="loading hidden">正在加载成分股…</div>
         <div id="errorBox" class="error hidden"></div>
-      </section>
-    </main>
+      </div>
+    </section>
+    <button
+      type="button"
+      id="expandList"
+      class="hud-rail-btn hud-rail-list"
+      data-expand="list"
+      title="展开公司列表"
+    >列表</button>
   </div>
 
   <script src="/js/app.js"></script>

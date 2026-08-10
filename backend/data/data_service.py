@@ -63,7 +63,11 @@ class IndustryService:
         self, name: str = "", code: str = "", limit: int = 80
     ) -> list[dict[str, Any]]:
         self.stocks.ensure_populated()
-        return self.stocks.search(name=name, code=code, limit=limit)
+        results = self.stocks.search(name=name, code=code, limit=limit)
+        # 搜不到且索引不完整时，继续催促全量重建（覆盖「>1000 却缺行业」的旧逻辑）
+        if not results and self.stocks.needs_full_build():
+            self.stocks.start_build(force=False)
+        return results
 
     def get_stock_profile(
         self, code: str, industry_code: str = "", name: str = ""

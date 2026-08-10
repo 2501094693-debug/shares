@@ -12,8 +12,8 @@ const KINDS = [
   { key: "cninfo", title: "巨潮公告", empty: "暂无巨潮公告" },
   { key: "designated_press", title: "七报七网", empty: "暂无指定披露媒体新闻" },
   { key: "official_news", title: "官方新闻", empty: "暂无官方新闻" },
-  { key: "reports", title: "机构研报", empty: "暂无机构研报" },
   { key: "other_news", title: "其他新闻", empty: "暂无其他外部新闻" },
+  { key: "reports", title: "机构研报", empty: "暂无机构研报" },
 ];
 
 /** @type {Record<string, { days: number, fullDays: number, items: any[], loading: boolean, exhausted: boolean, updatedAt: string }>} */

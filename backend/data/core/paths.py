@@ -10,9 +10,12 @@ TREE_CACHE = CACHE_DIR / "industry_tree.json"
 CONS_CACHE_DIR = CACHE_DIR / "cons"
 STOCK_INDEX_CACHE = CACHE_DIR / "stocks_index.json"
 NEWS_CACHE_DIR = CACHE_DIR / "news"
+STOCK_GEO_CACHE = CACHE_DIR / "stock_geo.json"
 
 # 成分股缓存有效期（秒）
 CONS_TTL = 6 * 60 * 60
+# 注册地缓存有效期（秒）
+GEO_TTL = 30 * 24 * 60 * 60
 
 
 def ensure_cache_dirs() -> None:

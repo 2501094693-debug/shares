@@ -1,7 +1,7 @@
 """详情页资讯入口。
 
 对外暴露 collect_company_messages()，供 /api/stocks/news 使用。
-分组键：exchange / cninfo / designated_press / official_news / reports / other_news。
+分组键：exchange / cninfo / designated_press / official_news / other_news / reports。
 """
 
 from __future__ import annotations
@@ -37,8 +37,8 @@ VALID_KINDS = (
     "cninfo",
     "designated_press",
     "official_news",
-    "reports",
     "other_news",
+    "reports",
 )
 _NEWS_KINDS = ("designated_press", "official_news", "other_news")
 
