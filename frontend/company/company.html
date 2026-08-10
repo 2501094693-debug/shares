@@ -16,54 +16,78 @@
         <span class="brand-mark">SW</span>
         <div>
           <h1 id="pageTitle">公司详情</h1>
-          <p id="pageSub">指标详情 · 公司公告 · 外部新闻 · 机构研报</p>
+          <p id="pageSub">指标详情 · 交易所公告 · 巨潮公告 · 七报七网 · 官方新闻 · 机构研报 · 其他新闻</p>
         </div>
       </div>
       <div class="top-actions">
         <a id="backLink" class="btn ghost" href="/">返回列表</a>
-        <button id="refreshNewsBtn" class="btn ghost" type="button">刷新近三日</button>
+        <button id="refreshNewsBtn" class="btn ghost" type="button">刷新最新</button>
       </div>
     </header>
 
     <section class="company-hero">
-      <div>
+      <div class="company-hero-identity">
         <p id="companyBreadcrumb" class="breadcrumb">-</p>
-        <h2 id="companyName">-</h2>
-        <p id="companyMeta" class="muted"></p>
+        <div class="company-hero-title-row">
+          <h2 id="companyName">-</h2>
+          <span id="companyCodeChip" class="company-code-chip"></span>
+        </div>
       </div>
-      <div id="quoteStrip" class="quote-strip"></div>
-    </section>
-
-    <section class="company-section">
-      <div class="section-head">
-        <h3>详细指标</h3>
-      </div>
-      <div id="metricsGrid" class="stock-detail company-metrics"></div>
-    </section>
-
-    <section class="company-section news-section" data-kind="notices">
-      <div class="section-head">
-        <h3>公司公告</h3>
-        <p class="muted news-section-meta" data-meta="notices"></p>
-      </div>
-      <div class="company-news-body" data-body="notices">
-        <p class="muted">正在加载近 3 天…</p>
-      </div>
-      <div class="news-section-actions">
-        <button class="btn ghost load-older-btn" type="button" data-kind="notices">加载更早公告</button>
+      <div class="company-hero-stats">
+        <div id="quoteStrip" class="quote-strip"></div>
+        <div id="metricsGrid" class="company-metrics"></div>
       </div>
     </section>
 
-    <section class="company-section news-section" data-kind="news">
+    <section class="company-section news-section" data-kind="exchange">
       <div class="section-head">
-        <h3>外部新闻</h3>
-        <p class="muted news-section-meta" data-meta="news"></p>
+        <h3>交易所公告</h3>
+        <p class="muted news-section-meta" data-meta="exchange"></p>
       </div>
-      <div class="company-news-body" data-body="news">
-        <p class="muted">正在加载近 3 天…</p>
+      <div class="company-news-body" data-body="exchange" tabindex="0">
+        <div class="news-list" data-list="exchange">
+          <p class="muted">正在加载最新…</p>
+        </div>
+        <p class="muted news-scroll-hint" data-hint="exchange"></p>
       </div>
-      <div class="news-section-actions">
-        <button class="btn ghost load-older-btn" type="button" data-kind="news">加载更早新闻</button>
+    </section>
+
+    <section class="company-section news-section" data-kind="cninfo">
+      <div class="section-head">
+        <h3>巨潮公告</h3>
+        <p class="muted news-section-meta" data-meta="cninfo"></p>
+      </div>
+      <div class="company-news-body" data-body="cninfo" tabindex="0">
+        <div class="news-list" data-list="cninfo">
+          <p class="muted">正在加载最新…</p>
+        </div>
+        <p class="muted news-scroll-hint" data-hint="cninfo"></p>
+      </div>
+    </section>
+
+    <section class="company-section news-section" data-kind="designated_press">
+      <div class="section-head">
+        <h3>七报七网</h3>
+        <p class="muted news-section-meta" data-meta="designated_press"></p>
+      </div>
+      <div class="company-news-body" data-body="designated_press" tabindex="0">
+        <div class="news-list" data-list="designated_press">
+          <p class="muted">正在加载最新…</p>
+        </div>
+        <p class="muted news-scroll-hint" data-hint="designated_press"></p>
+      </div>
+    </section>
+
+    <section class="company-section news-section" data-kind="official_news">
+      <div class="section-head">
+        <h3>官方新闻</h3>
+        <p class="muted news-section-meta" data-meta="official_news"></p>
+      </div>
+      <div class="company-news-body" data-body="official_news" tabindex="0">
+        <div class="news-list" data-list="official_news">
+          <p class="muted">正在加载最新…</p>
+        </div>
+        <p class="muted news-scroll-hint" data-hint="official_news"></p>
       </div>
     </section>
 
@@ -72,11 +96,24 @@
         <h3>机构研报</h3>
         <p class="muted news-section-meta" data-meta="reports"></p>
       </div>
-      <div class="company-news-body" data-body="reports">
-        <p class="muted">正在加载近 3 天…</p>
+      <div class="company-news-body" data-body="reports" tabindex="0">
+        <div class="news-list" data-list="reports">
+          <p class="muted">正在加载最新…</p>
+        </div>
+        <p class="muted news-scroll-hint" data-hint="reports"></p>
       </div>
-      <div class="news-section-actions">
-        <button class="btn ghost load-older-btn" type="button" data-kind="reports">加载更早研报</button>
+    </section>
+
+    <section class="company-section news-section" data-kind="other_news">
+      <div class="section-head">
+        <h3>其他新闻</h3>
+        <p class="muted news-section-meta" data-meta="other_news"></p>
+      </div>
+      <div class="company-news-body" data-body="other_news" tabindex="0">
+        <div class="news-list" data-list="other_news">
+          <p class="muted">正在加载最新…</p>
+        </div>
+        <p class="muted news-scroll-hint" data-hint="other_news"></p>
       </div>
     </section>
 

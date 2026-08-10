@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-# 保证从仓库根目录启动 / PyCharm 调试时也能解析 core、news 等包
+# 保证从仓库根目录启动 / PyCharm 调试时也能解析 data / message 等包
 _BACKEND_DIR = Path(__file__).resolve().parent
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
@@ -18,8 +18,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from news.agent import collect_important_news
-from services.data_service import service
+from message.feed import collect_company_messages
+from message.profile import query_company_profile
+from message.taxonomy.constants import ALL_SECTIONS, DEFAULT_SECTIONS
+from data.data_service import service
 
 ROOT = _BACKEND_DIR.parent
 FRONTEND = ROOT / "frontend"
@@ -171,7 +173,7 @@ def stocks_news(
     code: str = Query(""),
     name: str = Query(""),
     refresh: str = Query("0"),
-    days: int = Query(3, ge=1, le=800),
+    days: int = Query(3, ge=1, le=20000),
     kind: str = Query(""),
 ):
     code = code.strip()
@@ -180,12 +182,48 @@ def stocks_news(
     if not code:
         return _err("缺少参数 code", 400)
     try:
-        data = collect_important_news(
+        data = collect_company_messages(
             code,
             name,
             force_refresh=force,
             days=days,
             kind=kind,
+        )
+        return _ok(data)
+    except ValueError as exc:
+        return _err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return _err(str(exc), 500)
+
+
+@app.get("/api/stocks/profile-messages")
+def stocks_profile_messages(
+    code: str = Query("", description="股票代码或公司名"),
+    name: str = Query(""),
+    days: int = Query(90, ge=1, le=20000),
+    sections: str = Query(
+        "default",
+        description=(
+            "采集段：default="
+            + ",".join(DEFAULT_SECTIONS)
+            + "；all 或逗号组合="
+            + ",".join(ALL_SECTIONS)
+        ),
+    ),
+    max_pages: int = Query(3, ge=1, le=20),
+):
+    """系统性分类视图（disclosure/regulatory/press/news/research）。数据均来自 message。"""
+    code = code.strip()
+    name = name.strip()
+    if not code:
+        return _err("缺少参数 code", 400)
+    try:
+        data = query_company_profile(
+            code,
+            name=name,
+            days=days,
+            sections=sections,
+            max_pages=max_pages,
         )
         return _ok(data)
     except ValueError as exc:
