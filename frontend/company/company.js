@@ -93,6 +93,16 @@ function readCachedStock(stockCode) {
   }
 }
 
+function readCachedStock(stockCode) {
+  try {
+    const raw = sessionStorage.getItem(`stock:${stockCode}`);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 function setError(message) {
   if (!message) {
     els.errorBox.classList.add("hidden");
@@ -388,11 +398,11 @@ function nearBottom(kind) {
 
 function setMetricsLoading(message = "正在加载完整盘口指标…") {
   if (els.quoteStrip) {
-    els.quoteStrip.innerHTML = `<p class="muted">${escapeHtml(message)}</p>`;
+    els.quoteStrip.innerHTML = "";
   }
   const panels = els.metricsPanels || els.metricsGrid;
   if (panels) {
-    panels.innerHTML = `<p class="muted">${escapeHtml(message)}</p>`;
+    panels.innerHTML = `<p class="muted metrics-loading">${escapeHtml(message)}</p>`;
   }
 }
 
@@ -418,19 +428,22 @@ function applyHeaderOnly(stock = {}, industryMeta = {}) {
     : "公司详情";
 }
 
+function isQuoteReady(stock) {
+  // 盘口补全成功后通常至少有今开/昨收或完整涨跌幅字段
+  if (!stock || typeof stock !== "object") return false;
+  if (stock.quote_ready === true) return true;
+  if (stock.quote_ready === false) return false;
+  return Boolean(stock.open || stock.prev_close || stock.high || stock.low);
+}
+
 async function loadProfile() {
   if (!code) {
     setError("缺少公司代码");
     return null;
   }
 
-  // 只用接口返回的完整盘口；列表缓存字段不全，不再先渲染半套指标
-  const cached = readCachedStock(code);
-  applyHeaderOnly(cached || { code, name: nameHint }, {
-    l1_name: cached?.l1_name,
-    l2_name: cached?.l2_name,
-    name: cached?.l3_name,
-  });
+  // 标题可用 URL 参数；指标只等接口一次画完，绝不用列表缓存半套数据
+  applyHeaderOnly({ code, name: nameHint });
   setMetricsLoading();
 
   try {
@@ -440,11 +453,16 @@ async function loadProfile() {
     const json = await api(`/api/stocks/profile?${qs.toString()}`);
     const data = json.data || {};
     const stock = data.stock || {};
+    if (!isQuoteReady(stock)) {
+      setMetricsLoading("盘口指标暂不可用，请稍后刷新");
+      applyHeaderOnly(stock, data.industry || {});
+      return stock;
+    }
     applyStock(stock, data.industry || {});
     try {
-      sessionStorage.setItem(`stock:${code}`, JSON.stringify(stock));
+      sessionStorage.removeItem(`stock:${code}`);
     } catch {
-      /* ignore quota */
+      /* ignore */
     }
     return stock;
   } catch (err) {

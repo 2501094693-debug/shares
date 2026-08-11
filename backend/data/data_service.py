@@ -129,6 +129,7 @@ class IndustryService:
             quote = fetch_stock_quote(str(stock.get("code") or code))
             if quote:
                 stock = {**stock, **quote}
+                stock["quote_ready"] = True
                 # 股息(TTM) ≈ 现价 × 股息率
                 if not stock.get("dividend_ttm"):
                     try:
@@ -147,8 +148,10 @@ class IndustryService:
                             stock["dividend_ttm"] = f"{price * dy / 100:.2f}"
                     except (TypeError, ValueError):
                         pass
+            else:
+                stock["quote_ready"] = False
         except Exception:  # noqa: BLE001
-            pass
+            stock["quote_ready"] = False
 
         return {"stock": stock, "industry": industry_meta or {}}
 

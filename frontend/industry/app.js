@@ -424,17 +424,7 @@ function openCompanyPage(stock) {
   const industry = state.selectedCode || stock.l3_code || "";
   // 离开前快照列表+地图，供详情页「返回列表」精确恢复
   saveListRestoreState({ highlightCode: code });
-  try {
-    sessionStorage.setItem(
-      `stock:${code}`,
-      JSON.stringify({
-        ...stock,
-        l3_code: industry,
-      })
-    );
-  } catch {
-    /* ignore */
-  }
+  // 不把列表半套指标写入 sessionStorage，避免详情页先渲染不全再补全
   const qs = new URLSearchParams({
     code,
     name: stock.name || "",

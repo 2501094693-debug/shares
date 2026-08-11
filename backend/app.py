@@ -310,19 +310,28 @@ def index():
 @app.get("/company")
 @app.get("/company.html")
 def company_page():
-    return FileResponse(FRONTEND / "company" / "company.html")
+    return FileResponse(
+        FRONTEND / "company" / "company.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 @app.get("/js/app.js")
 def js_app():
     """兼容旧路径；行业页已改用 /js/industry/app.js（ES module）。"""
-    return FileResponse(FRONTEND / "industry" / "app.js", media_type="application/javascript")
+    return FileResponse(
+        FRONTEND / "industry" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 @app.get("/js/company.js")
 def js_company():
     return FileResponse(
-        FRONTEND / "company" / "company.js", media_type="application/javascript"
+        FRONTEND / "company" / "company.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
     )
 
 
