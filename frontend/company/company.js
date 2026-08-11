@@ -322,13 +322,14 @@ function renderMetrics(stock) {
       .map((items) => items.filter(([, v]) => displayValue(v) !== "-"))
       .filter((items) => items.length);
     if (!parts.length) return "";
+    const cols = Math.max(...parts.map((items) => items.length));
     return `
-    <section class="metrics-section">
+    <section class="metrics-section" style="--metrics-cols:${cols}">
       <h4 class="metrics-section-title">${escapeHtml(title)}</h4>
       ${parts
         .map(
           (items) =>
-            `<div class="company-metrics metrics-inline-row" style="--metrics-cols:${items.length}">${items
+            `<div class="company-metrics metrics-inline-row">${items
               .map(metricCell)
               .join("")}</div>`
         )

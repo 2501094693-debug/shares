@@ -941,9 +941,13 @@ thead th {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.metrics-section {
+  --metrics-cols: 8;
+}
+
 .company-metrics.metrics-period-row,
 .company-metrics.metrics-inline-row {
-  grid-template-columns: repeat(var(--metrics-cols, 9), minmax(0, 1fr));
+  grid-template-columns: repeat(var(--metrics-cols, 8), minmax(0, 1fr));
 }
 
 .company-metrics.metrics-extreme-row {
