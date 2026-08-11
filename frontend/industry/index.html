@@ -3,24 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>申万上市公司分类</title>
+  <title>ORBIT · 申万产业星图</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body class="map-app">
   <div id="regMap" class="map-stage" role="application" aria-label="注册地地图"></div>
 
-  <div class="hud">
+  <div class="hud" aria-label="轨道控制台">
     <section id="hudSearch" class="hud-search hud-panel" data-hud-panel="search">
       <div class="hud-panel-head">
         <div class="hud-panel-title">
           <h2>搜索</h2>
-          <span class="muted hud-panel-sub">行业 / 公司</span>
+          <span class="muted hud-panel-sub">SCAN · 行业 / 公司</span>
         </div>
         <div class="hud-search-tools">
-          <button id="mapBackBtn" class="btn ghost hidden" type="button">返回全国</button>
+          <label class="map-base-mode" title="切换地图底图">
+            <span class="sr-only">地图底图</span>
+            <select id="mapBaseMode" aria-label="地图底图">
+              <option value="normal">标准</option>
+              <option value="satellite">卫星</option>
+              <option value="hybrid">卫星路网</option>
+            </select>
+          </label>
           <span id="mapStatus" class="muted"></span>
           <span id="mapUnknown" class="map-unknown muted"></span>
           <button
@@ -57,7 +64,7 @@
       class="hud-rail-btn hud-rail-search"
       data-expand="search"
       title="展开搜索"
-    >搜索</button>
+    >展开搜索</button>
 
     <div id="companySearchPanel" class="company-search-panel hidden">
       <div class="company-search-head">
@@ -71,7 +78,7 @@
       <div class="hud-panel-head">
         <div class="hud-panel-title">
           <h2>行业树</h2>
-          <span id="treeMeta" class="muted">加载中…</span>
+          <span id="treeMeta" class="muted">SECTORS · 加载中…</span>
         </div>
         <button
           type="button"
@@ -92,13 +99,13 @@
       class="hud-rail-btn hud-rail-tree"
       data-expand="tree"
       title="展开行业树"
-    >行业</button>
+    >展开行业</button>
 
     <section id="hudList" class="hud-right hud-panel" data-hud-panel="list">
       <div class="hud-panel-head">
         <div class="hud-panel-title">
           <h2>公司列表</h2>
-          <span class="muted hud-panel-sub">点击定位地图</span>
+          <span class="muted hud-panel-sub">TARGETS · 点击定位</span>
         </div>
         <button
           type="button"
@@ -122,7 +129,7 @@
               <p id="industryMeta" class="muted"></p>
             </div>
             <div class="detail-actions">
-              <button id="reloadStocksBtn" class="btn ghost" type="button">重新拉取</button>
+              <button id="reloadStocksBtn" class="btn ghost" type="button">刷新</button>
             </div>
           </div>
 
@@ -157,9 +164,9 @@
       class="hud-rail-btn hud-rail-list"
       data-expand="list"
       title="展开公司列表"
-    >列表</button>
+    >展开列表</button>
   </div>
 
-  <script src="/js/app.js"></script>
+  <script type="module" src="/js/industry/app.js"></script>
 </body>
 </html>

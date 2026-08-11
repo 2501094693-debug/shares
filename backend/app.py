@@ -259,7 +259,10 @@ def stocks_profile_messages(
 
 @app.post("/api/stocks/geo-enrich")
 def stocks_geo_enrich(payload: dict[str, Any] = Body(default_factory=dict)):
-    """批量补齐注册地与坐标。Body: { codes: string[], force?: 0|1 }。"""
+    """批量补齐公司全称与注册省市区。Body: { codes: string[], force?: 0|1 }。
+
+    经纬度由前端高德 PlaceSearch 标注，本接口不返回可靠坐标。
+    """
     raw_codes = payload.get("codes") or []
     if not isinstance(raw_codes, list):
         return _err("codes 须为数组", 400)
@@ -312,6 +315,7 @@ def company_page():
 
 @app.get("/js/app.js")
 def js_app():
+    """兼容旧路径；行业页已改用 /js/industry/app.js（ES module）。"""
     return FileResponse(FRONTEND / "industry" / "app.js", media_type="application/javascript")
 
 
@@ -325,6 +329,12 @@ def js_company():
 # Static assets after API / page routes.
 app.mount("/css", StaticFiles(directory=str(FRONTEND / "shared" / "css")), name="css")
 app.mount("/geo", StaticFiles(directory=str(FRONTEND / "shared" / "geo")), name="geo")
+# 行业页 ES modules：/js/industry/app.js → ./map/*.js
+app.mount(
+    "/js/industry",
+    StaticFiles(directory=str(FRONTEND / "industry")),
+    name="js_industry",
+)
 
 
 if __name__ == "__main__":
