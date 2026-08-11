@@ -83,26 +83,6 @@ function truncateText(text, max = 160) {
   return `${s.slice(0, max)}…`;
 }
 
-function readCachedStock(stockCode) {
-  try {
-    const raw = sessionStorage.getItem(`stock:${stockCode}`);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-function readCachedStock(stockCode) {
-  try {
-    const raw = sessionStorage.getItem(`stock:${stockCode}`);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
 function setError(message) {
   if (!message) {
     els.errorBox.classList.add("hidden");
