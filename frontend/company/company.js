@@ -397,6 +397,25 @@ function renderMetrics(stock) {
     ],
   ]);
 
+  const capitalSection = renderInlineRows("股本与市值", [
+    [
+      ["总股本", stock.total_shares],
+      ["流通股", stock.float_shares],
+      ["自由流通股", stock.free_float_shares],
+      ["发行股本", stock.issued_shares],
+    ],
+    [
+      ["总市值", mcap],
+      ["流通市值", stock.float_market_cap],
+      ["自由流通市值", stock.free_float_market_cap],
+    ],
+    [
+      ["注册资本", stock.registered_capital],
+      ["纳入时间", stock.include_date],
+      ["上市时间", stock.list_date],
+    ],
+  ]);
+
   const html = [
     daySection,
     renderMetricSection("资金流向", [
@@ -405,18 +424,7 @@ function renderMetrics(stock) {
     ]),
     periodSection,
     valuationSection,
-    renderMetricSection("股本与市值", [
-      ["总股本", stock.total_shares],
-      ["流通股", stock.float_shares],
-      ["自由流通股", stock.free_float_shares],
-      ["总市值", mcap],
-      ["流通市值", stock.float_market_cap],
-      ["自由流通市值", stock.free_float_market_cap],
-      ["发行股本", stock.issued_shares],
-      ["注册资本", stock.registered_capital],
-      ["纳入时间", stock.include_date],
-      ["上市时间", stock.list_date],
-    ]),
+    capitalSection,
   ]
     .filter(Boolean)
     .join("");
