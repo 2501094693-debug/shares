@@ -386,20 +386,52 @@ function nearBottom(kind) {
   return ui.body.scrollTop + ui.body.clientHeight >= ui.body.scrollHeight - 48;
 }
 
+function setMetricsLoading(message = "正在加载完整盘口指标…") {
+  if (els.quoteStrip) {
+    els.quoteStrip.innerHTML = `<p class="muted">${escapeHtml(message)}</p>`;
+  }
+  const panels = els.metricsPanels || els.metricsGrid;
+  if (panels) {
+    panels.innerHTML = `<p class="muted">${escapeHtml(message)}</p>`;
+  }
+}
+
+function applyHeaderOnly(stock = {}, industryMeta = {}) {
+  const displayName = stock.name || nameHint || code;
+  document.title = `${displayName} · 公司详情`;
+  els.pageTitle.textContent = displayName;
+  els.companyName.textContent = displayName;
+
+  const codeText = stock.full_code || stock.code || code;
+  if (els.companyCodeChip) {
+    els.companyCodeChip.textContent = codeText || "";
+    els.companyCodeChip.hidden = !codeText;
+  }
+
+  const breadcrumbParts = [
+    industryMeta.l1_name,
+    industryMeta.l2_name,
+    industryMeta.name || industryMeta.l3_name,
+  ].filter(Boolean);
+  els.companyBreadcrumb.textContent = breadcrumbParts.length
+    ? breadcrumbParts.join(" / ")
+    : "公司详情";
+}
+
 async function loadProfile() {
   if (!code) {
     setError("缺少公司代码");
     return null;
   }
 
+  // 只用接口返回的完整盘口；列表缓存字段不全，不再先渲染半套指标
   const cached = readCachedStock(code);
-  if (cached) {
-    applyStock(cached, {
-      l1_name: cached.l1_name,
-      l2_name: cached.l2_name,
-      name: cached.l3_name,
-    });
-  }
+  applyHeaderOnly(cached || { code, name: nameHint }, {
+    l1_name: cached?.l1_name,
+    l2_name: cached?.l2_name,
+    name: cached?.l3_name,
+  });
+  setMetricsLoading();
 
   try {
     const qs = new URLSearchParams({ code });
@@ -416,8 +448,9 @@ async function loadProfile() {
     }
     return stock;
   } catch (err) {
-    if (!cached) setError(err.message || String(err));
-    return cached;
+    setError(err.message || String(err));
+    setMetricsLoading("指标加载失败");
+    return null;
   }
 }
 
