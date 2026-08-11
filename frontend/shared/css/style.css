@@ -1029,7 +1029,7 @@ thead th {
 }
 
 .quote-strip .stat-cell:not(:last-child),
-.company-metrics .stat-cell:not(:nth-child(4n)) {
+.company-metrics:not(.metrics-period-row) .stat-cell:not(:nth-child(4n)) {
   padding-right: 14px;
 }
 
