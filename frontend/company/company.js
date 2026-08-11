@@ -277,13 +277,14 @@ function setupMetricTips() {
   });
 }
 
-function renderMetricSection(title, items) {
+function renderMetricSection(title, items, { gridClass = "" } = {}) {
   const cells = items.filter(([, v]) => displayValue(v) !== "-");
   if (!cells.length) return "";
+  const gridCls = ["company-metrics", gridClass].filter(Boolean).join(" ");
   return `
     <section class="metrics-section">
       <h4 class="metrics-section-title">${escapeHtml(title)}</h4>
-      <div class="company-metrics">
+      <div class="${gridCls}">
         ${cells.map(metricCell).join("")}
       </div>
     </section>`;
@@ -296,6 +297,46 @@ function renderMetrics(stock) {
   const mcap =
     stock.total_market_cap ||
     (stock.market_cap ? `${displayValue(stock.market_cap)}亿` : "");
+
+  const periodItems = [
+    ["近1日", stock.change_1d, changeClass(stock.change_1d)],
+    ["3日", stock.change_3d, changeClass(stock.change_3d)],
+    ["5日", stock.change_5d, changeClass(stock.change_5d)],
+    ["10日", stock.change_10d, changeClass(stock.change_10d)],
+    ["20日", stock.change_20d, changeClass(stock.change_20d)],
+    ["60日", stock.change_60d, changeClass(stock.change_60d)],
+    ["近半年", stock.change_half_year, changeClass(stock.change_half_year)],
+    ["近1年", stock.change_1y, changeClass(stock.change_1y)],
+    ["今年", stock.change_ytd, changeClass(stock.change_ytd)],
+  ].filter(([, v]) => displayValue(v) !== "-");
+
+  const extremeItems = [
+    ["52周最高", stock.high_52w],
+    ["52周最低", stock.low_52w],
+    ["历史最高", stock.high_all],
+    ["历史最低", stock.low_all],
+  ].filter(([, v]) => displayValue(v) !== "-");
+
+  const periodSection = periodItems.length || extremeItems.length
+    ? `
+    <section class="metrics-section">
+      <h4 class="metrics-section-title">区间涨幅</h4>
+      ${
+        periodItems.length
+          ? `<div class="company-metrics metrics-period-row">${periodItems
+              .map(metricCell)
+              .join("")}</div>`
+          : ""
+      }
+      ${
+        extremeItems.length
+          ? `<div class="company-metrics metrics-extreme-row">${extremeItems
+              .map(metricCell)
+              .join("")}</div>`
+          : ""
+      }
+    </section>`
+    : "";
 
   const html = [
     renderMetricSection("当日行情", [
@@ -328,21 +369,7 @@ function renderMetrics(stock) {
       ["主力净流入", stock.main_net_inflow, changeClass(stock.main_net_inflow)],
       ["5日净流入", stock.main_net_inflow_5d, changeClass(stock.main_net_inflow_5d)],
     ]),
-    renderMetricSection("区间涨幅", [
-      ["近1日", stock.change_1d, changeClass(stock.change_1d)],
-      ["3日", stock.change_3d, changeClass(stock.change_3d)],
-      ["5日", stock.change_5d, changeClass(stock.change_5d)],
-      ["10日", stock.change_10d, changeClass(stock.change_10d)],
-      ["20日", stock.change_20d, changeClass(stock.change_20d)],
-      ["60日", stock.change_60d, changeClass(stock.change_60d)],
-      ["近半年", stock.change_half_year, changeClass(stock.change_half_year)],
-      ["近1年", stock.change_1y, changeClass(stock.change_1y)],
-      ["今年", stock.change_ytd, changeClass(stock.change_ytd)],
-      ["52周最高", stock.high_52w],
-      ["52周最低", stock.low_52w],
-      ["历史最高", stock.high_all],
-      ["历史最低", stock.low_all],
-    ]),
+    periodSection,
     renderMetricSection("估值与每股", [
       ["市盈率(动)", stock.pe],
       ["市盈率(静)", stock.pe_static],

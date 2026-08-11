@@ -941,6 +941,27 @@ thead th {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.company-metrics.metrics-period-row {
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+}
+
+.company-metrics.metrics-extreme-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 2px;
+}
+
+.company-metrics.metrics-period-row .stat-cell {
+  padding-right: 8px;
+}
+
+.company-metrics.metrics-period-row .stat-cell:not(:last-child) {
+  padding-right: 8px;
+}
+
+.company-metrics.metrics-period-row .detail-value {
+  font-size: 0.9rem;
+}
+
 .stat-cell {
   display: flex;
   flex-direction: column;
@@ -994,7 +1015,8 @@ thead th {
 
 .quote-strip .stat-cell.has-tip:nth-child(n + 4)::after,
 .company-metrics .stat-cell.has-tip:nth-child(4n)::after,
-.company-metrics .stat-cell.has-tip:nth-child(4n - 1)::after {
+.company-metrics .stat-cell.has-tip:nth-child(4n - 1)::after,
+.company-metrics.metrics-period-row .stat-cell.has-tip:nth-child(n + 6)::after {
   left: auto;
   right: 0;
 }
@@ -1136,6 +1158,23 @@ a.btn {
   }
 
   .company-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .company-metrics.metrics-period-row {
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .company-metrics.metrics-period-row .stat-cell {
+    flex: 0 0 auto;
+    min-width: 4.6rem;
+  }
+
+  .company-metrics.metrics-extreme-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
