@@ -376,7 +376,7 @@ function nearBottom(kind) {
   return ui.body.scrollTop + ui.body.clientHeight >= ui.body.scrollHeight - 48;
 }
 
-function setMetricsLoading(message = "正在加载完整盘口指标…") {
+function setMetricsLoading(message = "正在加载指标…") {
   if (els.quoteStrip) {
     els.quoteStrip.innerHTML = "";
   }
