@@ -385,15 +385,15 @@ function renderMetrics(stock) {
       ["市销率(TTM)", stock.ps_ttm],
     ],
     [
-      ["每股收益", stock.eps],
-      ["每股净资产", stock.bvps],
-      ["净资产收益率", stock.roe],
-    ],
-    [
       ["股息(TTM)", stock.dividend_ttm],
       ["股息率", stock.dividend_yield],
       ["净利增速", stock.profit_growth || stock.profit_yoy],
       ["营收增速", stock.revenue_growth || stock.revenue_yoy],
+    ],
+    [
+      ["每股收益", stock.eps],
+      ["每股净资产", stock.bvps],
+      ["净资产收益率", stock.roe],
     ],
   ]);
 
