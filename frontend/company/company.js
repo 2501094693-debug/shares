@@ -351,9 +351,9 @@ function renderMetrics(stock) {
       ["金额", stock.amount],
       ["换手", stock.turnover],
       ["换手(实)", stock.turnover_real],
-      ["现手", stock.current_volume],
-      ["量比", stock.volume_ratio],
       ["振幅", stock.amplitude],
+      ["量比", stock.volume_ratio],
+      ["现手", stock.current_volume],
       ["实体涨幅", stock.solid_change, changeClass(stock.solid_change)],
     ],
     [
