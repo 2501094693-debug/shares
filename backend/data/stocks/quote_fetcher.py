@@ -372,24 +372,150 @@ def _pct_change(cur: float, base: float) -> str:
     return _fmt_pct((cur / base - 1.0) * 100)
 
 
-def _fetch_period_returns_tencent(code: str) -> dict[str, Any]:
-    """腾讯日 K 回退（东财 his 不可用时）。"""
+def _tencent_symbol(code: str) -> str:
     c = normalize_code(code)
     market = detect_market(c)
     prefix = {"sse": "sh", "szse": "sz", "bse": "bj"}.get(market, "sh")
-    symbol = f"{prefix}{c}"
-    url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
-    # 不复权 day，更贴近盘口区间涨幅
-    params = {"param": f"{symbol},day,,,320,"}
-    headers = {"Referer": "https://gu.qq.com/", "User-Agent": "Mozilla/5.0"}
-    payload = _http_get_json(url, params=params, headers=headers, timeout=12) or {}
+    return f"{prefix}{c}"
+
+
+def _fetch_tencent_day_rows(
+    symbol: str,
+    *,
+    start: str = "",
+    end: str = "",
+    limit: int = 640,
+    qfq: bool = False,
+) -> list[list[Any]]:
+    """拉取腾讯日 K。qfq=True 为前复权（对齐东财历史高低）。"""
+    if start and end:
+        param = f"{symbol},day,{start},{end},{limit},{'qfq' if qfq else ''}"
+    else:
+        param = f"{symbol},day,,,{limit},{'qfq' if qfq else ''}"
+    payload = _http_get_json(
+        "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
+        params={"param": param},
+        headers={"Referer": "https://gu.qq.com/"},
+        timeout=12,
+    ) or {}
     node = ((payload.get("data") or {}) if isinstance(payload.get("data"), dict) else {}).get(
         symbol
     ) or {}
-    rows = node.get("day") or node.get("qfqday") or node.get("hfqday") or []
+    rows = node.get("qfqday") if qfq else node.get("day")
+    if not rows:
+        rows = node.get("qfqday") or node.get("day") or []
+    return rows if isinstance(rows, list) else []
+
+
+def _fetch_price_extremes(code: str, list_date: str = "") -> dict[str, Any]:
+    """52周/历史最高最低：用前复权全历史，口径对齐东财盘口。
+
+    腾讯单次日K约 640 根上限，且长区间会截成最近一段，因此按年并行拉取。
+    部分老股前复权会出现 ≤0 的异常价，需过滤；若有效样本不足则回退不复权。
+    """
+    symbol = _tencent_symbol(code)
+    start_year = 1990
+    ld = (list_date or "").replace("-", "").replace("/", "")
+    if len(ld) >= 4 and ld[:4].isdigit():
+        start_year = max(1990, int(ld[:4]))
+    end_year = time.localtime().tm_year
+
+    # 每次约一年（交易日 < 640），避免长区间被截成尾部
+    ranges = [
+        (f"{y:04d}-01-01", f"{y:04d}-12-31")
+        for y in range(start_year, end_year + 1)
+    ]
+
+    def _pull(span: tuple[str, str], qfq: bool) -> list[list[Any]]:
+        start, end = span
+        try:
+            return _fetch_tencent_day_rows(symbol, start=start, end=end, limit=640, qfq=qfq)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("extremes chunk skip %s %s qfq=%s: %s", code, start, qfq, exc)
+            return []
+
+    def _collect(qfq: bool) -> list[list[Any]]:
+        by_date: dict[str, list[Any]] = {}
+        with ThreadPoolExecutor(max_workers=min(8, max(2, len(ranges)))) as pool:
+            futs = [pool.submit(_pull, span, qfq) for span in ranges]
+            for fut in futs:
+                for row in fut.result() or []:
+                    if isinstance(row, (list, tuple)) and len(row) >= 5:
+                        by_date[str(row[0])[:10]] = list(row)
+        if len(by_date) < 5:
+            try:
+                for row in _fetch_tencent_day_rows(symbol, limit=640, qfq=qfq):
+                    if isinstance(row, (list, tuple)) and len(row) >= 5:
+                        by_date[str(row[0])[:10]] = list(row)
+            except Exception as exc:  # noqa: BLE001
+                logger.info("extremes fallback skip %s qfq=%s: %s", code, qfq, exc)
+        return [by_date[k] for k in sorted(by_date)]
+
+    def _minmax(rows: list[list[Any]], *, min_price: float = 0.0) -> tuple[float | None, float | None, int, int]:
+        """返回 (high, low, 有效根数, 被过滤根数)。"""
+        highs: list[float] = []
+        lows: list[float] = []
+        dropped = 0
+        for r in rows:
+            h = _num(r[3])
+            low = _num(r[4])
+            if h is None or low is None:
+                continue
+            if h <= min_price or low <= min_price:
+                dropped += 1
+                continue
+            highs.append(h)
+            lows.append(low)
+        if not highs or not lows:
+            return None, None, 0, dropped
+        return max(highs), min(lows), len(highs), dropped
+
+    qfq_rows = _collect(True)
+    if len(qfq_rows) < 5:
+        return {}
+
+    # 先用全部正价前复权；若大量异常（负价/零价），再与不复权对比兜底
+    high_all, low_all, kept, dropped = _minmax(qfq_rows, min_price=0.0)
+    use_rows = qfq_rows
+    if high_all is None or low_all is None:
+        return {}
+
+    bad_ratio = dropped / max(1, kept + dropped)
+    # 前复权异常时（如长期现金分红导致负价），回退不复权全历史
+    if bad_ratio >= 0.05:
+        raw_rows = _collect(False)
+        raw_high, raw_low, raw_kept, _ = _minmax(raw_rows, min_price=0.0)
+        # 若过滤后的前复权最低价相对不复权过低，视为算法失真
+        if raw_high is not None and raw_low is not None and raw_kept >= 5:
+            if low_all < raw_low * 0.05:
+                logger.info(
+                    "extremes use raw for %s (qfq bad_ratio=%.2f qfq_low=%.4f raw_low=%.4f)",
+                    code,
+                    bad_ratio,
+                    low_all,
+                    raw_low,
+                )
+                high_all, low_all = raw_high, raw_low
+                use_rows = raw_rows
+
+    out: dict[str, Any] = {
+        "high_all": _fmt_price(high_all),
+        "low_all": _fmt_price(low_all),
+    }
+    window = min(252, len(use_rows))
+    h52, l52, _, _ = _minmax(use_rows[-window:], min_price=0.0)
+    if h52 is not None:
+        out["high_52w"] = _fmt_price(h52)
+    if l52 is not None:
+        out["low_52w"] = _fmt_price(l52)
+    return out
+
+
+def _fetch_period_returns_tencent(code: str) -> dict[str, Any]:
+    """腾讯日 K：区间涨幅用不复权收盘（高低点另算前复权）。"""
+    symbol = _tencent_symbol(code)
+    rows = _fetch_tencent_day_rows(symbol, limit=320, qfq=False)
     closes: list[float] = []
-    highs: list[float] = []
-    lows: list[float] = []
     dates: list[str] = []
     for row in rows:
         if not isinstance(row, (list, tuple)) or len(row) < 5:
@@ -399,12 +525,6 @@ def _fetch_period_returns_tencent(code: str) -> dict[str, Any]:
             continue
         dates.append(str(row[0])[:10])
         closes.append(cclose)
-        h = _num(row[3])
-        low = _num(row[4])
-        if h is not None:
-            highs.append(h)
-        if low is not None:
-            lows.append(low)
     if len(closes) < 2:
         return {}
 
@@ -438,19 +558,11 @@ def _fetch_period_returns_tencent(code: str) -> dict[str, Any]:
                 break
         if ytd_base is not None:
             out["change_ytd"] = _pct_change(last, ytd_base)
-
-    window = min(252, len(highs), len(lows))
-    if window >= 5:
-        out["high_52w"] = _fmt_price(max(highs[-window:]))
-        out["low_52w"] = _fmt_price(min(lows[-window:]))
-    if highs and lows:
-        out["high_all"] = _fmt_price(max(highs))
-        out["low_all"] = _fmt_price(min(lows))
     return out
 
 
 def _fetch_period_returns(code: str) -> dict[str, Any]:
-    """用日 K 推算区间涨幅与高低点。优先腾讯（更稳），东财作补充。"""
+    """用日 K 推算区间涨幅。优先腾讯（更稳），东财作补充。"""
     try:
         # 腾讯优先：东财 push2his 在不少网络环境下会被直接掐断
         try:
@@ -501,8 +613,6 @@ def _fetch_period_returns(code: str) -> dict[str, Any]:
             return {}
 
         closes: list[float] = []
-        highs: list[float] = []
-        lows: list[float] = []
         dates: list[str] = []
         for line in klines:
             parts = str(line).split(",")
@@ -513,12 +623,6 @@ def _fetch_period_returns(code: str) -> dict[str, Any]:
                 continue
             dates.append(str(parts[0])[:10])
             closes.append(c)
-            h = _num(parts[2])
-            low = _num(parts[3])
-            if h is not None:
-                highs.append(h)
-            if low is not None:
-                lows.append(low)
 
         if len(closes) < 2:
             return {}
@@ -553,14 +657,6 @@ def _fetch_period_returns(code: str) -> dict[str, Any]:
                     break
             if ytd_base is not None:
                 out["change_ytd"] = _pct_change(last, ytd_base)
-
-        window = min(252, len(highs), len(lows))
-        if window >= 5:
-            out["high_52w"] = _fmt_price(max(highs[-window:]))
-            out["low_52w"] = _fmt_price(min(lows[-window:]))
-        if highs and lows:
-            out["high_all"] = _fmt_price(max(highs))
-            out["low_all"] = _fmt_price(min(lows))
         return out
     except Exception as exc:  # noqa: BLE001
         logger.info("period returns skip %s: %s", code, exc)
@@ -828,6 +924,9 @@ def _map_push2(data: dict[str, Any]) -> dict[str, Any]:
         "total_market_cap": _fmt_yi_wan(data.get("f116"), unit_yi=True),
         "list_date": _fmt_list_date(data.get("f189")),
         "industry_name_em": safe_str(data.get("f127")),
+        # 52周高低（东财盘口 f174/f175，前复权口径）
+        "high_52w": _fmt_price(data.get("f174")),
+        "low_52w": _fmt_price(data.get("f175")),
         # 盘后
         "after_volume": _fmt_signed(data.get("f260"), 0),
         "after_amount": _fmt_yi_wan(data.get("f261")),
@@ -866,7 +965,7 @@ def fetch_stock_quote(code: str, *, force: bool = False) -> dict[str, Any]:
 
     result: dict[str, Any] = {}
     try:
-        with ThreadPoolExecutor(max_workers=6) as pool:
+        with ThreadPoolExecutor(max_workers=7) as pool:
             fut_quote = pool.submit(_fetch_push2, code)
             fut_flow = pool.submit(_fetch_fund_flow, code)
             fut_ret = pool.submit(_fetch_period_returns, code)
@@ -874,6 +973,7 @@ def fetch_stock_quote(code: str, *, force: bool = False) -> dict[str, Any]:
             fut_f10 = pool.submit(_fetch_f10_profile, code)
             fut_val = pool.submit(_fetch_valuation_extra, code)
 
+            list_date = ""
             try:
                 raw = fut_quote.result()
                 if raw:
@@ -881,12 +981,23 @@ def fetch_stock_quote(code: str, *, force: bool = False) -> dict[str, Any]:
                         result.update(raw["__tencent_mapped__"] or {})
                     else:
                         result.update(_map_push2(raw))
+                        list_date = _fmt_list_date(raw.get("f189")) or result.get("list_date") or ""
+                if not list_date:
+                    list_date = result.get("list_date") or ""
             except Exception as exc:  # noqa: BLE001
                 logger.warning("push2 quote failed %s: %s", code, exc)
                 try:
                     result.update(_fetch_tencent_quote(code) or {})
                 except Exception:  # noqa: BLE001
                     pass
+                list_date = result.get("list_date") or ""
+
+            # 历史/52周高低：等拿到上市日后按前复权全历史算（对齐东财）
+            fut_ext = pool.submit(_fetch_price_extremes, code, list_date)
+            # 盘口自带的 52 周高低优先保留（东财 f174/f175）
+            official_52 = {
+                k: result[k] for k in ("high_52w", "low_52w") if result.get(k)
+            }
 
             for fut, label in (
                 (fut_flow, "fund flow"),
@@ -894,11 +1005,15 @@ def fetch_stock_quote(code: str, *, force: bool = False) -> dict[str, Any]:
                 (fut_hand, "current hand"),
                 (fut_f10, "f10"),
                 (fut_val, "valuation"),
+                (fut_ext, "price extremes"),
             ):
                 try:
                     result.update(fut.result() or {})
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("%s failed %s: %s", label, code, exc)
+
+            if official_52:
+                result.update(official_52)
     except Exception as exc:  # noqa: BLE001
         logger.warning("quote fetch failed %s: %s", code, exc)
         return {}
