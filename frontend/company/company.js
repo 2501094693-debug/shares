@@ -317,34 +317,36 @@ function renderMetrics(stock) {
     ["历史最低", stock.low_all],
   ].filter(([, v]) => displayValue(v) !== "-");
 
-  const periodSection = periodItems.length || extremeItems.length
-    ? `
+  const renderInlineRows = (title, rows) => {
+    const parts = rows
+      .map((items) => items.filter(([, v]) => displayValue(v) !== "-"))
+      .filter((items) => items.length);
+    if (!parts.length) return "";
+    return `
     <section class="metrics-section">
-      <h4 class="metrics-section-title">区间涨幅</h4>
-      ${
-        periodItems.length
-          ? `<div class="company-metrics metrics-period-row">${periodItems
+      <h4 class="metrics-section-title">${escapeHtml(title)}</h4>
+      ${parts
+        .map(
+          (items) =>
+            `<div class="company-metrics metrics-inline-row" style="--metrics-cols:${items.length}">${items
               .map(metricCell)
               .join("")}</div>`
-          : ""
-      }
-      ${
-        extremeItems.length
-          ? `<div class="company-metrics metrics-extreme-row">${extremeItems
-              .map(metricCell)
-              .join("")}</div>`
-          : ""
-      }
-    </section>`
-    : "";
+        )
+        .join("")}
+    </section>`;
+  };
 
-  const html = [
-    renderMetricSection("当日行情", [
+  const daySection = renderInlineRows("当日行情", [
+    [
       ["今开", stock.open],
       ["昨收", stock.prev_close],
       ["最高", stock.high],
       ["最低", stock.low],
       ["均价", stock.avg_price],
+      ["涨停", stock.limit_up],
+      ["跌停", stock.limit_down],
+    ],
+    [
       ["总手", stock.volume],
       ["金额", stock.amount],
       ["换手", stock.turnover],
@@ -353,18 +355,29 @@ function renderMetrics(stock) {
       ["量比", stock.volume_ratio],
       ["振幅", stock.amplitude],
       ["实体涨幅", stock.solid_change, changeClass(stock.solid_change)],
-      ["涨停", stock.limit_up],
-      ["跌停", stock.limit_down],
+    ],
+    [
       ["外盘", stock.outer_vol],
       ["内盘", stock.inner_vol],
       ["委买", stock.bid_vol],
       ["委卖", stock.ask_vol],
       ["委差", stock.bid_ask_diff, changeClass(stock.bid_ask_diff)],
       ["委比", stock.bid_ask_ratio, changeClass(stock.bid_ask_ratio)],
+    ],
+    [
       ["盘后委买", stock.after_bid],
       ["盘后量", stock.after_volume],
       ["盘后额", stock.after_amount],
-    ]),
+    ],
+  ]);
+
+  const periodSection = renderInlineRows("区间涨幅", [
+    periodItems,
+    extremeItems,
+  ]);
+
+  const html = [
+    daySection,
     renderMetricSection("资金流向", [
       ["主力净流入", stock.main_net_inflow, changeClass(stock.main_net_inflow)],
       ["5日净流入", stock.main_net_inflow_5d, changeClass(stock.main_net_inflow_5d)],
