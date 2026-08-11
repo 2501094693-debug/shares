@@ -411,8 +411,8 @@ function renderMetrics(stock) {
     ],
     [
       ["注册资本", stock.registered_capital],
-      ["纳入时间", stock.include_date],
       ["上市时间", stock.list_date],
+      ["纳入时间", stock.include_date],
     ],
   ]);
 
