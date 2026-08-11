@@ -1,10 +1,11 @@
 """数据层门面：对外保持原有 IndustryService API。
 
 模块分工：
-- data.core.paths     缓存路径
-- data.industry.tree  行业树 / 行业搜索
-- data.stocks.schema  索引字段规范
-- data.stocks.store   成分股 + 全局股票索引
+- data.core.paths           缓存路径
+- data.industry.tree        行业树 / 行业搜索
+- data.stocks.schema        索引字段规范
+- data.stocks.store         成分股 + 全局股票索引
+- data.stocks.quote_fetcher 东财盘口补全（公司详情）
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from typing import Any
 
 from data.core.paths import ensure_cache_dirs
 from data.industry.tree import IndustryTree
+from data.stocks.quote_fetcher import fetch_stock_quote
 from data.stocks.schema import METRIC_KEYS
 from data.stocks.store import StockStore
 
@@ -121,6 +123,32 @@ class IndustryService:
                 "l1_name": index_hit.get("l1_name") or "",
                 "l2_name": index_hit.get("l2_name") or "",
             }
+
+        # 东财盘口补全（失败则保留乐咕成分股字段）
+        try:
+            quote = fetch_stock_quote(str(stock.get("code") or code))
+            if quote:
+                stock = {**stock, **quote}
+                # 股息(TTM) ≈ 现价 × 股息率
+                if not stock.get("dividend_ttm"):
+                    try:
+                        price = float(
+                            str(stock.get("price") or "")
+                            .replace(",", "")
+                            .strip()
+                        )
+                        dy = float(
+                            str(stock.get("dividend_yield") or "")
+                            .replace("%", "")
+                            .replace(",", "")
+                            .strip()
+                        )
+                        if price > 0 and dy == dy:
+                            stock["dividend_ttm"] = f"{price * dy / 100:.2f}"
+                    except (TypeError, ValueError):
+                        pass
+        except Exception:  # noqa: BLE001
+            pass
 
         return {"stock": stock, "industry": industry_meta or {}}
 

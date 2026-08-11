@@ -40,6 +40,7 @@ const els = {
   companyCodeChip: document.getElementById("companyCodeChip"),
   quoteStrip: document.getElementById("quoteStrip"),
   metricsGrid: document.getElementById("metricsGrid"),
+  metricsPanels: document.getElementById("metricsPanels"),
   refreshNewsBtn: document.getElementById("refreshNewsBtn"),
   errorBox: document.getElementById("errorBox"),
 };
@@ -142,11 +143,16 @@ function nextDayWindow(current, fullDays) {
 
 function renderQuote(stock) {
   const cells = [
-    ["最新价", stock.price, ""],
-    ["近1日", stock.change_1d, changeClass(stock.change_1d)],
-    ["近5日", stock.change_5d, changeClass(stock.change_5d)],
-    ["今年以来", stock.change_ytd, changeClass(stock.change_ytd)],
-    ["市值(亿)", stock.market_cap, ""],
+    ["最新", stock.price, ""],
+    ["涨幅", stock.change_1d, changeClass(stock.change_1d)],
+    ["涨跌", stock.change_amt, changeClass(stock.change_amt)],
+    [
+      "市值",
+      stock.total_market_cap ||
+        (stock.market_cap ? `${displayValue(stock.market_cap)}亿` : ""),
+      "",
+    ],
+    ["换手", stock.turnover, ""],
   ];
   els.quoteStrip.innerHTML = cells
     .map(
@@ -159,26 +165,111 @@ function renderQuote(stock) {
     .join("");
 }
 
+function metricCell([label, value, cls = ""]) {
+  return `
+    <div class="stat-cell">
+      <span class="detail-label">${escapeHtml(label)}</span>
+      <span class="detail-value ${cls}">${escapeHtml(displayValue(value))}</span>
+    </div>`;
+}
+
+function renderMetricSection(title, items) {
+  const cells = items.filter(([, v]) => displayValue(v) !== "-");
+  if (!cells.length) return "";
+  return `
+    <section class="metrics-section">
+      <h4 class="metrics-section-title">${escapeHtml(title)}</h4>
+      <div class="company-metrics">
+        ${cells.map(metricCell).join("")}
+      </div>
+    </section>`;
+}
+
 function renderMetrics(stock) {
-  const items = [
-    ["纳入时间", stock.include_date],
-    ["市盈率", stock.pe],
-    ["PE(TTM)", stock.pe_ttm],
-    ["市净率", stock.pb],
-    ["ROE", stock.roe],
-    ["股息率", stock.dividend_yield],
-    ["净利增速", stock.profit_growth],
-    ["营收增速", stock.revenue_growth],
-  ];
-  els.metricsGrid.innerHTML = items
-    .map(
-      ([label, value]) => `
-      <div class="stat-cell">
-        <span class="detail-label">${escapeHtml(label)}</span>
-        <span class="detail-value">${escapeHtml(displayValue(value))}</span>
-      </div>`
-    )
+  const panels = els.metricsPanels || els.metricsGrid;
+  if (!panels) return;
+
+  const mcap =
+    stock.total_market_cap ||
+    (stock.market_cap ? `${displayValue(stock.market_cap)}亿` : "");
+
+  const html = [
+    renderMetricSection("当日行情", [
+      ["今开", stock.open],
+      ["昨收", stock.prev_close],
+      ["最高", stock.high],
+      ["最低", stock.low],
+      ["均价", stock.avg_price],
+      ["总手", stock.volume],
+      ["金额", stock.amount],
+      ["换手", stock.turnover],
+      ["换手(实)", stock.turnover_real],
+      ["现手", stock.current_volume],
+      ["量比", stock.volume_ratio],
+      ["振幅", stock.amplitude],
+      ["实体涨幅", stock.solid_change, changeClass(stock.solid_change)],
+      ["涨停", stock.limit_up],
+      ["跌停", stock.limit_down],
+      ["外盘", stock.outer_vol],
+      ["内盘", stock.inner_vol],
+      ["委买", stock.bid_vol],
+      ["委卖", stock.ask_vol],
+      ["委差", stock.bid_ask_diff, changeClass(stock.bid_ask_diff)],
+      ["委比", stock.bid_ask_ratio, changeClass(stock.bid_ask_ratio)],
+      ["盘后委买", stock.after_bid],
+      ["盘后量", stock.after_volume],
+      ["盘后额", stock.after_amount],
+    ]),
+    renderMetricSection("资金流向", [
+      ["主力净流入", stock.main_net_inflow, changeClass(stock.main_net_inflow)],
+      ["5日净流入", stock.main_net_inflow_5d, changeClass(stock.main_net_inflow_5d)],
+    ]),
+    renderMetricSection("区间涨幅", [
+      ["近1日", stock.change_1d, changeClass(stock.change_1d)],
+      ["3日", stock.change_3d, changeClass(stock.change_3d)],
+      ["5日", stock.change_5d, changeClass(stock.change_5d)],
+      ["10日", stock.change_10d, changeClass(stock.change_10d)],
+      ["20日", stock.change_20d, changeClass(stock.change_20d)],
+      ["60日", stock.change_60d, changeClass(stock.change_60d)],
+      ["近半年", stock.change_half_year, changeClass(stock.change_half_year)],
+      ["近1年", stock.change_1y, changeClass(stock.change_1y)],
+      ["今年", stock.change_ytd, changeClass(stock.change_ytd)],
+      ["52周最高", stock.high_52w],
+      ["52周最低", stock.low_52w],
+      ["历史最高", stock.high_all],
+      ["历史最低", stock.low_all],
+    ]),
+    renderMetricSection("估值与每股", [
+      ["市盈率(动)", stock.pe],
+      ["市盈率(静)", stock.pe_static],
+      ["市盈率(TTM)", stock.pe_ttm],
+      ["市净率", stock.pb],
+      ["市销率(TTM)", stock.ps_ttm],
+      ["每股收益", stock.eps],
+      ["每股净资产", stock.bvps],
+      ["净资产收益率", stock.roe],
+      ["股息(TTM)", stock.dividend_ttm],
+      ["股息率", stock.dividend_yield],
+      ["净利增速", stock.profit_growth || stock.profit_yoy],
+      ["营收增速", stock.revenue_growth || stock.revenue_yoy],
+    ]),
+    renderMetricSection("股本与市值", [
+      ["总股本", stock.total_shares],
+      ["流通股", stock.float_shares],
+      ["自由流通股", stock.free_float_shares],
+      ["总市值", mcap],
+      ["流通市值", stock.float_market_cap],
+      ["自由流通市值", stock.free_float_market_cap],
+      ["发行股本", stock.issued_shares],
+      ["注册资本", stock.registered_capital],
+      ["纳入时间", stock.include_date],
+      ["上市时间", stock.list_date],
+    ]),
+  ]
+    .filter(Boolean)
     .join("");
+
+  panels.innerHTML = html || `<p class="muted">暂无指标数据</p>`;
 }
 
 function applyStock(stock, industryMeta = {}) {
