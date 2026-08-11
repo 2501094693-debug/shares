@@ -949,6 +949,54 @@ thead th {
   padding: 10px 14px 8px 0;
 }
 
+.stat-cell.has-tip {
+  position: relative;
+  cursor: help;
+}
+
+.stat-cell.has-tip:hover .detail-label {
+  color: var(--accent);
+}
+
+.stat-cell.has-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  width: max-content;
+  max-width: min(280px, 70vw);
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: rgba(8, 14, 24, 0.96);
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-family: var(--font);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1.45;
+  white-space: normal;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.quote-strip .stat-cell.has-tip:nth-child(n + 4)::after,
+.company-metrics .stat-cell.has-tip:nth-child(4n)::after,
+.company-metrics .stat-cell.has-tip:nth-child(4n - 1)::after {
+  left: auto;
+  right: 0;
+}
+
+.stat-cell.has-tip:hover::after,
+.stat-cell.has-tip:focus-within::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .quote-strip .stat-cell:not(:last-child),
 .company-metrics .stat-cell:not(:nth-child(4n)) {
   padding-right: 14px;
