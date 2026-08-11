@@ -13,7 +13,7 @@ from typing import Any
 
 import requests
 
-from message.disclosure.http_util import detect_market, http_get, normalize_code, safe_str
+from message.disclosure.http_util import detect_market, normalize_code, safe_str
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +152,22 @@ def _sum_side(data: dict[str, Any], vol_keys: tuple[str, ...]) -> float | None:
     return total if ok else None
 
 
+def _session() -> requests.Session:
+    """独立 Session，关闭系统代理，避免 Windows 代理/ curl_cffi 干扰。"""
+    s = requests.Session()
+    s.trust_env = False
+    s.headers.update(
+        {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            )
+        }
+    )
+    return s
+
+
 def _http_get_json(
     url: str,
     *,
@@ -159,40 +175,96 @@ def _http_get_json(
     headers: dict[str, str] | None = None,
     timeout: int = 12,
 ) -> Any:
-    """行情拉取：优先 requests（避开 curl_cffi 被东财掐断），失败再试 http_get。"""
-    hdrs = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/122.0.0.0 Safari/537.36"
-        ),
-        **(headers or {}),
+    """仅用 requests（不走 curl_cffi）。"""
+    sess = _session()
+    resp = sess.get(url, params=params, headers=headers or {}, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _http_get_text(
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: int = 12,
+    encoding: str | None = None,
+) -> str:
+    sess = _session()
+    resp = sess.get(url, params=params, headers=headers or {}, timeout=timeout)
+    resp.raise_for_status()
+    if encoding:
+        resp.encoding = encoding
+    return resp.text
+
+
+def _fetch_tencent_quote(code: str) -> dict[str, Any]:
+    """腾讯实时行情回退（东财 push2 不可用时）。"""
+    c = normalize_code(code)
+    market = detect_market(c)
+    prefix = {"sse": "sh", "szse": "sz", "bse": "bj"}.get(market, "sh")
+    symbol = f"{prefix}{c}"
+    text = _http_get_text(
+        "https://qt.gtimg.cn/q=" + symbol,
+        headers={"Referer": "https://gu.qq.com/"},
+        timeout=10,
+    )
+    # v_sh601881="1~名称~代码~现价~昨收~今开~总量~外盘~内盘~..."
+    if '="' not in text:
+        return {}
+    body = text.split('="', 1)[1].rsplit('"', 1)[0]
+    p = body.split("~")
+    if len(p) < 45:
+        return {}
+
+    price = _num(p[3])
+    prev = _num(p[4])
+    open_p = _num(p[5])
+    volume = _num(p[6])
+    outer = _num(p[7])
+    inner = _num(p[8])
+    change_amt = _num(p[31]) if len(p) > 31 else None
+    change_pct = _num(p[32]) if len(p) > 32 else None
+    high = _num(p[33]) if len(p) > 33 else None
+    low = _num(p[34]) if len(p) > 34 else None
+    # p[37] 成交额（万），p[38] 换手
+    amount_wan = _num(p[37]) if len(p) > 37 else None
+    turnover = _num(p[38]) if len(p) > 38 else None
+    # p[44]/p[45] 常见为总市值/流通市值（亿）
+    mcap_yi = _num(p[45]) if len(p) > 45 else None
+    float_mcap_yi = _num(p[44]) if len(p) > 44 else None
+
+    solid = ""
+    if price is not None and open_p is not None and prev not in (None, 0):
+        solid = _fmt_pct((price - open_p) / prev * 100)
+
+    out: dict[str, Any] = {
+        "price": _fmt_price(price),
+        "prev_close": _fmt_price(prev),
+        "open": _fmt_price(open_p),
+        "high": _fmt_price(high),
+        "low": _fmt_price(low),
+        "volume": _fmt_volume_hands(volume),
+        "outer_vol": _fmt_volume_hands(outer),
+        "inner_vol": _fmt_volume_hands(inner),
+        "change_amt": _fmt_signed(change_amt),
+        "change_1d": _fmt_pct(change_pct),
+        "solid_change": solid,
+        "turnover": _fmt_pct(turnover),
+        "amount": _fmt_yi_wan((amount_wan or 0) * 1e4) if amount_wan is not None else "",
+        "_price_raw": price,
+        "_turnover_raw": turnover,
     }
-    errors: list[str] = []
-
-    # 1) requests：忽略系统代理，减少 Windows 代理/证书导致的断连
-    try:
-        resp = requests.get(
-            url,
-            params=params,
-            headers=hdrs,
-            timeout=timeout,
-            trust_env=False,
-        )
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"requests:{exc}")
-
-    # 2) 项目 http_get（curl_cffi / requests）
-    try:
-        resp = http_get(url, params=params, headers=hdrs, timeout=timeout)
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"http_get:{exc}")
-
-    raise RuntimeError(" | ".join(errors[-2:]))
+    if mcap_yi is not None:
+        out["market_cap"] = f"{mcap_yi:.2f}".rstrip("0").rstrip(".")
+        out["total_market_cap"] = f"{out['market_cap']}亿"
+    if float_mcap_yi is not None:
+        text = f"{float_mcap_yi:.2f}".rstrip("0").rstrip(".")
+        out["float_market_cap"] = f"{text}亿"
+    # 振幅
+    if high is not None and low is not None and prev not in (None, 0):
+        out["amplitude"] = _fmt_pct((high - low) / prev * 100)
+    return {k: v for k, v in out.items() if v not in (None, "")}
 
 
 def _fetch_push2(code: str) -> dict[str, Any]:
@@ -204,7 +276,9 @@ def _fetch_push2(code: str) -> dict[str, Any]:
         "secid": secid,
         "ut": "fa5fd1943c7b386f172d6893dbfba10b",
     }
-    headers = {"Referer": "https://quote.eastmoney.com/sh{}.html".format(normalize_code(code))}
+    headers = {
+        "Referer": f"https://quote.eastmoney.com/sh{normalize_code(code)}.html"
+    }
     last_exc: Exception | None = None
     for host in _PUSH2_HOSTS:
         try:
@@ -220,64 +294,76 @@ def _fetch_push2(code: str) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
             continue
+    # 东财不可用时回退腾讯
+    try:
+        tx = _fetch_tencent_quote(code)
+        if tx:
+            logger.info("push2 fallback to tencent quote for %s", code)
+            return {"__tencent_mapped__": tx}
+    except Exception as exc:  # noqa: BLE001
+        logger.info("tencent quote fallback failed %s: %s", code, exc)
     if last_exc:
-        raise last_exc
+        logger.info("push2 unavailable %s: %s", code, last_exc)
     return {}
 
 
 def _fetch_fund_flow(code: str) -> dict[str, Any]:
-    """主力净流入（今日 + 近5日合计）。"""
-    market = detect_market(normalize_code(code))
-    mid = 1 if market == "sse" else 0
-    params = {
-        "lmt": "0",
-        "klt": "101",
-        "secid": f"{mid}.{normalize_code(code)}",
-        "fields1": "f1,f2,f3,f7",
-        "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65",
-        "ut": "b2884a393a59ad64002292a3e90d46a5",
-        "_": int(time.time() * 1000),
-    }
-    headers = {"Referer": "https://data.eastmoney.com/zjlx/"}
-    payload = None
-    for host in (
-        "https://push2delay.eastmoney.com",
-        "https://push2his.eastmoney.com",
-        "https://push2.eastmoney.com",
-    ):
-        try:
-            payload = _http_get_json(
-                f"{host}/api/qt/stock/fflow/daykline/get",
-                params=params,
-                headers=headers,
-                timeout=10,
-            )
-            if isinstance(payload, dict):
-                break
-        except Exception:  # noqa: BLE001
-            payload = None
-            continue
-    if not isinstance(payload, dict):
+    """主力净流入（今日 + 近5日合计）。失败返回空，不抛异常。"""
+    try:
+        market = detect_market(normalize_code(code))
+        mid = 1 if market == "sse" else 0
+        params = {
+            "lmt": "0",
+            "klt": "101",
+            "secid": f"{mid}.{normalize_code(code)}",
+            "fields1": "f1,f2,f3,f7",
+            "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65",
+            "ut": "b2884a393a59ad64002292a3e90d46a5",
+            "_": int(time.time() * 1000),
+        }
+        headers = {"Referer": "https://data.eastmoney.com/zjlx/"}
+        payload = None
+        for host in (
+            "https://push2delay.eastmoney.com",
+            "https://push2his.eastmoney.com",
+            "https://push2.eastmoney.com",
+        ):
+            try:
+                payload = _http_get_json(
+                    f"{host}/api/qt/stock/fflow/daykline/get",
+                    params=params,
+                    headers=headers,
+                    timeout=10,
+                )
+                if isinstance(payload, dict):
+                    break
+            except Exception:  # noqa: BLE001
+                payload = None
+                continue
+        if not isinstance(payload, dict):
+            return {}
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        klines = (data or {}).get("klines") or []
+        rows: list[float] = []
+        for line in klines:
+            parts = str(line).split(",")
+            if len(parts) < 2:
+                continue
+            main = _num(parts[1])
+            if main is None:
+                continue
+            rows.append(main)
+        if not rows:
+            return {}
+        today = rows[-1]
+        last5 = sum(rows[-5:])
+        return {
+            "main_net_inflow": _fmt_yi_wan(today),
+            "main_net_inflow_5d": _fmt_yi_wan(last5),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.info("fund flow skip %s: %s", code, exc)
         return {}
-    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-    klines = (data or {}).get("klines") or []
-    rows: list[float] = []
-    for line in klines:
-        parts = str(line).split(",")
-        if len(parts) < 2:
-            continue
-        main = _num(parts[1])
-        if main is None:
-            continue
-        rows.append(main)
-    if not rows:
-        return {}
-    today = rows[-1]
-    last5 = sum(rows[-5:])
-    return {
-        "main_net_inflow": _fmt_yi_wan(today),
-        "main_net_inflow_5d": _fmt_yi_wan(last5),
-    }
 
 
 def _pct_change(cur: float, base: float) -> str:
@@ -365,116 +451,120 @@ def _fetch_period_returns_tencent(code: str) -> dict[str, Any]:
 
 def _fetch_period_returns(code: str) -> dict[str, Any]:
     """用日 K 推算区间涨幅与高低点。优先腾讯（更稳），东财作补充。"""
-    # 腾讯优先：东财 push2his 在不少网络环境下会被直接掐断
     try:
-        tx = _fetch_period_returns_tencent(code)
-        if tx:
-            return tx
-    except Exception as exc:  # noqa: BLE001
-        logger.info("tencent kline skip %s: %s", code, exc)
-
-    market = detect_market(normalize_code(code))
-    mid = 1 if market == "sse" else 0
-    params = {
-        "secid": f"{mid}.{normalize_code(code)}",
-        "fields1": "f1,f2,f3,f4,f5,f6",
-        "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
-        "klt": "101",
-        "fqt": "0",
-        "beg": "19900101",
-        "end": "20500101",
-        "lmt": "10000",
-        "ut": "fa5fd1943c7b386f172d6893dbfba10b",
-    }
-    headers = {"Referer": "https://quote.eastmoney.com/"}
-    payload = None
-    for host in (
-        "https://push2delay.eastmoney.com",
-        "https://push2his.eastmoney.com",
-    ):
+        # 腾讯优先：东财 push2his 在不少网络环境下会被直接掐断
         try:
-            payload = _http_get_json(
-                f"{host}/api/qt/stock/kline/get",
-                params=params,
-                headers=headers,
-                timeout=10,
-            )
-            data = payload.get("data") if isinstance(payload, dict) else None
-            klines = (data or {}).get("klines") or [] if isinstance(data, dict) else []
-            if klines:
-                break
-            payload = None
-        except Exception:  # noqa: BLE001
-            payload = None
-            continue
+            tx = _fetch_period_returns_tencent(code)
+            if tx:
+                return tx
+        except Exception as exc:  # noqa: BLE001
+            logger.info("tencent kline skip %s: %s", code, exc)
 
-    data = payload.get("data") if isinstance(payload, dict) else None
-    klines = (data or {}).get("klines") or [] if isinstance(data, dict) else []
-    if len(klines) < 2:
+        market = detect_market(normalize_code(code))
+        mid = 1 if market == "sse" else 0
+        params = {
+            "secid": f"{mid}.{normalize_code(code)}",
+            "fields1": "f1,f2,f3,f4,f5,f6",
+            "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
+            "klt": "101",
+            "fqt": "0",
+            "beg": "19900101",
+            "end": "20500101",
+            "lmt": "10000",
+            "ut": "fa5fd1943c7b386f172d6893dbfba10b",
+        }
+        headers = {"Referer": "https://quote.eastmoney.com/"}
+        payload = None
+        for host in (
+            "https://push2delay.eastmoney.com",
+            "https://push2his.eastmoney.com",
+        ):
+            try:
+                payload = _http_get_json(
+                    f"{host}/api/qt/stock/kline/get",
+                    params=params,
+                    headers=headers,
+                    timeout=10,
+                )
+                data = payload.get("data") if isinstance(payload, dict) else None
+                klines = (data or {}).get("klines") or [] if isinstance(data, dict) else []
+                if klines:
+                    break
+                payload = None
+            except Exception:  # noqa: BLE001
+                payload = None
+                continue
+
+        data = payload.get("data") if isinstance(payload, dict) else None
+        klines = (data or {}).get("klines") or [] if isinstance(data, dict) else []
+        if len(klines) < 2:
+            return {}
+
+        closes: list[float] = []
+        highs: list[float] = []
+        lows: list[float] = []
+        dates: list[str] = []
+        for line in klines:
+            parts = str(line).split(",")
+            if len(parts) < 5:
+                continue
+            c = _num(parts[4])
+            if c is None:
+                continue
+            dates.append(str(parts[0])[:10])
+            closes.append(c)
+            h = _num(parts[2])
+            low = _num(parts[3])
+            if h is not None:
+                highs.append(h)
+            if low is not None:
+                lows.append(low)
+
+        if len(closes) < 2:
+            return {}
+
+        last = closes[-1]
+        out: dict[str, Any] = {}
+
+        def at(n: int) -> float | None:
+            if len(closes) > n:
+                return closes[-(n + 1)]
+            return None
+
+        for key, days in {
+            "change_3d": 3,
+            "change_5d": 5,
+            "change_10d": 10,
+            "change_20d": 20,
+            "change_60d": 60,
+            "change_half_year": 120,
+            "change_1y": 250,
+        }.items():
+            base = at(days)
+            if base is not None:
+                out[key] = _pct_change(last, base)
+
+        year = dates[-1][:4] if dates else ""
+        if year:
+            ytd_base = None
+            for d, c in zip(dates, closes):
+                if d.startswith(year):
+                    ytd_base = c
+                    break
+            if ytd_base is not None:
+                out["change_ytd"] = _pct_change(last, ytd_base)
+
+        window = min(252, len(highs), len(lows))
+        if window >= 5:
+            out["high_52w"] = _fmt_price(max(highs[-window:]))
+            out["low_52w"] = _fmt_price(min(lows[-window:]))
+        if highs and lows:
+            out["high_all"] = _fmt_price(max(highs))
+            out["low_all"] = _fmt_price(min(lows))
+        return out
+    except Exception as exc:  # noqa: BLE001
+        logger.info("period returns skip %s: %s", code, exc)
         return {}
-
-    closes: list[float] = []
-    highs: list[float] = []
-    lows: list[float] = []
-    dates: list[str] = []
-    for line in klines:
-        parts = str(line).split(",")
-        if len(parts) < 5:
-            continue
-        c = _num(parts[4])
-        if c is None:
-            continue
-        dates.append(str(parts[0])[:10])
-        closes.append(c)
-        h = _num(parts[2])
-        low = _num(parts[3])
-        if h is not None:
-            highs.append(h)
-        if low is not None:
-            lows.append(low)
-
-    if len(closes) < 2:
-        return {}
-
-    last = closes[-1]
-    out: dict[str, Any] = {}
-
-    def at(n: int) -> float | None:
-        if len(closes) > n:
-            return closes[-(n + 1)]
-        return None
-
-    for key, days in {
-        "change_3d": 3,
-        "change_5d": 5,
-        "change_10d": 10,
-        "change_20d": 20,
-        "change_60d": 60,
-        "change_half_year": 120,
-        "change_1y": 250,
-    }.items():
-        base = at(days)
-        if base is not None:
-            out[key] = _pct_change(last, base)
-
-    year = dates[-1][:4] if dates else ""
-    if year:
-        ytd_base = None
-        for d, c in zip(dates, closes):
-            if d.startswith(year):
-                ytd_base = c
-                break
-        if ytd_base is not None:
-            out["change_ytd"] = _pct_change(last, ytd_base)
-
-    window = min(252, len(highs), len(lows))
-    if window >= 5:
-        out["high_52w"] = _fmt_price(max(highs[-window:]))
-        out["low_52w"] = _fmt_price(min(lows[-window:]))
-    if highs and lows:
-        out["high_all"] = _fmt_price(max(highs))
-        out["low_all"] = _fmt_price(min(lows))
-    return out
 
 
 def _fetch_current_hand(code: str) -> dict[str, Any]:
@@ -787,9 +877,16 @@ def fetch_stock_quote(code: str, *, force: bool = False) -> dict[str, Any]:
             try:
                 raw = fut_quote.result()
                 if raw:
-                    result.update(_map_push2(raw))
+                    if isinstance(raw, dict) and "__tencent_mapped__" in raw:
+                        result.update(raw["__tencent_mapped__"] or {})
+                    else:
+                        result.update(_map_push2(raw))
             except Exception as exc:  # noqa: BLE001
                 logger.warning("push2 quote failed %s: %s", code, exc)
+                try:
+                    result.update(_fetch_tencent_quote(code) or {})
+                except Exception:  # noqa: BLE001
+                    pass
 
             for fut, label in (
                 (fut_flow, "fund flow"),
