@@ -376,6 +376,27 @@ function renderMetrics(stock) {
     extremeItems,
   ]);
 
+  const valuationSection = renderInlineRows("估值与每股", [
+    [
+      ["市盈率(动)", stock.pe],
+      ["市盈率(静)", stock.pe_static],
+      ["市盈率(TTM)", stock.pe_ttm],
+      ["市净率", stock.pb],
+      ["市销率(TTM)", stock.ps_ttm],
+    ],
+    [
+      ["每股收益", stock.eps],
+      ["每股净资产", stock.bvps],
+      ["净资产收益率", stock.roe],
+    ],
+    [
+      ["股息(TTM)", stock.dividend_ttm],
+      ["股息率", stock.dividend_yield],
+      ["净利增速", stock.profit_growth || stock.profit_yoy],
+      ["营收增速", stock.revenue_growth || stock.revenue_yoy],
+    ],
+  ]);
+
   const html = [
     daySection,
     renderMetricSection("资金流向", [
@@ -383,20 +404,7 @@ function renderMetrics(stock) {
       ["5日净流入", stock.main_net_inflow_5d, changeClass(stock.main_net_inflow_5d)],
     ]),
     periodSection,
-    renderMetricSection("估值与每股", [
-      ["市盈率(动)", stock.pe],
-      ["市盈率(静)", stock.pe_static],
-      ["市盈率(TTM)", stock.pe_ttm],
-      ["市净率", stock.pb],
-      ["市销率(TTM)", stock.ps_ttm],
-      ["每股收益", stock.eps],
-      ["每股净资产", stock.bvps],
-      ["净资产收益率", stock.roe],
-      ["股息(TTM)", stock.dividend_ttm],
-      ["股息率", stock.dividend_yield],
-      ["净利增速", stock.profit_growth || stock.profit_yoy],
-      ["营收增速", stock.revenue_growth || stock.revenue_yoy],
-    ]),
+    valuationSection,
     renderMetricSection("股本与市值", [
       ["总股本", stock.total_shares],
       ["流通股", stock.float_shares],
