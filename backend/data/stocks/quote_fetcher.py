@@ -24,6 +24,8 @@ _mem_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _PUSH2_HOSTS = (
     "https://push2delay.eastmoney.com",
     "https://push2.eastmoney.com",
+    "https://82.push2.eastmoney.com",
+    "https://71.push2.eastmoney.com",
 )
 
 _PUSH2_FIELDS = (
@@ -157,23 +159,40 @@ def _http_get_json(
     headers: dict[str, str] | None = None,
     timeout: int = 12,
 ) -> Any:
-    """优先项目 http_get；失败回退 requests。"""
-    hdrs = {"User-Agent": "Mozilla/5.0", **(headers or {})}
-    last_exc: Exception | None = None
-    for attempt in range(2):
-        try:
-            resp = http_get(url, params=params, headers=hdrs, timeout=timeout)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            time.sleep(0.2 * (attempt + 1))
+    """行情拉取：优先 requests（避开 curl_cffi 被东财掐断），失败再试 http_get。"""
+    hdrs = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/122.0.0.0 Safari/537.36"
+        ),
+        **(headers or {}),
+    }
+    errors: list[str] = []
+
+    # 1) requests：忽略系统代理，减少 Windows 代理/证书导致的断连
     try:
-        resp = requests.get(url, params=params, headers=hdrs, timeout=timeout)
+        resp = requests.get(
+            url,
+            params=params,
+            headers=hdrs,
+            timeout=timeout,
+            trust_env=False,
+        )
         resp.raise_for_status()
         return resp.json()
     except Exception as exc:  # noqa: BLE001
-        raise last_exc or exc
+        errors.append(f"requests:{exc}")
+
+    # 2) 项目 http_get（curl_cffi / requests）
+    try:
+        resp = http_get(url, params=params, headers=hdrs, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"http_get:{exc}")
+
+    raise RuntimeError(" | ".join(errors[-2:]))
 
 
 def _fetch_push2(code: str) -> dict[str, Any]:
@@ -185,7 +204,7 @@ def _fetch_push2(code: str) -> dict[str, Any]:
         "secid": secid,
         "ut": "fa5fd1943c7b386f172d6893dbfba10b",
     }
-    headers = {"Referer": "https://quote.eastmoney.com/"}
+    headers = {"Referer": "https://quote.eastmoney.com/sh{}.html".format(normalize_code(code))}
     last_exc: Exception | None = None
     for host in _PUSH2_HOSTS:
         try:
@@ -193,13 +212,14 @@ def _fetch_push2(code: str) -> dict[str, Any]:
                 f"{host}/api/qt/stock/get",
                 params=params,
                 headers=headers,
-                timeout=12,
+                timeout=10,
             ) or {}
             data = payload.get("data")
             if isinstance(data, dict) and data:
                 return data
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
+            continue
     if last_exc:
         raise last_exc
     return {}
@@ -221,24 +241,26 @@ def _fetch_fund_flow(code: str) -> dict[str, Any]:
     headers = {"Referer": "https://data.eastmoney.com/zjlx/"}
     payload = None
     for host in (
-        "https://push2his.eastmoney.com",
         "https://push2delay.eastmoney.com",
+        "https://push2his.eastmoney.com",
+        "https://push2.eastmoney.com",
     ):
         try:
             payload = _http_get_json(
                 f"{host}/api/qt/stock/fflow/daykline/get",
                 params=params,
                 headers=headers,
-                timeout=12,
+                timeout=10,
             )
-            break
+            if isinstance(payload, dict):
+                break
         except Exception:  # noqa: BLE001
+            payload = None
             continue
     if not isinstance(payload, dict):
         return {}
-    klines = ((payload.get("data") or {}) if isinstance(payload.get("data"), dict) else {}).get(
-        "klines"
-    ) or []
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    klines = (data or {}).get("klines") or []
     rows: list[float] = []
     for line in klines:
         parts = str(line).split(",")
@@ -342,7 +364,15 @@ def _fetch_period_returns_tencent(code: str) -> dict[str, Any]:
 
 
 def _fetch_period_returns(code: str) -> dict[str, Any]:
-    """用日 K 推算区间涨幅与高低点。"""
+    """用日 K 推算区间涨幅与高低点。优先腾讯（更稳），东财作补充。"""
+    # 腾讯优先：东财 push2his 在不少网络环境下会被直接掐断
+    try:
+        tx = _fetch_period_returns_tencent(code)
+        if tx:
+            return tx
+    except Exception as exc:  # noqa: BLE001
+        logger.info("tencent kline skip %s: %s", code, exc)
+
     market = detect_market(normalize_code(code))
     mid = 1 if market == "sse" else 0
     params = {
@@ -359,15 +389,15 @@ def _fetch_period_returns(code: str) -> dict[str, Any]:
     headers = {"Referer": "https://quote.eastmoney.com/"}
     payload = None
     for host in (
-        "https://push2his.eastmoney.com",
         "https://push2delay.eastmoney.com",
+        "https://push2his.eastmoney.com",
     ):
         try:
             payload = _http_get_json(
                 f"{host}/api/qt/stock/kline/get",
                 params=params,
                 headers=headers,
-                timeout=15,
+                timeout=10,
             )
             data = payload.get("data") if isinstance(payload, dict) else None
             klines = (data or {}).get("klines") or [] if isinstance(data, dict) else []
@@ -381,11 +411,7 @@ def _fetch_period_returns(code: str) -> dict[str, Any]:
     data = payload.get("data") if isinstance(payload, dict) else None
     klines = (data or {}).get("klines") or [] if isinstance(data, dict) else []
     if len(klines) < 2:
-        try:
-            return _fetch_period_returns_tencent(code)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("tencent period returns failed %s: %s", code, exc)
-            return {}
+        return {}
 
     closes: list[float] = []
     highs: list[float] = []
@@ -408,7 +434,7 @@ def _fetch_period_returns(code: str) -> dict[str, Any]:
             lows.append(low)
 
     if len(closes) < 2:
-        return _fetch_period_returns_tencent(code)
+        return {}
 
     last = closes[-1]
     out: dict[str, Any] = {}
