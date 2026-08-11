@@ -322,9 +322,8 @@ function renderMetrics(stock) {
       .map((items) => items.filter(([, v]) => displayValue(v) !== "-"))
       .filter((items) => items.length);
     if (!parts.length) return "";
-    const cols = Math.max(...parts.map((items) => items.length));
     return `
-    <section class="metrics-section" style="--metrics-cols:${cols}">
+    <section class="metrics-section">
       <h4 class="metrics-section-title">${escapeHtml(title)}</h4>
       ${parts
         .map(
@@ -417,12 +416,16 @@ function renderMetrics(stock) {
     ],
   ]);
 
-  const html = [
-    daySection,
-    renderMetricSection("资金流向", [
+  const flowSection = renderInlineRows("资金流向", [
+    [
       ["主力净流入", stock.main_net_inflow, changeClass(stock.main_net_inflow)],
       ["5日净流入", stock.main_net_inflow_5d, changeClass(stock.main_net_inflow_5d)],
-    ]),
+    ],
+  ]);
+
+  const html = [
+    daySection,
+    flowSection,
     periodSection,
     valuationSection,
     capitalSection,

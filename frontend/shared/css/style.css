@@ -921,6 +921,7 @@ thead th {
 }
 
 .company-metrics-panels {
+  --metrics-cols: 9;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -941,34 +942,31 @@ thead th {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.metrics-section {
-  --metrics-cols: 8;
-}
-
+.company-metrics-panels .company-metrics,
 .company-metrics.metrics-period-row,
-.company-metrics.metrics-inline-row {
-  grid-template-columns: repeat(var(--metrics-cols, 8), minmax(0, 1fr));
-}
-
+.company-metrics.metrics-inline-row,
 .company-metrics.metrics-extreme-row {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--metrics-cols, 9), minmax(0, 1fr));
+}
+
+.company-metrics.metrics-inline-row + .company-metrics.metrics-inline-row,
+.company-metrics.metrics-extreme-row {
   margin-top: 2px;
 }
 
-.company-metrics.metrics-inline-row + .company-metrics.metrics-inline-row {
-  margin-top: 2px;
-}
-
+.company-metrics-panels .company-metrics .stat-cell,
 .company-metrics.metrics-period-row .stat-cell,
 .company-metrics.metrics-inline-row .stat-cell {
   padding-right: 8px;
 }
 
+.company-metrics-panels .company-metrics .stat-cell:not(:last-child),
 .company-metrics.metrics-period-row .stat-cell:not(:last-child),
 .company-metrics.metrics-inline-row .stat-cell:not(:last-child) {
   padding-right: 8px;
 }
 
+.company-metrics-panels .detail-value,
 .company-metrics.metrics-period-row .detail-value,
 .company-metrics.metrics-inline-row .detail-value {
   font-size: 0.9rem;
@@ -1041,8 +1039,7 @@ thead th {
   pointer-events: auto;
 }
 
-.quote-strip .stat-cell:not(:last-child),
-.company-metrics:not(.metrics-period-row):not(.metrics-inline-row) .stat-cell:not(:nth-child(4n)) {
+.quote-strip .stat-cell:not(:last-child) {
   padding-right: 14px;
 }
 
@@ -1174,8 +1171,10 @@ a.btn {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .company-metrics-panels .company-metrics,
   .company-metrics.metrics-period-row,
-  .company-metrics.metrics-inline-row {
+  .company-metrics.metrics-inline-row,
+  .company-metrics.metrics-extreme-row {
     display: flex;
     gap: 0;
     overflow-x: auto;
@@ -1183,22 +1182,12 @@ a.btn {
     -webkit-overflow-scrolling: touch;
   }
 
+  .company-metrics-panels .company-metrics .stat-cell,
   .company-metrics.metrics-period-row .stat-cell,
-  .company-metrics.metrics-inline-row .stat-cell {
+  .company-metrics.metrics-inline-row .stat-cell,
+  .company-metrics.metrics-extreme-row .stat-cell {
     flex: 0 0 auto;
     min-width: 4.6rem;
-  }
-
-  .company-metrics.metrics-extreme-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .company-metrics .stat-cell:not(:nth-child(4n)) {
-    padding-right: 0;
-  }
-
-  .company-metrics .stat-cell:not(:nth-child(2n)) {
-    padding-right: 14px;
   }
 }
 
