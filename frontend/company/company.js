@@ -41,9 +41,92 @@ const els = {
   quoteStrip: document.getElementById("quoteStrip"),
   metricsGrid: document.getElementById("metricsGrid"),
   metricsPanels: document.getElementById("metricsPanels"),
+  chartTabs: document.getElementById("chartTabs"),
+  chartMeta: document.getElementById("chartMeta"),
+  chartHoverCard: document.getElementById("chartHoverCard"),
+  chartWrap: document.getElementById("chartWrap"),
+  priceChart: document.getElementById("priceChart"),
+  chartEmpty: document.getElementById("chartEmpty"),
+  chartAxisScroll: document.getElementById("chartAxisScroll"),
+  chartScrollBar: document.getElementById("chartScrollBar"),
   refreshNewsBtn: document.getElementById("refreshNewsBtn"),
   errorBox: document.getElementById("errorBox"),
 };
+
+/** @type {{ mode: string, loading: boolean, kind: 'intraday'|'kline', items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, meta: string }} */
+const chartState = {
+  mode: "intraday",
+  loading: false,
+  kind: "intraday",
+  items: [],
+  allItems: [],
+  viewStart: 0,
+  viewSize: 90,
+  preClose: null,
+  source: "",
+  meta: "",
+};
+
+const CHART_MODES = {
+  intraday: { label: "分时", kind: "intraday", ndays: 1, viewSize: 0 },
+  intraday5: { label: "五日", kind: "intraday", ndays: 5, viewSize: 0 },
+  day: { label: "日K", kind: "kline", period: "day", limit: 720, viewSize: 90 },
+  week: { label: "周K", kind: "kline", period: "week", limit: 360, viewSize: 80 },
+  month: { label: "月K", kind: "kline", period: "month", limit: 240, viewSize: 72 },
+};
+
+/** 日/周/月 K 均线：周期按当前 K 线根数（周K 的 MA5 = 5 周） */
+const KLINE_MA_LINES = [
+  { period: 5, key: "ma5", label: "MA5", color: "#f0b429" },
+  { period: 10, key: "ma10", label: "MA10", color: "#5b9dff" },
+  { period: 20, key: "ma20", label: "MA20", color: "#d48cff" },
+];
+
+function computeSmaSeries(closes, period) {
+  const n = closes.length;
+  const out = new Array(n).fill(null);
+  if (period <= 0 || n < period) return out;
+  for (let i = period - 1; i < n; i += 1) {
+    let sum = 0;
+    let ok = true;
+    for (let j = i - period + 1; j <= i; j += 1) {
+      const v = Number(closes[j]);
+      if (!Number.isFinite(v)) {
+        ok = false;
+        break;
+      }
+      sum += v;
+    }
+    // 前 period-1 根及缺数窗口保持 null，绝不写 0
+    if (ok) out[i] = sum / period;
+  }
+  return out;
+}
+
+function maPoint(vals, index) {
+  if (!Array.isArray(vals) || index == null || index < 0 || index >= vals.length) {
+    return null;
+  }
+  const raw = vals[index];
+  if (raw == null || raw === "") return null;
+  const v = Number(raw);
+  return Number.isFinite(v) ? v : null;
+}
+
+function getKlineMaBundle() {
+  const all = chartState.allItems || [];
+  const closes = all.map((d) => Number(d.close));
+  const full = {};
+  for (const line of KLINE_MA_LINES) {
+    full[line.key] = computeSmaSeries(closes, line.period);
+  }
+  const { start, size } = chartViewWindow();
+  const visible = {};
+  for (const line of KLINE_MA_LINES) {
+    visible[line.key] = (full[line.key] || []).slice(start, start + size);
+  }
+  return { full, visible };
+}
 
 async function api(path, options = {}) {
   const res = await fetch(path, options);
@@ -340,8 +423,8 @@ function renderMetrics(stock) {
     [
       ["今开", stock.open],
       ["昨收", stock.prev_close],
-      ["最高", stock.high],
       ["最低", stock.low],
+      ["最高", stock.high],
       ["均价", stock.avg_price],
       ["涨停", stock.limit_up],
       ["跌停", stock.limit_down],
@@ -782,6 +865,1080 @@ function setupBackLink() {
   }
 }
 
+/* ---------- 行情图表 ---------- */
+
+function cssVar(name, fallback) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+function fmtNum(n, digits = 2) {
+  if (n == null || !Number.isFinite(Number(n))) return "-";
+  return Number(n).toFixed(digits);
+}
+
+function fmtVol(n) {
+  if (n == null || !Number.isFinite(Number(n))) return "-";
+  const v = Number(n);
+  if (Math.abs(v) >= 1e8) return `${(v / 1e8).toFixed(2)}亿`;
+  if (Math.abs(v) >= 1e4) return `${(v / 1e4).toFixed(1)}万`;
+  return String(Math.round(v));
+}
+
+function shortTimeLabel(t, mode) {
+  const s = String(t || "");
+  if (mode === "intraday5") {
+    if (s.length >= 10) return s.slice(5, 10); // MM-DD
+    return s;
+  }
+  if (mode === "intraday") {
+    if (s.length >= 16) return s.slice(11, 16);
+    if (s.length >= 10) return s.slice(5, 10);
+    return s;
+  }
+  if (s.length >= 10) return s.slice(0, 10);
+  return s;
+}
+
+function dayBreakIndices(items) {
+  const breaks = [];
+  for (let i = 0; i < items.length; i += 1) {
+    if (i === 0) {
+      breaks.push(i);
+      continue;
+    }
+    const a = String(items[i - 1].time || "").slice(0, 10);
+    const b = String(items[i].time || "").slice(0, 10);
+    if (a && b && a !== b) breaks.push(i);
+  }
+  return breaks;
+}
+
+function setChartStatus(message, { empty = false } = {}) {
+  if (els.chartMeta) els.chartMeta.textContent = message || "";
+  if (els.chartEmpty) {
+    els.chartEmpty.textContent = empty ? message || "暂无走势数据" : "暂无走势数据";
+    els.chartEmpty.classList.toggle("hidden", !empty);
+  }
+}
+
+function chartViewWindow() {
+  const all = chartState.allItems || [];
+  const total = all.length;
+  let size = Number(chartState.viewSize) || 0;
+  if (size <= 0 || size >= total) size = total;
+  const maxStart = Math.max(0, total - size);
+  const start = Math.min(Math.max(0, Number(chartState.viewStart) || 0), maxStart);
+  return {
+    all,
+    total,
+    size,
+    maxStart,
+    start,
+    items: total ? all.slice(start, start + size) : [],
+  };
+}
+
+function chartMinViewSize(total) {
+  if (total <= 1) return Math.max(1, total);
+  if (chartState.kind === "intraday") return Math.min(total, 36);
+  return Math.min(total, 20);
+}
+
+function refreshChartWindowStatus() {
+  const conf = CHART_MODES[chartState.mode] || CHART_MODES.intraday;
+  const { total, size } = chartViewWindow();
+  if (!total) return;
+  const src = chartState.source ? ` · ${chartState.source}` : "";
+  const adj = chartState.kind === "kline" ? " · 前复权" : "";
+  const tip =
+    size < total
+      ? ` · 显示 ${size}/${total}，滚轮缩放 · 拖动/滑动平移`
+      : ` · ${total} 点，滚轮可放大`;
+  setChartStatus(`${conf.label}${tip}${adj}${src}`);
+}
+
+function setChartViewStart(nextStart, { render = true, hoverIndex = null } = {}) {
+  const { maxStart } = chartViewWindow();
+  const start = Math.min(Math.max(0, Math.round(nextStart)), maxStart);
+  if (start === chartState.viewStart && chartState.items.length) {
+    syncChartScrollBar();
+    if (render) renderChart(hoverIndex);
+    return start;
+  }
+  chartState.viewStart = start;
+  const win = chartViewWindow();
+  chartState.items = win.items;
+  syncChartScrollBar();
+  if (render) renderChart(hoverIndex);
+  return start;
+}
+
+/** 以横轴比例 anchorRatio(0~1) 为锚点缩放可视点数。factor>1 显示更多，factor<1 放大。 */
+function zoomChartViewport(anchorRatio, factor, { render = true } = {}) {
+  const total = (chartState.allItems || []).length;
+  if (total <= 1) return false;
+  const win = chartViewWindow();
+  const minSize = chartMinViewSize(total);
+  const ratio = Math.min(1, Math.max(0, Number(anchorRatio) || 0.5));
+  let nextSize = Math.round(win.size * factor);
+  nextSize = Math.max(minSize, Math.min(total, nextSize));
+  if (nextSize === win.size) return false;
+
+  const anchorIndex = win.start + ratio * win.size;
+  let nextStart = Math.round(anchorIndex - ratio * nextSize);
+  nextStart = Math.max(0, Math.min(nextStart, total - nextSize));
+
+  chartState.viewSize = nextSize;
+  chartState.viewStart = nextStart;
+  chartState.items = chartViewWindow().items;
+  syncChartScrollBar();
+  refreshChartWindowStatus();
+  if (render) renderChart();
+  return true;
+}
+
+function syncChartScrollBar() {
+  const bar = els.chartScrollBar;
+  const wrap = els.chartAxisScroll;
+  if (!bar) return;
+  const { maxStart, start, total, size } = chartViewWindow();
+  const canScroll = total > size && maxStart > 0;
+  if (wrap) wrap.classList.toggle("is-disabled", !canScroll);
+  bar.disabled = !canScroll;
+  bar.min = "0";
+  bar.max = String(Math.max(0, maxStart));
+  bar.value = String(start);
+  // 滑块宽度随可视比例变化（WebKit）
+  const ratio = total > 0 ? Math.min(1, size / total) : 1;
+  const thumbPx = Math.max(28, Math.round(48 + ratio * 72));
+  bar.style.setProperty("--thumb-w", `${thumbPx}px`);
+}
+
+function resetChartViewport(allItems, modeConf) {
+  chartState.allItems = Array.isArray(allItems) ? allItems : [];
+  const total = chartState.allItems.length;
+  let viewSize = Number(modeConf?.viewSize);
+  if (!Number.isFinite(viewSize) || viewSize <= 0) {
+    viewSize = total; // 分时默认看全天
+  }
+  chartState.viewSize = viewSize;
+  chartState.viewStart = Math.max(0, total - (viewSize > 0 && viewSize < total ? viewSize : total));
+  chartState.items = chartViewWindow().items;
+  syncChartScrollBar();
+}
+
+function chartLayout(w, h) {
+  // 顶部/右侧留给坐标与分时涨跌幅
+  const pctAxis =
+    chartState.kind === "intraday" &&
+    chartState.mode === "intraday" &&
+    Number.isFinite(chartState.preClose) &&
+    chartState.preClose;
+  const pad = {
+    top: 14,
+    right: pctAxis ? 52 : 30,
+    bottom: 28,
+    left: 60,
+  };
+  const innerW = Math.max(10, w - pad.left - pad.right);
+  const innerH = Math.max(10, h - pad.top - pad.bottom);
+  const volH = Math.max(36, Math.floor(innerH * 0.16));
+  const gap = 10;
+  const priceH = Math.max(100, innerH - volH - gap);
+  return {
+    pad,
+    price: { x: pad.left, y: pad.top, w: innerW, h: priceH },
+    volume: {
+      x: pad.left,
+      y: pad.top + priceH + gap,
+      w: innerW,
+      h: volH,
+    },
+  };
+}
+
+/** 取 1/2/5×10^n 漂亮步长 */
+function niceNum(range, round) {
+  const r = Math.abs(Number(range)) || 1;
+  const exp = Math.floor(Math.log10(r));
+  const frac = r / 10 ** exp;
+  let nice;
+  if (round) {
+    if (frac < 1.5) nice = 1;
+    else if (frac < 3) nice = 2;
+    else if (frac < 7) nice = 5;
+    else nice = 10;
+  } else if (frac <= 1) nice = 1;
+  else if (frac <= 2) nice = 2;
+  else if (frac <= 5) nice = 5;
+  else nice = 10;
+  return nice * 10 ** exp;
+}
+
+function roundToStep(value, step) {
+  if (!Number.isFinite(value) || !Number.isFinite(step) || step <= 0) return value;
+  const decimals = Math.min(8, Math.max(0, Math.ceil(-Math.log10(step) + 1)));
+  const n = Math.round(value / step) * step;
+  return Number(n.toFixed(decimals));
+}
+
+function fmtAxisPrice(value, step) {
+  if (!Number.isFinite(value)) return "-";
+  let digits = 2;
+  if (Number.isFinite(step) && step > 0) {
+    if (step >= 1) digits = Math.abs(step % 1) < 1e-8 ? 0 : 2;
+    else if (step >= 0.1) digits = 2;
+    else if (step >= 0.01) digits = 2;
+    else if (step >= 0.001) digits = 3;
+    else digits = 4;
+  }
+  return value.toFixed(digits);
+}
+
+/**
+ * 价格纵轴：视窗贴合真实高低（少留白），刻度取落在视窗内的漂亮数。
+ * 避免为对齐整数价把范围撑大，否则波动会被压扁。
+ * center 有值时（分时昨收）仅做上下对称，仍尽量贴合实际波幅。
+ */
+function buildPriceScale(
+  dataMin,
+  dataMax,
+  { tickCount = 5, padRatio = 0.02, center = null } = {}
+) {
+  let lo = Number(dataMin);
+  let hi = Number(dataMax);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+    return { min: 0, max: 1, ticks: [0, 0.25, 0.5, 0.75, 1], step: 0.25 };
+  }
+  if (hi < lo) {
+    const t = lo;
+    lo = hi;
+    hi = t;
+  }
+
+  if (Number.isFinite(center)) {
+    // 只按实际偏离昨收的幅度对称，最小约 0.15% 防止完全横盘时高度为 0
+    const raw = Math.max(hi - center, center - lo);
+    const floor = Math.max(Math.abs(center) * 0.0015, 0.01);
+    const span = Math.max(raw, floor);
+    lo = center - span;
+    hi = center + span;
+  }
+
+  if (hi <= lo) {
+    const d = Math.max(Math.abs(hi) * 0.005, 0.02);
+    lo -= d;
+    hi += d;
+  }
+
+  // 少量边距即可，过大只会让 K 线/分时显得更「平」
+  const pad = Math.max((hi - lo) * padRatio, 0.005);
+  lo -= pad;
+  hi += pad;
+
+  const target = Math.max(4, Math.min(7, tickCount));
+  // round=false：倾向更小步长，少把视窗撑开
+  let step = niceNum((hi - lo) / Math.max(1, target - 1), false);
+  if (step < 0.01) step = 0.01;
+
+  const ticks = [];
+  const startI = Math.ceil(lo / step - 1e-9);
+  const endI = Math.floor(hi / step + 1e-9);
+  for (let i = startI; i <= endI; i += 1) {
+    const v = roundToStep(i * step, step);
+    if (v >= lo - step * 1e-6 && v <= hi + step * 1e-6) ticks.push(v);
+  }
+
+  // 刻度过密则加大步长，但仍不扩张 min/max
+  let guard = 0;
+  while (ticks.length > 8 && guard < 6) {
+    guard += 1;
+    step = niceNum(step * 1.8, false);
+    if (step < 0.01) step = 0.01;
+    ticks.length = 0;
+    const a = Math.ceil(lo / step - 1e-9);
+    const b = Math.floor(hi / step + 1e-9);
+    for (let i = a; i <= b; i += 1) {
+      const v = roundToStep(i * step, step);
+      if (v >= lo - step * 1e-6 && v <= hi + step * 1e-6) ticks.push(v);
+    }
+  }
+
+  // 至少两端有可读刻度：不足时补视窗边界（按步长精度格式化）
+  if (ticks.length === 0) {
+    ticks.push(roundToStep(lo, step), roundToStep(hi, step));
+  } else if (ticks.length === 1) {
+    if (Math.abs(ticks[0] - lo) > Math.abs(ticks[0] - hi)) ticks.unshift(roundToStep(lo, step));
+    else ticks.push(roundToStep(hi, step));
+  }
+
+  return {
+    min: lo,
+    max: hi,
+    ticks,
+    step,
+  };
+}
+
+function priceScaleTickCount(priceH) {
+  return Math.max(4, Math.min(7, Math.round(Number(priceH) / 42) || 5));
+}
+
+function drawGrid(ctx, rect, yTicks, xTicks, colors) {
+  ctx.save();
+  ctx.strokeStyle = colors.grid;
+  ctx.lineWidth = 1;
+  for (const y of yTicks) {
+    ctx.beginPath();
+    ctx.moveTo(rect.x, y);
+    ctx.lineTo(rect.x + rect.w, y);
+    ctx.stroke();
+  }
+  for (const x of xTicks) {
+    ctx.beginPath();
+    ctx.moveTo(x, rect.y);
+    ctx.lineTo(x, rect.y + rect.h);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { preClose = null } = {}) {
+  const { price, volume } = layout;
+  const range = priceScale.max - priceScale.min || 1;
+  const ticks = Array.isArray(priceScale.ticks) ? priceScale.ticks : [];
+  const yOf = (val) => price.y + ((priceScale.max - val) / range) * price.h;
+
+  ctx.save();
+  ctx.font = '11px "JetBrains Mono", Consolas, monospace';
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+
+  for (const val of ticks) {
+    const y = yOf(val);
+    if (y < price.y - 1 || y > price.y + price.h + 1) continue;
+    if (Number.isFinite(preClose)) {
+      if (val > preClose) ctx.fillStyle = colors.up;
+      else if (val < preClose) ctx.fillStyle = colors.down;
+      else ctx.fillStyle = colors.muted;
+    } else {
+      ctx.fillStyle = colors.muted;
+    }
+    ctx.fillText(fmtAxisPrice(val, priceScale.step), price.x - 8, y);
+  }
+
+  // 分时：右侧涨跌幅刻度，与左侧价格对齐
+  if (mode === "intraday" && Number.isFinite(preClose) && preClose) {
+    ctx.textAlign = "left";
+    for (const val of ticks) {
+      const y = yOf(val);
+      if (y < price.y - 1 || y > price.y + price.h + 1) continue;
+      const pct = ((val - preClose) / preClose) * 100;
+      if (pct > 0) ctx.fillStyle = colors.up;
+      else if (pct < 0) ctx.fillStyle = colors.down;
+      else ctx.fillStyle = colors.muted;
+      const sign = pct > 0 ? "+" : "";
+      ctx.fillText(`${sign}${pct.toFixed(2)}%`, price.x + price.w + 6, y);
+    }
+  }
+
+  ctx.fillStyle = colors.muted;
+  ctx.textBaseline = "top";
+  const n = items.length;
+  if (n > 0) {
+    let idxs;
+    if (mode === "intraday5") {
+      idxs = dayBreakIndices(items);
+    } else {
+      idxs = [0, Math.floor((n - 1) / 2), n - 1];
+    }
+    const seen = new Set();
+    const plotLeft = price.x;
+    const plotRight = price.x + price.w;
+    for (const i of idxs) {
+      if (seen.has(i)) continue;
+      seen.add(i);
+      const label = shortTimeLabel(items[i].time, mode);
+      let x = plotLeft + ((i + 0.5) / n) * price.w;
+      // 首尾标签贴边对齐，避免被 canvas 裁掉
+      if (i === 0) {
+        ctx.textAlign = "left";
+        x = plotLeft;
+      } else if (i === n - 1) {
+        ctx.textAlign = "right";
+        x = plotRight;
+      } else {
+        ctx.textAlign = "center";
+        const approxHalf = Math.min(48, label.length * 3.4);
+        x = Math.min(plotRight - approxHalf, Math.max(plotLeft + approxHalf, x));
+      }
+      ctx.fillText(label, x, volume.y + volume.h + 6);
+    }
+  }
+  ctx.restore();
+}
+
+function paintChartFrame(ctx, w, h, colors) {
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "rgba(4, 8, 14, 0.15)";
+  ctx.fillRect(0, 0, w, h);
+}
+
+function drawIntradayChart(ctx, layout, items, preClose, mode, colors, hoverIndex) {
+  const n = items.length;
+  if (!n) return;
+
+  const prices = items.map((d) => Number(d.price)).filter(Number.isFinite);
+  let minP = Math.min(...prices);
+  let maxP = Math.max(...prices);
+  if (Number.isFinite(preClose)) {
+    minP = Math.min(minP, preClose);
+    maxP = Math.max(maxP, preClose);
+  }
+  const { price, volume } = layout;
+  const priceScale = buildPriceScale(minP, maxP, {
+    tickCount: priceScaleTickCount(price.h),
+    padRatio: 0.015,
+    center: mode === "intraday" && Number.isFinite(preClose) ? preClose : null,
+  });
+  const vols = items.map((d) => Number(d.volume) || 0);
+  const maxVol = Math.max(...vols, 1);
+
+  const xAt = (i) => price.x + ((i + 0.5) / n) * price.w;
+  const yAt = (p) =>
+    price.y + ((priceScale.max - p) / (priceScale.max - priceScale.min || 1)) * price.h;
+
+  const yTicks = (priceScale.ticks || []).map(yAt);
+  let xTicks = [0, 0.5, 1].map((t) => price.x + price.w * t);
+  if (mode === "intraday5") {
+    xTicks = dayBreakIndices(items).map((i) => price.x + (i / Math.max(n, 1)) * price.w);
+  }
+  drawGrid(ctx, price, yTicks, xTicks, colors);
+  drawGrid(
+    ctx,
+    volume,
+    [volume.y, volume.y + volume.h],
+    xTicks,
+    colors
+  );
+
+  // 五日：日期分隔线更明显
+  if (mode === "intraday5") {
+    ctx.save();
+    ctx.strokeStyle = "rgba(42, 212, 184, 0.22)";
+    ctx.lineWidth = 1;
+    for (const i of dayBreakIndices(items)) {
+      if (i <= 0) continue;
+      const x = price.x + (i / n) * price.w;
+      ctx.beginPath();
+      ctx.moveTo(x, price.y);
+      ctx.lineTo(x, volume.y + volume.h);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  if (Number.isFinite(preClose)) {
+    const y = yAt(preClose);
+    ctx.save();
+    ctx.strokeStyle = colors.ref;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(price.x, y);
+    ctx.lineTo(price.x + price.w, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // volume bars
+  const barW = Math.max(1, (price.w / n) * 0.7);
+  for (let i = 0; i < n; i += 1) {
+    const v = vols[i];
+    const h = (v / maxVol) * volume.h;
+    const x = xAt(i) - barW / 2;
+    const prev = i > 0 ? Number(items[i - 1].price) : preClose;
+    const cur = Number(items[i].price);
+    const up = Number.isFinite(prev) ? cur >= prev : true;
+    ctx.fillStyle = up ? colors.upSoft : colors.downSoft;
+    ctx.fillRect(x, volume.y + volume.h - h, barW, h);
+  }
+
+  // avg line
+  ctx.beginPath();
+  let startedAvg = false;
+  for (let i = 0; i < n; i += 1) {
+    const avg = Number(items[i].avg_price);
+    if (!Number.isFinite(avg)) continue;
+    const x = xAt(i);
+    const y = yAt(avg);
+    if (!startedAvg) {
+      ctx.moveTo(x, y);
+      startedAvg = true;
+    } else ctx.lineTo(x, y);
+  }
+  if (startedAvg) {
+    ctx.strokeStyle = colors.avg;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  }
+
+  // price line + fill
+  ctx.beginPath();
+  let startedPrice = false;
+  for (let i = 0; i < n; i += 1) {
+    const p = Number(items[i].price);
+    if (!Number.isFinite(p)) continue;
+    const x = xAt(i);
+    const y = yAt(p);
+    if (!startedPrice) {
+      ctx.moveTo(x, y);
+      startedPrice = true;
+    } else ctx.lineTo(x, y);
+  }
+  if (startedPrice) {
+    ctx.strokeStyle = colors.accent;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
+    ctx.beginPath();
+    startedPrice = false;
+    for (let i = 0; i < n; i += 1) {
+      const p = Number(items[i].price);
+      if (!Number.isFinite(p)) continue;
+      const x = xAt(i);
+      const y = yAt(p);
+      if (!startedPrice) {
+        ctx.moveTo(x, y);
+        startedPrice = true;
+      } else ctx.lineTo(x, y);
+    }
+    ctx.lineTo(xAt(n - 1), price.y + price.h);
+    ctx.lineTo(xAt(0), price.y + price.h);
+    ctx.closePath();
+    const gradient = ctx.createLinearGradient(0, price.y, 0, price.y + price.h);
+    gradient.addColorStop(0, "rgba(42, 212, 184, 0.18)");
+    gradient.addColorStop(1, "rgba(42, 212, 184, 0)");
+    ctx.fillStyle = gradient;
+    ctx.fill();
+  }
+
+  if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
+    const x = xAt(hoverIndex);
+    const p = Number(items[hoverIndex].price);
+    ctx.save();
+    ctx.strokeStyle = colors.cross;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, price.y);
+    ctx.lineTo(x, volume.y + volume.h);
+    ctx.stroke();
+    if (Number.isFinite(p)) {
+      const y = yAt(p);
+      ctx.beginPath();
+      ctx.moveTo(price.x, y);
+      ctx.lineTo(price.x + price.w, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = colors.accent;
+      ctx.beginPath();
+      ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { preClose });
+}
+
+function drawMaLines(ctx, maVisible, yAt, xAt, n) {
+  for (const line of KLINE_MA_LINES) {
+    const vals = maVisible[line.key] || [];
+    ctx.save();
+    ctx.strokeStyle = line.color;
+    ctx.lineWidth = 1.25;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < n; i += 1) {
+      const v = maPoint(vals, i);
+      if (v == null) {
+        started = false;
+        continue;
+      }
+      const x = xAt(i);
+      const y = yAt(v);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawKlineChart(ctx, layout, items, mode, colors, hoverIndex) {
+  const n = items.length;
+  if (!n) return;
+
+  const { visible: maVisible } = getKlineMaBundle();
+  const highs = items.map((d) => Number(d.high)).filter(Number.isFinite);
+  const lows = items.map((d) => Number(d.low)).filter(Number.isFinite);
+  const maNums = [];
+  for (const line of KLINE_MA_LINES) {
+    const vals = maVisible[line.key] || [];
+    for (let i = 0; i < vals.length; i += 1) {
+      const v = maPoint(vals, i);
+      if (v != null) maNums.push(v);
+    }
+  }
+  const lo = Math.min(...lows, ...(maNums.length ? maNums : lows));
+  const hi = Math.max(...highs, ...(maNums.length ? maNums : highs));
+  const { price, volume } = layout;
+  const priceScale = buildPriceScale(lo, hi, {
+    tickCount: priceScaleTickCount(price.h),
+    padRatio: 0.02,
+  });
+  const vols = items.map((d) => Number(d.volume) || 0);
+  const maxVol = Math.max(...vols, 1);
+  const slot = price.w / n;
+  const bodyW = Math.max(2, Math.min(14, slot * 0.62));
+
+  const xAt = (i) => price.x + (i + 0.5) * slot;
+  const yAt = (p) =>
+    price.y + ((priceScale.max - p) / (priceScale.max - priceScale.min || 1)) * price.h;
+
+  const yTicks = (priceScale.ticks || []).map(yAt);
+  const xTicks = [0, 0.5, 1].map((t) => price.x + price.w * t);
+  drawGrid(ctx, price, yTicks, xTicks, colors);
+  drawGrid(ctx, volume, [volume.y, volume.y + volume.h], xTicks, colors);
+
+  for (let i = 0; i < n; i += 1) {
+    const d = items[i];
+    const o = Number(d.open);
+    const c = Number(d.close);
+    const h = Number(d.high);
+    const l = Number(d.low);
+    if (![o, c, h, l].every(Number.isFinite)) continue;
+    const up = c >= o;
+    const color = up ? colors.up : colors.down;
+    const soft = up ? colors.upSoft : colors.downSoft;
+    const x = xAt(i);
+
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, yAt(h));
+    ctx.lineTo(x, yAt(l));
+    ctx.stroke();
+
+    const y1 = yAt(Math.max(o, c));
+    const y2 = yAt(Math.min(o, c));
+    const bh = Math.max(1, y2 - y1);
+    if (up) {
+      ctx.strokeRect(x - bodyW / 2, y1, bodyW, bh);
+    } else {
+      ctx.fillRect(x - bodyW / 2, y1, bodyW, bh);
+    }
+
+    const vh = (vols[i] / maxVol) * volume.h;
+    ctx.fillStyle = soft;
+    ctx.fillRect(x - bodyW / 2, volume.y + volume.h - vh, bodyW, vh);
+  }
+
+  drawMaLines(ctx, maVisible, yAt, xAt, n);
+
+  if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
+    const x = xAt(hoverIndex);
+    ctx.save();
+    ctx.strokeStyle = colors.cross;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, price.y);
+    ctx.lineTo(x, volume.y + volume.h);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawAxesLabels(ctx, layout, priceScale, items, mode, colors);
+}
+
+function renderChart(hoverIndex = null) {
+  const canvas = els.priceChart;
+  const wrap = els.chartWrap;
+  if (!canvas || !wrap) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = Math.max(320, wrap.clientWidth || 640);
+  const cssH = Math.max(240, wrap.clientHeight || 320);
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const colors = {
+    accent: cssVar("--accent", "#2ad4b8"),
+    muted: cssVar("--muted", "#8494a8"),
+    up: cssVar("--up", "#ff5d6c"),
+    down: cssVar("--down", "#3dd68c"),
+    upSoft: "rgba(255, 93, 108, 0.45)",
+    downSoft: "rgba(61, 214, 140, 0.45)",
+    avg: cssVar("--accent-hot", "#f0b429"),
+    grid: "rgba(42, 212, 184, 0.08)",
+    ref: "rgba(132, 148, 168, 0.55)",
+    cross: "rgba(232, 238, 247, 0.35)",
+  };
+
+  paintChartFrame(ctx, cssW, cssH, colors);
+  const items = chartState.items || [];
+  if (!items.length) return;
+
+  const layout = chartLayout(cssW, cssH);
+  if (chartState.kind === "intraday") {
+    drawIntradayChart(
+      ctx,
+      layout,
+      items,
+      chartState.preClose,
+      chartState.mode,
+      colors,
+      hoverIndex
+    );
+  } else {
+    drawKlineChart(ctx, layout, items, chartState.mode, colors, hoverIndex);
+  }
+}
+
+function hideHoverCard() {
+  if (!els.chartHoverCard) return;
+  els.chartHoverCard.classList.add("hidden");
+  els.chartHoverCard.setAttribute("aria-hidden", "true");
+  els.chartHoverCard.innerHTML = "";
+}
+
+function showHoverCard() {
+  if (!els.chartHoverCard) return;
+  els.chartHoverCard.classList.remove("hidden");
+  els.chartHoverCard.setAttribute("aria-hidden", "false");
+}
+
+function updateHoverLabel(index, evt = null) {
+  if (!els.chartHoverCard) return;
+  const items = chartState.items || [];
+  if (index == null || index < 0 || index >= items.length) {
+    hideHoverCard();
+    return;
+  }
+  const d = items[index];
+
+  const row = (label, valueHtml, valueCls = "") =>
+    `<span class="chart-hover-item"><span class="k">${escapeHtml(label)}</span><span class="v ${valueCls}">${valueHtml}</span></span>`;
+
+  const pctText = (pct) => {
+    if (pct == null || !Number.isFinite(Number(pct))) return null;
+    const n = Number(pct);
+    const cls = n > 0 ? "change-up" : n < 0 ? "change-down" : "";
+    const sign = n > 0 ? "+" : "";
+    return { text: `${sign}${n.toFixed(2)}%`, cls: `chart-hover-pct ${cls}` };
+  };
+
+  let rows = [];
+  if (chartState.kind === "intraday") {
+    let pct = null;
+    const price = Number(d.price);
+    if (Number.isFinite(chartState.preClose) && Number.isFinite(price) && chartState.preClose) {
+      pct = ((price - chartState.preClose) / chartState.preClose) * 100;
+    }
+    const priceCls =
+      pct > 0 ? "change-up" : pct < 0 ? "change-down" : "";
+    const p = pctText(pct);
+    rows = [
+      row("现价", escapeHtml(fmtNum(d.price)), priceCls),
+      row("均价", escapeHtml(fmtNum(d.avg_price))),
+      p ? row("涨跌幅", escapeHtml(p.text), p.cls) : "",
+      row("成交量", escapeHtml(fmtVol(d.volume))),
+    ].filter(Boolean);
+  } else {
+    let pct = Number(d.pct_chg);
+    if (!Number.isFinite(pct) && index > 0) {
+      const prevClose = Number(items[index - 1].close);
+      const close = Number(d.close);
+      if (Number.isFinite(prevClose) && prevClose && Number.isFinite(close)) {
+        pct = ((close - prevClose) / prevClose) * 100;
+      }
+    }
+    const closeCls =
+      Number.isFinite(pct) && pct > 0
+        ? "change-up"
+        : Number.isFinite(pct) && pct < 0
+          ? "change-down"
+          : "";
+    const p = pctText(pct);
+    const absIndex = (Number(chartState.viewStart) || 0) + index;
+    const { full: maFull } = getKlineMaBundle();
+    const maRows = KLINE_MA_LINES.map((line) => {
+      const v = maPoint(maFull[line.key] || [], absIndex);
+      if (v == null) return "";
+      return row(
+        line.label,
+        `<span style="color:${line.color}">${escapeHtml(fmtNum(v))}</span>`
+      );
+    }).filter(Boolean);
+    rows = [
+      row("开盘", escapeHtml(fmtNum(d.open))),
+      row("最低", escapeHtml(fmtNum(d.low))),
+      row("最高", escapeHtml(fmtNum(d.high))),
+      row("收盘", escapeHtml(fmtNum(d.close)), closeCls),
+      p ? row("涨跌幅", escapeHtml(p.text), p.cls) : "",
+      ...maRows,
+      row("成交量", escapeHtml(fmtVol(d.volume))),
+    ].filter(Boolean);
+  }
+
+  els.chartHoverCard.innerHTML = `
+    <p class="chart-hover-card-time">${escapeHtml(d.time || "")}</p>
+    <div class="chart-hover-card-rows">${rows.join("")}</div>
+  `;
+  showHoverCard();
+}
+
+function pointerIndex(evt) {
+  const canvas = els.priceChart;
+  const wrap = els.chartWrap;
+  const items = chartState.items || [];
+  if (!canvas || !wrap || !items.length) return null;
+  const rect = canvas.getBoundingClientRect();
+  const x = evt.clientX - rect.left;
+  const layout = chartLayout(rect.width, rect.height);
+  if (x < layout.price.x || x > layout.price.x + layout.price.w) return null;
+  const t = (x - layout.price.x) / layout.price.w;
+  const idx = Math.min(items.length - 1, Math.max(0, Math.floor(t * items.length)));
+  return idx;
+}
+
+function panChartByPixels(dx, canvasWidth) {
+  const { size, maxStart } = chartViewWindow();
+  if (maxStart <= 0 || size <= 0) return false;
+  const layout = chartLayout(canvasWidth, 300);
+  const barW = layout.price.w / size;
+  if (barW <= 0) return false;
+  // 右拖看更早，左拖看更新
+  const deltaBars = Math.round(-dx / barW);
+  if (!deltaBars) return false;
+  setChartViewStart(chartState.viewStart + deltaBars, { render: true });
+  return true;
+}
+
+async function loadChart(mode = chartState.mode) {
+  if (!code || !els.priceChart) return;
+  const conf = CHART_MODES[mode] || CHART_MODES.intraday;
+  chartState.mode = mode;
+  chartState.kind = conf.kind;
+  chartState.loading = true;
+  setChartStatus(`正在加载${conf.label}…`);
+  hideHoverCard();
+
+  try {
+    let data;
+    if (conf.kind === "intraday") {
+      const qs = new URLSearchParams({
+        code,
+        ndays: String(conf.ndays || 1),
+      });
+      const json = await api(`/api/stocks/intraday?${qs.toString()}`);
+      data = json.data || {};
+      resetChartViewport(data.items || [], conf);
+      chartState.preClose = Number(data.pre_close);
+      if (!Number.isFinite(chartState.preClose)) chartState.preClose = null;
+      chartState.source = data.source || "";
+    } else {
+      const qs = new URLSearchParams({
+        code,
+        period: conf.period,
+        adjust: "qfq",
+        limit: String(conf.limit || 180),
+      });
+      const json = await api(`/api/stocks/kline?${qs.toString()}`);
+      data = json.data || {};
+      resetChartViewport(data.items || [], conf);
+      chartState.preClose = null;
+      chartState.source = data.source || "";
+    }
+
+    const count = chartState.allItems.length;
+    if (!count) {
+      setChartStatus("暂无走势数据", { empty: true });
+      renderChart();
+      return;
+    }
+    refreshChartWindowStatus();
+    renderChart();
+  } catch (err) {
+    resetChartViewport([], conf);
+    setChartStatus(err.message || "走势加载失败", { empty: true });
+    renderChart();
+  } finally {
+    chartState.loading = false;
+  }
+}
+
+function setupChart() {
+  if (!els.chartTabs || !els.priceChart) return;
+
+  els.chartTabs.addEventListener("click", (evt) => {
+    const btn = evt.target.closest(".chart-tab");
+    if (!btn) return;
+    const mode = btn.getAttribute("data-mode");
+    if (!mode || mode === chartState.mode) return;
+    els.chartTabs.querySelectorAll(".chart-tab").forEach((el) => {
+      const active = el === btn;
+      el.classList.toggle("is-active", active);
+      el.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    loadChart(mode);
+  });
+
+  if (els.chartScrollBar) {
+    els.chartScrollBar.addEventListener("input", () => {
+      hideHoverCard();
+      setChartViewStart(Number(els.chartScrollBar.value) || 0, { render: true });
+    });
+  }
+
+  let hoverIdx = null;
+  let pan = null;
+
+  const onMove = (evt) => {
+    if (pan) {
+      const dx = evt.clientX - pan.lastX;
+      if (Math.abs(evt.clientX - pan.originX) > 4) pan.moved = true;
+      if (pan.moved && Math.abs(dx) >= 1) {
+        hideHoverCard();
+        hoverIdx = null;
+        panChartByPixels(dx, pan.width);
+        pan.lastX = evt.clientX;
+      }
+      return;
+    }
+    const idx = pointerIndex(evt);
+    if (idx === hoverIdx) {
+      return;
+    }
+    hoverIdx = idx;
+    updateHoverLabel(idx, evt);
+    renderChart(idx);
+  };
+
+  const onLeave = () => {
+    if (pan) return;
+    hoverIdx = null;
+    hideHoverCard();
+    renderChart();
+  };
+
+  const onDown = (evt) => {
+    if (evt.button != null && evt.button !== 0) return;
+    const rect = els.priceChart.getBoundingClientRect();
+    pan = {
+      originX: evt.clientX,
+      lastX: evt.clientX,
+      width: rect.width,
+      moved: false,
+    };
+    els.chartWrap?.classList.add("is-panning");
+    try {
+      els.priceChart.setPointerCapture(evt.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const onUp = (evt) => {
+    if (!pan) return;
+    const wasPan = pan.moved;
+    pan = null;
+    els.chartWrap?.classList.remove("is-panning");
+    try {
+      els.priceChart.releasePointerCapture(evt.pointerId);
+    } catch {
+      /* ignore */
+    }
+    if (!wasPan) {
+      const idx = pointerIndex(evt);
+      hoverIdx = idx;
+      updateHoverLabel(idx, evt);
+      renderChart(idx);
+    } else {
+      hideHoverCard();
+      hoverIdx = null;
+      renderChart();
+    }
+  };
+
+  els.priceChart.addEventListener("pointerdown", onDown);
+  els.priceChart.addEventListener("pointermove", onMove);
+  els.priceChart.addEventListener("pointerup", onUp);
+  els.priceChart.addEventListener("pointercancel", onUp);
+  els.priceChart.addEventListener("pointerleave", onLeave);
+
+  els.priceChart.addEventListener(
+    "wheel",
+    (evt) => {
+      const total = (chartState.allItems || []).length;
+      if (!total) return;
+      evt.preventDefault();
+      hideHoverCard();
+      hoverIdx = null;
+
+      const rect = els.priceChart.getBoundingClientRect();
+      const layout = chartLayout(rect.width, rect.height);
+      const x = evt.clientX - rect.left;
+      let anchorRatio = 0.5;
+      if (x >= layout.price.x && x <= layout.price.x + layout.price.w) {
+        anchorRatio = (x - layout.price.x) / layout.price.w;
+      }
+
+      // 横向滚轮/触控板：平移；纵向：以指针为锚点缩放
+      if (Math.abs(evt.deltaX) > Math.abs(evt.deltaY) * 1.15) {
+        const { maxStart } = chartViewWindow();
+        if (maxStart <= 0) return;
+        const step = Math.max(1, Math.round(Math.abs(evt.deltaX) / 40));
+        setChartViewStart(chartState.viewStart + (evt.deltaX > 0 ? step : -step), {
+          render: true,
+        });
+        return;
+      }
+
+      const steps = Math.max(1, Math.min(5, Math.round(Math.abs(evt.deltaY) / 72) || 1));
+      const base = evt.deltaY > 0 ? 1.14 : 1 / 1.14; // 向下：看更多；向上：放大
+      const factor = base ** steps;
+      zoomChartViewport(anchorRatio, factor, { render: true });
+    },
+    { passive: false }
+  );
+
+  if (typeof ResizeObserver !== "undefined" && els.chartWrap) {
+    let timer = 0;
+    const ro = new ResizeObserver(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        syncChartScrollBar();
+        renderChart(hoverIdx);
+      }, 60);
+    });
+    ro.observe(els.chartWrap);
+  } else {
+    window.addEventListener("resize", () => {
+      syncChartScrollBar();
+      renderChart(hoverIdx);
+    });
+  }
+}
+
 els.refreshNewsBtn.addEventListener("click", () =>
   loadAllNews({ refresh: true })
 );
@@ -789,7 +1946,11 @@ els.refreshNewsBtn.addEventListener("click", () =>
 setupBackLink();
 setupScrollLoaders();
 setupMetricTips();
+setupChart();
 (async () => {
   await loadProfile();
-  await loadAllNews({ refresh: false });
+  await Promise.all([
+    loadChart("intraday"),
+    loadAllNews({ refresh: false }),
+  ]);
 })();

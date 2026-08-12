@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from data.data_service import service
 from data.stocks.geo import enrich_codes
+from data.stocks.kline_fetcher import fetch_intraday, fetch_kline
 from message.feed import collect_company_messages
 from message.profile import query_company_profile
 from message.taxonomy.constants import ALL_SECTIONS, DEFAULT_SECTIONS
@@ -186,6 +187,59 @@ def stocks_profile(
         return _err("缺少参数 code", 400)
     try:
         data = service.get_stock_profile(code, industry_code=industry, name=name)
+        return _ok(data)
+    except ValueError as exc:
+        return _err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return _err(str(exc), 500)
+
+
+@app.get("/api/stocks/kline")
+def stocks_kline(
+    code: str = Query("", description="股票代码，如 601881"),
+    period: str = Query(
+        "day",
+        description="day|week|month|1m|5m|15m|30m|60m",
+    ),
+    adjust: str = Query("qfq", description="none|qfq|hfq"),
+    limit: int = Query(320, ge=1, le=10000),
+    beg: str = Query("", description="开始日期 YYYYMMDD 或 YYYY-MM-DD"),
+    end: str = Query("", description="结束日期 YYYYMMDD 或 YYYY-MM-DD"),
+    refresh: str = Query("0"),
+):
+    """日/周/月/分钟 K 线。腾讯优先，东财兜底。"""
+    code = code.strip()
+    if not code:
+        return _err("缺少参数 code", 400)
+    try:
+        data = fetch_kline(
+            code,
+            period=period,
+            adjust=adjust,
+            limit=limit,
+            beg=beg.strip(),
+            end=end.strip(),
+            force=refresh == "1",
+        )
+        return _ok(data)
+    except ValueError as exc:
+        return _err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return _err(str(exc), 500)
+
+
+@app.get("/api/stocks/intraday")
+def stocks_intraday(
+    code: str = Query("", description="股票代码，如 601881"),
+    ndays: int = Query(1, description="1=当日分时，5=五日分时"),
+    refresh: str = Query("0"),
+):
+    """分时走势（东财 trends2）。"""
+    code = code.strip()
+    if not code:
+        return _err("缺少参数 code", 400)
+    try:
+        data = fetch_intraday(code, ndays=ndays, force=refresh == "1")
         return _ok(data)
     except ValueError as exc:
         return _err(str(exc), 400)

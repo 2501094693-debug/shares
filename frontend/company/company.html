@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=orbit-global-cols-20260812" />
+  <link rel="stylesheet" href="/css/style.css?v=hover-dock-20260812" />
 </head>
 <body class="company-page-root">
   <div class="app company-page">
@@ -16,7 +16,7 @@
         <span class="brand-mark">SW</span>
         <div>
           <h1 id="pageTitle">公司详情</h1>
-          <p id="pageSub">指标详情 · 交易所公告 · 巨潮公告 · 七报七网 · 官方新闻 · 其他新闻 · 机构研报</p>
+          <p id="pageSub">指标详情 · 行情走势 · 交易所公告 · 巨潮公告 · 七报七网 · 官方新闻 · 其他新闻 · 机构研报</p>
         </div>
       </div>
       <div class="top-actions">
@@ -38,6 +38,40 @@
         <div id="metricsPanels" class="company-metrics-panels">
           <div id="metricsGrid" class="company-metrics"></div>
         </div>
+      </div>
+    </section>
+
+    <section class="company-section chart-section" aria-label="行情走势">
+      <div class="section-head chart-section-head">
+        <h3>行情走势</h3>
+        <div id="chartTabs" class="chart-tabs" role="tablist" aria-label="周期">
+          <button type="button" class="chart-tab is-active" data-mode="intraday" role="tab" aria-selected="true">分时</button>
+          <button type="button" class="chart-tab" data-mode="intraday5" role="tab" aria-selected="false">五日</button>
+          <button type="button" class="chart-tab" data-mode="day" role="tab" aria-selected="false">日K</button>
+          <button type="button" class="chart-tab" data-mode="week" role="tab" aria-selected="false">周K</button>
+          <button type="button" class="chart-tab" data-mode="month" role="tab" aria-selected="false">月K</button>
+        </div>
+      </div>
+      <div class="chart-toolbar">
+        <p id="chartMeta" class="muted chart-meta">加载中…</p>
+        <div id="chartHoverCard" class="chart-hover-card hidden" aria-hidden="true"></div>
+      </div>
+      <div id="chartWrap" class="chart-canvas-wrap">
+        <canvas id="priceChart" width="960" height="360" aria-label="价格走势图"></canvas>
+        <p id="chartEmpty" class="muted chart-empty hidden">暂无走势数据</p>
+      </div>
+      <div id="chartAxisScroll" class="chart-axis-scroll is-disabled">
+        <input
+          id="chartScrollBar"
+          class="chart-scroll-bar"
+          type="range"
+          min="0"
+          max="0"
+          value="0"
+          step="1"
+          aria-label="时间轴滑动"
+          disabled
+        />
       </div>
     </section>
 
@@ -122,6 +156,6 @@
     <div id="errorBox" class="error hidden"></div>
   </div>
 
-  <script src="/js/company.js?v=valuation-row-swap-20260812"></script>
+  <script src="/js/company.js?v=hover-low-high-swap-20260812"></script>
 </body>
 </html>
