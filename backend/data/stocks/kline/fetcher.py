@@ -1,37 +1,36 @@
 """个股 K 线 / 分时。
 
-- 日/周/月/分钟：腾讯优先，东财兜底
+数据源策略（东财 push2his 在不少网络会被掐，所以日/周/月先走腾讯）：
+- 日 / 周 / 月 / 分钟 K：腾讯优先，东财兜底
 - 分时当日：东财 trends2
-- 分时五日：东财多日优先，不完整时腾讯 day/query 兜底
+- 分时五日：东财多日优先；只回一天或不完整时，腾讯 day/query 兜底
 
-对外：
-- fetch_kline(code, period=day|week|month|1m|5m|15m|30m|60m)
-- fetch_intraday(code, ndays=1|5)
+对外入口：
+- ``fetch_kline(code, period=day|week|month|1m|5m|15m|30m|60m)``
+- ``fetch_intraday(code, ndays=1|5)``
+
+HTTP / 代码标识 / 数字解析与盘口共用 ``common.http`` / ``common.codes`` / ``common.fmt``。
 """
 
 from __future__ import annotations
 
 import logging
-import threading
 import time
 from typing import Any
 
-from data.stocks.quote_fetcher import (
-    _http_get_json,
-    _num,
-    _secid,
-    _tencent_symbol,
-)
+from data.stocks.common.cache import TtlCache
+from data.stocks.common.codes import secid, tencent_symbol
+from data.stocks.common.fmt import to_float
+from data.stocks.common.http import get_json
 from message.disclosure.http_util import normalize_code
 
 logger = logging.getLogger(__name__)
 
-KLINE_TTL = 120  # 秒；分时更短
-INTRADAY_TTL = 20
+KLINE_TTL = 120  # 秒；K 线变化慢
+INTRADAY_TTL = 20  # 分时更短
 
-_cache_lock = threading.Lock()
-_kline_cache: dict[str, tuple[float, dict[str, Any]]] = {}
-_intraday_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_kline_cache = TtlCache(KLINE_TTL)
+_intraday_cache = TtlCache(INTRADAY_TTL)
 
 _PERIOD_TO_KLT = {
     "day": "101",
@@ -109,6 +108,11 @@ _TREND_HOSTS_MULTI = (
 _EM_HEADERS = {"Referer": "https://quote.eastmoney.com/"}
 
 
+# ---------------------------------------------------------------------------
+# 周期 / 复权参数
+# ---------------------------------------------------------------------------
+
+
 def _normalize_period(period: str) -> str:
     key = (period or "day").strip().lower()
     if key not in _PERIOD_TO_KLT:
@@ -130,14 +134,20 @@ def _adjust_label(fqt: int) -> str:
     return {0: "none", 1: "qfq", 2: "hfq"}.get(fqt, "none")
 
 
+# ---------------------------------------------------------------------------
+# 东财 K 线
+# ---------------------------------------------------------------------------
+
+
 def _parse_kline_row(line: str) -> dict[str, Any] | None:
+    """东财 klines 一行：date,open,close,high,low,volume,amount,..."""
     parts = str(line).split(",")
     if len(parts) < 5:
         return None
-    open_ = _num(parts[1])
-    close = _num(parts[2])
-    high = _num(parts[3])
-    low = _num(parts[4])
+    open_ = to_float(parts[1])
+    close = to_float(parts[2])
+    high = to_float(parts[3])
+    low = to_float(parts[4])
     if close is None and open_ is None:
         return None
     item: dict[str, Any] = {
@@ -146,17 +156,17 @@ def _parse_kline_row(line: str) -> dict[str, Any] | None:
         "close": close,
         "high": high,
         "low": low,
-        "volume": _num(parts[5]) if len(parts) > 5 else None,
-        "amount": _num(parts[6]) if len(parts) > 6 else None,
+        "volume": to_float(parts[5]) if len(parts) > 5 else None,
+        "amount": to_float(parts[6]) if len(parts) > 6 else None,
     }
     if len(parts) > 7:
-        item["amplitude"] = _num(parts[7])
+        item["amplitude"] = to_float(parts[7])
     if len(parts) > 8:
-        item["pct_chg"] = _num(parts[8])
+        item["pct_chg"] = to_float(parts[8])
     if len(parts) > 9:
-        item["change"] = _num(parts[9])
+        item["change"] = to_float(parts[9])
     if len(parts) > 10:
-        item["turnover"] = _num(parts[10])
+        item["turnover"] = to_float(parts[10])
     return item
 
 
@@ -169,9 +179,10 @@ def _fetch_eastmoney_kline(
     beg: str = "",
     end: str = "",
 ) -> list[dict[str, Any]]:
+    """东财日/周/月/分钟 K。多 host 轮询，有一根有效 K 就返回。"""
     klt = _PERIOD_TO_KLT[period]
     params = {
-        "secid": _secid(code),
+        "secid": secid(code),
         "fields1": "f1,f2,f3,f4,f5,f6",
         "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
         "klt": klt,
@@ -184,7 +195,7 @@ def _fetch_eastmoney_kline(
     last_exc: Exception | None = None
     for host in _KLINE_HOSTS:
         try:
-            payload = _http_get_json(
+            payload = get_json(
                 f"{host}/api/qt/stock/kline/get",
                 params=params,
                 headers=_EM_HEADERS,
@@ -210,13 +221,18 @@ def _fetch_eastmoney_kline(
     return []
 
 
+# ---------------------------------------------------------------------------
+# 腾讯 K 线（日/周/月 + 分钟）
+# ---------------------------------------------------------------------------
+
+
 def _parse_tencent_row(row: list[Any]) -> dict[str, Any] | None:
     if not isinstance(row, (list, tuple)) or len(row) < 5:
         return None
-    open_ = _num(row[1])
-    close = _num(row[2])
-    high = _num(row[3])
-    low = _num(row[4])
+    open_ = to_float(row[1])
+    close = to_float(row[2])
+    high = to_float(row[3])
+    low = to_float(row[4])
     if close is None and open_ is None:
         return None
     item: dict[str, Any] = {
@@ -225,8 +241,8 @@ def _parse_tencent_row(row: list[Any]) -> dict[str, Any] | None:
         "close": close,
         "high": high,
         "low": low,
-        "volume": _num(row[5]) if len(row) > 5 else None,
-        "amount": _num(row[6]) if len(row) > 6 else None,
+        "volume": to_float(row[5]) if len(row) > 5 else None,
+        "amount": to_float(row[6]) if len(row) > 6 else None,
     }
     return item
 
@@ -247,8 +263,8 @@ def _fetch_tencent_minute_kline(
     tx_period = _PERIOD_TO_TENCENT_MINUTE.get(period)
     if not tx_period:
         return []
-    symbol = _tencent_symbol(code)
-    payload = _http_get_json(
+    symbol = tencent_symbol(code)
+    payload = get_json(
         "https://ifzq.gtimg.cn/appstock/app/kline/mkline",
         params={"param": f"{symbol},{tx_period},,{limit}"},
         headers={"Referer": "https://gu.qq.com/"},
@@ -264,10 +280,10 @@ def _fetch_tencent_minute_kline(
     for row in rows:
         if not isinstance(row, (list, tuple)) or len(row) < 5:
             continue
-        open_ = _num(row[1])
-        close = _num(row[2])
-        high = _num(row[3])
-        low = _num(row[4])
+        open_ = to_float(row[1])
+        close = to_float(row[2])
+        high = to_float(row[3])
+        low = to_float(row[4])
         if close is None and open_ is None:
             continue
         items.append(
@@ -277,7 +293,7 @@ def _fetch_tencent_minute_kline(
                 "close": close,
                 "high": high,
                 "low": low,
-                "volume": _num(row[5]) if len(row) > 5 else None,
+                "volume": to_float(row[5]) if len(row) > 5 else None,
                 "amount": None,
             }
         )
@@ -300,7 +316,7 @@ def _fetch_tencent_kline(
     if not tx_period:
         return []
 
-    symbol = _tencent_symbol(code)
+    symbol = tencent_symbol(code)
     qfq_flag = "qfq" if adjust == 1 else ""
     # 腾讯后复权能力弱；hfq 时仍取不复权，由上层决定是否接受
     start = ""
@@ -315,7 +331,7 @@ def _fetch_tencent_kline(
     else:
         param = f"{symbol},{tx_period},,,{limit},{qfq_flag}"
 
-    payload = _http_get_json(
+    payload = get_json(
         "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
         params={"param": param},
         headers={"Referer": "https://gu.qq.com/"},
@@ -344,6 +360,11 @@ def _fetch_tencent_kline(
     return items
 
 
+# ---------------------------------------------------------------------------
+# 对外：K 线
+# ---------------------------------------------------------------------------
+
+
 def fetch_kline(
     code: str,
     *,
@@ -354,7 +375,12 @@ def fetch_kline(
     end: str = "",
     force: bool = False,
 ) -> dict[str, Any]:
-    """拉取 K 线。period: day|week|month|1m|5m|15m|30m|60m。"""
+    """拉取 K 线。
+
+    period: day|week|month|1m|5m|15m|30m|60m
+    adjust: none|qfq|hfq（或 0|1|2），默认前复权。
+    日/周/月与分钟都是腾讯优先、东财兜底。
+    """
     code = normalize_code(code)
     if not code:
         raise ValueError("无效股票代码")
@@ -367,10 +393,9 @@ def fetch_kline(
     cache_key = f"{code}:{period}:{fqt}:{limit}:{beg}:{end}"
     now = time.time()
     if not force:
-        with _cache_lock:
-            hit = _kline_cache.get(cache_key)
-            if hit and now - hit[0] < KLINE_TTL:
-                return hit[1]
+        hit = _kline_cache.get(cache_key)
+        if hit is not None:
+            return hit
 
     source = ""
     items: list[dict[str, Any]] = []
@@ -411,9 +436,13 @@ def fetch_kline(
         "count": len(items),
         "items": items,
     }
-    with _cache_lock:
-        _kline_cache[cache_key] = (now, result)
+    _kline_cache.put(cache_key, result, cached_at=now)
     return result
+
+
+# ---------------------------------------------------------------------------
+# 分时（东财 trends2 + 腾讯五日兜底）
+# ---------------------------------------------------------------------------
 
 
 def _parse_trend_row(line: str) -> dict[str, Any] | None:
@@ -421,8 +450,8 @@ def _parse_trend_row(line: str) -> dict[str, Any] | None:
     parts = str(line).split(",")
     if len(parts) < 3:
         return None
-    price = _num(parts[1])
-    avg = _num(parts[2])
+    price = to_float(parts[1])
+    avg = to_float(parts[2])
     if price is None and avg is None:
         return None
     # 部分历史分时 price 可能为 0，用均价兜底
@@ -431,10 +460,10 @@ def _parse_trend_row(line: str) -> dict[str, Any] | None:
         "time": str(parts[0]).strip(),
         "price": use_price,
         "avg_price": avg,
-        "high": _num(parts[3]) if len(parts) > 3 else None,
-        "low": _num(parts[4]) if len(parts) > 4 else None,
-        "volume": _num(parts[5]) if len(parts) > 5 else None,
-        "amount": _num(parts[6]) if len(parts) > 6 else None,
+        "high": to_float(parts[3]) if len(parts) > 3 else None,
+        "low": to_float(parts[4]) if len(parts) > 4 else None,
+        "volume": to_float(parts[5]) if len(parts) > 5 else None,
+        "amount": to_float(parts[6]) if len(parts) > 6 else None,
     }
     return item
 
@@ -450,8 +479,8 @@ def _trend_unique_days(items: list[dict[str, Any]]) -> int:
 
 def _fetch_tencent_day_trends(code: str, *, ndays: int = 5) -> dict[str, Any]:
     """腾讯多日分时（day/query），作五日兜底。volume 为当日累计手，需差分。"""
-    symbol = _tencent_symbol(code)
-    payload = _http_get_json(
+    symbol = tencent_symbol(code)
+    payload = get_json(
         "https://web.ifzq.gtimg.cn/appstock/app/day/query",
         params={"code": symbol},
         headers={"Referer": "https://gu.qq.com/"},
@@ -484,7 +513,7 @@ def _fetch_tencent_day_trends(code: str, *, ndays: int = 5) -> dict[str, Any]:
             date_fmt = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
         else:
             date_fmt = raw_date
-        prec = _num(day.get("prec"))
+        prec = to_float(day.get("prec"))
         if pre_close is None and prec is not None:
             pre_close = prec
 
@@ -500,9 +529,9 @@ def _fetch_tencent_day_trends(code: str, *, ndays: int = 5) -> dict[str, Any]:
             # 主会话到 15:00，去掉盘后零碎点
             if hm > "1500":
                 continue
-            price = _num(parts[1])
-            cum_vol = _num(parts[2]) or 0.0
-            cum_amt = _num(parts[3]) if len(parts) > 3 else None
+            price = to_float(parts[1])
+            cum_vol = to_float(parts[2]) or 0.0
+            cum_amt = to_float(parts[3]) if len(parts) > 3 else None
             vol = max(0.0, cum_vol - prev_vol)
             prev_vol = cum_vol
             amount = None
@@ -547,7 +576,10 @@ def fetch_intraday(
     ndays: int = 1,
     force: bool = False,
 ) -> dict[str, Any]:
-    """拉取分时。ndays=1 当日，ndays=5 五日。"""
+    """拉取分时。``ndays=1`` 当日，``ndays=5`` 五日。
+
+    五日时东财部分 host 只回当天，会继续试 push2his；仍不够再走腾讯 day/query。
+    """
     code = normalize_code(code)
     if not code:
         raise ValueError("无效股票代码")
@@ -558,13 +590,12 @@ def fetch_intraday(
     cache_key = f"{code}:{ndays}"
     now = time.time()
     if not force:
-        with _cache_lock:
-            hit = _intraday_cache.get(cache_key)
-            if hit and now - hit[0] < INTRADAY_TTL:
-                return hit[1]
+        hit = _intraday_cache.get(cache_key)
+        if hit is not None:
+            return hit
 
     params = {
-        "secid": _secid(code),
+        "secid": secid(code),
         "fields1": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13",
         "fields2": "f51,f52,f53,f54,f55,f56,f57,f58",
         "iscr": "0",
@@ -582,7 +613,7 @@ def fetch_intraday(
     hosts = _TREND_HOSTS_MULTI if ndays > 1 else _TREND_HOSTS
     for host in hosts:
         try:
-            payload = _http_get_json(
+            payload = get_json(
                 f"{host}/api/qt/stock/trends2/get",
                 params=params,
                 headers=_EM_HEADERS,
@@ -615,13 +646,13 @@ def fetch_intraday(
                         day_n,
                         len(parsed),
                         parsed,
-                        _num(data.get("preClose")) or _num(data.get("prePrice")),
+                        to_float(data.get("preClose")) or to_float(data.get("prePrice")),
                         str(data.get("name") or "").strip(),
                     )
                 continue
 
             items = parsed
-            pre_close = _num(data.get("preClose")) or _num(data.get("prePrice"))
+            pre_close = to_float(data.get("preClose")) or to_float(data.get("prePrice"))
             name = str(data.get("name") or "").strip()
             source = "eastmoney"
             break
@@ -663,6 +694,5 @@ def fetch_intraday(
         "count": len(items),
         "items": items,
     }
-    with _cache_lock:
-        _intraday_cache[cache_key] = (now, result)
+    _intraday_cache.put(cache_key, result, cached_at=now)
     return result

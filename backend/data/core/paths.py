@@ -6,10 +6,12 @@ from pathlib import Path
 
 # backend/cache（本文件在 backend/data/core/）
 CACHE_DIR = Path(__file__).resolve().parents[2] / "cache"
-TREE_CACHE = CACHE_DIR / "industry_tree.json"
+
 CONS_CACHE_DIR = CACHE_DIR / "cons"
-STOCK_INDEX_CACHE = CACHE_DIR / "stocks_index.json"
 NEWS_CACHE_DIR = CACHE_DIR / "news"
+
+TREE_CACHE = CACHE_DIR / "industry_tree.json"
+STOCK_INDEX_CACHE = CACHE_DIR / "stocks_index.json"
 STOCK_GEO_CACHE = CACHE_DIR / "stock_geo.json"
 
 # 成分股缓存有效期（秒）

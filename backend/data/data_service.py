@@ -1,11 +1,10 @@
 """数据层门面：对外保持原有 IndustryService API。
 
 模块分工：
-- data.core.paths           缓存路径
-- data.industry.tree        行业树 / 行业搜索
-- data.stocks.schema        索引字段规范
-- data.stocks.store         成分股 + 全局股票索引
-- data.stocks.quote_fetcher 东财盘口补全（公司详情）
+- data.core.paths      缓存路径
+- data.industry.tree   行业树 / 行业搜索
+- data.stocks.index    成分股 + 全局股票索引
+- data.stocks.quote    东财/腾讯盘口补全（公司详情）
 """
 
 from __future__ import annotations
@@ -14,9 +13,8 @@ from typing import Any
 
 from data.core.paths import ensure_cache_dirs
 from data.industry.tree import IndustryTree
-from data.stocks.quote_fetcher import fetch_stock_quote
-from data.stocks.schema import METRIC_KEYS
-from data.stocks.store import StockStore
+from data.stocks.index import METRIC_KEYS, StockStore
+from data.stocks.quote import fetch_stock_quote
 
 
 class IndustryService:

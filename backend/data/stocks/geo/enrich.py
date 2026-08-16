@@ -5,8 +5,9 @@
 2. 解析规范省 / 市名；
 3. 磁盘缓存，供批量 enrich。
 
-经纬度由前端高德 PlaceSearch（公司全称）标注，本模块不负责算坐标。
-对外入口：enrich_codes() ← POST /api/stocks/geo-enrich
+    经纬度由前端高德 PlaceSearch（公司全称）标注，本模块不负责算坐标。
+    东财 F10 代码格式见 ``common.codes.em_code``（SH600519）。
+    对外入口：enrich_codes() ← POST /api/stocks/geo-enrich
 """
 
 from __future__ import annotations
@@ -20,7 +21,8 @@ from pathlib import Path
 from typing import Any
 
 from data.core.paths import GEO_TTL, STOCK_GEO_CACHE, ensure_cache_dirs
-from message.disclosure.http_util import detect_market, http_get, normalize_code, safe_str
+from data.stocks.common.codes import em_code
+from message.disclosure.http_util import http_get, normalize_code, safe_str
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -30,8 +32,9 @@ _EM_SURVEY_URL = (
     "https://emweb.securities.eastmoney.com/PC_HSF10/CompanySurvey/CompanySurveyAjax"
 )
 
+# enrich.py → geo → stocks → data → backend → 仓库根
 _CITY_CENTROIDS_PATH = (
-    Path(__file__).resolve().parents[3]
+    Path(__file__).resolve().parents[4]
     / "frontend"
     / "shared"
     / "geo"
@@ -138,16 +141,6 @@ def _empty_row(code: str = "") -> dict[str, Any]:
         "coord_system": "gcj02",
         "geocode_source": "none",
     }
-
-
-def _em_code(code: str) -> str:
-    """600519 → SH600519（东财 F10 用）。"""
-    c = normalize_code(code)
-    if not c:
-        return ""
-    market = detect_market(c)
-    prefix = {"sse": "SH", "szse": "SZ", "bse": "BJ"}.get(market, "SH")
-    return f"{prefix}{c}"
 
 
 def _province_short(name: str) -> str:
@@ -373,7 +366,7 @@ def _cache_put(code: str, row: dict[str, Any]) -> None:
 
 def fetch_registration_raw(code: str) -> dict[str, str]:
     """东财 F10：注册地址 / 区域 / 公司全称。"""
-    em = _em_code(code)
+    em = em_code(code)
     if not em:
         return {"reg_address": "", "region": "", "full_name": ""}
     try:

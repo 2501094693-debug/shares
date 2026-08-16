@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from data.data_service import service
 from data.stocks.geo import enrich_codes
-from data.stocks.kline_fetcher import fetch_intraday, fetch_kline
+from data.stocks.kline import fetch_intraday, fetch_kline
 from message.feed import collect_company_messages
 from message.profile import query_company_profile
 from message.taxonomy.constants import ALL_SECTIONS, DEFAULT_SECTIONS

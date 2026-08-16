@@ -3,6 +3,6 @@
 子包：
 - ``data.core``         缓存路径等基础设施
 - ``data.industry``     申万行业树
-- ``data.stocks``       成分股与股票索引
+- ``data.stocks``       成分股索引、盘口、K 线、注册地
 - ``data.data_service`` 行业浏览器门面
 """
