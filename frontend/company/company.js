@@ -770,9 +770,6 @@ async function loadNewsKind(kind, days, { refresh = false } = {}) {
     ui.list.innerHTML = `<p class="muted">正在加载${daysLabel(days)}…</p>`;
   }
 
-  const prevCount = st.items.length;
-  const prevOldest = oldestPublished(st.items);
-
   try {
     const data = await fetchNewsKind(kind, days, { refresh });
     const groups = data.groups || {};
@@ -783,17 +780,10 @@ async function loadNewsKind(kind, days, { refresh = false } = {}) {
     st.days = Number(data.days) || days;
     st.updatedAt = data.updated_at || "";
     st.items = items;
-    const newestOldest = oldestPublished(items);
-    const noDeeper =
-      prevCount > 0 &&
-      items.length <= prevCount &&
-      newestOldest &&
-      prevOldest &&
-      newestOldest >= prevOldest;
+    // 相邻窗口没新增更早条目，只说明中间有空窗（例如 3→14 天无公告），
+    // 不能当成数据源见底；否则会在「近 14 天」提前 exhausted，再也拉不到年报等历史。
     st.exhausted =
-      st.days >= fullDays - 5 ||
-      Boolean(data.source_capped) ||
-      noDeeper;
+      st.days >= fullDays - 5 || Boolean(data.source_capped);
     paintSection(kind);
   } catch (err) {
     st.loading = false;
