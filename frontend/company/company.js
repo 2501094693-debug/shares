@@ -42,6 +42,7 @@ const els = {
   metricsGrid: document.getElementById("metricsGrid"),
   metricsPanels: document.getElementById("metricsPanels"),
   chartTabs: document.getElementById("chartTabs"),
+  chartAdjust: document.getElementById("chartAdjust"),
   chartMeta: document.getElementById("chartMeta"),
   chartHoverCard: document.getElementById("chartHoverCard"),
   chartWrap: document.getElementById("chartWrap"),
@@ -53,11 +54,12 @@ const els = {
   errorBox: document.getElementById("errorBox"),
 };
 
-/** @type {{ mode: string, loading: boolean, kind: 'intraday'|'kline', items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, meta: string }} */
+/** @type {{ mode: string, adjust: 'qfq'|'none', loading: boolean, kind: 'intraday'|'kline', items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, meta: string }} */
 const chartState = {
-  mode: "intraday",
+  mode: "day",
+  adjust: "qfq",
   loading: false,
-  kind: "intraday",
+  kind: "kline",
   items: [],
   allItems: [],
   viewStart: 0,
@@ -70,12 +72,46 @@ const chartState = {
 const CHART_MODES = {
   intraday: { label: "分时", kind: "intraday", ndays: 1, viewSize: 0 },
   intraday5: { label: "五日", kind: "intraday", ndays: 5, viewSize: 0 },
-  day: { label: "日K", kind: "kline", period: "day", limit: 720, viewSize: 90 },
-  week: { label: "周K", kind: "kline", period: "week", limit: 360, viewSize: 80 },
-  month: { label: "月K", kind: "kline", period: "month", limit: 240, viewSize: 72 },
+  "1m": { label: "1分", kind: "kline", period: "1m", limit: 720, viewSize: 240, adjust: "none" },
+  "5m": { label: "5分", kind: "kline", period: "5m", limit: 480, viewSize: 96, adjust: "none" },
+  "15m": { label: "15分", kind: "kline", period: "15m", limit: 360, viewSize: 80, adjust: "none" },
+  "30m": { label: "30分", kind: "kline", period: "30m", limit: 360, viewSize: 80, adjust: "none" },
+  "60m": { label: "60分", kind: "kline", period: "60m", limit: 240, viewSize: 72, adjust: "none" },
+  day: { label: "日K", kind: "kline", period: "day", limit: 720, viewSize: 90, adjust: "qfq" },
+  week: { label: "周K", kind: "kline", period: "week", limit: 360, viewSize: 80, adjust: "qfq" },
+  month: { label: "月K", kind: "kline", period: "month", limit: 240, viewSize: 72, adjust: "qfq" },
 };
 
-/** 日/周/月 K 均线：周期按当前 K 线根数（周K 的 MA5 = 5 周） */
+const MINUTE_KLINE_MODES = new Set(["1m", "5m", "15m", "30m", "60m"]);
+const ADJUSTABLE_KLINE_MODES = new Set(["day", "week", "month"]);
+
+function isMinuteKline(mode) {
+  return MINUTE_KLINE_MODES.has(mode);
+}
+
+function isAdjustableKline(mode) {
+  return ADJUSTABLE_KLINE_MODES.has(mode);
+}
+
+function klineAdjustFor(mode) {
+  if (isAdjustableKline(mode)) return chartState.adjust === "none" ? "none" : "qfq";
+  const conf = CHART_MODES[mode];
+  return conf?.adjust || "none";
+}
+
+function syncChartAdjustUi(mode = chartState.mode) {
+  if (!els.chartAdjust) return;
+  const show = isAdjustableKline(mode);
+  els.chartAdjust.classList.toggle("hidden", !show);
+  const current = klineAdjustFor(mode);
+  els.chartAdjust.querySelectorAll("[data-adjust]").forEach((el) => {
+    const active = el.getAttribute("data-adjust") === current;
+    el.classList.toggle("is-active", active);
+    el.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+/** K 均线：周期按当前 K 线根数（周K 的 MA5 = 5 周，1分的 MA5 = 5 分钟） */
 const KLINE_MA_LINES = [
   { period: 5, key: "ma5", label: "MA5", color: "#f0b429" },
   { period: 10, key: "ma10", label: "MA10", color: "#5b9dff" },
@@ -262,8 +298,6 @@ const METRIC_TIPS = {
   盘后委买: "收盘后那段固定价格交易里，还有多少人挂单想买。",
   盘后量: "收盘后那段时间成交了多少。",
   盘后额: "收盘后那段时间成交了多少钱。",
-  主力净流入: "大单资金今天是净流入还是净流出。正数偏“大资金在买”，负数偏“大资金在卖”。",
-  "5日净流入": "最近 5 个交易日，大单资金累计是流入多还是流出多。",
   近1日: "最近 1 个交易日涨了还是跌了多少。",
   "3日": "最近 3 个交易日累计涨跌多少。",
   "5日": "最近 5 个交易日累计涨跌多少。",
@@ -499,16 +533,8 @@ function renderMetrics(stock) {
     ],
   ]);
 
-  const flowSection = renderInlineRows("资金流向", [
-    [
-      ["主力净流入", stock.main_net_inflow, changeClass(stock.main_net_inflow)],
-      ["5日净流入", stock.main_net_inflow_5d, changeClass(stock.main_net_inflow_5d)],
-    ],
-  ]);
-
   const html = [
     daySection,
-    flowSection,
     periodSection,
     valuationSection,
     capitalSection,
@@ -896,6 +922,12 @@ function shortTimeLabel(t, mode) {
     if (s.length >= 10) return s.slice(5, 10);
     return s;
   }
+  // 分钟 K：2026-08-19 15:00 → 08-19 15:00
+  if (isMinuteKline(mode)) {
+    if (s.length >= 16) return `${s.slice(5, 10)} ${s.slice(11, 16)}`;
+    if (s.length >= 10) return s.slice(5, 10);
+    return s;
+  }
   if (s.length >= 10) return s.slice(0, 10);
   return s;
 }
@@ -946,11 +978,15 @@ function chartMinViewSize(total) {
 }
 
 function refreshChartWindowStatus() {
-  const conf = CHART_MODES[chartState.mode] || CHART_MODES.intraday;
+  const conf = CHART_MODES[chartState.mode] || CHART_MODES.day;
   const { total, size } = chartViewWindow();
   if (!total) return;
   const src = chartState.source ? ` · ${chartState.source}` : "";
-  const adj = chartState.kind === "kline" ? " · 前复权" : "";
+  const adj = isAdjustableKline(chartState.mode)
+    ? chartState.adjust === "none"
+      ? " · 不复权"
+      : " · 前复权"
+    : "";
   const tip =
     size < total
       ? ` · 显示 ${size}/${total}，滚轮缩放 · 拖动/滑动平移`
@@ -1250,6 +1286,18 @@ function drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { preClose
     let idxs;
     if (mode === "intraday5") {
       idxs = dayBreakIndices(items);
+    } else if (isMinuteKline(mode)) {
+      const breaks = dayBreakIndices(items);
+      if (breaks.length >= 2) {
+        idxs = breaks.length <= 5 ? breaks.slice() : [
+          breaks[0],
+          breaks[Math.floor(breaks.length / 2)],
+          breaks[breaks.length - 1],
+        ];
+        if (idxs[idxs.length - 1] !== n - 1) idxs.push(n - 1);
+      } else {
+        idxs = [0, Math.floor((n - 1) / 2), n - 1];
+      }
     } else {
       idxs = [0, Math.floor((n - 1) / 2), n - 1];
     }
@@ -1512,7 +1560,13 @@ function drawKlineChart(ctx, layout, items, mode, colors, hoverIndex) {
     price.y + ((priceScale.max - p) / (priceScale.max - priceScale.min || 1)) * price.h;
 
   const yTicks = (priceScale.ticks || []).map(yAt);
-  const xTicks = [0, 0.5, 1].map((t) => price.x + price.w * t);
+  let xTicks = [0, 0.5, 1].map((t) => price.x + price.w * t);
+  if (isMinuteKline(mode)) {
+    const breaks = dayBreakIndices(items);
+    if (breaks.length >= 2) {
+      xTicks = breaks.map((i) => price.x + (i / Math.max(n, 1)) * price.w);
+    }
+  }
   drawGrid(ctx, price, yTicks, xTicks, colors);
   drawGrid(ctx, volume, [volume.y, volume.y + volume.h], xTicks, colors);
 
@@ -1735,10 +1789,11 @@ function panChartByPixels(dx, canvasWidth) {
 
 async function loadChart(mode = chartState.mode) {
   if (!code || !els.priceChart) return;
-  const conf = CHART_MODES[mode] || CHART_MODES.intraday;
+  const conf = CHART_MODES[mode] || CHART_MODES.day;
   chartState.mode = mode;
   chartState.kind = conf.kind;
   chartState.loading = true;
+  syncChartAdjustUi(mode);
   setChartStatus(`正在加载${conf.label}…`);
   hideHoverCard();
 
@@ -1759,7 +1814,7 @@ async function loadChart(mode = chartState.mode) {
       const qs = new URLSearchParams({
         code,
         period: conf.period,
-        adjust: "qfq",
+        adjust: klineAdjustFor(mode),
         limit: String(conf.limit || 180),
       });
       const json = await api(`/api/stocks/kline?${qs.toString()}`);
@@ -1801,6 +1856,18 @@ function setupChart() {
     });
     loadChart(mode);
   });
+
+  els.chartAdjust?.addEventListener("click", (evt) => {
+    const btn = evt.target.closest("[data-adjust]");
+    if (!btn || !isAdjustableKline(chartState.mode)) return;
+    const adjust = btn.getAttribute("data-adjust");
+    if (!adjust || adjust === chartState.adjust) return;
+    chartState.adjust = adjust === "none" ? "none" : "qfq";
+    syncChartAdjustUi();
+    loadChart(chartState.mode);
+  });
+
+  syncChartAdjustUi();
 
   if (els.chartScrollBar) {
     els.chartScrollBar.addEventListener("input", () => {
@@ -1950,7 +2017,7 @@ setupChart();
 (async () => {
   await loadProfile();
   await Promise.all([
-    loadChart("intraday"),
+    loadChart("day"),
     loadAllNews({ refresh: false }),
   ]);
 })();

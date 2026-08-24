@@ -930,10 +930,68 @@ thead th {
   gap: 10px 16px;
 }
 
+.chart-head-controls {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 100%;
+}
+
 .chart-tabs {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chart-adjust {
+  display: inline-flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(42, 212, 184, 0.05);
+}
+
+.chart-adjust.hidden {
+  display: none;
+}
+
+.chart-adjust-btn {
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--display);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.chart-adjust-btn + .chart-adjust-btn {
+  border-left: 1px solid var(--line);
+}
+
+.chart-adjust-btn:hover {
+  color: var(--accent);
+}
+
+.chart-adjust-btn.is-active {
+  color: #041018;
+  background: linear-gradient(180deg, rgba(42, 212, 184, 0.95), rgba(24, 160, 140, 0.95));
 }
 
 .chart-tab {
@@ -1448,6 +1506,18 @@ a.btn {
 @media (max-width: 960px) {
   .quote-strip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .chart-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .chart-tab {
+    flex: 0 0 auto;
+    padding: 6px 10px;
   }
 
   .company-metrics {

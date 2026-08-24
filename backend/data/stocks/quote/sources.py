@@ -5,7 +5,6 @@
 
 数据源分工：
 - 实时盘口：东财 push2，失败再腾讯 qt.gtimg.cn
-- 资金流向：东财 fflow/daykline
 - 区间涨幅：腾讯日 K 优先，东财 kline 补充
 - 历史/52 周高低：腾讯前复权日 K（按年并行）
 - 现手：东财 details
@@ -286,70 +285,6 @@ def map_push2(data: dict[str, Any]) -> dict[str, Any]:
         out["market_cap"] = f"{mcap_yi / 1e8:.2f}".rstrip("0").rstrip(".")
 
     return drop_empty(out)
-
-
-# ---------------------------------------------------------------------------
-# 资金流向
-# ---------------------------------------------------------------------------
-
-
-def fetch_fund_flow(code: str) -> dict[str, Any]:
-    """主力净流入：今日 + 近 5 日合计。失败返回空。"""
-    try:
-        market = detect_market(normalize_code(code))
-        mid = 1 if market == "sse" else 0
-        params = {
-            "lmt": "0",
-            "klt": "101",
-            "secid": f"{mid}.{normalize_code(code)}",
-            "fields1": "f1,f2,f3,f7",
-            "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65",
-            "ut": "b2884a393a59ad64002292a3e90d46a5",
-            "_": int(time.time() * 1000),
-        }
-        headers = {"Referer": "https://data.eastmoney.com/zjlx/"}
-        payload = None
-        for host in (
-            "https://push2delay.eastmoney.com",
-            "https://push2his.eastmoney.com",
-            "https://push2.eastmoney.com",
-        ):
-            try:
-                payload = get_json(
-                    f"{host}/api/qt/stock/fflow/daykline/get",
-                    params=params,
-                    headers=headers,
-                    timeout=10,
-                )
-                if isinstance(payload, dict):
-                    break
-            except Exception:  # noqa: BLE001
-                payload = None
-                continue
-        if not isinstance(payload, dict):
-            return {}
-        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-        klines = (data or {}).get("klines") or []
-        rows: list[float] = []
-        for line in klines:
-            parts = str(line).split(",")
-            if len(parts) < 2:
-                continue
-            main = to_float(parts[1])
-            if main is None:
-                continue
-            rows.append(main)
-        if not rows:
-            return {}
-        today = rows[-1]
-        last5 = sum(rows[-5:])
-        return {
-            "main_net_inflow": fmt_yi_wan(today),
-            "main_net_inflow_5d": fmt_yi_wan(last5),
-        }
-    except Exception as exc:  # noqa: BLE001
-        logger.info("fund flow skip %s: %s", code, exc)
-        return {}
 
 
 # ---------------------------------------------------------------------------

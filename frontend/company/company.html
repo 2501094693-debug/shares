@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=hover-dock-20260812" />
+  <link rel="stylesheet" href="/css/style.css?v=kline-adjust-20260820" />
 </head>
 <body class="company-page-root">
   <div class="app company-page">
@@ -44,12 +44,23 @@
     <section class="company-section chart-section" aria-label="行情走势">
       <div class="section-head chart-section-head">
         <h3>行情走势</h3>
-        <div id="chartTabs" class="chart-tabs" role="tablist" aria-label="周期">
-          <button type="button" class="chart-tab is-active" data-mode="intraday" role="tab" aria-selected="true">分时</button>
-          <button type="button" class="chart-tab" data-mode="intraday5" role="tab" aria-selected="false">五日</button>
-          <button type="button" class="chart-tab" data-mode="day" role="tab" aria-selected="false">日K</button>
-          <button type="button" class="chart-tab" data-mode="week" role="tab" aria-selected="false">周K</button>
-          <button type="button" class="chart-tab" data-mode="month" role="tab" aria-selected="false">月K</button>
+        <div class="chart-head-controls">
+          <div id="chartTabs" class="chart-tabs" role="tablist" aria-label="周期">
+            <button type="button" class="chart-tab is-active" data-mode="day" role="tab" aria-selected="true">日K</button>
+            <button type="button" class="chart-tab" data-mode="week" role="tab" aria-selected="false">周K</button>
+            <button type="button" class="chart-tab" data-mode="month" role="tab" aria-selected="false">月K</button>
+            <button type="button" class="chart-tab" data-mode="intraday" role="tab" aria-selected="false">分时</button>
+            <button type="button" class="chart-tab" data-mode="intraday5" role="tab" aria-selected="false">五日</button>
+            <button type="button" class="chart-tab" data-mode="1m" role="tab" aria-selected="false">1分</button>
+            <button type="button" class="chart-tab" data-mode="5m" role="tab" aria-selected="false">5分</button>
+            <button type="button" class="chart-tab" data-mode="15m" role="tab" aria-selected="false">15分</button>
+            <button type="button" class="chart-tab" data-mode="30m" role="tab" aria-selected="false">30分</button>
+            <button type="button" class="chart-tab" data-mode="60m" role="tab" aria-selected="false">60分</button>
+          </div>
+          <div id="chartAdjust" class="chart-adjust" role="group" aria-label="复权">
+            <button type="button" class="chart-adjust-btn is-active" data-adjust="qfq" aria-pressed="true">前复权</button>
+            <button type="button" class="chart-adjust-btn" data-adjust="none" aria-pressed="false">不复权</button>
+          </div>
         </div>
       </div>
       <div class="chart-toolbar">
@@ -156,6 +167,6 @@
     <div id="errorBox" class="error hidden"></div>
   </div>
 
-  <script src="/js/company.js?v=hover-low-high-swap-20260812"></script>
+  <script src="/js/company.js?v=quote-no-fflow-20260820"></script>
 </body>
 </html>

@@ -1,3 +1,4 @@
+
 """个股 K 线 / 分时。
 
 数据源策略（东财 push2his 在不少网络会被掐，所以日/周/月先走腾讯）：
@@ -229,15 +230,15 @@ def _fetch_eastmoney_kline(
 def _parse_tencent_row(row: list[Any]) -> dict[str, Any] | None:
     if not isinstance(row, (list, tuple)) or len(row) < 5:
         return None
-    open_ = to_float(row[1])
+    open_price = to_float(row[1])
     close = to_float(row[2])
     high = to_float(row[3])
     low = to_float(row[4])
-    if close is None and open_ is None:
+    if close is None and open_price is None:
         return None
     item: dict[str, Any] = {
         "time": str(row[0])[:19].strip(),
-        "open": open_,
+        "open": open_price,
         "close": close,
         "high": high,
         "low": low,
@@ -273,23 +274,25 @@ def _fetch_tencent_minute_kline(
     node = ((payload.get("data") or {}) if isinstance(payload.get("data"), dict) else {}).get(
         symbol
     ) or {}
+
     rows = node.get(tx_period) if isinstance(node, dict) else None
     if not isinstance(rows, list):
         return []
+
     items: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, (list, tuple)) or len(row) < 5:
             continue
-        open_ = to_float(row[1])
+        open_price = to_float(row[1])
         close = to_float(row[2])
         high = to_float(row[3])
         low = to_float(row[4])
-        if close is None and open_ is None:
+        if close is None and open_price is None:
             continue
         items.append(
             {
                 "time": _format_tencent_minute_time(row[0]),
-                "open": open_,
+                "open": open_price,
                 "close": close,
                 "high": high,
                 "low": low,
@@ -317,8 +320,10 @@ def _fetch_tencent_kline(
         return []
 
     symbol = tencent_symbol(code)
-    qfq_flag = "qfq" if adjust == 1 else ""
+
     # 腾讯后复权能力弱；hfq 时仍取不复权，由上层决定是否接受
+    qfq_flag = "qfq" if adjust == 1 else ""
+
     start = ""
     finish = ""
     if beg:
@@ -337,9 +342,11 @@ def _fetch_tencent_kline(
         headers={"Referer": "https://gu.qq.com/"},
         timeout=12,
     ) or {}
+
     node = ((payload.get("data") or {}) if isinstance(payload.get("data"), dict) else {}).get(
         symbol
     ) or {}
+
     if not isinstance(node, dict):
         return []
 
@@ -357,6 +364,7 @@ def _fetch_tencent_kline(
             items.append(parsed)
     if limit and len(items) > limit:
         items = items[-limit:]
+
     return items
 
 
@@ -384,8 +392,11 @@ def fetch_kline(
     code = normalize_code(code)
     if not code:
         raise ValueError("无效股票代码")
+
     period = _normalize_period(period)
+
     fqt = _normalize_adjust(adjust)
+
     limit = max(1, min(int(limit or 320), 10000))
     beg = (beg or "").replace("-", "").strip()
     end = (end or "").replace("-", "").strip()
@@ -408,14 +419,14 @@ def fetch_kline(
             )
             if items:
                 source = "tencent"
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.info("tencent kline failed %s: %s", code, exc)
     elif period in _PERIOD_TO_TENCENT_MINUTE:
         try:
             items = _fetch_tencent_minute_kline(code, period=period, limit=limit)
             if items:
                 source = "tencent"
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.info("tencent minute kline failed %s: %s", code, exc)
 
     if not items:
@@ -425,7 +436,7 @@ def fetch_kline(
             )
             if items:
                 source = "eastmoney"
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.info("eastmoney kline failed %s: %s", code, exc)
 
     result = {
@@ -436,7 +447,9 @@ def fetch_kline(
         "count": len(items),
         "items": items,
     }
+
     _kline_cache.put(cache_key, result, cached_at=now)
+
     return result
 
 
@@ -583,6 +596,7 @@ def fetch_intraday(
     code = normalize_code(code)
     if not code:
         raise ValueError("无效股票代码")
+
     ndays = int(ndays or 1)
     if ndays not in (1, 5):
         raise ValueError("ndays 须为 1 或 5")
@@ -623,6 +637,7 @@ def fetch_intraday(
             if not isinstance(data, dict):
                 continue
             trends = data.get("trends") or []
+
             parsed: list[dict[str, Any]] = []
             for line in trends:
                 row = _parse_trend_row(str(line))
@@ -630,6 +645,7 @@ def fetch_intraday(
                     parsed.append(row)
             if not parsed:
                 continue
+
             day_n = _trend_unique_days(parsed)
             # 五日请求若某主机只回一天，记为候选但继续试更好源
             if ndays > 1 and day_n < 2:

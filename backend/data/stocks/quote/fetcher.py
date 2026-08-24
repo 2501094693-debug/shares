@@ -5,7 +5,7 @@
 
 流程：
 1. 代码规范化；缓存命中则直接返回
-2. 线程池并行：实时盘口、资金流、区间涨幅、现手、F10、估值
+2. 线程池并行：实时盘口、区间涨幅、现手、F10、估值
 3. 拿到上市日后，再提交历史/52 周高低（前复权需要上市年）
 4. 东财盘口自带的 52 周高低优先于自行计算值
 5. 用自由流通股把换手(实)、自由流通市值算出来
@@ -23,7 +23,6 @@ from data.stocks.common.fmt import fmt_list_date, fmt_pct, fmt_shares, fmt_yi_wa
 from data.stocks.quote.sources import (
     fetch_current_hand,
     fetch_f10_profile,
-    fetch_fund_flow,
     fetch_period_returns,
     fetch_price_extremes,
     fetch_realtime_quote,
@@ -77,9 +76,8 @@ def fetch_stock_quote(code: str, *, force: bool = False) -> dict[str, Any]:
 
     result: dict[str, Any] = {}
     try:
-        with ThreadPoolExecutor(max_workers=7) as pool:
+        with ThreadPoolExecutor(max_workers=6) as pool:
             fut_quote = pool.submit(fetch_realtime_quote, code)
-            fut_flow = pool.submit(fetch_fund_flow, code)
             fut_ret = pool.submit(fetch_period_returns, code)
             fut_hand = pool.submit(fetch_current_hand, code)
             fut_f10 = pool.submit(fetch_f10_profile, code)
@@ -115,7 +113,6 @@ def fetch_stock_quote(code: str, *, force: bool = False) -> dict[str, Any]:
             }
 
             for fut, label in (
-                (fut_flow, "fund flow"),
                 (fut_ret, "period returns"),
                 (fut_hand, "current hand"),
                 (fut_f10, "f10"),
