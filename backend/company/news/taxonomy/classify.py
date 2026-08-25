@@ -11,6 +11,7 @@ from .constants import (
     CATEGORY_MARKET_NEWS,
     CATEGORY_REGULATORY,
     CATEGORY_RESEARCH,
+    PRESS_OUTLET_IDS,
     REGULATORY_KINDS,
     STATUTORY_CHANNELS,
     TIER_BROKER,
@@ -22,6 +23,10 @@ from .constants import (
 )
 from .keywords import infer_subcategory
 from .media_tiers import is_designated_press_media, resolve_media_tier
+
+_MARKET_NEWS_CHANNELS = frozenset(
+    {"news", "em", "eastmoney", "search", "tonghuashun", "xueqiu", "flash"}
+)
 
 
 def _s(item: dict[str, Any], *keys: str) -> str:
@@ -49,25 +54,23 @@ def classify_item(item: dict[str, Any]) -> dict[str, Any]:
     paper = _s(item, "paper")
     outlet = _s(item, "outlet", "outlet_name")
 
-    # --- category & source_tier ---
     category = CATEGORY_MARKET_NEWS
     tier = TIER_MARKET_MEDIA
 
     if kind == "report" or channel in {"report", "research"}:
         category = CATEGORY_RESEARCH
         tier = TIER_BROKER
-    elif kind in REGULATORY_KINDS or channel == "regulatory":
+    elif kind in REGULATORY_KINDS or channel in {"regulatory", "inquiry"}:
         category = CATEGORY_REGULATORY
         tier = TIER_STATUTORY
     elif channel in STATUTORY_CHANNELS or kind == "notice":
-        # 交易所/巨潮公告；若 kind 已是 inquiry/penalty 上面已处理
         if kind in REGULATORY_KINDS:
             category = CATEGORY_REGULATORY
         else:
             category = CATEGORY_DISCLOSURE
         tier = TIER_STATUTORY
     elif (
-        channel in {"cs", "cnstock", "stcn", "zqrb", "financialnews", "jjckb", "chinadaily"}
+        channel in PRESS_OUTLET_IDS
         or kind == "press"
         or outlet
         or paper
@@ -79,16 +82,14 @@ def classify_item(item: dict[str, Any]) -> dict[str, Any]:
     elif channel in {"company_ir", "ir"} or kind == "ir":
         category = CATEGORY_COMPANY_IR
         tier = TIER_COMPANY_IR
-    elif kind == "news" or channel in {"news", "em", "eastmoney"}:
+    elif kind == "news" or channel in _MARKET_NEWS_CHANNELS:
         category = CATEGORY_MARKET_NEWS
         tier = resolve_media_tier(media or source, default=TIER_MARKET_MEDIA)
-        # 东财新闻若署名其实是指定报刊，升为 designated_press
         if tier == TIER_DESIGNATED_PRESS:
             category = CATEGORY_DESIGNATED_PRESS
         elif tier == TIER_PLATFORM:
             category = CATEGORY_MARKET_NEWS
     else:
-        # 兜底：看媒体署名
         tier = resolve_media_tier(media or source, default=TIER_MARKET_MEDIA)
         if tier == TIER_DESIGNATED_PRESS:
             category = CATEGORY_DESIGNATED_PRESS
@@ -97,7 +98,6 @@ def classify_item(item: dict[str, Any]) -> dict[str, Any]:
         else:
             category = CATEGORY_MARKET_NEWS
 
-    # --- subcategory ---
     if category == CATEGORY_REGULATORY:
         if kind == "inquiry":
             sub = "inquiry"

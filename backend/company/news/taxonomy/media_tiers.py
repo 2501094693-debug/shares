@@ -1,8 +1,4 @@
-"""mediaName / source 字符串 → source_tier 映射。
-
-未知来源默认 market_media；匹配采用「别名是否为来源子串」，
-较长别名优先（在 resolve_media_tier 中处理）。
-"""
+"""mediaName / source 字符串 → source_tier 映射。"""
 
 from __future__ import annotations
 
@@ -14,9 +10,7 @@ from .constants import (
     TIER_PLATFORM,
 )
 
-# (别名, tier) — 别名越具体越好
 MEDIA_TIER_RULES: tuple[tuple[str, str], ...] = (
-    # 指定披露七报七网
     ("中国证券报·中证金牛座", TIER_DESIGNATED_PRESS),
     ("中国证券报·中证网", TIER_DESIGNATED_PRESS),
     ("上海证券报·中国证券网", TIER_DESIGNATED_PRESS),
@@ -38,7 +32,6 @@ MEDIA_TIER_RULES: tuple[tuple[str, str], ...] = (
     ("上证报", TIER_DESIGNATED_PRESS),
     ("China Daily", TIER_DESIGNATED_PRESS),
     ("Chinadaily", TIER_DESIGNATED_PRESS),
-    # 官方 / 央媒
     ("人民日报", TIER_OFFICIAL_MEDIA),
     ("人民网", TIER_OFFICIAL_MEDIA),
     ("人民财讯", TIER_OFFICIAL_MEDIA),
@@ -50,14 +43,17 @@ MEDIA_TIER_RULES: tuple[tuple[str, str], ...] = (
     ("央视财经", TIER_OFFICIAL_MEDIA),
     ("央视新闻", TIER_OFFICIAL_MEDIA),
     ("央广财经", TIER_OFFICIAL_MEDIA),
-    # 东财平台自有
     ("东方财富Choice数据", TIER_PLATFORM),
     ("东方财富研究中心", TIER_PLATFORM),
     ("东方财富证券", TIER_PLATFORM),
     ("东方财富", TIER_PLATFORM),
+    ("eastmoney", TIER_PLATFORM),
     ("数据宝", TIER_PLATFORM),
     ("e公司", TIER_PLATFORM),
-    # 券商 / 期货机构
+    ("同花顺", TIER_PLATFORM),
+    ("tonghuashun", TIER_PLATFORM),
+    ("雪球", TIER_PLATFORM),
+    ("xueqiu", TIER_PLATFORM),
     ("广发证券", TIER_BROKER),
     ("中泰证券", TIER_BROKER),
     ("华金证券", TIER_BROKER),
@@ -65,7 +61,6 @@ MEDIA_TIER_RULES: tuple[tuple[str, str], ...] = (
     ("金瑞期货", TIER_BROKER),
     ("瑞达期货", TIER_BROKER),
     ("券商中国", TIER_BROKER),
-    # 市场化财经媒体（常见）
     ("财联社", TIER_MARKET_MEDIA),
     ("每日经济新闻", TIER_MARKET_MEDIA),
     ("界面新闻", TIER_MARKET_MEDIA),

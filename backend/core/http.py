@@ -1,8 +1,8 @@
 """行情 HTTP 客户端。
 
-与 ``message.disclosure.http_util.http_get`` 刻意分开：
-那边优先 curl_cffi、并尊重系统代理；东财 push2 / 腾讯在 Windows 代理或
-curl_cffi 干扰下经常被掐。这里用标准 requests，且 ``trust_env=False`` 关闭代理。
+行情接口用标准 requests，且 ``trust_env=False`` 关闭代理：东财 push2 / 腾讯
+在 Windows 代理或 curl_cffi 干扰下经常被掐。公告/新闻站点请用 ``browser_get`` /
+``browser_post``（优先 curl_cffi Chrome 指纹）。
 
 每次请求新建 Session，避免跨线程复用同一 Session 的状态问题。
 """

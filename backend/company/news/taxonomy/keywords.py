@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-# (subcategory, keywords) — 先匹配更具体的监管类
 SUBCATEGORY_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "inquiry",

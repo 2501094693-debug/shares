@@ -2,15 +2,15 @@
 
 在 backend 目录::
 
-    python -m message.taxonomy.tests_classify
+    python -m company.news.taxonomy.tests_classify
 """
 
 from __future__ import annotations
 
 import sys
 
-from message.taxonomy.classify import classify_item
-from message.taxonomy.constants import (
+from company.news.taxonomy.classify import classify_item
+from company.news.taxonomy.constants import (
     CATEGORY_DESIGNATED_PRESS,
     CATEGORY_DISCLOSURE,
     CATEGORY_MARKET_NEWS,
@@ -91,7 +91,7 @@ def main() -> int:
         (
             {
                 "title": "市场情绪逐步回暖",
-                "channel": "news",
+                "channel": "search",
                 "kind": "news",
                 "source": "中国证券报",
                 "media_name": "中国证券报",

@@ -1,12 +1,18 @@
-"""个股资讯：巨潮公告、交易所公告、七网新闻、东财新闻、同花顺新闻、雪球新闻。
+"""个股资讯：采集源 + 详情页/画像集成。
 
-子包：
+采集源：
   - ``cninfo``       巨潮资讯公告
   - ``exchange``     上交所 / 深交所 / 北交所公告
   - ``press``        七网官网新闻（中证网、中国证券网、证券时报网、证券日报网、金融时报网、经济参考网、中国日报网）
   - ``eastmoney``    东方财富（搜索 / 7×24 / 栏目 / F10 / 公告 / 正文）
   - ``tonghuashun``  同花顺（F10 热点新闻 / 公告 / 研报 / 7×24 / 正文）
   - ``xueqiu``       雪球（个股资讯 / 公告 / 研报 / 讨论 / 7×24 / 栏目 / 正文）
+
+集成：
+  - ``feed``         详情页分组（``collect_company_messages`` → ``/api/stocks/news``）
+  - ``profile``      分类画像（``query_company_profile`` → ``/api/stocks/profile-messages``）
+  - ``query``        公告 / 监管 / 七网统一查询
+  - ``taxonomy``     category / source_tier / subcategory
 """
 
 from company.news.cninfo import (
@@ -180,6 +186,17 @@ from company.news.xueqiu import (
     xq_symbol,
 )
 
+from company.news.feed import collect_company_messages, collect_important_news
+from company.news.profile import query_company_profile
+from company.news.query import (
+    query_announcements,
+    query_company_messages,
+    query_press,
+    query_press_flat,
+    query_regulatory,
+)
+from company.news.taxonomy import ALL_SECTIONS, DEFAULT_SECTIONS, classify_item
+
 __all__ = [
     "BSE_CATEGORIES",
     "BSE_LAYERS",
@@ -339,4 +356,15 @@ __all__ = [
     "sse_pdf_url",
     "szse_bulletin_page_url",
     "szse_pdf_url",
+    "ALL_SECTIONS",
+    "DEFAULT_SECTIONS",
+    "classify_item",
+    "collect_company_messages",
+    "collect_important_news",
+    "query_announcements",
+    "query_company_messages",
+    "query_company_profile",
+    "query_press",
+    "query_press_flat",
+    "query_regulatory",
 ]

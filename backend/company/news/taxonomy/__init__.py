@@ -7,6 +7,8 @@ from .constants import (
     ALL_SECTIONS,
     CATEGORIES,
     DEFAULT_SECTIONS,
+    PRESS_OUTLET_IDS,
+    PRESS_OUTLETS,
     SOURCE_TIERS,
 )
 
@@ -16,4 +18,6 @@ __all__ = [
     "SOURCE_TIERS",
     "DEFAULT_SECTIONS",
     "ALL_SECTIONS",
+    "PRESS_OUTLETS",
+    "PRESS_OUTLET_IDS",
 ]

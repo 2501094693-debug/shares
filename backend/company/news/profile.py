@@ -5,19 +5,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Iterable
 
-from message.disclosure.http_util import (
-    dedupe,
-    default_start,
-    lookback_start,
-    normalize_code,
-    sort_key,
+from core.codes import normalize_code, safe_str
+
+from company.news._items import as_news, as_report, default_start, dedupe, lookback_start, sort_key, unpack
+from company.news.eastmoney.search import fetch_news as fetch_eastmoney_news
+from company.news.query import (
+    query_announcements,
+    query_press,
+    query_regulatory,
+    resolve_keywords,
 )
-from message.market import fetch_media_news, fetch_research_reports
-from message.disclosure.query import query_announcements, query_regulatory
-from message.press.query import query_press
-from message.press.resolve import resolve_keywords
-from message.taxonomy.classify import classify_item
-from message.taxonomy.constants import (
+from company.news.taxonomy.classify import classify_item
+from company.news.taxonomy.constants import (
     ALL_SECTIONS,
     CATEGORIES,
     CATEGORY_DESIGNATED_PRESS,
@@ -32,6 +31,10 @@ from message.taxonomy.constants import (
     SECTION_REGULATORY,
     SECTION_RESEARCH,
 )
+from company.news.tonghuashun.news import fetch_news as fetch_ths_news
+from company.news.tonghuashun.reports import fetch_reports as fetch_ths_reports
+from company.news.xueqiu.news import fetch_news as fetch_xq_news
+from company.news.xueqiu.reports import fetch_reports as fetch_xq_reports
 
 
 def _parse_sections(sections: str | Iterable[str] | None) -> list[str]:
@@ -53,7 +56,6 @@ def _parse_sections(sections: str | Iterable[str] | None) -> list[str]:
         raise ValueError(
             f"未知 sections: {unknown}；可选: {', '.join(ALL_SECTIONS)} 或 all"
         )
-    # 去重保序
     seen: set[str] = set()
     out: list[str] = []
     for p in parts:
@@ -102,7 +104,7 @@ def query_company_profile(
     """
     resolved = resolve_keywords(code_or_name)
     code = resolved["code"] or normalize_code(code_or_name)
-    resolved_name = name.strip() or resolved["name"]
+    resolved_name = safe_str(name) or resolved["name"]
     keyword = resolved["keyword"] or resolved_name or code
 
     if not code and not keyword:
@@ -115,7 +117,6 @@ def query_company_profile(
     groups = _empty_groups()
     errors: dict[str, str] = {}
 
-    # 1) 法定公告
     if SECTION_DISCLOSURE in selected and code:
         try:
             rows = query_announcements(
@@ -130,7 +131,6 @@ def query_company_profile(
         except Exception as exc:  # noqa: BLE001
             errors[SECTION_DISCLOSURE] = str(exc)
 
-    # 2) 监管
     if SECTION_REGULATORY in selected and code:
         try:
             rows = query_regulatory(
@@ -140,7 +140,6 @@ def query_company_profile(
         except Exception as exc:  # noqa: BLE001
             errors[SECTION_REGULATORY] = str(exc)
 
-    # 3) 指定报刊
     if SECTION_DESIGNATED_PRESS in selected and keyword:
         try:
             press = query_press(
@@ -150,10 +149,8 @@ def query_company_profile(
                 end=end,
                 days=None,
                 max_pages=max(2, min(max_pages, 4)),
-                include_direct=False,
             )
             rows = list(press.get("items") or [])
-            # 确保 code/name
             for r in rows:
                 r.setdefault("code", code)
                 r.setdefault("name", resolved_name)
@@ -161,42 +158,72 @@ def query_company_profile(
         except Exception as exc:  # noqa: BLE001
             errors[SECTION_DESIGNATED_PRESS] = str(exc)
 
-    # 4) 市场化新闻（东财）
     if SECTION_MARKET_NEWS in selected and (code or keyword):
         try:
             news_start = start or lookback_start(days or 365)
             collected: list[dict[str, Any]] = []
+            target = code or keyword
+            collected.extend(
+                unpack(
+                    fetch_eastmoney_news(
+                        target, start=news_start, days=None, max_pages=max_pages
+                    )
+                )
+            )
+            if keyword and keyword != target:
+                collected.extend(
+                    unpack(
+                        fetch_eastmoney_news(
+                            keyword, start=news_start, days=None, max_pages=max_pages
+                        )
+                    )
+                )
             if code:
-                collected.extend(fetch_media_news(code, news_start))
-            if keyword and keyword != code:
-                collected.extend(fetch_media_news(keyword, news_start))
-            for r in collected:
-                r.setdefault("code", code)
-                r.setdefault("name", resolved_name)
-                r.setdefault("channel", "news")
-            _put(groups, _classify_list(collected))
+                collected.extend(
+                    unpack(
+                        fetch_ths_news(
+                            code, start=news_start, days=None, max_pages=min(max_pages, 8)
+                        )
+                    )
+                )
+                collected.extend(
+                    unpack(
+                        fetch_xq_news(
+                            code, start=news_start, days=None, max_pages=min(max_pages, 8)
+                        )
+                    )
+                )
+            tagged = [
+                as_news(r, code=code, name=resolved_name) for r in collected
+            ]
+            _put(groups, _classify_list(tagged))
         except Exception as exc:  # noqa: BLE001
             errors[SECTION_MARKET_NEWS] = str(exc)
 
-    # 5) 研报
     if SECTION_RESEARCH in selected and code:
         try:
             report_start = start or lookback_start(days or 365)
-            rows = fetch_research_reports(code, report_start)
-            for r in rows:
-                r.setdefault("code", code)
-                r.setdefault("name", resolved_name)
-                r.setdefault("channel", "report")
-            _put(groups, _classify_list(rows))
+            rows = unpack(
+                fetch_ths_reports(code, start=report_start, days=None)
+            )
+            rows.extend(
+                unpack(
+                    fetch_xq_reports(
+                        code,
+                        start=report_start,
+                        days=None,
+                        max_pages=min(max_pages, 8),
+                    )
+                )
+            )
+            tagged = [as_report(r, code=code, name=resolved_name) for r in rows]
+            _put(groups, _classify_list(tagged))
         except Exception as exc:  # noqa: BLE001
             errors[SECTION_RESEARCH] = str(exc)
 
-    # 组内去重排序
     for cat, rows in list(groups.items()):
         groups[cat] = sorted(dedupe(rows), key=sort_key)
 
-    counts = {cat: len(rows) for cat, rows in groups.items()}
-    # 只统计有业务意义的主类（与计划返回结构一致）
     main_keys = (
         CATEGORY_DISCLOSURE,
         CATEGORY_REGULATORY,
@@ -217,5 +244,5 @@ def query_company_profile(
         "counts": main_counts,
         "errors": errors,
         "view": "profile",
-        "note": "系统性分类视图；详情页三栏请用 /api/stocks/news（message.feed）",
+        "note": "系统性分类视图；详情页分组请用 /api/stocks/news（company.news.feed）",
     }

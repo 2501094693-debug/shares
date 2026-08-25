@@ -2,7 +2,7 @@
 
 两套业务：
 - ``industry``：申万分类、成分股检索、地图标注
-- ``company`` + ``message``：单只股票的盘口、K 线、资讯
+- ``company``：单只股票的盘口、K 线、资讯
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-# 保证从仓库根目录启动 / PyCharm 调试时也能解析 industry / company / message
+# 保证从仓库根目录启动 / PyCharm 调试时也能解析 industry / company
 _BACKEND_DIR = Path(__file__).resolve().parent
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))

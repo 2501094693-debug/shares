@@ -8,9 +8,11 @@ import time
 from pathlib import Path
 from typing import Any
 
-from core.paths import ensure_cache_dirs
+from core.paths import NEWS_CACHE_DIR, ensure_cache_dirs
 
-from .constants import CACHE_DIR, CACHE_TTL_SEC, CACHE_VERSION
+CACHE_DIR = NEWS_CACHE_DIR
+CACHE_TTL_SEC = 30 * 60
+CACHE_VERSION = 14
 
 
 def cache_path(code: str, days: int, kind: str = "") -> Path:

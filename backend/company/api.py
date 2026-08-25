@@ -5,11 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 
 from company.line import fetch_kline, fetch_ticks
+from company.news.feed import collect_company_messages
+from company.news.profile import query_company_profile
+from company.news.taxonomy.constants import ALL_SECTIONS, DEFAULT_SECTIONS
 from company.profile import get_stock_profile
 from core.api import err, ok
-from message.feed import collect_company_messages
-from message.profile import query_company_profile
-from message.taxonomy.constants import ALL_SECTIONS, DEFAULT_SECTIONS
 
 router = APIRouter()
 
@@ -132,7 +132,7 @@ def stocks_profile_messages(
     ),
     max_pages: int = Query(3, ge=1, le=20),
 ):
-    """系统性分类视图（disclosure/regulatory/press/news/research）。数据均来自 message。"""
+    """系统性分类视图（disclosure/regulatory/press/news/research）。数据来自 company.news。"""
     code = code.strip()
     name = name.strip()
     if not code:

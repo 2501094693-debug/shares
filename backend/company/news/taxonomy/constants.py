@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Final
 
-# 业务大类
 CATEGORY_DISCLOSURE: Final = "disclosure"
 CATEGORY_REGULATORY: Final = "regulatory"
 CATEGORY_DESIGNATED_PRESS: Final = "designated_press"
@@ -21,7 +20,6 @@ CATEGORIES: tuple[str, ...] = (
     CATEGORY_COMPANY_IR,
 )
 
-# 信源层级（可信度从高到低大致递减）
 TIER_STATUTORY: Final = "statutory"
 TIER_DESIGNATED_PRESS: Final = "designated_press"
 TIER_OFFICIAL_MEDIA: Final = "official_media"
@@ -40,14 +38,12 @@ SOURCE_TIERS: tuple[str, ...] = (
     TIER_COMPANY_IR,
 )
 
-# profile 可采集的 section 名（与 groups 键对齐，另含采集开关）
 SECTION_DISCLOSURE: Final = "disclosure"
 SECTION_REGULATORY: Final = "regulatory"
 SECTION_DESIGNATED_PRESS: Final = "designated_press"
 SECTION_MARKET_NEWS: Final = "market_news"
 SECTION_RESEARCH: Final = "research"
 
-# 默认只采法定与指定报刊，避免全量过慢；news/reports 需显式打开
 DEFAULT_SECTIONS: tuple[str, ...] = (
     SECTION_DISCLOSURE,
     SECTION_REGULATORY,
@@ -62,12 +58,40 @@ ALL_SECTIONS: tuple[str, ...] = (
     SECTION_RESEARCH,
 )
 
-# 法定披露通道
 STATUTORY_CHANNELS: frozenset[str] = frozenset(
-    {"sse", "szse", "bse", "cninfo", "regulatory"}
+    {"sse", "szse", "bse", "cninfo", "regulatory", "bulletin"}
 )
 
-# 监管类 kind
 REGULATORY_KINDS: frozenset[str] = frozenset(
     {"inquiry", "penalty", "regulatory"}
 )
+
+REGULATORY_TITLE_KEYWORDS: tuple[str, ...] = (
+    "问询函",
+    "关注函",
+    "监管函",
+    "警示函",
+    "责令改正",
+    "监管措施",
+    "纪律处分",
+    "通报批评",
+    "公开谴责",
+    "行政处罚",
+    "市场禁入",
+    "立案告知",
+    "立案调查",
+    "处罚决定",
+    "监管工作函",
+)
+
+PRESS_OUTLETS: tuple[dict[str, str], ...] = (
+    {"id": "cs", "name": "中证网", "paper": "中国证券报"},
+    {"id": "cnstock", "name": "中国证券网", "paper": "上海证券报"},
+    {"id": "stcn", "name": "证券时报网", "paper": "证券时报"},
+    {"id": "zqrb", "name": "证券日报网", "paper": "证券日报"},
+    {"id": "financialnews", "name": "金融时报网", "paper": "金融时报"},
+    {"id": "jjckb", "name": "经济参考网", "paper": "经济参考报"},
+    {"id": "chinadaily", "name": "中国日报网", "paper": "中国日报"},
+)
+
+PRESS_OUTLET_IDS: tuple[str, ...] = tuple(o["id"] for o in PRESS_OUTLETS)
