@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from data.core.paths import ensure_cache_dirs
+from core.paths import ensure_cache_dirs
 
 from .constants import CACHE_DIR, CACHE_TTL_SEC, CACHE_VERSION
 
