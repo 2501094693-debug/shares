@@ -86,3 +86,57 @@ def browser_get(
         )
     sess = _session()
     return sess.get(url, params=params, headers=hdrs, timeout=timeout)
+
+
+def browser_post(
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    data: Any = None,
+    json_body: Any = None,
+    headers: dict[str, str] | None = None,
+    timeout: int = 30,
+):
+    """POST：优先 curl_cffi（Chrome 指纹），否则退回普通 requests。
+
+    巨潮 ``hisAnnouncement/query`` 等站点会校验 Origin / Referer；
+    行情接口请继续用 ``get_json``（``trust_env=False``）。
+    """
+    try:
+        from curl_cffi import requests as curl_requests
+    except ImportError:  # pragma: no cover
+        curl_requests = None
+
+    hdrs = {"User-Agent": _UA, **(headers or {})}
+    if curl_requests is not None:
+        return curl_requests.post(
+            url,
+            params=params,
+            data=data,
+            json=json_body,
+            headers=hdrs,
+            timeout=timeout,
+            impersonate="chrome",
+        )
+    sess = _session()
+    return sess.post(
+        url,
+        params=params,
+        data=data,
+        json=json_body,
+        headers=hdrs,
+        timeout=timeout,
+    )
+
+
+def get_bytes(
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: int = 60,
+) -> bytes:
+    """GET 返回原始字节（公告 PDF 等）。优先 curl_cffi。"""
+    resp = browser_get(url, params=params, headers=headers, timeout=timeout)
+    resp.raise_for_status()
+    return resp.content
