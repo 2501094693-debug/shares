@@ -1,28 +1,21 @@
 """官网侧尽力检索（失败不影响主流程）。
 
 目前多数站点搜索需浏览器环境；此处仅保留少量可直连接口的尝试，
-主数据仍来自 eastmoney 按媒体署名筛选。
+主数据仍来自 eastmoney 按媒体署名筛选。中证网走 ``company.news.press.cs``，
+中国证券网走 ``company.news.press.cnstock``，证券时报网走 ``company.news.press.stcn``，
+证券日报网走 ``company.news.press.zqrb``，金融时报网走 ``company.news.press.financialnews``，
+经济参考网走 ``company.news.press.jjckb``，中国日报网走 ``company.news.press.chinadaily``。
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-from urllib.parse import quote, urljoin
 
-from bs4 import BeautifulSoup
-
-from message.disclosure.http_util import http_get, safe_str, within_range
+from message.disclosure.http_util import safe_str, within_range
 from message.disclosure.normalize import make_item
 
 from .constants import Outlet
-
-
-def _abs(base: str, href: str) -> str:
-    href = safe_str(href)
-    if not href or href.startswith("javascript:"):
-        return ""
-    return urljoin(base, href)
 
 
 def fetch_stcn_direct(
@@ -34,49 +27,37 @@ def fetch_stcn_direct(
     code: str = "",
     name: str = "",
 ) -> list[dict[str, Any]]:
-    """证券时报网 search_data（常为空，成功则补充）。"""
-    url = (
-        "https://www.stcn.com/article/search_data.html"
-        f"?search_type=news&keyword={quote(keyword)}&uncertainty=1&sorter=time"
-    )
+    """证券时报网 search_data（见 ``company.news.press.stcn``）。"""
+    from company.news.press.stcn import fetch_news
+
+    query = name or keyword or code
+    if not query:
+        return []
     try:
-        resp = http_get(
-            url,
-            headers={
-                "Referer": "https://www.stcn.com/article/search.html",
-                "X-Requested-With": "XMLHttpRequest",
-                "Accept": "application/json, text/javascript, */*; q=0.01",
-            },
-            timeout=20,
+        pack = fetch_news(
+            query,
+            start=start,
+            end=end,
+            days=None if start is not None else 31,
+            type_="news",
+            sort="time",
+            max_pages=4,
         )
-        resp.raise_for_status()
-        payload = resp.json()
     except Exception:  # noqa: BLE001
         return []
 
-    data = payload.get("data")
-    html = ""
-    if isinstance(data, dict):
-        html = safe_str(data.get("data"))
-    elif isinstance(data, str):
-        html = data
-    if not html:
-        return []
-
-    soup = BeautifulSoup(html, "lxml")
     items: list[dict[str, Any]] = []
-    for a in soup.select("a[href*='/article/detail']"):
-        title = a.get_text(" ", strip=True)
-        href = _abs("https://www.stcn.com", a.get("href") or "")
-        if not title or not href:
-            continue
+    for row in pack.get("items") or []:
+        published = safe_str(row.get("published_at"))
         item = make_item(
-            title=title,
-            url=href,
+            title=safe_str(row.get("title")),
+            published_at=published,
+            url=safe_str(row.get("url")),
             source=outlet["paper"],
             channel=outlet["id"],
             kind="press",
-            why="证券时报网",
+            summary=safe_str(row.get("summary")),
+            why=safe_str(row.get("column")) or outlet["name"],
             code=code,
             name=name,
             extra={
@@ -84,6 +65,7 @@ def fetch_stcn_direct(
                 "outlet_name": outlet["name"],
                 "paper": outlet["paper"],
                 "domain": outlet["domain"],
+                "media_name": safe_str(row.get("column")) or outlet["name"],
                 "via": "stcn_direct",
             },
         )
@@ -101,43 +83,38 @@ def fetch_chinadaily_direct(
     code: str = "",
     name: str = "",
 ) -> list[dict[str, Any]]:
-    """中国日报网新闻搜索页。"""
-    url = (
-        "https://newssearch.chinadaily.com.cn/cn/search"
-        f"?keywords={quote(keyword)}"
-    )
+    """中国日报网 rest/cn/search（见 ``company.news.press.chinadaily``）。"""
+    from company.news.press.chinadaily import fetch_news
+
+    query = name or keyword or code
+    if not query:
+        return []
     try:
-        resp = http_get(
-            url,
-            headers={"Referer": "https://www.chinadaily.com.cn/"},
-            timeout=25,
+        pack = fetch_news(
+            query,
+            start=start,
+            end=end,
+            days=None if start is not None else 31,
+            type_="story",
+            sort="time",
+            lang="cn",
+            max_pages=4,
         )
-        resp.raise_for_status()
-        html = resp.text
     except Exception:  # noqa: BLE001
         return []
 
-    soup = BeautifulSoup(html, "lxml")
     items: list[dict[str, Any]] = []
-    for a in soup.select("a[href]"):
-        title = a.get_text(" ", strip=True)
-        href = safe_str(a.get("href"))
-        if len(title) < 8:
-            continue
-        if "chinadaily.com.cn" not in href and not href.startswith("/"):
-            continue
-        if not any(k in title for k in (keyword, keyword[:2])):
-            # 搜索页噪音大，要求标题含关键词片段
-            if keyword not in title:
-                continue
-        full = _abs("https://www.chinadaily.com.cn", href)
+    for row in pack.get("items") or []:
+        published = safe_str(row.get("published_at"))
         item = make_item(
-            title=title,
-            url=full,
+            title=safe_str(row.get("title")),
+            published_at=published,
+            url=safe_str(row.get("url")),
             source=outlet["paper"],
             channel=outlet["id"],
             kind="press",
-            why="中国日报网",
+            summary=safe_str(row.get("summary")),
+            why=safe_str(row.get("origin")) or outlet["name"],
             code=code,
             name=name,
             extra={
@@ -145,21 +122,291 @@ def fetch_chinadaily_direct(
                 "outlet_name": outlet["name"],
                 "paper": outlet["paper"],
                 "domain": outlet["domain"],
+                "media_name": safe_str(row.get("origin")) or outlet["name"],
                 "via": "chinadaily_direct",
             },
         )
         if within_range(item, start, end):
             items.append(item)
-    # 去重
-    seen: set[str] = set()
-    out: list[dict[str, Any]] = []
-    for it in items:
-        u = it.get("url") or ""
-        if u in seen:
-            continue
-        seen.add(u)
-        out.append(it)
-    return out[:30]
+    return items
+
+
+def fetch_cs_direct(
+    keyword: str,
+    outlet: Outlet,
+    *,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    code: str = "",
+    name: str = "",
+) -> list[dict[str, Any]]:
+    """中证网 search_articles（见 ``company.news.press.cs``）。"""
+    from company.news.press.cs import fetch_news
+
+    query = name or keyword or code
+    if not query:
+        return []
+    try:
+        pack = fetch_news(
+            query,
+            start=start,
+            end=end,
+            days=None if start is not None else 31,
+            field="all",
+            sort="time",
+            max_pages=4,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+
+    items: list[dict[str, Any]] = []
+    for row in pack.get("items") or []:
+        published = safe_str(row.get("published_at"))
+        item = make_item(
+            title=safe_str(row.get("title")),
+            published_at=published,
+            url=safe_str(row.get("url")),
+            source=outlet["paper"],
+            channel=outlet["id"],
+            kind="press",
+            summary=safe_str(row.get("summary")),
+            why=safe_str(row.get("origin")) or outlet["name"],
+            code=code,
+            name=name,
+            extra={
+                "outlet": outlet["id"],
+                "outlet_name": outlet["name"],
+                "paper": outlet["paper"],
+                "domain": outlet["domain"],
+                "media_name": safe_str(row.get("origin")) or outlet["name"],
+                "via": "cs_direct",
+            },
+        )
+        if within_range(item, start, end):
+            items.append(item)
+    return items
+
+
+def fetch_cnstock_direct(
+    keyword: str,
+    outlet: Outlet,
+    *,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    code: str = "",
+    name: str = "",
+) -> list[dict[str, Any]]:
+    """中国证券网 search/v2/news（见 ``company.news.press.cnstock``）。"""
+    from company.news.press.cnstock import fetch_news
+
+    query = name or keyword or code
+    if not query:
+        return []
+    try:
+        pack = fetch_news(
+            query,
+            start=start,
+            end=end,
+            days=None if start is not None else 31,
+            type_="news",
+            max_pages=4,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+
+    items: list[dict[str, Any]] = []
+    for row in pack.get("items") or []:
+        published = safe_str(row.get("published_at"))
+        item = make_item(
+            title=safe_str(row.get("title")),
+            published_at=published,
+            url=safe_str(row.get("url")),
+            source=outlet["paper"],
+            channel=outlet["id"],
+            kind="press",
+            summary=safe_str(row.get("summary")),
+            why=safe_str(row.get("column")) or outlet["name"],
+            code=code,
+            name=name,
+            extra={
+                "outlet": outlet["id"],
+                "outlet_name": outlet["name"],
+                "paper": outlet["paper"],
+                "domain": outlet["domain"],
+                "media_name": outlet["name"],
+                "via": "cnstock_direct",
+            },
+        )
+        if within_range(item, start, end):
+            items.append(item)
+    return items
+
+
+def fetch_zqrb_direct(
+    keyword: str,
+    outlet: Outlet,
+    *,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    code: str = "",
+    name: str = "",
+) -> list[dict[str, Any]]:
+    """证券日报网 search.php（见 ``company.news.press.zqrb``）。"""
+    from company.news.press.zqrb import fetch_news
+
+    query = name or keyword or code
+    if not query:
+        return []
+    try:
+        pack = fetch_news(
+            query,
+            start=start,
+            end=end,
+            days=None if start is not None else 31,
+            src="news",
+            field="title",
+            sort="time",
+            max_pages=4,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+
+    items: list[dict[str, Any]] = []
+    for row in pack.get("items") or []:
+        published = safe_str(row.get("published_at"))
+        item = make_item(
+            title=safe_str(row.get("title")),
+            published_at=published,
+            url=safe_str(row.get("url")),
+            source=outlet["paper"],
+            channel=outlet["id"],
+            kind="press",
+            summary=safe_str(row.get("summary")),
+            why=safe_str(row.get("column")) or outlet["name"],
+            code=code,
+            name=name,
+            extra={
+                "outlet": outlet["id"],
+                "outlet_name": outlet["name"],
+                "paper": outlet["paper"],
+                "domain": outlet["domain"],
+                "media_name": safe_str(row.get("origin")) or outlet["name"],
+                "via": "zqrb_direct",
+            },
+        )
+        if within_range(item, start, end):
+            items.append(item)
+    return items
+
+
+def fetch_financialnews_direct(
+    keyword: str,
+    outlet: Outlet,
+    *,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    code: str = "",
+    name: str = "",
+) -> list[dict[str, Any]]:
+    """中国金融新闻网 Search.do（见 ``company.news.press.financialnews``）。"""
+    from company.news.press.financialnews import fetch_news
+
+    query = name or keyword or code
+    if not query:
+        return []
+    try:
+        pack = fetch_news(
+            query,
+            start=start,
+            end=end,
+            days=None if start is not None else 31,
+            field="all",
+            sort="time",
+            max_pages=4,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+
+    items: list[dict[str, Any]] = []
+    for row in pack.get("items") or []:
+        published = safe_str(row.get("published_at"))
+        item = make_item(
+            title=safe_str(row.get("title")),
+            published_at=published,
+            url=safe_str(row.get("url")),
+            source=outlet["paper"],
+            channel=outlet["id"],
+            kind="press",
+            summary=safe_str(row.get("summary")),
+            why=safe_str(row.get("column")) or outlet["name"],
+            code=code,
+            name=name,
+            extra={
+                "outlet": outlet["id"],
+                "outlet_name": outlet["name"],
+                "paper": outlet["paper"],
+                "domain": outlet["domain"],
+                "media_name": safe_str(row.get("origin")) or outlet["name"],
+                "via": "financialnews_direct",
+            },
+        )
+        if within_range(item, start, end):
+            items.append(item)
+    return items
+
+
+def fetch_jjckb_direct(
+    keyword: str,
+    outlet: Outlet,
+    *,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    code: str = "",
+    name: str = "",
+) -> list[dict[str, Any]]:
+    """经济参考网 getNewsFromAllData（见 ``company.news.press.jjckb``）。"""
+    from company.news.press.jjckb import fetch_news
+
+    query = name or keyword or code
+    if not query:
+        return []
+    try:
+        pack = fetch_news(
+            query,
+            start=start,
+            end=end,
+            days=None if start is not None else 31,
+            max_pages=4,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+
+    items: list[dict[str, Any]] = []
+    for row in pack.get("items") or []:
+        published = safe_str(row.get("published_at"))
+        item = make_item(
+            title=safe_str(row.get("title")),
+            published_at=published,
+            url=safe_str(row.get("url")),
+            source=outlet["paper"],
+            channel=outlet["id"],
+            kind="press",
+            summary=safe_str(row.get("summary")),
+            why=safe_str(row.get("column")) or outlet["name"],
+            code=code,
+            name=name,
+            extra={
+                "outlet": outlet["id"],
+                "outlet_name": outlet["name"],
+                "paper": outlet["paper"],
+                "domain": outlet["domain"],
+                "media_name": safe_str(row.get("origin")) or outlet["name"],
+                "via": "jjckb_direct",
+            },
+        )
+        if within_range(item, start, end):
+            items.append(item)
+    return items
 
 
 def fetch_outlet_direct(
@@ -168,8 +415,18 @@ def fetch_outlet_direct(
     **kwargs: Any,
 ) -> list[dict[str, Any]]:
     oid = outlet["id"]
+    if oid == "cs":
+        return fetch_cs_direct(keyword, outlet, **kwargs)
+    if oid == "cnstock":
+        return fetch_cnstock_direct(keyword, outlet, **kwargs)
     if oid == "stcn":
         return fetch_stcn_direct(keyword, outlet, **kwargs)
+    if oid == "zqrb":
+        return fetch_zqrb_direct(keyword, outlet, **kwargs)
+    if oid == "financialnews":
+        return fetch_financialnews_direct(keyword, outlet, **kwargs)
+    if oid == "jjckb":
+        return fetch_jjckb_direct(keyword, outlet, **kwargs)
     if oid == "chinadaily":
         return fetch_chinadaily_direct(keyword, outlet, **kwargs)
     return []
