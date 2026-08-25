@@ -54,7 +54,7 @@ const els = {
   errorBox: document.getElementById("errorBox"),
 };
 
-/** @type {{ mode: string, adjust: 'qfq'|'none', loading: boolean, kind: 'intraday'|'kline', items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, meta: string }} */
+/** @type {{ mode: string, adjust: 'qfq'|'none', loading: boolean, kind: 'ticks'|'kline', items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, meta: string }} */
 const chartState = {
   mode: "day",
   adjust: "qfq",
@@ -70,8 +70,7 @@ const chartState = {
 };
 
 const CHART_MODES = {
-  intraday: { label: "分时", kind: "intraday", ndays: 1, viewSize: 0 },
-  intraday5: { label: "五日", kind: "intraday", ndays: 5, viewSize: 0 },
+  ticks: { label: "实时", kind: "ticks", viewSize: 480 },
   "1m": { label: "1分", kind: "kline", period: "1m", limit: 720, viewSize: 240, adjust: "none" },
   "5m": { label: "5分", kind: "kline", period: "5m", limit: 480, viewSize: 96, adjust: "none" },
   "15m": { label: "15分", kind: "kline", period: "15m", limit: 360, viewSize: 80, adjust: "none" },
@@ -901,14 +900,26 @@ function fmtVol(n) {
   return String(Math.round(v));
 }
 
+function downsampleTicks(items, maxN) {
+  if (!Array.isArray(items) || items.length <= maxN) return items;
+  const last = Math.max(2, maxN) - 1;
+  const step = (items.length - 1) / last;
+  const out = [];
+  for (let i = 0; i < last; i += 1) {
+    out.push(items[Math.round(i * step)]);
+  }
+  out.push(items[items.length - 1]);
+  return out;
+}
+
 function shortTimeLabel(t, mode) {
   const s = String(t || "");
-  if (mode === "intraday5") {
-    if (s.length >= 10) return s.slice(5, 10); // MM-DD
-    return s;
-  }
-  if (mode === "intraday") {
+  if (mode === "ticks") {
     if (s.length >= 16) return s.slice(11, 16);
+    if (s.length >= 8 && s.includes(":")) {
+      const hm = s.match(/(\d{1,2}:\d{2})/);
+      if (hm) return hm[1].padStart(5, "0");
+    }
     if (s.length >= 10) return s.slice(5, 10);
     return s;
   }
@@ -963,7 +974,7 @@ function chartViewWindow() {
 
 function chartMinViewSize(total) {
   if (total <= 1) return Math.max(1, total);
-  if (chartState.kind === "intraday") return Math.min(total, 36);
+  if (chartState.kind === "ticks") return Math.min(total, 36);
   return Math.min(total, 20);
 }
 
@@ -1046,7 +1057,7 @@ function resetChartViewport(allItems, modeConf) {
   const total = chartState.allItems.length;
   let viewSize = Number(modeConf?.viewSize);
   if (!Number.isFinite(viewSize) || viewSize <= 0) {
-    viewSize = total; // 分时默认看全天
+    viewSize = total;
   }
   chartState.viewSize = viewSize;
   chartState.viewStart = Math.max(0, total - (viewSize > 0 && viewSize < total ? viewSize : total));
@@ -1057,8 +1068,7 @@ function resetChartViewport(allItems, modeConf) {
 function chartLayout(w, h) {
   // 顶部/右侧留给坐标与分时涨跌幅
   const pctAxis =
-    chartState.kind === "intraday" &&
-    chartState.mode === "intraday" &&
+    chartState.kind === "ticks" &&
     Number.isFinite(chartState.preClose) &&
     chartState.preClose;
   const pad = {
@@ -1255,7 +1265,7 @@ function drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { preClose
   }
 
   // 分时：右侧涨跌幅刻度，与左侧价格对齐
-  if (mode === "intraday" && Number.isFinite(preClose) && preClose) {
+  if (mode === "ticks" && Number.isFinite(preClose) && preClose) {
     ctx.textAlign = "left";
     for (const val of ticks) {
       const y = yOf(val);
@@ -1274,9 +1284,7 @@ function drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { preClose
   const n = items.length;
   if (n > 0) {
     let idxs;
-    if (mode === "intraday5") {
-      idxs = dayBreakIndices(items);
-    } else if (isMinuteKline(mode)) {
+    if (isMinuteKline(mode)) {
       const breaks = dayBreakIndices(items);
       if (breaks.length >= 2) {
         idxs = breaks.length <= 5 ? breaks.slice() : [
@@ -1323,7 +1331,7 @@ function paintChartFrame(ctx, w, h, colors) {
   ctx.fillRect(0, 0, w, h);
 }
 
-function drawIntradayChart(ctx, layout, items, preClose, mode, colors, hoverIndex) {
+function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverIndex) {
   const n = items.length;
   if (!n) return;
 
@@ -1338,7 +1346,7 @@ function drawIntradayChart(ctx, layout, items, preClose, mode, colors, hoverInde
   const priceScale = buildPriceScale(minP, maxP, {
     tickCount: priceScaleTickCount(price.h),
     padRatio: 0.015,
-    center: mode === "intraday" && Number.isFinite(preClose) ? preClose : null,
+    center: Number.isFinite(preClose) ? preClose : null,
   });
   const vols = items.map((d) => Number(d.volume) || 0);
   const maxVol = Math.max(...vols, 1);
@@ -1348,10 +1356,7 @@ function drawIntradayChart(ctx, layout, items, preClose, mode, colors, hoverInde
     price.y + ((priceScale.max - p) / (priceScale.max - priceScale.min || 1)) * price.h;
 
   const yTicks = (priceScale.ticks || []).map(yAt);
-  let xTicks = [0, 0.5, 1].map((t) => price.x + price.w * t);
-  if (mode === "intraday5") {
-    xTicks = dayBreakIndices(items).map((i) => price.x + (i / Math.max(n, 1)) * price.w);
-  }
+  const xTicks = [0, 0.5, 1].map((t) => price.x + price.w * t);
   drawGrid(ctx, price, yTicks, xTicks, colors);
   drawGrid(
     ctx,
@@ -1360,22 +1365,6 @@ function drawIntradayChart(ctx, layout, items, preClose, mode, colors, hoverInde
     xTicks,
     colors
   );
-
-  // 五日：日期分隔线更明显
-  if (mode === "intraday5") {
-    ctx.save();
-    ctx.strokeStyle = "rgba(42, 212, 184, 0.22)";
-    ctx.lineWidth = 1;
-    for (const i of dayBreakIndices(items)) {
-      if (i <= 0) continue;
-      const x = price.x + (i / n) * price.w;
-      ctx.beginPath();
-      ctx.moveTo(x, price.y);
-      ctx.lineTo(x, volume.y + volume.h);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
 
   if (Number.isFinite(preClose)) {
     const y = yAt(preClose);
@@ -1642,8 +1631,8 @@ function renderChart(hoverIndex = null) {
   if (!items.length) return;
 
   const layout = chartLayout(cssW, cssH);
-  if (chartState.kind === "intraday") {
-    drawIntradayChart(
+  if (chartState.kind === "ticks") {
+    drawRealtimeChart(
       ctx,
       layout,
       items,
@@ -1691,7 +1680,7 @@ function updateHoverLabel(index, evt = null) {
   };
 
   let rows = [];
-  if (chartState.kind === "intraday") {
+  if (chartState.kind === "ticks") {
     let pct = null;
     const price = Number(d.price);
     if (Number.isFinite(chartState.preClose) && Number.isFinite(price) && chartState.preClose) {
@@ -1700,9 +1689,10 @@ function updateHoverLabel(index, evt = null) {
     const priceCls =
       pct > 0 ? "change-up" : pct < 0 ? "change-down" : "";
     const p = pctText(pct);
+    const avg = Number(d.avg_price);
     rows = [
       row("现价", escapeHtml(fmtNum(d.price)), priceCls),
-      row("均价", escapeHtml(fmtNum(d.avg_price))),
+      Number.isFinite(avg) ? row("均价", escapeHtml(fmtNum(avg))) : "",
       p ? row("涨跌幅", escapeHtml(p.text), p.cls) : "",
       row("成交量", escapeHtml(fmtVol(d.volume))),
     ].filter(Boolean);
@@ -1789,15 +1779,13 @@ async function loadChart(mode = chartState.mode) {
 
   try {
     let data;
-    if (conf.kind === "intraday") {
-      const qs = new URLSearchParams({
-        code,
-        ndays: String(conf.ndays || 1),
-      });
-      const json = await api(`/api/stocks/intraday?${qs.toString()}`);
+    if (conf.kind === "ticks") {
+      const qs = new URLSearchParams({ code });
+      const json = await api(`/api/stocks/ticks?${qs.toString()}`);
       data = json.data || {};
-      resetChartViewport(data.items || [], conf);
-      chartState.preClose = Number(data.pre_close);
+      const rawItems = Array.isArray(data.items) ? data.items : [];
+      resetChartViewport(downsampleTicks(rawItems, 2400), conf);
+      chartState.preClose = Number(data.pre_price);
       if (!Number.isFinite(chartState.preClose)) chartState.preClose = null;
       chartState.source = data.source || "";
     } else {
@@ -1807,7 +1795,7 @@ async function loadChart(mode = chartState.mode) {
         adjust: klineAdjustFor(mode),
         limit: String(conf.limit || 180),
       });
-      const json = await api(`/api/stocks/kline?${qs.toString()}`);
+      const json = await api(`/api/stocks/line?${qs.toString()}`);
       data = json.data || {};
       resetChartViewport(data.items || [], conf);
       chartState.preClose = null;

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from data.core.paths import NEWS_CACHE_DIR
+from core.paths import NEWS_CACHE_DIR
 
 # 沿用 cache/news 目录，避免旧缓存键失效带来多余请求；版本号 bump 后旧文件作废
 CACHE_DIR = NEWS_CACHE_DIR
