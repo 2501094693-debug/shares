@@ -1,0 +1,212 @@
+static/js/stock-discussion-core.bb077c12.js 200 219666
+static/js/stock-discussion-mf-entry.ca24cc33.js 200 5536
+static/js/stock-discussion-components.4cd18623.js 200 111760
+static/js/stock-discussion-bootstrap.f022db0e.js 200 108259
+keep 207
+),i.CONTENT_RUDE_REJECT,
+),i.CONTENT_RUDE_REJECT_DEPRECATED,
+),i.CONTENT_TOO_SHORT,
+),i.CONTENT_VIOLATION_CHAR,
+),i.CONTENT_VIOLATION_REJECT,
+),i.CONTENT_VIOLATION_REJECT_DEPRECATED_1,
+),i.CONTENT_VIOLATION_REJECT_DEPRECATED_2,
+),i.FORUM_NOT_FOUND,
+),i=new URLSearchParams;for(var a in t)i.set(a,String(t[a]));r.A.postData(o,i,{headers:{
+),t.commentsData?e(
+).click)},clickReportButton:function(){o.A.log(o.A.post(o.A.stockDiscussionPostLogString(t),
+).click)},clickReportReasonButton:function(e){o.A.log(o.A.post(o.A.stockDiscussionPostLogString(t),
+).concat(e),type:u,order:l,position:{afterPostIndex:s},data:a(t.type,t.data),rawType:(null!==(r=t.type)&&void 0!==r?r:
+).concat(t.normalizedAfterPostIndex,
+).concat(t.postPattern[i],
+).includes(t.code)||e.state.post.stocksData.set(t.market,
+)})),o=t.convertContentStock(o,n),o=t.convertContentTopic(o,n),o=t.convertContentMention(o,n),o=t.convertContentImage(o,n)}},{key:
+)})}),p.handlePostSelfView=(0,c.n)(function(t){p.hide(),u.A.setPostSelfView({pid:p.post.pid}).then(function(){p.store.dispatch(
+)})}),p.showStickyMenu=(0,c.n)(function(){var t,e,n;u.A.isStickyPostData(p.post)&&p.post.isTop?(t=
++t._s(t.options.content)+
+,attrs:{descriptionData:t.contentSource}}):t._e(),t._v(
+,c.appendChild(r),r.src=String(e),(t=r.contentWindow.document).open(),t.write(d(
+,clickMask:t,buttons:[{content:
+,component:A.A,afterPostIndex:this.topicPosition,order:-100,componentClassName:
+,component:N,afterPostIndex:0,order:-100,componentClassName:
+,component:U.A,afterPostIndex:0,order:-200,componentClassName:
+,components:{PostItem:E}})],R),U=(0,P.A)(N,function(){var t=this,e=t._self._c;t._self._setupProxy;return t.isPostItem?e(
+,content:
+,content:t,onInput:l,onChange:l,hintElement:s,lengthElement:a},buttons:[{content:
+,content:{type:
+,data:{}},t.postLogParam=t.initLogParam(),t}return(0,r.A)(e,t),(0,s.A)(e,[{key:
+,e),t.lastComment=t.inputContent,t.image=
+,e)}),p.showDeleteMenu=(0,c.n)(function(t){p.statMethod.clickDeleteButton&&p.statMethod.clickDeleteButton();var e=[p.setContentTitle(
+,g.lastPublishContentId=
+,get:function(){return d.A.relationContent[0]||{}}},{key:
+,get:function(){return s.A.getUserId()===t.post.uid}},{key:
+,get:function(){return this.$store.state.post.forwardDataMapUpdateTrigger}},{key:
+,get:function(){return this.$store.state.post.reportPostSetUpdateTrigger}},{key:
+,get:function(){return this.$store.state.post.stickyPostSetUpdateTrigger}},{key:
+,get:function(){return this.$store.state.post.stockInfoTrigger}},{key:
+,get:function(){return this.$store.state.post.stockInfo}},{key:
+,get:function(){return this.contentCardDataToCommonPostData(this.item)||{}}},{key:
+,get:function(){return this.inputContent.length>=this.options.limit}}])}(u.default);(0,l.__decorate)([(0,c.ox)(
+,get:function(){return this.quoteMap||this.$store.state.post.stockInfo}},{key:
+,get:function(){return y.A.relationContent.length>0}},{key:
+,get:function(){var t=this.infoData,e=this.newsData,i=this.userStat;if(e){var n=e.time||t.ctime,o=e.replys||i.commentNum,s=n&&(0,p.A)(n)||
+,get:function(){var t=this.stickyPostData.length+this.listData.length;return y.A.valid||(this.pageState=g.U.notYetOpen),y.A.valid&&t>0}},{key:
+,get:function(){var t=this;return this.quoteMapTrigger,this.targetList.map(function(e){return
+,h.A.TOAST_MESSAGE[h.l.USER_PUBLISH_REPEAT]):d.A.publishPost(o).then(function(e){t.$store.dispatch(
+,jumpUrl:(null===(e=n.extInfo)||void 0===e||null===(e=e.postInfo)||void 0===e?void 0:e.jumpUrl)||
+,method:function(){return p.handleDeletePost(t)}},{type:
+,method:t.handlePostSelfView}),t.isSelf&&o.splice(1,0,{type:
+,method:t.showCancelDistributionMenu}),[l.e8.USER_DISCUSS,l.e8.HOT_DISCUSS].includes(t.post.bizType)&&o.splice(1,0,{type:
+,method:t.showStickyMenu}),t.isSelf||t.post.type===l.M$.MEDIA_LIVE||n.includes(t.post.bizType)||o.splice(1,0,{type:
+,n=!0);var o=[p.setContentTitle(t),{type:
+,null,{item:i.content})],2):t.isMenuDivideOptions(i)?e(
+,null,{item:t.options.content})]],2)]),t._v(
+,on:{click:function(e){return e.stopPropagation(),t.clickContent.apply(null,arguments)}}},[t.topData?e(
+,on:{click:t.postComment}},[t._v(
+,order:u,position:{afterPostIndex:d},data:{sentenceData:e,titleJumpUrl:n,title:
+,p.post.pid),p.store.dispatch(
+,t.inputContent=
+,t.lastComment=
+,t.marketId=void 0,t.stockName=void 0,t.isTradingDay=!1,t.valid=!0,t.stickyPostData=[],t.relationContent=[],t.relationCircle=[],t.sortLogParam=void 0}},{key:
+,t[t.CONTENT_RUDE_REJECT=-100]=
+,t[t.CONTENT_RUDE_REJECT_DEPRECATED=-98]=
+,t[t.CONTENT_TOO_SHORT=-13]=
+,t[t.CONTENT_VIOLATION_CHAR=-12]=
+,t[t.CONTENT_VIOLATION_REJECT=-101]=
+,t[t.CONTENT_VIOLATION_REJECT_DEPRECATED_1=-97]=
+,t[t.CONTENT_VIOLATION_REJECT_DEPRECATED_2=-89]=
+,t[t.FORUM_NOT_FOUND=-10]=
+,this.options.content=n.content;var o=null!==(e=n.buttons)&&void 0!==e&&e.length?n.buttons:[{content:
+,title:e,method:function(){p.handleStickyPost(n)}},{type:
+,title:u.A.isStickyPostData(t.post)&&t.post.isTop?
+,value:function(){f.A.log(f.A.post(f.A.stockDiscussionPostLogString(this.postLogParam),
+,value:function(){this.isHideSticky=this.$store.state.post.stickyPostSet.has(this.currentPostId)&&!w.A.isStickyPostData(this.postData)}},{key:
+,value:function(){this.isReported=this.$store.state.post.reportPostSet.has(Number(this.item.info.id))}},{key:
+,value:function(){this.targetList.forEach(function(t){if(
+,value:function(){var t=this.$refs.relatedForumItems;return t?Array.isArray(t)?t:[t]:[]}},{key:
+,value:function(){var t=this.$store.state.post.forwardDataMap.get((0,D.Q)(this.item.stat.likeKey));t&&(this.item.stat.forwardNum=t)}},{key:
+,value:function(e){return t.postLogString(e)}},{key:
+,value:function(e){var n=u.A.getPostTypeName(t.post.bizType);return{type:
+,value:function(t){if(f.A.log(f.A.post(f.A.stockDiscussionPostLogString(this.postLogParam),
+,value:function(t){return{content:
+,value:function(t,e){f.A.log(f.A.post(f.A.stockDiscussionPostLogString(this.postLogParam),
+,value:function(t,e){var i=this;this.showDialog({content:g,buttons:[{content:f[0].content,style:
+,value:t.inputContent,expression:
+,{attrs:{infoData:t.infoData,titleData:t.titleData},on:{clickContentStat:t.clickContentStat}}):t._e(),t._v(
+,{attrs:{item:t.postRenderItem.item,list:t.list}}):t.renderItem.visible&&t.renderItem.wrapperClassName?e(
+,{domProps:{innerHTML:t._s(t.item.content)}})])]:t.isPostMenuBack?[e(
+,{pid:[p.post.pid],flag:t}),p.store.dispatch(
+.concat(e)).click)},clickReportReasonCommitButton:function(){o.A.log(o.A.post(o.A.stockDiscussionPostLogString(t),
+.concat(t.forum.name,
+//adm.10jqka.com.cn/interface/ad/recommend
+//bbsclick.10jqka.com.cn/getVote
+//bbsclick.10jqka.com.cn/getlist
+//community.touzime.com/lgt/count/open/api/v1/list
+//d.10jqka.com.cn/multimarketreal/$1/$2/10_199112_264648
+//fund.10jqka.com.cn/quotation/level3_track_etf/recommend
+//s.thsi.cn/cb?;sns/sea-modules/gallery/bundle/lrz.all.bundle.js
+//s.thsi.cn/sns/lib/front/snsUtils/0.0.27/snsUtils.js
+//s.thsi.cn/sns/lib/front/thsc-theme/1.1.0/thsc-theme.min.js
+//upass.10jqka.com.cn/asset/wechatlogin/js/checkwechat.js
+//upass.10jqka.com.cn/bind/phone
+/lgt/content-distribution/auth/api/content/v1/batch_cancel_distribution
+/lgt/hotmodules/auth/api/top/v1/add_top_post
+/lgt/hotmodules/auth/api/top/v1/del_top_post
+/lgt/interactmsg/api/counts
+/lgt/main/frontend-main-service/appeal/index.html?type=account
+/lgt/main/interactive-message-frontend/index.html
+/lgt/post/open/api/forum/content/v1/hot_feed
+/lgt/post/open/api/forum/content/v1/recent
+/lgt/publish/auth/api/post/delete
+/lgt/publish/auth/api/post/publish/check
+/lgt/publish/auth/api/post/v2/publish
+/lgt/pull_black/auth/api/black_user/v1/check_relation
+:!t.hasRelatedForum}}):t._e(),t._v(
+:t.isRelatedForumFull}})],1)]):t._e(),t._v(
+:t.postBusinessType[u]||u,
+:t.showPullContent}},[e(
+===(null===(e=t.post)||void 0===e||null===(e=e.abstract)||void 0===e?void 0:e.content)&&(t.post.abstract.content=
+===_.A.getAppInfo().platform&&(0,k.UF)(this.listElement,this.handleListScroll),(0,k.UF)(this.listElement,this.handlePostShow),this.handlePostShow()}},{key:
+==typeof n&&u.A.stickyPostData.splice(n,1)}p.store.dispatch(
+==typeof t.hasMore?t.hasMore:t.feed.length>0}},{key:
+==typeof this.options.content}},{key:
+Content-Type
+HXContentPublisher
+],i=this.$store.state.post.reportPostSet;return e.has(this.currentPostId)&&!i.has(this.currentPostId)&&(t=!1),t}},{key:
+],l.postBusinessType=(o={},(0,i.A)((0,i.A)((0,i.A)((0,i.A)((0,i.A)((0,i.A)((0,i.A)((0,i.A)((0,i.A)((0,i.A)(o,s.e8.USER_DISCUSS,
+],l.postPattern=[
+aijp_post_
+banner theme-bg-content
+bxzj_post_
+checkRepeatContent
+clickContentStat
+client.html?action=ymtz^url=https://t.10jqka.com.cn/lgt/main/frontend-main-service/topic/index.html?code=$2^webid=2804^fontzoom=no^mode=new
+commentsData
+common_post theme-bg-content
+content-type
+contentFlowRuntimeContext
+convertContentStock
+currentPostId
+deletePost
+deletePostSetUpdateTrigger
+group-post-
+guba-recommended-question-cache:
+guba-recommended-question-click-items
+guba-recommended-question-exposure-items
+handlePostShow
+hasRelatedForum
+https://mams.10jqka.com.cn/new/server/v1/transform/getFundInfo
+https://ms.10jqka.com.cn/thsHotDetail/
+https://t.10jqka.com.cn/lgt/community/follow-fans-lists.html?userid=
+isPostItem
+isPostMenuBack
+isPostMenuTitle
+isRelatedForumFull
+iwdm_post_
+jhjj_post_
+latest_list-iwc theme-bg-content
+lhb_post_
+onDeletePostSetUpdateTriggerChange
+onStickyPostSetUpdateTriggerChange
+onTargetListChange
+pmfx_post_
+post-menu-back
+post-menu-title
+post-report-button
+post-report-item
+post/deletePost
+post/getForwardCount
+post/getLikes
+post/recordStockInfo
+post/stickyPost
+postComment
+postElement
+postFileByUrl
+postRenderItems
+postShare
+pull_refresh_status-content theme-bg-content
+qhzbgc_post_
+reason theme-bd-divide theme-text-content theme-bg-global
+related-forum
+setPostSelfView
+snsUtils
+sns_lungu_
+sns_post_
+stickyPost
+stickyPostSetUpdateTrigger
+stock_discussion-content
+stock_discussion-content--drawer
+stock_discussion-content--page-scroll
+sunmao_post_
+targetList
+ydjd_post_
+yysc_post_
+ztjj_post_
+zx-post-
+},[t._v(t._s(t.item.content))]),t._v(
+},[t.isPostMenuTitle?[e(
+},[t.isTextContent?[t._v(
+},{content:
+},{content:f[1].content,action:function(){i.hideDialog(),i.jumpPhonePage()}}],clickMask:t})}},{key:
+};h.A.stringSimilarityPercent(this.lastComment,this.inputContent)>.9?this.$store.dispatch(
+}];[l.M$.MEDIA_VIDEO,l.M$.MEDIA_LIVE].includes(t.post.type)||t.post.bizType===l.e8.ASK_ANSWER||o.splice(1,0,{type:
+}];t.isSelf||t.post.type===l.M$.MEDIA_LIVE||n.includes(t.post.bizType)?t.isSelf&&o.splice(1,0,{type:

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=kline-adjust-20260820" />
+  <link rel="stylesheet" href="/css/style.css?v=pe-chart-20260826" />
 </head>
 <body class="company-page-root">
   <div class="app company-page">
@@ -16,7 +16,7 @@
         <span class="brand-mark">SW</span>
         <div>
           <h1 id="pageTitle">公司详情</h1>
-          <p id="pageSub">指标详情 · 行情走势 · 交易所公告 · 巨潮公告 · 七报七网 · 官方新闻 · 其他新闻 · 机构研报</p>
+          <p id="pageSub">指标详情 · 行情走势 · 估值 · 交易所公告 · 巨潮公告 · 七报七网 · 官方新闻 · 其他新闻 · 机构研报</p>
         </div>
       </div>
       <div class="top-actions">
@@ -80,6 +80,47 @@
           value="0"
           step="1"
           aria-label="时间轴滑动"
+          disabled
+        />
+      </div>
+    </section>
+
+    <section class="company-section chart-section pe-chart-section" aria-label="估值走势">
+      <div class="section-head chart-section-head">
+        <h3>估值走势</h3>
+        <div class="chart-head-controls">
+          <div id="peChartTabs" class="chart-tabs" role="tablist" aria-label="估值口径">
+            <button type="button" class="chart-tab" data-series="dyn" role="tab" aria-selected="false">市盈率动</button>
+            <button type="button" class="chart-tab is-active" data-series="ttm" role="tab" aria-selected="true">市盈率TTM</button>
+            <button type="button" class="chart-tab" data-series="static" role="tab" aria-selected="false">市盈率静</button>
+            <button type="button" class="chart-tab" data-series="pb" role="tab" aria-selected="false">市净率</button>
+          </div>
+          <div id="peChartRange" class="chart-adjust" role="group" aria-label="区间">
+            <button type="button" class="chart-adjust-btn" data-range="y1" aria-pressed="false">1年</button>
+            <button type="button" class="chart-adjust-btn is-active" data-range="y3" aria-pressed="true">3年</button>
+            <button type="button" class="chart-adjust-btn" data-range="y5" aria-pressed="false">5年</button>
+            <button type="button" class="chart-adjust-btn" data-range="all" aria-pressed="false">全部</button>
+          </div>
+        </div>
+      </div>
+      <div class="chart-toolbar">
+        <p id="peChartMeta" class="muted chart-meta">加载中…</p>
+        <div id="peChartHoverCard" class="chart-hover-card hidden" aria-hidden="true"></div>
+      </div>
+      <div id="peChartWrap" class="chart-canvas-wrap">
+        <canvas id="peChart" width="960" height="320" aria-label="估值曲线图"></canvas>
+        <p id="peChartEmpty" class="muted chart-empty hidden">暂无估值数据</p>
+      </div>
+      <div id="peChartAxisScroll" class="chart-axis-scroll is-disabled">
+        <input
+          id="peChartScrollBar"
+          class="chart-scroll-bar"
+          type="range"
+          min="0"
+          max="0"
+          value="0"
+          step="1"
+          aria-label="估值时间轴滑动"
           disabled
         />
       </div>
@@ -166,6 +207,6 @@
     <div id="errorBox" class="error hidden"></div>
   </div>
 
-  <script src="/js/company.js?v=line-ticks-20260825"></script>
+  <script src="/js/company.js?v=pe-dyn-20260826"></script>
 </body>
 </html>

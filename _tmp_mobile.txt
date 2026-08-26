@@ -1,0 +1,47 @@
+==== GET https://t.10jqka.com.cn/m/guba/600519/ status=200 len=9180
+<!doctype html><html lang=""><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><script type="text/javascript" src="//s.thsi.cn/js/chameleon/chameleon.1.12.min.178771
+
+==== GET https://t.10jqka.com.cn/m/guba/600519 status=200 len=9180
+<!doctype html><html lang=""><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><script type="text/javascript" src="//s.thsi.cn/js/chameleon/chameleon.1.12.min.178771
+
+==== GET https://eq.10jqka.com.cn/wap/guba/600519.html status=404 len=162
+<html> <head><title>404 Not Found</title></head> <body bgcolor="white"> <center><h1>404 Not Found</h1></center> <hr><center>nginx</center> </body> </html> 
+
+==== GET https://m.10jqka.com.cn/stockpage/600519/ status=200 len=36246
+<!DOCTYPE html> <html>  <head>   <meta charset="utf-8">   <title>个股资金流向查询_个股行情_手机同花顺财经</title>   <meta name="keywords" content="个股点评, 个股查询, 个股行情" />   <meta name="description" content="手机同花顺财经提供五档盘口、逐笔交易等实时行情数据；汇总基本资料及重大新闻、研究报告及行业资讯，解读中国信安主力资金动向、财务数据，为投资提供参考决策。" />   <meta name="
+
+==== GET https://stockpage.10jqka.com.cn/600519/ status=200 len=36246
+<!DOCTYPE html> <html>  <head>   <meta charset="utf-8">   <title>个股资金流向查询_个股行情_手机同花顺财经</title>   <meta name="keywords" content="个股点评, 个股查询, 个股行情" />   <meta name="description" content="手机同花顺财经提供五档盘口、逐笔交易等实时行情数据；汇总基本资料及重大新闻、研究报告及行业资讯，解读中国信安主力资金动向、财务数据，为投资提供参考决策。" />   <meta name="
+
+==== POST getPostList mobile status=200 len=71
+{"errorCode":-1,"errorMsg":"\u672a\u767b\u5f55","result":{},"isT":true}
+
+==== POST getPostList hexin status=200 len=71
+{"errorCode":-1,"errorMsg":"\u672a\u767b\u5f55","result":{},"isT":true}
+
+==== GET https://t.10jqka.com.cn/newcircle/post/getPostList/ {'code': '600519', 'type': 1, 'page': 1} status=200 len=76
+{"errorCode":-10001,"errorMsg":"\u65e0\u6743\u9650\u8bbf\u95ee","result":""}
+
+==== GET https://t.10jqka.com.cn/lgt/getPostList {'code': '600519', 'page': 1} status=404 len=166
+<html> <head><title>404 Not Found</title></head> <body bgcolor="white"> <center><h1>404 Not Found</h1></center> <hr><center>openresty</center> </body> </html> 
+
+==== GET https://eq.10jqka.com.cn/openapi/comment/v1/getStockCommentList {'code': '600519', 'page': 1} status=404 len=162
+<html> <head><title>404 Not Found</title></head> <body bgcolor="white"> <center><h1>404 Not Found</h1></center> <hr><center>nginx</center> </body> </html> 
+
+==== GET https://eq.10jqka.com.cn/openapi/stock/comment/list {'code': '600519'} status=404 len=162
+<html> <head><title>404 Not Found</title></head> <body bgcolor="white"> <center><h1>404 Not Found</h1></center> <hr><center>nginx</center> </body> </html> 
+
+==== GET https://comment.10jqka.com.cn/getCommentList {'code': '600519'} status=404 len=166
+<html> <head><title>404 Not Found</title></head> <body bgcolor="white"> <center><h1>404 Not Found</h1></center> <hr><center>openresty</center> </body> </html> 
+
+==== GET https://t.10jqka.com.cn/newcircle/group/getFeed/ {'code': '600519'} status=200 len=76
+{"errorCode":-10001,"errorMsg":"\u65e0\u6743\u9650\u8bbf\u95ee","result":""}
+
+==== GET https://t.10jqka.com.cn/newcircle/group/getGroupFeed/ {'code': '600519', 'fid': 2372} status=200 len=76
+{"errorCode":-10001,"errorMsg":"\u65e0\u6743\u9650\u8bbf\u95ee","result":""}
+
+==== GET https://t.10jqka.com.cn/m/guba/600519/getPostList None status=200 len=9180
+<!doctype html><html lang=""><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><script type="text/javascript" src="//s.thsi.cn/js/chameleon/chameleon.1.12.min.178771
+
+==== GET https://news.10jqka.com.cn/tapp/news/push/stock/ {'code': '600519'} status=200 len=19613
+{"code":"200","msg":"成功","time":"1787712856","data":{"list":[{"id":"5029227","seq":"679297790","title":"工信部：将研究起草动力电池退役相关行政法规，实施动力电池数字身份证管理制度","digest":"8月26日，国务院新闻办公室举行“开局起步‘十五五’”系列主题新闻发布会，介绍全力抓好“十五五”规划实施，加快推进新型工业化有关情况。工业和信息化部副部长辛国斌表示，针对大家普遍关心的新能源汽车动力电池退役问题，“十五五”时期我们将研究起草相关行政法规，

@@ -1228,11 +1228,23 @@ thead th {
   cursor: grabbing;
 }
 
+.pe-chart-section {
+  height: calc(100vh * 3 / 5);
+  min-height: 360px;
+  max-height: calc(100vh * 3 / 5);
+}
+
 @media (max-width: 960px) {
   .chart-section {
     height: calc(100vh * 5 / 6);
     min-height: calc(100vh * 5 / 6);
     max-height: calc(100vh * 5 / 6);
+  }
+
+  .pe-chart-section {
+    height: calc(100vh * 3 / 5);
+    min-height: 320px;
+    max-height: calc(100vh * 3 / 5);
   }
 
   .chart-axis-scroll {

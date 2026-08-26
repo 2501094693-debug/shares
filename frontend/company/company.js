@@ -50,6 +50,15 @@ const els = {
   chartEmpty: document.getElementById("chartEmpty"),
   chartAxisScroll: document.getElementById("chartAxisScroll"),
   chartScrollBar: document.getElementById("chartScrollBar"),
+  peChartTabs: document.getElementById("peChartTabs"),
+  peChartRange: document.getElementById("peChartRange"),
+  peChartMeta: document.getElementById("peChartMeta"),
+  peChartHoverCard: document.getElementById("peChartHoverCard"),
+  peChartWrap: document.getElementById("peChartWrap"),
+  peChart: document.getElementById("peChart"),
+  peChartEmpty: document.getElementById("peChartEmpty"),
+  peChartAxisScroll: document.getElementById("peChartAxisScroll"),
+  peChartScrollBar: document.getElementById("peChartScrollBar"),
   refreshNewsBtn: document.getElementById("refreshNewsBtn"),
   errorBox: document.getElementById("errorBox"),
 };
@@ -1984,6 +1993,633 @@ function setupChart() {
   }
 }
 
+/* ---------- 市盈率曲线 ---------- */
+
+const PE_SERIES = {
+  dyn: { key: "pe_dyn", label: "市盈率(动)" },
+  ttm: { key: "pe_ttm", label: "市盈率(TTM)" },
+  static: { key: "pe_static", label: "市盈率(静)" },
+  pb: { key: "pb", label: "市净率" },
+};
+
+const PE_RANGES = {
+  y1: { label: "1年", viewSize: 250 },
+  y3: { label: "3年", viewSize: 750 },
+  y5: { label: "5年", viewSize: 1250 },
+  all: { label: "全部", viewSize: 0 },
+};
+
+const peState = {
+  series: "ttm",
+  range: "y3",
+  loading: false,
+  items: [],
+  allItems: [],
+  viewStart: 0,
+  viewSize: 750,
+  source: "",
+};
+
+function peSeriesConf() {
+  return PE_SERIES[peState.series] || PE_SERIES.ttm;
+}
+
+function peValue(d) {
+  const key = peSeriesConf().key;
+  const n = Number(d?.[key]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function quantile(values, q) {
+  if (!values.length) return null;
+  const s = values.slice().sort((a, b) => a - b);
+  const pos = (s.length - 1) * q;
+  const i = Math.floor(pos);
+  const f = pos - i;
+  const a = s[i];
+  const b = s[Math.min(i + 1, s.length - 1)];
+  return a + (b - a) * f;
+}
+
+function percentileRank(values, x) {
+  if (!values.length || !Number.isFinite(x)) return null;
+  let n = 0;
+  for (const v of values) {
+    if (v <= x) n += 1;
+  }
+  return (n / values.length) * 100;
+}
+
+function peEmptyHint() {
+  if (peState.series === "pb") return "暂无市净率数据";
+  if (peState.series === "dyn") return "暂无动态市盈率（可能长期亏损）";
+  if ((peState.allItems || []).length) return "该口径暂无有效市盈率（可能长期亏损）";
+  return "暂无估值数据";
+}
+
+function setPeStatus(message, { empty = false } = {}) {
+  if (els.peChartMeta) els.peChartMeta.textContent = message || "";
+  if (els.peChartEmpty) {
+    els.peChartEmpty.textContent = empty ? message || peEmptyHint() : "暂无估值数据";
+    els.peChartEmpty.classList.toggle("hidden", !empty);
+  }
+}
+
+function peViewWindow() {
+  const all = peState.allItems || [];
+  const total = all.length;
+  let size = Number(peState.viewSize) || 0;
+  if (size <= 0 || size >= total) size = total;
+  const maxStart = Math.max(0, total - size);
+  const start = Math.min(Math.max(0, Number(peState.viewStart) || 0), maxStart);
+  return { total, size, start, maxStart, items: total ? all.slice(start, start + size) : [] };
+}
+
+function peMinViewSize(total) {
+  if (total <= 1) return Math.max(1, total);
+  return Math.min(total, 40);
+}
+
+function syncPeScrollBar() {
+  const bar = els.peChartScrollBar;
+  const wrap = els.peChartAxisScroll;
+  if (!bar || !wrap) return;
+  const { maxStart, start, total, size } = peViewWindow();
+  const disabled = maxStart <= 0;
+  wrap.classList.toggle("is-disabled", disabled);
+  bar.disabled = disabled;
+  bar.min = "0";
+  bar.max = String(maxStart);
+  bar.value = String(start);
+  const ratio = total > 0 ? Math.min(1, size / total) : 1;
+  bar.style.setProperty("--thumb-w", `${Math.max(28, Math.round(ratio * 220))}px`);
+}
+
+function resetPeViewport(allItems) {
+  peState.allItems = Array.isArray(allItems) ? allItems : [];
+  const total = peState.allItems.length;
+  const conf = PE_RANGES[peState.range] || PE_RANGES.y3;
+  let viewSize = Number(conf.viewSize) || 0;
+  if (viewSize <= 0 || viewSize >= total) viewSize = total;
+  peState.viewSize = viewSize;
+  peState.viewStart = Math.max(0, total - viewSize);
+  peState.items = peViewWindow().items;
+  syncPeScrollBar();
+}
+
+function setPeViewStart(nextStart, { render = true, hoverIndex = null } = {}) {
+  const { maxStart } = peViewWindow();
+  const start = Math.min(Math.max(0, Math.round(nextStart)), maxStart);
+  if (start === peState.viewStart && peState.items.length) {
+    syncPeScrollBar();
+    if (render) renderPeChart(hoverIndex);
+    return start;
+  }
+  peState.viewStart = start;
+  peState.items = peViewWindow().items;
+  syncPeScrollBar();
+  if (render) {
+    refreshPeWindowStatus();
+    renderPeChart(hoverIndex);
+  }
+  return start;
+}
+
+function zoomPeViewport(anchorRatio, factor, { render = true } = {}) {
+  const total = (peState.allItems || []).length;
+  if (total <= 1) return;
+  const win = peViewWindow();
+  const minSize = peMinViewSize(total);
+  const nextSize = Math.min(total, Math.max(minSize, Math.round(win.size * factor)));
+  const anchorIndex = win.start + Math.round(win.size * Math.min(1, Math.max(0, anchorRatio)));
+  const nextStart = Math.round(anchorIndex - nextSize * Math.min(1, Math.max(0, anchorRatio)));
+  peState.viewSize = nextSize;
+  peState.viewStart = nextStart;
+  peState.items = peViewWindow().items;
+  syncPeScrollBar();
+  if (render) {
+    refreshPeWindowStatus();
+    renderPeChart();
+  }
+}
+
+function refreshPeWindowStatus() {
+  const { total, size, items } = peViewWindow();
+  if (!total) return;
+  const series = peSeriesConf();
+  const values = items.map(peValue).filter((v) => v != null);
+  const last = values.length ? values[values.length - 1] : null;
+  const mid = quantile(values, 0.5);
+  const lo = values.length ? Math.min(...values) : null;
+  const hi = values.length ? Math.max(...values) : null;
+  const rank = percentileRank(values, last);
+  const src = peState.source ? ` · ${peState.source}` : "";
+  const tip =
+    size < total
+      ? ` · 显示 ${size}/${total}，滚轮缩放 · 拖动/滑动平移`
+      : ` · ${total} 日，滚轮可放大`;
+  const stats = [
+    last != null ? `当前 ${fmtNum(last)}` : "",
+    rank != null ? `${Math.round(rank)}%分位` : "",
+    mid != null ? `中位 ${fmtNum(mid)}` : "",
+    lo != null && hi != null ? `区间 ${fmtNum(lo)}–${fmtNum(hi)}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  setPeStatus(`${series.label}${stats ? ` · ${stats}` : ""}${tip}${src}`);
+}
+
+function peChartLayout(w, h) {
+  const pad = { top: 14, right: 56, bottom: 28, left: 60 };
+  const innerW = Math.max(10, w - pad.left - pad.right);
+  const innerH = Math.max(10, h - pad.top - pad.bottom);
+  return {
+    pad,
+    price: { x: pad.left, y: pad.top, w: innerW, h: innerH },
+    volume: { x: pad.left, y: pad.top + innerH, w: innerW, h: 0 },
+  };
+}
+
+function hidePeHoverCard() {
+  if (!els.peChartHoverCard) return;
+  els.peChartHoverCard.classList.add("hidden");
+  els.peChartHoverCard.setAttribute("aria-hidden", "true");
+  els.peChartHoverCard.innerHTML = "";
+}
+
+function showPeHoverCard() {
+  if (!els.peChartHoverCard) return;
+  els.peChartHoverCard.classList.remove("hidden");
+  els.peChartHoverCard.setAttribute("aria-hidden", "false");
+}
+
+function updatePeHoverLabel(index) {
+  if (!els.peChartHoverCard) return;
+  const items = peState.items || [];
+  if (index == null || index < 0 || index >= items.length) {
+    hidePeHoverCard();
+    return;
+  }
+  const d = items[index];
+  const series = peSeriesConf();
+  const pe = peValue(d);
+  const values = items.map(peValue).filter((v) => v != null);
+  const rank = percentileRank(values, pe);
+  const row = (label, valueHtml, valueCls = "") =>
+    `<span class="chart-hover-item"><span class="k">${escapeHtml(label)}</span><span class="v ${valueCls}">${valueHtml}</span></span>`;
+  const extra =
+    peState.series === "dyn" || peState.series === "pb"
+      ? Number.isFinite(Number(d.pe_ttm))
+        ? row("市盈率(TTM)", escapeHtml(fmtNum(d.pe_ttm)))
+        : ""
+      : Number.isFinite(Number(d.pe_dyn))
+        ? row("市盈率(动)", escapeHtml(fmtNum(d.pe_dyn)))
+        : Number.isFinite(Number(d.pb))
+          ? row("市净率", escapeHtml(fmtNum(d.pb)))
+          : "";
+  const rows = [
+    row(series.label, escapeHtml(fmtNum(pe))),
+    Number.isFinite(Number(d.close)) ? row("收盘", escapeHtml(fmtNum(d.close))) : "",
+    rank != null ? row("窗口分位", escapeHtml(`${Math.round(rank)}%`)) : "",
+    extra,
+  ].filter(Boolean);
+  els.peChartHoverCard.innerHTML = `
+    <p class="chart-hover-card-time">${escapeHtml(d.time || "")}</p>
+    <div class="chart-hover-card-rows">${rows.join("")}</div>
+  `;
+  showPeHoverCard();
+}
+
+function pePointerIndex(evt) {
+  const canvas = els.peChart;
+  const wrap = els.peChartWrap;
+  const items = peState.items || [];
+  if (!canvas || !wrap || !items.length) return null;
+  const rect = canvas.getBoundingClientRect();
+  const x = evt.clientX - rect.left;
+  const layout = peChartLayout(rect.width, rect.height);
+  if (x < layout.price.x || x > layout.price.x + layout.price.w) return null;
+  const t = (x - layout.price.x) / layout.price.w;
+  return Math.min(items.length - 1, Math.max(0, Math.floor(t * items.length)));
+}
+
+function panPeByPixels(dx, canvasWidth) {
+  const { size, maxStart } = peViewWindow();
+  if (maxStart <= 0 || size <= 0) return false;
+  const layout = peChartLayout(canvasWidth, 300);
+  const barW = layout.price.w / size;
+  if (barW <= 0) return false;
+  const deltaBars = Math.round(-dx / barW);
+  if (!deltaBars) return false;
+  setPeViewStart(peState.viewStart + deltaBars, { render: true });
+  return true;
+}
+
+function drawPeRefLine(ctx, price, y, text, color, align = "right") {
+  if (!Number.isFinite(y)) return;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(price.x, y);
+  ctx.lineTo(price.x + price.w, y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = color;
+  ctx.font = '10px "JetBrains Mono", Consolas, monospace';
+  ctx.textBaseline = "middle";
+  if (align === "right") {
+    ctx.textAlign = "left";
+    ctx.fillText(text, price.x + price.w + 6, y);
+  } else {
+    ctx.textAlign = "left";
+    ctx.fillText(text, price.x + 6, y + 8);
+  }
+  ctx.restore();
+}
+
+function drawPeChart(ctx, layout, items, colors, hoverIndex) {
+  const n = items.length;
+  if (!n) return;
+  const values = items.map(peValue).filter((v) => v != null);
+  if (!values.length) return;
+
+  const { price } = layout;
+  const q25 = quantile(values, 0.25);
+  const q50 = quantile(values, 0.5);
+  const q75 = quantile(values, 0.75);
+  let minP = Math.min(...values);
+  let maxP = Math.max(...values);
+  if (q25 != null) minP = Math.min(minP, q25);
+  if (q75 != null) maxP = Math.max(maxP, q75);
+  const priceScale = buildPriceScale(minP, maxP, {
+    tickCount: priceScaleTickCount(price.h),
+    padRatio: 0.04,
+  });
+  const yAt = (p) =>
+    price.y + ((priceScale.max - p) / (priceScale.max - priceScale.min || 1)) * price.h;
+  const xAt = (i) => price.x + ((i + 0.5) / n) * price.w;
+
+  const yTicks = (priceScale.ticks || []).map(yAt);
+  const xTicks = [0, 0.5, 1].map((t) => price.x + price.w * t);
+  drawGrid(ctx, price, yTicks, xTicks, colors);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(price.x, price.y, price.w, price.h);
+  ctx.clip();
+
+  if (q25 != null && q75 != null) {
+    const yA = yAt(q25);
+    const yB = yAt(q75);
+    ctx.fillStyle = "rgba(42, 212, 184, 0.08)";
+    ctx.fillRect(price.x, Math.min(yA, yB), price.w, Math.abs(yB - yA));
+  }
+
+  ctx.beginPath();
+  let started = false;
+  for (let i = 0; i < n; i += 1) {
+    const v = peValue(items[i]);
+    if (v == null) {
+      started = false;
+      continue;
+    }
+    const x = xAt(i);
+    const y = yAt(v);
+    if (!started) {
+      ctx.moveTo(x, y);
+      started = true;
+    } else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = colors.accent;
+  ctx.lineWidth = 1.7;
+  ctx.stroke();
+  ctx.restore();
+
+  if (q50 != null) {
+    drawPeRefLine(ctx, price, yAt(q50), `中 ${fmtNum(q50)}`, "rgba(132, 148, 168, 0.85)");
+  }
+  if (q25 != null) {
+    drawPeRefLine(ctx, price, yAt(q25), `25% ${fmtNum(q25)}`, "rgba(61, 214, 140, 0.7)");
+  }
+  if (q75 != null) {
+    drawPeRefLine(ctx, price, yAt(q75), `75% ${fmtNum(q75)}`, "rgba(255, 93, 108, 0.7)");
+  }
+
+  const lastIdx = [...items].map(peValue).reduce((acc, v, i) => (v != null ? i : acc), -1);
+  if (lastIdx >= 0) {
+    const last = peValue(items[lastIdx]);
+    ctx.fillStyle = colors.accent;
+    ctx.beginPath();
+    ctx.arc(xAt(lastIdx), yAt(last), 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
+    const x = xAt(hoverIndex);
+    const v = peValue(items[hoverIndex]);
+    ctx.save();
+    ctx.strokeStyle = colors.cross;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, price.y);
+    ctx.lineTo(x, price.y + price.h);
+    ctx.stroke();
+    if (v != null) {
+      const y = yAt(v);
+      ctx.beginPath();
+      ctx.moveTo(price.x, y);
+      ctx.lineTo(price.x + price.w, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = colors.accent;
+      ctx.beginPath();
+      ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  drawAxesLabels(ctx, layout, priceScale, items, "day", colors);
+}
+
+function renderPeChart(hoverIndex = null) {
+  const canvas = els.peChart;
+  const wrap = els.peChartWrap;
+  if (!canvas || !wrap) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = Math.max(320, wrap.clientWidth || 640);
+  const cssH = Math.max(220, wrap.clientHeight || 280);
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const colors = {
+    accent: cssVar("--accent", "#2ad4b8"),
+    muted: cssVar("--muted", "#8494a8"),
+    up: cssVar("--up", "#ff5d6c"),
+    down: cssVar("--down", "#3dd68c"),
+    grid: "rgba(42, 212, 184, 0.08)",
+    cross: "rgba(232, 238, 247, 0.35)",
+  };
+
+  paintChartFrame(ctx, cssW, cssH, colors);
+  const items = peState.items || [];
+  const hasValue = items.some((d) => peValue(d) != null);
+  if (!items.length || !hasValue) return;
+  drawPeChart(ctx, peChartLayout(cssW, cssH), items, colors, hoverIndex);
+}
+
+function applyPeSeries(series) {
+  if (!PE_SERIES[series] || series === peState.series) return;
+  peState.series = series;
+  els.peChartTabs?.querySelectorAll("[data-series]").forEach((el) => {
+    const active = el.getAttribute("data-series") === series;
+    el.classList.toggle("is-active", active);
+    el.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  hidePeHoverCard();
+  const hasValue = (peState.items || []).some((d) => peValue(d) != null);
+  if (!hasValue) {
+    setPeStatus(peEmptyHint(), { empty: true });
+    renderPeChart();
+    return;
+  }
+  setPeStatus("");
+  refreshPeWindowStatus();
+  renderPeChart();
+}
+
+function applyPeRange(range) {
+  if (!PE_RANGES[range]) return;
+  peState.range = range;
+  els.peChartRange?.querySelectorAll("[data-range]").forEach((el) => {
+    const active = el.getAttribute("data-range") === range;
+    el.classList.toggle("is-active", active);
+    el.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  resetPeViewport(peState.allItems);
+  hidePeHoverCard();
+  const hasValue = (peState.items || []).some((d) => peValue(d) != null);
+  if (!peState.allItems.length || !hasValue) {
+    setPeStatus(peEmptyHint(), { empty: true });
+    renderPeChart();
+    return;
+  }
+  setPeStatus("");
+  refreshPeWindowStatus();
+  renderPeChart();
+}
+
+async function loadPeChart() {
+  if (!code || !els.peChart) return;
+  peState.loading = true;
+  setPeStatus("正在加载估值…");
+  hidePeHoverCard();
+  try {
+    const qs = new URLSearchParams({ code, limit: "2500" });
+    const json = await api(`/api/stocks/pe?${qs.toString()}`);
+    const data = json.data || {};
+    peState.source = data.source || "";
+    resetPeViewport(data.items || []);
+    const hasValue = (peState.items || []).some((d) => peValue(d) != null);
+    if (!peState.allItems.length || !hasValue) {
+      setPeStatus(peEmptyHint(), { empty: true });
+      renderPeChart();
+      return;
+    }
+    setPeStatus("");
+    refreshPeWindowStatus();
+    renderPeChart();
+  } catch (err) {
+    resetPeViewport([]);
+    setPeStatus(err.message || "估值加载失败", { empty: true });
+    renderPeChart();
+  } finally {
+    peState.loading = false;
+  }
+}
+
+function setupPeChart() {
+  if (!els.peChartTabs || !els.peChart) return;
+
+  els.peChartTabs.addEventListener("click", (evt) => {
+    const btn = evt.target.closest("[data-series]");
+    if (!btn) return;
+    applyPeSeries(btn.getAttribute("data-series"));
+  });
+
+  els.peChartRange?.addEventListener("click", (evt) => {
+    const btn = evt.target.closest("[data-range]");
+    if (!btn) return;
+    applyPeRange(btn.getAttribute("data-range"));
+  });
+
+  if (els.peChartScrollBar) {
+    els.peChartScrollBar.addEventListener("input", () => {
+      hidePeHoverCard();
+      setPeViewStart(Number(els.peChartScrollBar.value) || 0, { render: true });
+    });
+  }
+
+  let hoverIdx = null;
+  let pan = null;
+
+  const onMove = (evt) => {
+    if (pan) {
+      const dx = evt.clientX - pan.lastX;
+      if (Math.abs(evt.clientX - pan.originX) > 4) pan.moved = true;
+      if (pan.moved && Math.abs(dx) >= 1) {
+        hidePeHoverCard();
+        hoverIdx = null;
+        panPeByPixels(dx, pan.width);
+        pan.lastX = evt.clientX;
+      }
+      return;
+    }
+    const idx = pePointerIndex(evt);
+    if (idx === hoverIdx) return;
+    hoverIdx = idx;
+    updatePeHoverLabel(idx);
+    renderPeChart(idx);
+  };
+
+  const onLeave = () => {
+    if (pan) return;
+    hoverIdx = null;
+    hidePeHoverCard();
+    renderPeChart();
+  };
+
+  const onDown = (evt) => {
+    if (evt.button != null && evt.button !== 0) return;
+    const rect = els.peChart.getBoundingClientRect();
+    pan = { originX: evt.clientX, lastX: evt.clientX, width: rect.width, moved: false };
+    els.peChartWrap?.classList.add("is-panning");
+    try {
+      els.peChart.setPointerCapture(evt.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const onUp = (evt) => {
+    if (!pan) return;
+    const wasPan = pan.moved;
+    pan = null;
+    els.peChartWrap?.classList.remove("is-panning");
+    try {
+      els.peChart.releasePointerCapture(evt.pointerId);
+    } catch {
+      /* ignore */
+    }
+    if (!wasPan) {
+      const idx = pePointerIndex(evt);
+      hoverIdx = idx;
+      updatePeHoverLabel(idx);
+      renderPeChart(idx);
+    } else {
+      hidePeHoverCard();
+      hoverIdx = null;
+      renderPeChart();
+    }
+  };
+
+  els.peChart.addEventListener("pointerdown", onDown);
+  els.peChart.addEventListener("pointermove", onMove);
+  els.peChart.addEventListener("pointerup", onUp);
+  els.peChart.addEventListener("pointercancel", onUp);
+  els.peChart.addEventListener("pointerleave", onLeave);
+
+  els.peChart.addEventListener(
+    "wheel",
+    (evt) => {
+      const total = (peState.allItems || []).length;
+      if (!total) return;
+      evt.preventDefault();
+      hidePeHoverCard();
+      hoverIdx = null;
+      const rect = els.peChart.getBoundingClientRect();
+      const layout = peChartLayout(rect.width, rect.height);
+      const x = evt.clientX - rect.left;
+      let anchorRatio = 0.5;
+      if (x >= layout.price.x && x <= layout.price.x + layout.price.w) {
+        anchorRatio = (x - layout.price.x) / layout.price.w;
+      }
+      if (Math.abs(evt.deltaX) > Math.abs(evt.deltaY) * 1.15) {
+        const { maxStart } = peViewWindow();
+        if (maxStart <= 0) return;
+        const step = Math.max(1, Math.round(Math.abs(evt.deltaX) / 40));
+        setPeViewStart(peState.viewStart + (evt.deltaX > 0 ? step : -step), { render: true });
+        return;
+      }
+      const steps = Math.max(1, Math.min(5, Math.round(Math.abs(evt.deltaY) / 72) || 1));
+      const base = evt.deltaY > 0 ? 1.14 : 1 / 1.14;
+      zoomPeViewport(anchorRatio, base ** steps, { render: true });
+    },
+    { passive: false }
+  );
+
+  if (typeof ResizeObserver !== "undefined" && els.peChartWrap) {
+    let timer = 0;
+    const ro = new ResizeObserver(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        syncPeScrollBar();
+        renderPeChart(hoverIdx);
+      }, 60);
+    });
+    ro.observe(els.peChartWrap);
+  } else {
+    window.addEventListener("resize", () => {
+      syncPeScrollBar();
+      renderPeChart(hoverIdx);
+    });
+  }
+}
+
 els.refreshNewsBtn.addEventListener("click", () =>
   loadAllNews({ refresh: true })
 );
@@ -1992,10 +2628,12 @@ setupBackLink();
 setupScrollLoaders();
 setupMetricTips();
 setupChart();
+setupPeChart();
 (async () => {
   await loadProfile();
   await Promise.all([
     loadChart("day"),
+    loadPeChart(),
     loadAllNews({ refresh: false }),
   ]);
 })();
