@@ -58,6 +58,26 @@ def _latest_holders(rows: list[Any]) -> tuple[str, list[dict[str, Any]]]:
     return latest, holders
 
 
+def _deduct_shares(
+    hold: float | None,
+    ratio: float | None,
+    float_shares: float | None,
+) -> float:
+    """大股东扣除股数。
+
+    十大流通股东的 ``HOLD_NUM`` 有时按 A+H 总流通计（如建设银行汇金），
+    而自由流通分母用的是流通 A 股。直接相减会得到负数并被夹成 0。
+    持股数大于流通 A 股时，改按占流通比折到 A 股口径。
+    """
+    if hold is None or hold <= 0:
+        return 0.0
+    if float_shares and hold > float_shares:
+        if ratio is not None and ratio > 0:
+            return float_shares * (ratio / 100.0)
+        return 0.0
+    return hold
+
+
 def _holder_row(row: dict[str, Any]) -> dict[str, Any]:
     name = safe_str(row.get("HOLDER_NAME"))
     hold = to_float(row.get("HOLD_NUM"))
@@ -156,8 +176,12 @@ def calc(code: str) -> dict[str, Any]:
     holders = [_holder_row(row) for row in holders_raw]
     deducted = [row for row in holders if row["deduct"]]
     skipped = [row for row in holders if row["skip_hkconnect"]]
-    big = sum(row["hold_num"] or 0 for row in deducted)
+    big = sum(
+        _deduct_shares(row["hold_num"], row["ratio"], float_shares) for row in deducted
+    )
     free = max(float_shares - big, 0) if float_shares is not None else None
+    if (not free) and float_shares:
+        free = float_shares
 
     free_mcap = None
     if free and free > 0:

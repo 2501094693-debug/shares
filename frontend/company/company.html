@@ -7,206 +7,296 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=pe-chart-20260826" />
+  <link rel="stylesheet" href="/css/style.css?v=company-hover-right-20260826" />
 </head>
 <body class="company-page-root">
   <div class="app company-page">
-    <header class="topbar">
+    <header class="topbar company-topbar">
       <div class="brand">
         <span class="brand-mark">SW</span>
         <div>
           <h1 id="pageTitle">公司详情</h1>
-          <p id="pageSub">指标详情 · 行情走势 · 估值 · 交易所公告 · 巨潮公告 · 七报七网 · 官方新闻 · 其他新闻 · 机构研报</p>
+          <p id="pageSub" class="company-page-sub">概览 · 走势 · 资讯</p>
         </div>
       </div>
       <div class="top-actions">
         <a id="backLink" class="btn ghost" href="/">返回列表</a>
-        <button id="refreshNewsBtn" class="btn ghost" type="button">刷新最新</button>
+        <button id="refreshNewsBtn" class="btn ghost" type="button" hidden>刷新资讯</button>
       </div>
     </header>
 
-    <section class="company-hero">
-      <div class="company-hero-identity">
-        <p id="companyBreadcrumb" class="breadcrumb">-</p>
-        <div class="company-hero-title-row">
-          <h2 id="companyName">-</h2>
-          <span id="companyCodeChip" class="company-code-chip"></span>
-        </div>
-      </div>
-      <div class="company-hero-stats">
-        <div id="quoteStrip" class="quote-strip"></div>
-        <div id="metricsPanels" class="company-metrics-panels">
-          <div id="metricsGrid" class="company-metrics"></div>
-        </div>
-      </div>
-    </section>
+    <nav id="companyMainTabs" class="company-main-tabs" aria-label="主面板">
+      <button type="button" class="company-main-tab is-active" data-panel="overview" role="tab" aria-selected="true">概览</button>
+      <button type="button" class="company-main-tab" data-panel="charts" role="tab" aria-selected="false">走势</button>
+      <button type="button" class="company-main-tab" data-panel="news" role="tab" aria-selected="false">资讯</button>
+    </nav>
 
-    <section class="company-section chart-section" aria-label="行情走势">
-      <div class="section-head chart-section-head">
-        <h3>行情走势</h3>
-        <div class="chart-head-controls">
-          <div id="chartTabs" class="chart-tabs" role="tablist" aria-label="周期">
-            <button type="button" class="chart-tab is-active" data-mode="day" role="tab" aria-selected="true">日K</button>
-            <button type="button" class="chart-tab" data-mode="week" role="tab" aria-selected="false">周K</button>
-            <button type="button" class="chart-tab" data-mode="month" role="tab" aria-selected="false">月K</button>
-            <button type="button" class="chart-tab" data-mode="ticks" role="tab" aria-selected="false">实时</button>
-            <button type="button" class="chart-tab" data-mode="1m" role="tab" aria-selected="false">1分</button>
-            <button type="button" class="chart-tab" data-mode="5m" role="tab" aria-selected="false">5分</button>
-            <button type="button" class="chart-tab" data-mode="15m" role="tab" aria-selected="false">15分</button>
-            <button type="button" class="chart-tab" data-mode="30m" role="tab" aria-selected="false">30分</button>
-            <button type="button" class="chart-tab" data-mode="60m" role="tab" aria-selected="false">60分</button>
+    <div class="company-panels">
+      <div id="panel-overview" class="company-panel is-active" data-panel="overview" role="tabpanel">
+        <section class="company-hero">
+          <div class="company-hero-identity">
+            <p id="companyBreadcrumb" class="breadcrumb">-</p>
+            <div class="company-hero-title-row">
+              <h2 id="companyName">-</h2>
+              <span id="companyCodeChip" class="company-code-chip"></span>
+            </div>
           </div>
-          <div id="chartAdjust" class="chart-adjust" role="group" aria-label="复权">
-            <button type="button" class="chart-adjust-btn is-active" data-adjust="qfq" aria-pressed="true">前复权</button>
-            <button type="button" class="chart-adjust-btn" data-adjust="none" aria-pressed="false">不复权</button>
+          <div id="metricsPanels" class="company-metrics-panels">
+            <div id="metricsGrid" class="company-metrics"></div>
           </div>
+        </section>
+      </div>
+
+      <div id="panel-charts" class="company-panel" data-panel="charts" role="tabpanel" hidden>
+        <div class="charts-deck">
+          <article class="chart-card chart-card--ticks" aria-label="实时走势">
+            <header class="chart-card__head">
+              <div class="chart-card__head-main">
+                <div class="chart-card__title">
+                  <span class="chart-card__mark" aria-hidden="true"></span>
+                  <h3>实时</h3>
+                </div>
+                <div id="ticksChartHoverCard" class="chart-ticks-hover chart-hover-card hidden" aria-hidden="true"></div>
+                <p id="ticksChartMeta" class="chart-card__meta muted">加载中…</p>
+              </div>
+            </header>
+            <div class="chart-card__stage">
+              <div id="ticksChartWrap" class="chart-canvas-wrap">
+                <canvas id="ticksChart" width="960" height="360" aria-label="实时走势图"></canvas>
+                <p id="ticksChartEmpty" class="muted chart-empty hidden">暂无走势数据</p>
+              </div>
+            </div>
+            <footer class="chart-card__foot">
+              <div id="ticksChartAxisScroll" class="chart-axis-scroll is-disabled">
+                <input
+                  id="ticksChartScrollBar"
+                  class="chart-scroll-bar"
+                  type="range"
+                  min="0"
+                  max="0"
+                  value="0"
+                  step="1"
+                  aria-label="实时时间轴滑动"
+                  disabled
+                />
+              </div>
+            </footer>
+          </article>
+
+          <article class="chart-card chart-card--kline" aria-label="行情走势">
+            <header class="chart-card__head">
+              <div class="chart-card__head-main">
+                <div class="chart-card__title">
+                  <span class="chart-card__mark" aria-hidden="true"></span>
+                  <h3>行情走势</h3>
+                </div>
+                <p id="chartMeta" class="chart-card__meta muted">加载中…</p>
+              </div>
+              <div class="chart-card__controls">
+                <label class="chart-select-wrap" aria-label="周期">
+                  <select id="chartModeSelect" class="chart-select">
+                    <option value="day">日K</option>
+                    <option value="week">周K</option>
+                    <option value="month">月K</option>
+                    <option value="1m">1分</option>
+                    <option value="5m">5分</option>
+                    <option value="15m">15分</option>
+                    <option value="30m">30分</option>
+                    <option value="60m">60分</option>
+                  </select>
+                </label>
+                <div id="chartHoverCard" class="chart-kline-hover chart-hover-card hidden" aria-hidden="true"></div>
+                <label id="chartAdjustWrap" class="chart-select-wrap" aria-label="复权">
+                  <select id="chartAdjustSelect" class="chart-select">
+                    <option value="qfq">前复权</option>
+                    <option value="none">不复权</option>
+                    <option value="hfq">后复权</option>
+                  </select>
+                </label>
+              </div>
+            </header>
+            <div class="chart-card__stage">
+              <div id="chartWrap" class="chart-canvas-wrap">
+                <canvas id="priceChart" width="960" height="360" aria-label="价格走势图"></canvas>
+                <p id="chartEmpty" class="muted chart-empty hidden">暂无走势数据</p>
+              </div>
+            </div>
+            <footer class="chart-card__foot">
+              <div id="chartAxisScroll" class="chart-axis-scroll is-disabled">
+                <input
+                  id="chartScrollBar"
+                  class="chart-scroll-bar"
+                  type="range"
+                  min="0"
+                  max="0"
+                  value="0"
+                  step="1"
+                  aria-label="时间轴滑动"
+                  disabled
+                />
+              </div>
+            </footer>
+          </article>
+
+          <article class="chart-card chart-card--pe" aria-label="估值走势">
+            <header class="chart-card__head">
+              <div class="chart-card__head-main">
+                <div class="chart-card__title">
+                  <span class="chart-card__mark" aria-hidden="true"></span>
+                  <h3>估值走势</h3>
+                </div>
+                <p id="peChartMeta" class="chart-card__meta muted">加载中…</p>
+              </div>
+              <div class="chart-card__controls">
+                <label class="chart-select-wrap" aria-label="估值口径">
+                  <select id="peSeriesSelect" class="chart-select">
+                    <option value="dyn">市盈率动</option>
+                    <option value="ttm" selected>市盈率TTM</option>
+                    <option value="static">市盈率静</option>
+                    <option value="pb">市净率</option>
+                  </select>
+                </label>
+                <div id="peChartHoverCard" class="chart-pe-hover chart-hover-card hidden" aria-hidden="true"></div>
+              </div>
+            </header>
+            <div class="chart-card__stage">
+              <div id="peChartWrap" class="chart-canvas-wrap">
+                <canvas id="peChart" width="960" height="320" aria-label="估值曲线图"></canvas>
+                <p id="peChartEmpty" class="muted chart-empty hidden">暂无估值数据</p>
+              </div>
+            </div>
+            <footer class="chart-card__foot">
+              <div id="peChartAxisScroll" class="chart-axis-scroll is-disabled">
+                <input
+                  id="peChartScrollBar"
+                  class="chart-scroll-bar"
+                  type="range"
+                  min="0"
+                  max="0"
+                  value="0"
+                  step="1"
+                  aria-label="估值时间轴滑动"
+                  disabled
+                />
+              </div>
+            </footer>
+          </article>
+
+          <article class="chart-card chart-card--turnover" aria-label="换手率走势">
+            <header class="chart-card__head">
+              <div class="chart-card__head-main">
+                <div class="chart-card__title">
+                  <span class="chart-card__mark" aria-hidden="true"></span>
+                  <h3>换手率走势</h3>
+                </div>
+                <p id="turnoverChartMeta" class="chart-card__meta muted">加载中…</p>
+              </div>
+              <div class="chart-card__controls">
+                <div id="turnoverChartHoverCard" class="chart-turnover-hover chart-hover-card hidden" aria-hidden="true"></div>
+              </div>
+            </header>
+            <div class="chart-card__stage">
+              <div id="turnoverChartWrap" class="chart-canvas-wrap">
+                <canvas id="turnoverChart" width="960" height="320" aria-label="换手率曲线图"></canvas>
+                <p id="turnoverChartEmpty" class="muted chart-empty hidden">暂无换手率数据</p>
+              </div>
+            </div>
+            <footer class="chart-card__foot">
+              <div id="turnoverChartAxisScroll" class="chart-axis-scroll is-disabled">
+                <input
+                  id="turnoverChartScrollBar"
+                  class="chart-scroll-bar"
+                  type="range"
+                  min="0"
+                  max="0"
+                  value="0"
+                  step="1"
+                  aria-label="换手率时间轴滑动"
+                  disabled
+                />
+              </div>
+            </footer>
+          </article>
         </div>
       </div>
-      <div class="chart-toolbar">
-        <p id="chartMeta" class="muted chart-meta">加载中…</p>
-        <div id="chartHoverCard" class="chart-hover-card hidden" aria-hidden="true"></div>
-      </div>
-      <div id="chartWrap" class="chart-canvas-wrap">
-        <canvas id="priceChart" width="960" height="360" aria-label="价格走势图"></canvas>
-        <p id="chartEmpty" class="muted chart-empty hidden">暂无走势数据</p>
-      </div>
-      <div id="chartAxisScroll" class="chart-axis-scroll is-disabled">
-        <input
-          id="chartScrollBar"
-          class="chart-scroll-bar"
-          type="range"
-          min="0"
-          max="0"
-          value="0"
-          step="1"
-          aria-label="时间轴滑动"
-          disabled
-        />
-      </div>
-    </section>
 
-    <section class="company-section chart-section pe-chart-section" aria-label="估值走势">
-      <div class="section-head chart-section-head">
-        <h3>估值走势</h3>
-        <div class="chart-head-controls">
-          <div id="peChartTabs" class="chart-tabs" role="tablist" aria-label="估值口径">
-            <button type="button" class="chart-tab" data-series="dyn" role="tab" aria-selected="false">市盈率动</button>
-            <button type="button" class="chart-tab is-active" data-series="ttm" role="tab" aria-selected="true">市盈率TTM</button>
-            <button type="button" class="chart-tab" data-series="static" role="tab" aria-selected="false">市盈率静</button>
-            <button type="button" class="chart-tab" data-series="pb" role="tab" aria-selected="false">市净率</button>
+      <div id="panel-news" class="company-panel" data-panel="news" role="tabpanel" hidden>
+        <section class="company-section news-hub" aria-label="资讯">
+          <div class="section-head news-hub-head">
+            <h3>资讯</h3>
+            <p id="newsHubMeta" class="muted news-hub-meta"></p>
           </div>
-          <div id="peChartRange" class="chart-adjust" role="group" aria-label="区间">
-            <button type="button" class="chart-adjust-btn" data-range="y1" aria-pressed="false">1年</button>
-            <button type="button" class="chart-adjust-btn is-active" data-range="y3" aria-pressed="true">3年</button>
-            <button type="button" class="chart-adjust-btn" data-range="y5" aria-pressed="false">5年</button>
-            <button type="button" class="chart-adjust-btn" data-range="all" aria-pressed="false">全部</button>
+          <div id="newsTabs" class="news-tab-bar" role="tablist" aria-label="资讯分类">
+            <button type="button" class="news-tab is-active" data-kind="exchange" role="tab" aria-selected="true">交易所公告</button>
+            <button type="button" class="news-tab" data-kind="cninfo" role="tab" aria-selected="false">巨潮公告</button>
+            <button type="button" class="news-tab" data-kind="designated_press" role="tab" aria-selected="false">七报七网</button>
+            <button type="button" class="news-tab" data-kind="official_news" role="tab" aria-selected="false">官方新闻</button>
+            <button type="button" class="news-tab" data-kind="other_news" role="tab" aria-selected="false">其他新闻</button>
+            <button type="button" class="news-tab" data-kind="reports" role="tab" aria-selected="false">机构研报</button>
           </div>
-        </div>
+          <div class="news-panels">
+            <div class="news-panel is-active" data-panel="exchange">
+              <p class="muted news-section-meta" data-meta="exchange"></p>
+              <div class="company-news-body" data-body="exchange" tabindex="0">
+                <div class="news-list" data-list="exchange">
+                  <p class="muted">正在加载最新…</p>
+                </div>
+                <p class="muted news-scroll-hint" data-hint="exchange"></p>
+              </div>
+            </div>
+            <div class="news-panel" data-panel="cninfo" hidden>
+              <p class="muted news-section-meta" data-meta="cninfo"></p>
+              <div class="company-news-body" data-body="cninfo" tabindex="0">
+                <div class="news-list" data-list="cninfo">
+                  <p class="muted">正在加载最新…</p>
+                </div>
+                <p class="muted news-scroll-hint" data-hint="cninfo"></p>
+              </div>
+            </div>
+            <div class="news-panel" data-panel="designated_press" hidden>
+              <p class="muted news-section-meta" data-meta="designated_press"></p>
+              <div class="company-news-body" data-body="designated_press" tabindex="0">
+                <div class="news-list" data-list="designated_press">
+                  <p class="muted">正在加载最新…</p>
+                </div>
+                <p class="muted news-scroll-hint" data-hint="designated_press"></p>
+              </div>
+            </div>
+            <div class="news-panel" data-panel="official_news" hidden>
+              <p class="muted news-section-meta" data-meta="official_news"></p>
+              <div class="company-news-body" data-body="official_news" tabindex="0">
+                <div class="news-list" data-list="official_news">
+                  <p class="muted">正在加载最新…</p>
+                </div>
+                <p class="muted news-scroll-hint" data-hint="official_news"></p>
+              </div>
+            </div>
+            <div class="news-panel" data-panel="other_news" hidden>
+              <p class="muted news-section-meta" data-meta="other_news"></p>
+              <div class="company-news-body" data-body="other_news" tabindex="0">
+                <div class="news-list" data-list="other_news">
+                  <p class="muted">正在加载最新…</p>
+                </div>
+                <p class="muted news-scroll-hint" data-hint="other_news"></p>
+              </div>
+            </div>
+            <div class="news-panel" data-panel="reports" hidden>
+              <p class="muted news-section-meta" data-meta="reports"></p>
+              <div class="company-news-body" data-body="reports" tabindex="0">
+                <div class="news-list" data-list="reports">
+                  <p class="muted">正在加载最新…</p>
+                </div>
+                <p class="muted news-scroll-hint" data-hint="reports"></p>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
-      <div class="chart-toolbar">
-        <p id="peChartMeta" class="muted chart-meta">加载中…</p>
-        <div id="peChartHoverCard" class="chart-hover-card hidden" aria-hidden="true"></div>
-      </div>
-      <div id="peChartWrap" class="chart-canvas-wrap">
-        <canvas id="peChart" width="960" height="320" aria-label="估值曲线图"></canvas>
-        <p id="peChartEmpty" class="muted chart-empty hidden">暂无估值数据</p>
-      </div>
-      <div id="peChartAxisScroll" class="chart-axis-scroll is-disabled">
-        <input
-          id="peChartScrollBar"
-          class="chart-scroll-bar"
-          type="range"
-          min="0"
-          max="0"
-          value="0"
-          step="1"
-          aria-label="估值时间轴滑动"
-          disabled
-        />
-      </div>
-    </section>
-
-    <section class="company-section news-section" data-kind="exchange">
-      <div class="section-head">
-        <h3>交易所公告</h3>
-        <p class="muted news-section-meta" data-meta="exchange"></p>
-      </div>
-      <div class="company-news-body" data-body="exchange" tabindex="0">
-        <div class="news-list" data-list="exchange">
-          <p class="muted">正在加载最新…</p>
-        </div>
-        <p class="muted news-scroll-hint" data-hint="exchange"></p>
-      </div>
-    </section>
-
-    <section class="company-section news-section" data-kind="cninfo">
-      <div class="section-head">
-        <h3>巨潮公告</h3>
-        <p class="muted news-section-meta" data-meta="cninfo"></p>
-      </div>
-      <div class="company-news-body" data-body="cninfo" tabindex="0">
-        <div class="news-list" data-list="cninfo">
-          <p class="muted">正在加载最新…</p>
-        </div>
-        <p class="muted news-scroll-hint" data-hint="cninfo"></p>
-      </div>
-    </section>
-
-    <section class="company-section news-section" data-kind="designated_press">
-      <div class="section-head">
-        <h3>七报七网</h3>
-        <p class="muted news-section-meta" data-meta="designated_press"></p>
-      </div>
-      <div class="company-news-body" data-body="designated_press" tabindex="0">
-        <div class="news-list" data-list="designated_press">
-          <p class="muted">正在加载最新…</p>
-        </div>
-        <p class="muted news-scroll-hint" data-hint="designated_press"></p>
-      </div>
-    </section>
-
-    <section class="company-section news-section" data-kind="official_news">
-      <div class="section-head">
-        <h3>官方新闻</h3>
-        <p class="muted news-section-meta" data-meta="official_news"></p>
-      </div>
-      <div class="company-news-body" data-body="official_news" tabindex="0">
-        <div class="news-list" data-list="official_news">
-          <p class="muted">正在加载最新…</p>
-        </div>
-        <p class="muted news-scroll-hint" data-hint="official_news"></p>
-      </div>
-    </section>
-
-    <section class="company-section news-section" data-kind="other_news">
-      <div class="section-head">
-        <h3>其他新闻</h3>
-        <p class="muted news-section-meta" data-meta="other_news"></p>
-      </div>
-      <div class="company-news-body" data-body="other_news" tabindex="0">
-        <div class="news-list" data-list="other_news">
-          <p class="muted">正在加载最新…</p>
-        </div>
-        <p class="muted news-scroll-hint" data-hint="other_news"></p>
-      </div>
-    </section>
-
-    <section class="company-section news-section" data-kind="reports">
-      <div class="section-head">
-        <h3>机构研报</h3>
-        <p class="muted news-section-meta" data-meta="reports"></p>
-      </div>
-      <div class="company-news-body" data-body="reports" tabindex="0">
-        <div class="news-list" data-list="reports">
-          <p class="muted">正在加载最新…</p>
-        </div>
-        <p class="muted news-scroll-hint" data-hint="reports"></p>
-      </div>
-    </section>
+    </div>
 
     <div id="errorBox" class="error hidden"></div>
   </div>
 
-  <script src="/js/company.js?v=pe-dyn-20260826"></script>
+  <script src="/js/company.js?v=company-fix-init-20260826"></script>
 </body>
 </html>

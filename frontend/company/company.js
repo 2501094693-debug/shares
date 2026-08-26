@@ -38,11 +38,11 @@ const els = {
   companyBreadcrumb: document.getElementById("companyBreadcrumb"),
   companyName: document.getElementById("companyName"),
   companyCodeChip: document.getElementById("companyCodeChip"),
-  quoteStrip: document.getElementById("quoteStrip"),
   metricsGrid: document.getElementById("metricsGrid"),
   metricsPanels: document.getElementById("metricsPanels"),
-  chartTabs: document.getElementById("chartTabs"),
-  chartAdjust: document.getElementById("chartAdjust"),
+  chartModeSelect: document.getElementById("chartModeSelect"),
+  chartAdjustSelect: document.getElementById("chartAdjustSelect"),
+  chartAdjustWrap: document.getElementById("chartAdjustWrap"),
   chartMeta: document.getElementById("chartMeta"),
   chartHoverCard: document.getElementById("chartHoverCard"),
   chartWrap: document.getElementById("chartWrap"),
@@ -50,8 +50,14 @@ const els = {
   chartEmpty: document.getElementById("chartEmpty"),
   chartAxisScroll: document.getElementById("chartAxisScroll"),
   chartScrollBar: document.getElementById("chartScrollBar"),
-  peChartTabs: document.getElementById("peChartTabs"),
-  peChartRange: document.getElementById("peChartRange"),
+  ticksChartMeta: document.getElementById("ticksChartMeta"),
+  ticksChartHoverCard: document.getElementById("ticksChartHoverCard"),
+  ticksChartWrap: document.getElementById("ticksChartWrap"),
+  ticksChart: document.getElementById("ticksChart"),
+  ticksChartEmpty: document.getElementById("ticksChartEmpty"),
+  ticksChartAxisScroll: document.getElementById("ticksChartAxisScroll"),
+  ticksChartScrollBar: document.getElementById("ticksChartScrollBar"),
+  peSeriesSelect: document.getElementById("peSeriesSelect"),
   peChartMeta: document.getElementById("peChartMeta"),
   peChartHoverCard: document.getElementById("peChartHoverCard"),
   peChartWrap: document.getElementById("peChartWrap"),
@@ -59,11 +65,24 @@ const els = {
   peChartEmpty: document.getElementById("peChartEmpty"),
   peChartAxisScroll: document.getElementById("peChartAxisScroll"),
   peChartScrollBar: document.getElementById("peChartScrollBar"),
+  turnoverChartMeta: document.getElementById("turnoverChartMeta"),
+  turnoverChartHoverCard: document.getElementById("turnoverChartHoverCard"),
+  turnoverChartWrap: document.getElementById("turnoverChartWrap"),
+  turnoverChart: document.getElementById("turnoverChart"),
+  turnoverChartEmpty: document.getElementById("turnoverChartEmpty"),
+  turnoverChartAxisScroll: document.getElementById("turnoverChartAxisScroll"),
+  turnoverChartScrollBar: document.getElementById("turnoverChartScrollBar"),
   refreshNewsBtn: document.getElementById("refreshNewsBtn"),
+  companyMainTabs: document.getElementById("companyMainTabs"),
+  newsTabs: document.getElementById("newsTabs"),
+  newsHubMeta: document.getElementById("newsHubMeta"),
   errorBox: document.getElementById("errorBox"),
 };
 
-/** @type {{ mode: string, adjust: 'qfq'|'none', loading: boolean, kind: 'ticks'|'kline', items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, meta: string }} */
+let activeNewsKind = "exchange";
+let activeMainPanel = "overview";
+
+/** @type {{ mode: string, adjust: 'qfq'|'hfq'|'none', loading: boolean, kind: 'kline', items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, meta: string }} */
 const chartState = {
   mode: "day",
   adjust: "qfq",
@@ -78,8 +97,25 @@ const chartState = {
   meta: "",
 };
 
+/** @type {{ loading: boolean, items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, live: boolean, phase: string, tradeDate: string, hoverTime: string|null }} */
+const ticksState = {
+  loading: false,
+  items: [],
+  allItems: [],
+  viewStart: 0,
+  viewSize: 0,
+  preClose: null,
+  source: "",
+  live: false,
+  phase: "closed",
+  tradeDate: "",
+  hoverTime: null,
+};
+
+const TICKS_LIVE_POS = -200;
+const TICKS_DRAW_MAX = 1800;
+
 const CHART_MODES = {
-  ticks: { label: "实时", kind: "ticks", viewSize: 480 },
   "1m": { label: "1分", kind: "kline", period: "1m", limit: 720, viewSize: 240, adjust: "none" },
   "5m": { label: "5分", kind: "kline", period: "5m", limit: 480, viewSize: 96, adjust: "none" },
   "15m": { label: "15分", kind: "kline", period: "15m", limit: 360, viewSize: 80, adjust: "none" },
@@ -101,22 +137,29 @@ function isAdjustableKline(mode) {
   return ADJUSTABLE_KLINE_MODES.has(mode);
 }
 
+function adjustLabel(adjust) {
+  if (adjust === "none") return "不复权";
+  if (adjust === "hfq") return "后复权";
+  return "前复权";
+}
+
 function klineAdjustFor(mode) {
-  if (isAdjustableKline(mode)) return chartState.adjust === "none" ? "none" : "qfq";
+  if (isAdjustableKline(mode)) return chartState.adjust;
   const conf = CHART_MODES[mode];
   return conf?.adjust || "none";
 }
 
 function syncChartAdjustUi(mode = chartState.mode) {
-  if (!els.chartAdjust) return;
   const show = isAdjustableKline(mode);
-  els.chartAdjust.classList.toggle("hidden", !show);
-  const current = klineAdjustFor(mode);
-  els.chartAdjust.querySelectorAll("[data-adjust]").forEach((el) => {
-    const active = el.getAttribute("data-adjust") === current;
-    el.classList.toggle("is-active", active);
-    el.setAttribute("aria-pressed", active ? "true" : "false");
-  });
+  if (els.chartAdjustWrap) els.chartAdjustWrap.classList.toggle("hidden", !show);
+  if (!els.chartAdjustSelect) return;
+  els.chartAdjustSelect.disabled = !show;
+  els.chartAdjustSelect.value = klineAdjustFor(mode);
+}
+
+function syncChartModeSelect(mode = chartState.mode) {
+  if (!els.chartModeSelect) return;
+  if (els.chartModeSelect.value !== mode) els.chartModeSelect.value = mode;
 }
 
 /** K 均线：周期按当前 K 线根数（周K 的 MA5 = 5 周，1分的 MA5 = 5 分钟） */
@@ -258,24 +301,6 @@ function nextDayWindow(current, fullDays) {
   return Math.min(Math.max(next, cur + 1), cap);
 }
 
-function renderQuote(stock) {
-  const cells = [
-    ["最新", stock.price, ""],
-    ["涨幅", stock.change_1d, changeClass(stock.change_1d)],
-    ["涨跌", stock.change_amt, changeClass(stock.change_amt)],
-    [
-      "市值",
-      stock.total_market_cap ||
-        (stock.market_cap ? `${displayValue(stock.market_cap)}亿` : ""),
-      "",
-    ],
-    ["换手", stock.turnover, ""],
-  ];
-  els.quoteStrip.innerHTML = cells
-    .map(([label, value, cls]) => metricCell([label, value, cls]))
-    .join("");
-}
-
 /** 指标含义说明（点击展示，尽量白话） */
 const METRIC_TIPS = {
   最新: "现在这只股票的最新成交价格。",
@@ -308,6 +333,7 @@ const METRIC_TIPS = {
   盘后额: "收盘后那段时间成交了多少钱。",
   近1日: "最近 1 个交易日涨了还是跌了多少。",
   "3日": "最近 3 个交易日累计涨跌多少。",
+  近3日: "最近 3 个交易日累计涨跌多少。",
   "5日": "最近 5 个交易日累计涨跌多少。",
   "10日": "最近 10 个交易日累计涨跌多少。",
   "20日": "最近 20 个交易日累计涨跌多少（大约一个月）。",
@@ -370,7 +396,7 @@ function closeMetricTips(except = null) {
 }
 
 function setupMetricTips() {
-  const root = document.querySelector(".company-hero-stats");
+  const root = document.querySelector(".company-hero");
   if (!root || root.dataset.tipBound === "1") return;
   root.dataset.tipBound = "1";
 
@@ -415,6 +441,31 @@ function renderMetricSection(title, items, { gridClass = "" } = {}) {
     </section>`;
 }
 
+function renderInlineMetricRows(title, rows, { highlightFirst = false, rowOpts = [] } = {}) {
+  const parts = rows
+    .map((items) => items.filter(([, v]) => displayValue(v) !== "-"))
+    .filter((items) => items.length);
+  if (!parts.length) return "";
+  return `
+    <section class="metrics-section">
+      <h4 class="metrics-section-title">${escapeHtml(title)}</h4>
+      ${parts
+        .map((items, idx) => {
+          const opts = rowOpts[idx] || {};
+          const rowCls = [
+            "company-metrics",
+            opts.class || "metrics-inline-row",
+            highlightFirst && idx === 0 ? "metrics-highlight-row" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          const style = opts.cols ? ` style="--metrics-cols:${opts.cols}"` : "";
+          return `<div class="${rowCls}"${style}>${items.map(metricCell).join("")}</div>`;
+        })
+        .join("")}
+    </section>`;
+}
+
 function renderMetrics(stock) {
   const panels = els.metricsPanels || els.metricsGrid;
   if (!panels) return;
@@ -424,8 +475,7 @@ function renderMetrics(stock) {
     (stock.market_cap ? `${displayValue(stock.market_cap)}亿` : "");
 
   const periodItems = [
-    ["近1日", stock.change_1d, changeClass(stock.change_1d)],
-    ["3日", stock.change_3d, changeClass(stock.change_3d)],
+    ["近3日", stock.change_3d, changeClass(stock.change_3d)],
     ["5日", stock.change_5d, changeClass(stock.change_5d)],
     ["10日", stock.change_10d, changeClass(stock.change_10d)],
     ["20日", stock.change_20d, changeClass(stock.change_20d)],
@@ -442,26 +492,12 @@ function renderMetrics(stock) {
     ["历史最低", stock.low_all],
   ].filter(([, v]) => displayValue(v) !== "-");
 
-  const renderInlineRows = (title, rows) => {
-    const parts = rows
-      .map((items) => items.filter(([, v]) => displayValue(v) !== "-"))
-      .filter((items) => items.length);
-    if (!parts.length) return "";
-    return `
-    <section class="metrics-section">
-      <h4 class="metrics-section-title">${escapeHtml(title)}</h4>
-      ${parts
-        .map(
-          (items) =>
-            `<div class="company-metrics metrics-inline-row">${items
-              .map(metricCell)
-              .join("")}</div>`
-        )
-        .join("")}
-    </section>`;
-  };
-
-  const daySection = renderInlineRows("当日行情", [
+  const daySection = renderInlineMetricRows("当日行情", [
+    [
+      ["最新", stock.price],
+      ["涨幅", stock.change_1d, changeClass(stock.change_1d)],
+      ["涨跌", stock.change_amt, changeClass(stock.change_amt)],
+    ],
     [
       ["今开", stock.open],
       ["昨收", stock.prev_close],
@@ -494,14 +530,16 @@ function renderMetrics(stock) {
       ["盘后量", stock.after_volume],
       ["盘后额", stock.after_amount],
     ],
-  ]);
+  ], { highlightFirst: true });
 
-  const periodSection = renderInlineRows("区间涨幅", [
-    periodItems,
-    extremeItems,
-  ]);
+  const periodSection = renderInlineMetricRows("区间涨幅", [periodItems, extremeItems], {
+    rowOpts: [
+      { class: "metrics-period-row", cols: periodItems.length || 8 },
+      { class: "metrics-extreme-row", cols: extremeItems.length || 4 },
+    ],
+  });
 
-  const valuationSection = renderInlineRows("估值与每股", [
+  const valuationSection = renderInlineMetricRows("估值与每股", [
     [
       ["市盈率(动)", stock.pe],
       ["市盈率(静)", stock.pe_static],
@@ -522,7 +560,7 @@ function renderMetrics(stock) {
     ],
   ]);
 
-  const capitalSection = renderInlineRows("股本与市值", [
+  const capitalSection = renderInlineMetricRows("股本与市值", [
     [
       ["总股本", stock.total_shares],
       ["流通股", stock.float_shares],
@@ -542,8 +580,8 @@ function renderMetrics(stock) {
   ]);
 
   const html = [
-    daySection,
     periodSection,
+    daySection,
     valuationSection,
     capitalSection,
   ]
@@ -574,7 +612,6 @@ function applyStock(stock, industryMeta = {}) {
     ? breadcrumbParts.join(" / ")
     : "公司详情";
 
-  renderQuote(stock);
   renderMetrics(stock);
 }
 
@@ -620,6 +657,13 @@ function newestPublished(items) {
   return newest;
 }
 
+function updateNewsHubMeta(kind = activeNewsKind) {
+  if (!els.newsHubMeta) return;
+  const ui = sectionEls(kind);
+  const text = ui.meta?.textContent?.trim();
+  els.newsHubMeta.textContent = text || "";
+}
+
 function updateSectionMeta(kind) {
   const ui = sectionEls(kind);
   const st = sectionState[kind];
@@ -631,6 +675,10 @@ function updateSectionMeta(kind) {
   const span = from && to ? `${from} ~ ${to}` : daysLabel(st.days);
 
   ui.meta.textContent = `${daysLabel(st.days)} · ${span} · ${st.items.length} 条 · 更新于 ${st.updatedAt || "-"}`;
+
+  if (kind === activeNewsKind) {
+    updateNewsHubMeta(kind);
+  }
 
   if (!ui.hint) return;
   if (st.loading) {
@@ -668,9 +716,6 @@ function nearBottom(kind) {
 }
 
 function setMetricsLoading(message = "正在加载指标…") {
-  if (els.quoteStrip) {
-    els.quoteStrip.innerHTML = "";
-  }
   const panels = els.metricsPanels || els.metricsGrid;
   if (panels) {
     panels.innerHTML = `<p class="muted metrics-loading">${escapeHtml(message)}</p>`;
@@ -874,11 +919,109 @@ function setupScrollLoaders() {
     ui.body.addEventListener(
       "scroll",
       () => {
+        if (key !== activeNewsKind) return;
         if (nearBottom(key)) loadOlder(key);
       },
       { passive: true }
     );
   });
+}
+
+function switchNewsKind(kind) {
+  if (!kind || kind === activeNewsKind) return;
+  activeNewsKind = kind;
+
+  if (els.newsTabs) {
+    els.newsTabs.querySelectorAll("[data-kind]").forEach((tab) => {
+      const active = tab.getAttribute("data-kind") === kind;
+      tab.classList.toggle("is-active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+    });
+  }
+
+  document.querySelectorAll(".news-panel[data-panel]").forEach((panel) => {
+    const active = panel.getAttribute("data-panel") === kind;
+    panel.classList.toggle("is-active", active);
+    panel.hidden = !active;
+  });
+
+  updateNewsHubMeta(kind);
+
+  const ui = sectionEls(kind);
+  if (ui.body) {
+    ui.body.scrollTop = 0;
+  }
+  if (needsMoreContent(kind)) {
+    loadOlder(kind);
+  }
+}
+
+function setupNewsTabs() {
+  if (!els.newsTabs || els.newsTabs.dataset.bound === "1") return;
+  els.newsTabs.dataset.bound = "1";
+
+  els.newsTabs.addEventListener("click", (event) => {
+    const tab = event.target.closest("[data-kind]");
+    if (!tab || !els.newsTabs.contains(tab)) return;
+    switchNewsKind(tab.getAttribute("data-kind"));
+  });
+}
+
+function refreshChartsLayout() {
+  window.requestAnimationFrame(() => {
+    syncChartScrollBar();
+    renderChart();
+    syncTicksChartScrollBar();
+    renderTicksChart();
+    syncPeScrollBar();
+    renderPeChart();
+    syncTurnoverScrollBar();
+    renderTurnoverChart();
+  });
+}
+
+function switchMainPanel(panelId) {
+  if (!panelId || panelId === activeMainPanel) return;
+  activeMainPanel = panelId;
+
+  if (els.companyMainTabs) {
+    els.companyMainTabs.querySelectorAll("[data-panel]").forEach((tab) => {
+      const active = tab.getAttribute("data-panel") === panelId;
+      tab.classList.toggle("is-active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+    });
+  }
+
+  document.querySelectorAll(".company-panel[data-panel]").forEach((panel) => {
+    const active = panel.getAttribute("data-panel") === panelId;
+    panel.classList.toggle("is-active", active);
+    panel.hidden = !active;
+  });
+
+  if (els.refreshNewsBtn) {
+    els.refreshNewsBtn.hidden = panelId !== "news";
+  }
+
+  if (panelId === "charts") {
+    refreshChartsLayout();
+  } else if (panelId === "news" && needsMoreContent(activeNewsKind)) {
+    loadOlder(activeNewsKind);
+  }
+}
+
+function setupMainTabs() {
+  if (!els.companyMainTabs || els.companyMainTabs.dataset.bound === "1") return;
+  els.companyMainTabs.dataset.bound = "1";
+
+  els.companyMainTabs.addEventListener("click", (event) => {
+    const tab = event.target.closest("[data-panel]");
+    if (!tab || !els.companyMainTabs.contains(tab)) return;
+    switchMainPanel(tab.getAttribute("data-panel") || "");
+  });
+
+  if (els.refreshNewsBtn) {
+    els.refreshNewsBtn.hidden = activeMainPanel !== "news";
+  }
 }
 
 function setupBackLink() {
@@ -899,6 +1042,11 @@ function cssVar(name, fallback) {
 function fmtNum(n, digits = 2) {
   if (n == null || !Number.isFinite(Number(n))) return "-";
   return Number(n).toFixed(digits);
+}
+
+function fmtPct(n, digits = 2) {
+  if (n == null || !Number.isFinite(Number(n))) return "-";
+  return `${Number(n).toFixed(digits)}%`;
 }
 
 function fmtVol(n) {
@@ -981,9 +1129,9 @@ function chartViewWindow() {
   };
 }
 
-function chartMinViewSize(total) {
+function chartMinViewSize(total, { ticks = false } = {}) {
   if (total <= 1) return Math.max(1, total);
-  if (chartState.kind === "ticks") return Math.min(total, 36);
+  if (ticks) return Math.min(total, 36);
   return Math.min(total, 20);
 }
 
@@ -993,9 +1141,7 @@ function refreshChartWindowStatus() {
   if (!total) return;
   const src = chartState.source ? ` · ${chartState.source}` : "";
   const adj = isAdjustableKline(chartState.mode)
-    ? chartState.adjust === "none"
-      ? " · 不复权"
-      : " · 前复权"
+    ? ` · ${adjustLabel(chartState.adjust)}`
     : "";
   const tip =
     size < total
@@ -1017,6 +1163,7 @@ function setChartViewStart(nextStart, { render = true, hoverIndex = null } = {})
   chartState.items = win.items;
   syncChartScrollBar();
   if (render) renderChart(hoverIndex);
+  propagateLinkedAxis("kline");
   return start;
 }
 
@@ -1025,7 +1172,7 @@ function zoomChartViewport(anchorRatio, factor, { render = true } = {}) {
   const total = (chartState.allItems || []).length;
   if (total <= 1) return false;
   const win = chartViewWindow();
-  const minSize = chartMinViewSize(total);
+  const minSize = chartMinViewSize(total, { ticks: false });
   const ratio = Math.min(1, Math.max(0, Number(anchorRatio) || 0.5));
   let nextSize = Math.round(win.size * factor);
   nextSize = Math.max(minSize, Math.min(total, nextSize));
@@ -1041,6 +1188,7 @@ function zoomChartViewport(anchorRatio, factor, { render = true } = {}) {
   syncChartScrollBar();
   refreshChartWindowStatus();
   if (render) renderChart();
+  propagateLinkedAxis("kline");
   return true;
 }
 
@@ -1074,17 +1222,113 @@ function resetChartViewport(allItems, modeConf) {
   syncChartScrollBar();
 }
 
-function chartLayout(w, h) {
-  // 顶部/右侧留给坐标与分时涨跌幅
-  const pctAxis =
-    chartState.kind === "ticks" &&
-    Number.isFinite(chartState.preClose) &&
-    chartState.preClose;
+let linkedAxisLock = false;
+
+function itemAxisDate(d) {
+  const s = String(d?.time || "").trim();
+  if (s.length >= 10) return s.slice(0, 10);
+  return s;
+}
+
+function visibleAxisRange(items) {
+  if (!Array.isArray(items) || !items.length) return null;
+  const start = itemAxisDate(items[0]);
+  const end = itemAxisDate(items[items.length - 1]);
+  if (!start || !end) return null;
+  return start <= end ? { start, end } : { start: end, end: start };
+}
+
+function viewportFromAxisRange(allItems, range) {
+  if (!Array.isArray(allItems) || !allItems.length || !range) return null;
+  const { start, end } = range;
+  let lo = 0;
+  let hi = allItems.length - 1;
+  while (lo < allItems.length && itemAxisDate(allItems[lo]) < start) lo += 1;
+  while (hi >= lo && itemAxisDate(allItems[hi]) > end) hi -= 1;
+  if (hi < lo) return null;
+  return { viewStart: lo, viewSize: hi - lo + 1 };
+}
+
+function klineJoinsLinkedAxis() {
+  return !isMinuteKline(chartState.mode);
+}
+
+function applyLinkedRangeToKline(range) {
+  const vp = viewportFromAxisRange(chartState.allItems, range);
+  if (!vp) return;
+  chartState.viewStart = vp.viewStart;
+  chartState.viewSize = vp.viewSize;
+  chartState.items = chartViewWindow().items;
+  syncChartScrollBar();
+  if (chartState.allItems.length) refreshChartWindowStatus();
+  renderChart();
+}
+
+function applyLinkedRangeToPe(range) {
+  const vp = viewportFromAxisRange(peState.allItems, range);
+  if (!vp) return;
+  peState.viewStart = vp.viewStart;
+  peState.viewSize = vp.viewSize;
+  peState.items = peViewWindow().items;
+  syncPeScrollBar();
+  hidePeHoverCard();
+  if (!peState.allItems.length) {
+    renderPeChart();
+    return;
+  }
+  const hasValue = (peState.items || []).some((d) => peValue(d) != null);
+  if (!hasValue) setPeStatus(peEmptyHint(), { empty: true });
+  else {
+    setPeStatus("");
+    refreshPeWindowStatus();
+  }
+  renderPeChart();
+}
+
+function applyLinkedRangeToTurnover(range) {
+  const vp = viewportFromAxisRange(turnoverState.allItems, range);
+  if (!vp) return;
+  turnoverState.viewStart = vp.viewStart;
+  turnoverState.viewSize = vp.viewSize;
+  turnoverState.items = turnoverViewWindow().items;
+  syncTurnoverScrollBar();
+  hideTurnoverHoverCard();
+  if (!turnoverState.allItems.length) {
+    renderTurnoverChart();
+    return;
+  }
+  const hasValue = (turnoverState.items || []).some((d) => turnoverValue(d) != null);
+  if (!hasValue) setTurnoverStatus("暂无换手率数据", { empty: true });
+  else {
+    setTurnoverStatus("");
+    refreshTurnoverWindowStatus();
+  }
+  renderTurnoverChart();
+}
+
+function propagateLinkedAxis(source) {
+  if (linkedAxisLock) return;
+  if (source === "kline" && !klineJoinsLinkedAxis()) return;
+  const items =
+    source === "kline" ? chartState.items : source === "pe" ? peState.items : turnoverState.items;
+  const range = visibleAxisRange(items);
+  if (!range) return;
+  linkedAxisLock = true;
+  try {
+    if (source !== "kline" && klineJoinsLinkedAxis()) applyLinkedRangeToKline(range);
+    if (source !== "pe") applyLinkedRangeToPe(range);
+    if (source !== "turnover") applyLinkedRangeToTurnover(range);
+  } finally {
+    linkedAxisLock = false;
+  }
+}
+
+function chartLayout(w, h, { pctAxis = false, compact = false } = {}) {
   const pad = {
     top: 14,
-    right: pctAxis ? 52 : 30,
-    bottom: 28,
-    left: 60,
+    right: pctAxis ? (compact ? 46 : 52) : compact ? 26 : 30,
+    bottom: compact ? 24 : 28,
+    left: compact ? 48 : 60,
   };
   const innerW = Math.max(10, w - pad.left - pad.right);
   const innerH = Math.max(10, h - pad.top - pad.bottom);
@@ -1249,7 +1493,107 @@ function drawGrid(ctx, rect, yTicks, xTicks, colors) {
   ctx.restore();
 }
 
-function drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { preClose = null } = {}) {
+/** A 股分时横轴：开盘竞价 09:15 → 盘后 15:30，午休压缩不占宽度。 */
+const SESSION_SEGMENTS = [
+  { start: 9 * 60 + 15, end: 9 * 60 + 25 },
+  { start: 9 * 60 + 30, end: 11 * 60 + 30 },
+  { start: 13 * 60, end: 15 * 60 },
+  { start: 15 * 60 + 5, end: 15 * 60 + 30 },
+];
+
+const SESSION_X_LABELS = [
+  { label: "09:15", minutes: 9 * 60 + 15, align: "left" },
+  { label: "10:30", minutes: 10 * 60 + 30, align: "center" },
+  { label: "11:30", minutes: 11 * 60 + 30, align: "center" },
+  { label: "14:00", minutes: 14 * 60, align: "center" },
+  { label: "15:00", minutes: 15 * 60, align: "center" },
+  { label: "15:30", minutes: 15 * 60 + 30, align: "right" },
+];
+
+function sessionDuration() {
+  return SESSION_SEGMENTS.reduce((sum, seg) => sum + (seg.end - seg.start), 0);
+}
+
+function parseClockMinutes(value) {
+  const s = String(value || "");
+  const m = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}(?:\.\d+)?))?/);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]) + Number(m[3] || 0) / 60;
+}
+
+function sessionOffset(minutes) {
+  if (!Number.isFinite(minutes)) return null;
+  let acc = 0;
+  for (const seg of SESSION_SEGMENTS) {
+    if (minutes <= seg.start) return acc;
+    if (minutes <= seg.end) return acc + (minutes - seg.start);
+    acc += seg.end - seg.start;
+  }
+  return acc;
+}
+
+function sessionXAt(minutes, layout) {
+  const off = sessionOffset(minutes);
+  const total = sessionDuration() || 1;
+  const ratio = off == null ? 0 : Math.min(1, Math.max(0, off / total));
+  return layout.price.x + ratio * layout.price.w;
+}
+
+function cnNowParts(date = new Date()) {
+  const fmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+  const map = {};
+  for (const part of fmt.formatToParts(date)) {
+    if (part.type !== "literal") map[part.type] = part.value;
+  }
+  const weekdayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const weekday = weekdayMap[map.weekday] ?? 0;
+  const minutes = Number(map.hour) * 60 + Number(map.minute) + Number(map.second || 0) / 60;
+  return {
+    weekday,
+    minutes,
+    dateStr: `${map.year}-${map.month}-${map.day}`,
+  };
+}
+
+function cnMarketPhase() {
+  const { weekday, minutes } = cnNowParts();
+  if (weekday === 0 || weekday === 6) return "closed";
+  if (
+    (minutes >= 9 * 60 + 15 && minutes < 9 * 60 + 25) ||
+    (minutes >= 9 * 60 + 30 && minutes < 11 * 60 + 30) ||
+    (minutes >= 13 * 60 && minutes < 15 * 60) ||
+    (minutes >= 15 * 60 + 5 && minutes < 15 * 60 + 31)
+  ) {
+    return "live";
+  }
+  if (minutes >= 11 * 60 + 30 && minutes < 13 * 60) return "lunch";
+  return "closed";
+}
+
+function drawSessionTimeLabels(ctx, layout, colors) {
+  const { volume } = layout;
+  ctx.save();
+  ctx.font = '11px "JetBrains Mono", Consolas, monospace';
+  ctx.fillStyle = colors.muted;
+  ctx.textBaseline = "top";
+  for (const item of SESSION_X_LABELS) {
+    ctx.textAlign = item.align || "center";
+    ctx.fillText(item.label, sessionXAt(item.minutes, layout), volume.y + volume.h + 6);
+  }
+  ctx.restore();
+}
+
+function drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { preClose = null, yFormat = null, skipTimeLabels = false } = {}) {
   const { price, volume } = layout;
   const range = priceScale.max - priceScale.min || 1;
   const ticks = Array.isArray(priceScale.ticks) ? priceScale.ticks : [];
@@ -1270,7 +1614,7 @@ function drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { preClose
     } else {
       ctx.fillStyle = colors.muted;
     }
-    ctx.fillText(fmtAxisPrice(val, priceScale.step), price.x - 8, y);
+    ctx.fillText(yFormat ? yFormat(val, priceScale.step) : fmtAxisPrice(val, priceScale.step), price.x - 8, y);
   }
 
   // 分时：右侧涨跌幅刻度，与左侧价格对齐
@@ -1286,6 +1630,11 @@ function drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { preClose
       const sign = pct > 0 ? "+" : "";
       ctx.fillText(`${sign}${pct.toFixed(2)}%`, price.x + price.w + 6, y);
     }
+  }
+
+  if (skipTimeLabels) {
+    ctx.restore();
+    return;
   }
 
   ctx.fillStyle = colors.muted;
@@ -1340,13 +1689,40 @@ function paintChartFrame(ctx, w, h, colors) {
   ctx.fillRect(0, 0, w, h);
 }
 
-function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverIndex) {
+function sessionVolumeBuckets(items) {
+  const buckets = [];
+  const index = new Map();
+  for (const d of items) {
+    const mins = parseClockMinutes(d.time);
+    if (mins == null) continue;
+    const key = Math.floor(mins);
+    let bucket = index.get(key);
+    if (!bucket) {
+      bucket = {
+        minutes: key + 0.5,
+        volume: 0,
+        price: Number(d.price),
+        prev: null,
+      };
+      index.set(key, bucket);
+      buckets.push(bucket);
+    }
+    bucket.volume += Number(d.volume) || 0;
+    bucket.prev = Number.isFinite(bucket.price) ? bucket.price : bucket.prev;
+    bucket.price = Number(d.price);
+  }
+  return buckets;
+}
+
+function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverIndex, opts = {}) {
+  const sessionAxis = Boolean(opts.sessionAxis);
+  const nowMinutes = Number.isFinite(opts.nowMinutes) ? opts.nowMinutes : null;
   const n = items.length;
-  if (!n) return;
+  if (!n && !sessionAxis) return;
 
   const prices = items.map((d) => Number(d.price)).filter(Number.isFinite);
-  let minP = Math.min(...prices);
-  let maxP = Math.max(...prices);
+  let minP = prices.length ? Math.min(...prices) : Number.isFinite(preClose) ? preClose : 0;
+  let maxP = prices.length ? Math.max(...prices) : Number.isFinite(preClose) ? preClose : 1;
   if (Number.isFinite(preClose)) {
     minP = Math.min(minP, preClose);
     maxP = Math.max(maxP, preClose);
@@ -1357,23 +1733,21 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
     padRatio: 0.015,
     center: Number.isFinite(preClose) ? preClose : null,
   });
-  const vols = items.map((d) => Number(d.volume) || 0);
-  const maxVol = Math.max(...vols, 1);
 
-  const xAt = (i) => price.x + ((i + 0.5) / n) * price.w;
+  const xAt = (i) => {
+    if (!sessionAxis) return price.x + ((i + 0.5) / Math.max(1, n)) * price.w;
+    const mins = parseClockMinutes(items[i]?.time);
+    return mins == null ? price.x : sessionXAt(mins, layout);
+  };
   const yAt = (p) =>
     price.y + ((priceScale.max - p) / (priceScale.max - priceScale.min || 1)) * price.h;
 
   const yTicks = (priceScale.ticks || []).map(yAt);
-  const xTicks = [0, 0.5, 1].map((t) => price.x + price.w * t);
+  const xTicks = sessionAxis
+    ? SESSION_X_LABELS.map((item) => sessionXAt(item.minutes, layout))
+    : [0, 0.5, 1].map((t) => price.x + price.w * t);
   drawGrid(ctx, price, yTicks, xTicks, colors);
-  drawGrid(
-    ctx,
-    volume,
-    [volume.y, volume.y + volume.h],
-    xTicks,
-    colors
-  );
+  drawGrid(ctx, volume, [volume.y, volume.y + volume.h], xTicks, colors);
 
   if (Number.isFinite(preClose)) {
     const y = yAt(preClose);
@@ -1388,58 +1762,56 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
     ctx.restore();
   }
 
-  // volume bars
-  const barW = Math.max(1, (price.w / n) * 0.7);
-  for (let i = 0; i < n; i += 1) {
-    const v = vols[i];
-    const h = (v / maxVol) * volume.h;
-    const x = xAt(i) - barW / 2;
-    const prev = i > 0 ? Number(items[i - 1].price) : preClose;
-    const cur = Number(items[i].price);
-    const up = Number.isFinite(prev) ? cur >= prev : true;
-    ctx.fillStyle = up ? colors.upSoft : colors.downSoft;
-    ctx.fillRect(x, volume.y + volume.h - h, barW, h);
+  if (sessionAxis) {
+    const buckets = sessionVolumeBuckets(items);
+    const maxVol = buckets.reduce((m, b) => Math.max(m, b.volume || 0), 1);
+    const barW = Math.max(1, (price.w / sessionDuration()) * 0.75);
+    for (const bucket of buckets) {
+      const h = (bucket.volume / maxVol) * volume.h;
+      const x = sessionXAt(bucket.minutes, layout) - barW / 2;
+      const up = Number.isFinite(bucket.prev) ? bucket.price >= bucket.prev : true;
+      ctx.fillStyle = up ? colors.upSoft : colors.downSoft;
+      ctx.fillRect(x, volume.y + volume.h - h, barW, h);
+    }
+  } else if (n) {
+    const vols = items.map((d) => Number(d.volume) || 0);
+    const maxVol = Math.max(...vols, 1);
+    const barW = Math.max(1, (price.w / n) * 0.7);
+    for (let i = 0; i < n; i += 1) {
+      const v = vols[i];
+      const h = (v / maxVol) * volume.h;
+      const x = xAt(i) - barW / 2;
+      const prev = i > 0 ? Number(items[i - 1].price) : preClose;
+      const cur = Number(items[i].price);
+      const up = Number.isFinite(prev) ? cur >= prev : true;
+      ctx.fillStyle = up ? colors.upSoft : colors.downSoft;
+      ctx.fillRect(x, volume.y + volume.h - h, barW, h);
+    }
   }
 
-  // avg line
-  ctx.beginPath();
-  let startedAvg = false;
-  for (let i = 0; i < n; i += 1) {
-    const avg = Number(items[i].avg_price);
-    if (!Number.isFinite(avg)) continue;
-    const x = xAt(i);
-    const y = yAt(avg);
-    if (!startedAvg) {
-      ctx.moveTo(x, y);
-      startedAvg = true;
-    } else ctx.lineTo(x, y);
-  }
-  if (startedAvg) {
-    ctx.strokeStyle = colors.avg;
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-  }
-
-  // price line + fill
-  ctx.beginPath();
-  let startedPrice = false;
-  for (let i = 0; i < n; i += 1) {
-    const p = Number(items[i].price);
-    if (!Number.isFinite(p)) continue;
-    const x = xAt(i);
-    const y = yAt(p);
-    if (!startedPrice) {
-      ctx.moveTo(x, y);
-      startedPrice = true;
-    } else ctx.lineTo(x, y);
-  }
-  if (startedPrice) {
-    ctx.strokeStyle = colors.accent;
-    ctx.lineWidth = 1.6;
-    ctx.stroke();
+  if (n) {
+    ctx.beginPath();
+    let startedAvg = false;
+    for (let i = 0; i < n; i += 1) {
+      const avg = Number(items[i].avg_price);
+      if (!Number.isFinite(avg)) continue;
+      const x = xAt(i);
+      const y = yAt(avg);
+      if (!startedAvg) {
+        ctx.moveTo(x, y);
+        startedAvg = true;
+      } else ctx.lineTo(x, y);
+    }
+    if (startedAvg) {
+      ctx.strokeStyle = colors.avg;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
 
     ctx.beginPath();
-    startedPrice = false;
+    let startedPrice = false;
+    let firstX = null;
+    let lastX = null;
     for (let i = 0; i < n; i += 1) {
       const p = Number(items[i].price);
       if (!Number.isFinite(p)) continue;
@@ -1448,16 +1820,49 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
       if (!startedPrice) {
         ctx.moveTo(x, y);
         startedPrice = true;
+        firstX = x;
       } else ctx.lineTo(x, y);
+      lastX = x;
     }
-    ctx.lineTo(xAt(n - 1), price.y + price.h);
-    ctx.lineTo(xAt(0), price.y + price.h);
-    ctx.closePath();
-    const gradient = ctx.createLinearGradient(0, price.y, 0, price.y + price.h);
-    gradient.addColorStop(0, "rgba(42, 212, 184, 0.18)");
-    gradient.addColorStop(1, "rgba(42, 212, 184, 0)");
-    ctx.fillStyle = gradient;
-    ctx.fill();
+    if (startedPrice) {
+      ctx.strokeStyle = colors.accent;
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+
+      ctx.beginPath();
+      startedPrice = false;
+      for (let i = 0; i < n; i += 1) {
+        const p = Number(items[i].price);
+        if (!Number.isFinite(p)) continue;
+        const x = xAt(i);
+        const y = yAt(p);
+        if (!startedPrice) {
+          ctx.moveTo(x, y);
+          startedPrice = true;
+        } else ctx.lineTo(x, y);
+      }
+      ctx.lineTo(lastX, price.y + price.h);
+      ctx.lineTo(firstX, price.y + price.h);
+      ctx.closePath();
+      const gradient = ctx.createLinearGradient(0, price.y, 0, price.y + price.h);
+      gradient.addColorStop(0, "rgba(42, 212, 184, 0.18)");
+      gradient.addColorStop(1, "rgba(42, 212, 184, 0)");
+      ctx.fillStyle = gradient;
+      ctx.fill();
+    }
+  }
+
+  if (sessionAxis && nowMinutes != null) {
+    const x = sessionXAt(nowMinutes, layout);
+    ctx.save();
+    ctx.strokeStyle = colors.cross;
+    ctx.setLineDash([2, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x, price.y);
+    ctx.lineTo(x, volume.y + volume.h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
   }
 
   if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
@@ -1485,7 +1890,11 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
     ctx.restore();
   }
 
-  drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { preClose });
+  drawAxesLabels(ctx, layout, priceScale, items, mode, colors, {
+    preClose,
+    skipTimeLabels: sessionAxis,
+  });
+  if (sessionAxis) drawSessionTimeLabels(ctx, layout, colors);
 }
 
 function drawMaLines(ctx, maVisible, yAt, xAt, n) {
@@ -1609,6 +2018,21 @@ function drawKlineChart(ctx, layout, items, mode, colors, hoverIndex) {
   drawAxesLabels(ctx, layout, priceScale, items, mode, colors);
 }
 
+function chartColors() {
+  return {
+    accent: cssVar("--accent", "#2ad4b8"),
+    muted: cssVar("--muted", "#8494a8"),
+    up: cssVar("--up", "#ff5d6c"),
+    down: cssVar("--down", "#3dd68c"),
+    upSoft: "rgba(255, 93, 108, 0.45)",
+    downSoft: "rgba(61, 214, 140, 0.45)",
+    avg: cssVar("--accent-hot", "#f0b429"),
+    grid: "rgba(42, 212, 184, 0.08)",
+    ref: "rgba(132, 148, 168, 0.55)",
+    cross: "rgba(232, 238, 247, 0.35)",
+  };
+}
+
 function renderChart(hoverIndex = null) {
   const canvas = els.priceChart;
   const wrap = els.chartWrap;
@@ -1622,37 +2046,13 @@ function renderChart(hoverIndex = null) {
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  const colors = {
-    accent: cssVar("--accent", "#2ad4b8"),
-    muted: cssVar("--muted", "#8494a8"),
-    up: cssVar("--up", "#ff5d6c"),
-    down: cssVar("--down", "#3dd68c"),
-    upSoft: "rgba(255, 93, 108, 0.45)",
-    downSoft: "rgba(61, 214, 140, 0.45)",
-    avg: cssVar("--accent-hot", "#f0b429"),
-    grid: "rgba(42, 212, 184, 0.08)",
-    ref: "rgba(132, 148, 168, 0.55)",
-    cross: "rgba(232, 238, 247, 0.35)",
-  };
-
+  const colors = chartColors();
   paintChartFrame(ctx, cssW, cssH, colors);
   const items = chartState.items || [];
   if (!items.length) return;
 
   const layout = chartLayout(cssW, cssH);
-  if (chartState.kind === "ticks") {
-    drawRealtimeChart(
-      ctx,
-      layout,
-      items,
-      chartState.preClose,
-      chartState.mode,
-      colors,
-      hoverIndex
-    );
-  } else {
-    drawKlineChart(ctx, layout, items, chartState.mode, colors, hoverIndex);
-  }
+  drawKlineChart(ctx, layout, items, chartState.mode, colors, hoverIndex);
 }
 
 function hideHoverCard() {
@@ -1689,63 +2089,42 @@ function updateHoverLabel(index, evt = null) {
   };
 
   let rows = [];
-  if (chartState.kind === "ticks") {
-    let pct = null;
-    const price = Number(d.price);
-    if (Number.isFinite(chartState.preClose) && Number.isFinite(price) && chartState.preClose) {
-      pct = ((price - chartState.preClose) / chartState.preClose) * 100;
+  let pct = Number(d.pct_chg);
+  if (!Number.isFinite(pct) && index > 0) {
+    const prevClose = Number(items[index - 1].close);
+    const close = Number(d.close);
+    if (Number.isFinite(prevClose) && prevClose && Number.isFinite(close)) {
+      pct = ((close - prevClose) / prevClose) * 100;
     }
-    const priceCls =
-      pct > 0 ? "change-up" : pct < 0 ? "change-down" : "";
-    const p = pctText(pct);
-    const avg = Number(d.avg_price);
-    rows = [
-      row("现价", escapeHtml(fmtNum(d.price)), priceCls),
-      Number.isFinite(avg) ? row("均价", escapeHtml(fmtNum(avg))) : "",
-      p ? row("涨跌幅", escapeHtml(p.text), p.cls) : "",
-      row("成交量", escapeHtml(fmtVol(d.volume))),
-    ].filter(Boolean);
-  } else {
-    let pct = Number(d.pct_chg);
-    if (!Number.isFinite(pct) && index > 0) {
-      const prevClose = Number(items[index - 1].close);
-      const close = Number(d.close);
-      if (Number.isFinite(prevClose) && prevClose && Number.isFinite(close)) {
-        pct = ((close - prevClose) / prevClose) * 100;
-      }
-    }
-    const closeCls =
-      Number.isFinite(pct) && pct > 0
-        ? "change-up"
-        : Number.isFinite(pct) && pct < 0
-          ? "change-down"
-          : "";
-    const p = pctText(pct);
-    const absIndex = (Number(chartState.viewStart) || 0) + index;
-    const { full: maFull } = getKlineMaBundle();
-    const maRows = KLINE_MA_LINES.map((line) => {
-      const v = maPoint(maFull[line.key] || [], absIndex);
-      if (v == null) return "";
-      return row(
-        line.label,
-        `<span style="color:${line.color}">${escapeHtml(fmtNum(v))}</span>`
-      );
-    }).filter(Boolean);
-    rows = [
-      row("开盘", escapeHtml(fmtNum(d.open))),
-      row("最低", escapeHtml(fmtNum(d.low))),
-      row("最高", escapeHtml(fmtNum(d.high))),
-      row("收盘", escapeHtml(fmtNum(d.close)), closeCls),
-      p ? row("涨跌幅", escapeHtml(p.text), p.cls) : "",
-      ...maRows,
-      row("成交量", escapeHtml(fmtVol(d.volume))),
-    ].filter(Boolean);
   }
+  const closeCls =
+    Number.isFinite(pct) && pct > 0
+      ? "change-up"
+      : Number.isFinite(pct) && pct < 0
+        ? "change-down"
+        : "";
+  const p = pctText(pct);
+  const absIndex = (Number(chartState.viewStart) || 0) + index;
+  const { full: maFull } = getKlineMaBundle();
+  const maRows = KLINE_MA_LINES.map((line) => {
+    const v = maPoint(maFull[line.key] || [], absIndex);
+    if (v == null) return "";
+    return row(
+      line.label,
+      `<span style="color:${line.color}">${escapeHtml(fmtNum(v))}</span>`
+    );
+  }).filter(Boolean);
+  rows = [
+    row("开盘", escapeHtml(fmtNum(d.open))),
+    row("最低", escapeHtml(fmtNum(d.low))),
+    row("最高", escapeHtml(fmtNum(d.high))),
+    row("收盘", escapeHtml(fmtNum(d.close)), closeCls),
+    p ? row("涨跌幅", escapeHtml(p.text), p.cls) : "",
+    ...maRows,
+    row("成交量", escapeHtml(fmtVol(d.volume))),
+  ].filter(Boolean);
 
-  els.chartHoverCard.innerHTML = `
-    <p class="chart-hover-card-time">${escapeHtml(d.time || "")}</p>
-    <div class="chart-hover-card-rows">${rows.join("")}</div>
-  `;
+  els.chartHoverCard.innerHTML = `<div class="chart-hover-card-rows chart-hover-card-rows--inline"><span class="chart-hover-card-time">${escapeHtml(d.time || "")}</span>${rows.join("")}</div>`;
   showHoverCard();
 }
 
@@ -1776,90 +2155,455 @@ function panChartByPixels(dx, canvasWidth) {
   return true;
 }
 
-async function loadChart(mode = chartState.mode) {
-  if (!code || !els.priceChart) return;
-  const conf = CHART_MODES[mode] || CHART_MODES.day;
-  chartState.mode = mode;
-  chartState.kind = conf.kind;
-  chartState.loading = true;
-  syncChartAdjustUi(mode);
-  setChartStatus(`正在加载${conf.label}…`);
-  hideHoverCard();
+/* ---------- 实时分时图 ---------- */
 
-  try {
-    let data;
-    if (conf.kind === "ticks") {
-      const qs = new URLSearchParams({ code });
-      const json = await api(`/api/stocks/ticks?${qs.toString()}`);
-      data = json.data || {};
-      const rawItems = Array.isArray(data.items) ? data.items : [];
-      resetChartViewport(downsampleTicks(rawItems, 2400), conf);
-      chartState.preClose = Number(data.pre_price);
-      if (!Number.isFinite(chartState.preClose)) chartState.preClose = null;
-      chartState.source = data.source || "";
-    } else {
-      const qs = new URLSearchParams({
-        code,
-        period: conf.period,
-        adjust: klineAdjustFor(mode),
-        limit: String(conf.limit || 180),
-      });
-      const json = await api(`/api/stocks/line?${qs.toString()}`);
-      data = json.data || {};
-      resetChartViewport(data.items || [], conf);
-      chartState.preClose = null;
-      chartState.source = data.source || "";
-    }
-
-    const count = chartState.allItems.length;
-    if (!count) {
-      setChartStatus("暂无走势数据", { empty: true });
-      renderChart();
-      return;
-    }
-    refreshChartWindowStatus();
-    renderChart();
-  } catch (err) {
-    resetChartViewport([], conf);
-    setChartStatus(err.message || "走势加载失败", { empty: true });
-    renderChart();
-  } finally {
-    chartState.loading = false;
+function setTicksChartStatus(message, { empty = false } = {}) {
+  if (els.ticksChartMeta) els.ticksChartMeta.textContent = message || "";
+  if (els.ticksChartEmpty) {
+    els.ticksChartEmpty.textContent = empty ? message || "暂无走势数据" : "暂无走势数据";
+    els.ticksChartEmpty.classList.toggle("hidden", !empty);
   }
 }
 
-function setupChart() {
-  if (!els.chartTabs || !els.priceChart) return;
+function formatTicksDay(raw) {
+  const s = String(raw || "").trim();
+  if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return "";
+}
 
-  els.chartTabs.addEventListener("click", (evt) => {
-    const btn = evt.target.closest(".chart-tab");
-    if (!btn) return;
-    const mode = btn.getAttribute("data-mode");
-    if (!mode || mode === chartState.mode) return;
-    els.chartTabs.querySelectorAll(".chart-tab").forEach((el) => {
-      const active = el === btn;
-      el.classList.toggle("is-active", active);
-      el.setAttribute("aria-selected", active ? "true" : "false");
-    });
-    loadChart(mode);
+function inferTicksTradeDate(data, items) {
+  const fromApi = formatTicksDay(data?.day);
+  if (fromApi) return fromApi;
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const day = formatTicksDay(items[i]?.time);
+    if (day) return day;
+  }
+  const now = cnNowParts();
+  const phase = cnMarketPhase();
+  if (phase !== "closed") return now.dateStr;
+  if (now.weekday >= 1 && now.weekday <= 5 && now.minutes >= 15 * 60 + 30) return now.dateStr;
+  return "";
+}
+
+function withTickAvg(items) {
+  let pv = 0;
+  let volSum = 0;
+  return items.map((d) => {
+    const price = Number(d.price);
+    const vol = Number(d.volume) || 0;
+    if (Number.isFinite(price) && vol > 0) {
+      pv += price * vol;
+      volSum += vol;
+    }
+    const avg = Number(d.avg_price);
+    return {
+      ...d,
+      avg_price: Number.isFinite(avg) ? avg : volSum ? pv / volSum : price,
+    };
   });
+}
 
-  els.chartAdjust?.addEventListener("click", (evt) => {
-    const btn = evt.target.closest("[data-adjust]");
-    if (!btn || !isAdjustableKline(chartState.mode)) return;
-    const adjust = btn.getAttribute("data-adjust");
-    if (!adjust || adjust === chartState.adjust) return;
-    chartState.adjust = adjust === "none" ? "none" : "qfq";
-    syncChartAdjustUi();
-    loadChart(chartState.mode);
+function downsampleTicksByTime(items, maxN = TICKS_DRAW_MAX) {
+  if (!Array.isArray(items) || items.length <= maxN) return items;
+  const last = Math.max(2, maxN) - 1;
+  const out = [];
+  let prev = -1;
+  for (let i = 0; i < last; i += 1) {
+    const idx = Math.round((i * (items.length - 1)) / last);
+    if (idx === prev) continue;
+    out.push(items[idx]);
+    prev = idx;
+  }
+  if (prev !== items.length - 1) out.push(items[items.length - 1]);
+  return out;
+}
+
+function tickRowKey(d) {
+  return `${d.time}|${d.price}|${d.volume}|${d.count ?? ""}|${d.seq ?? ""}`;
+}
+
+function mergeTickItems(current, incoming) {
+  if (!incoming.length) return current;
+  if (!current.length) return incoming;
+  const lastKey = tickRowKey(current[current.length - 1]);
+  let idx = -1;
+  for (let i = incoming.length - 1; i >= 0; i -= 1) {
+    if (tickRowKey(incoming[i]) === lastKey) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx >= 0) return current.concat(incoming.slice(idx + 1));
+  const lastT = parseClockMinutes(current[current.length - 1].time);
+  const firstT = parseClockMinutes(incoming[0].time);
+  if (lastT != null && firstT != null && firstT >= lastT) return current.concat(incoming);
+  return incoming;
+}
+
+function applyTicksItems(rawItems) {
+  const decorated = withTickAvg(Array.isArray(rawItems) ? rawItems : []);
+  ticksState.allItems = decorated;
+  ticksState.items = downsampleTicksByTime(decorated);
+  ticksState.viewSize = ticksState.items.length;
+  ticksState.viewStart = 0;
+  syncTicksChartScrollBar();
+}
+
+function minuteBarsToTicks(bars) {
+  if (!Array.isArray(bars) || !bars.length) {
+    return { items: [], preClose: null, day: "", source: "" };
+  }
+  const lastDay = formatTicksDay(bars[bars.length - 1]?.time);
+  const dayBars = lastDay
+    ? bars.filter((b) => formatTicksDay(b.time) === lastDay)
+    : bars.slice();
+  const prevBars = lastDay
+    ? bars.filter((b) => formatTicksDay(b.time) && formatTicksDay(b.time) < lastDay)
+    : [];
+  const prevClose = prevBars.length ? Number(prevBars[prevBars.length - 1].close) : null;
+  const useAmount = dayBars.some((b) => Number.isFinite(Number(b.amount)));
+  let pv = 0;
+  let shares = 0;
+  const items = dayBars.map((b) => {
+    const price = Number(b.close);
+    const vol = Number(b.volume) || 0;
+    const amt = Number(b.amount);
+    if (useAmount && Number.isFinite(amt) && amt > 0) {
+      pv += amt;
+      shares += vol * 100;
+    } else if (Number.isFinite(price) && vol > 0) {
+      pv += price * vol;
+      shares += vol;
+    }
+    const clock = String(b.time || "").slice(11, 16) || b.time;
+    return {
+      time: clock,
+      price,
+      volume: vol,
+      avg_price: shares ? pv / shares : price,
+    };
   });
+  return { items, preClose: Number.isFinite(prevClose) ? prevClose : null, day: lastDay };
+}
 
-  syncChartAdjustUi();
+function ticksChartViewWindow() {
+  const all = ticksState.items || [];
+  const total = all.length;
+  return {
+    all,
+    total,
+    size: total,
+    maxStart: 0,
+    start: 0,
+    items: all,
+  };
+}
 
-  if (els.chartScrollBar) {
-    els.chartScrollBar.addEventListener("input", () => {
-      hideHoverCard();
-      setChartViewStart(Number(els.chartScrollBar.value) || 0, { render: true });
+function refreshTicksChartWindowStatus() {
+  const count = (ticksState.items || []).length;
+  if (!count && !ticksState.tradeDate) return;
+  const src = ticksState.source ? ` · ${ticksState.source}` : "";
+  const date = ticksState.tradeDate ? ` · ${ticksState.tradeDate}` : "";
+  const axis = "09:15–15:30";
+  if (ticksState.phase === "live") {
+    setTicksChartStatus(`实时 · ${axis} · 每秒刷新${src}`);
+    return;
+  }
+  if (ticksState.phase === "lunch") {
+    setTicksChartStatus(`午间休市 · ${axis}${date}${src}`);
+    return;
+  }
+  const today = cnNowParts().dateStr;
+  if (ticksState.tradeDate && ticksState.tradeDate === today) {
+    setTicksChartStatus(`已收盘${date} · ${axis}${src}`);
+    return;
+  }
+  setTicksChartStatus(`上一交易日${date} · ${axis}${src}`);
+}
+
+function syncTicksChartScrollBar() {
+  const bar = els.ticksChartScrollBar;
+  const wrap = els.ticksChartAxisScroll;
+  if (wrap) wrap.classList.add("is-disabled");
+  if (!bar) return;
+  bar.disabled = true;
+  bar.min = "0";
+  bar.max = "0";
+  bar.value = "0";
+}
+
+function setTicksChartViewStart() {
+  return 0;
+}
+
+function zoomTicksChartViewport() {
+  return false;
+}
+
+function panTicksChartByPixels() {
+  return false;
+}
+
+function ticksHoverIndex() {
+  const items = ticksState.items || [];
+  const t = ticksState.hoverTime;
+  if (!t || !items.length) return null;
+  let best = null;
+  for (let i = 0; i < items.length; i += 1) {
+    if (String(items[i].time) === t) return i;
+    if (String(items[i].time) <= t) best = i;
+  }
+  return best;
+}
+
+function renderTicksChart(hoverIndex = undefined) {
+  const canvas = els.ticksChart;
+  const wrap = els.ticksChartWrap;
+  if (!canvas || !wrap) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = Math.max(240, wrap.clientWidth || 320);
+  const cssH = Math.max(200, wrap.clientHeight || 280);
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const colors = chartColors();
+  paintChartFrame(ctx, cssW, cssH, colors);
+  const items = ticksState.items || [];
+  const idx = hoverIndex === undefined ? ticksHoverIndex() : hoverIndex;
+  const showPctAxis = Number.isFinite(ticksState.preClose) && ticksState.preClose;
+  const layout = chartLayout(cssW, cssH, { pctAxis: showPctAxis, compact: true });
+  drawRealtimeChart(ctx, layout, items, ticksState.preClose, "ticks", colors, idx, {
+    sessionAxis: true,
+    nowMinutes: ticksState.phase === "live" ? cnNowParts().minutes : null,
+  });
+}
+
+function ticksLatestItem() {
+  const all = ticksState.allItems || [];
+  if (all.length) return all[all.length - 1];
+  const items = ticksState.items || [];
+  return items.length ? items[items.length - 1] : null;
+}
+
+function hideTicksHoverCard() {
+  ticksState.hoverTime = null;
+  fillTicksQuoteCard(ticksLatestItem());
+}
+
+function showTicksHoverCard() {
+  if (!els.ticksChartHoverCard) return;
+  els.ticksChartHoverCard.classList.remove("hidden");
+  els.ticksChartHoverCard.setAttribute("aria-hidden", "false");
+}
+
+function fillTicksQuoteCard(d) {
+  if (!els.ticksChartHoverCard) return;
+  if (!d) {
+    els.ticksChartHoverCard.classList.add("hidden");
+    els.ticksChartHoverCard.setAttribute("aria-hidden", "true");
+    els.ticksChartHoverCard.innerHTML = "";
+    return;
+  }
+  const row = (label, valueHtml, valueCls = "") =>
+    `<span class="chart-hover-item"><span class="k">${escapeHtml(label)}</span><span class="v ${valueCls}">${valueHtml}</span></span>`;
+
+  let pct = null;
+  const price = Number(d.price);
+  if (Number.isFinite(ticksState.preClose) && Number.isFinite(price) && ticksState.preClose) {
+    pct = ((price - ticksState.preClose) / ticksState.preClose) * 100;
+  }
+  const priceCls = pct > 0 ? "change-up" : pct < 0 ? "change-down" : "";
+  const pctText =
+    pct == null || !Number.isFinite(Number(pct))
+      ? null
+      : {
+          text: `${pct > 0 ? "+" : ""}${Number(pct).toFixed(2)}%`,
+          cls: `chart-hover-pct ${priceCls}`,
+        };
+  const avg = Number(d.avg_price);
+  const rows = [
+    row("现价", escapeHtml(fmtNum(d.price)), priceCls),
+    Number.isFinite(avg) ? row("均价", escapeHtml(fmtNum(avg))) : "",
+    pctText ? row("涨跌幅", escapeHtml(pctText.text), pctText.cls) : "",
+    row("成交量", escapeHtml(fmtVol(d.volume))),
+  ].filter(Boolean);
+
+  els.ticksChartHoverCard.innerHTML = `<div class="chart-hover-card-rows chart-hover-card-rows--inline"><span class="chart-hover-card-time">${escapeHtml(d.time || "")}</span>${rows.join("")}</div>`;
+  showTicksHoverCard();
+}
+
+function updateTicksHoverLabel(index) {
+  const items = ticksState.items || [];
+  if (index == null || index < 0 || index >= items.length) {
+    hideTicksHoverCard();
+    return;
+  }
+  const d = items[index];
+  ticksState.hoverTime = d.time || null;
+  fillTicksQuoteCard(d);
+}
+
+function refreshTicksQuoteCard() {
+  const hover = ticksHoverIndex();
+  if (hover != null) updateTicksHoverLabel(hover);
+  else fillTicksQuoteCard(ticksLatestItem());
+}
+
+function ticksPointerIndex(evt) {
+  const canvas = els.ticksChart;
+  const wrap = els.ticksChartWrap;
+  const items = ticksState.items || [];
+  if (!canvas || !wrap || !items.length) return null;
+  const rect = canvas.getBoundingClientRect();
+  const x = evt.clientX - rect.left;
+  const showPctAxis = Number.isFinite(ticksState.preClose) && ticksState.preClose;
+  const layout = chartLayout(rect.width, rect.height, { pctAxis: showPctAxis, compact: true });
+  if (x < layout.price.x || x > layout.price.x + layout.price.w) return null;
+  let best = 0;
+  for (let i = 0; i < items.length; i += 1) {
+    const mins = parseClockMinutes(items[i].time);
+    const tx = mins == null ? layout.price.x : sessionXAt(mins, layout);
+    if (tx <= x) best = i;
+    else break;
+  }
+  return best;
+}
+
+async function loadPreviousSessionTicks() {
+  const qs = new URLSearchParams({
+    code,
+    period: "1m",
+    adjust: "none",
+    limit: "500",
+  });
+  const json = await api(`/api/stocks/line?${qs.toString()}`);
+  const data = json.data || {};
+  const converted = minuteBarsToTicks(data.items || []);
+  let preClose = converted.preClose;
+  if (!Number.isFinite(preClose)) {
+    const n = Number(data.pre_price);
+    preClose = Number.isFinite(n) ? n : null;
+  }
+  return {
+    items: converted.items,
+    preClose,
+    source: data.source ? `${data.source}·1m` : "1m",
+    day: converted.day,
+  };
+}
+
+async function loadTicksChart({ silent = false, incremental = false } = {}) {
+  if (!code || !els.ticksChart) return;
+  if (ticksState.loading) return;
+  ticksState.loading = true;
+  ticksState.phase = cnMarketPhase();
+  ticksState.live = ticksState.phase === "live";
+  if (!silent) {
+    setTicksChartStatus("正在加载实时…");
+    hideTicksHoverCard();
+  }
+
+  try {
+    const qs = new URLSearchParams({ code });
+    if (incremental) {
+      qs.set("pos", String(TICKS_LIVE_POS));
+      qs.set("refresh", "1");
+    } else if (ticksState.phase === "live") {
+      qs.set("refresh", "1");
+    }
+    const json = await api(`/api/stocks/ticks?${qs.toString()}`);
+    const data = json.data || {};
+    let rawItems = Array.isArray(data.items) ? data.items : [];
+    let preClose = Number(data.pre_price);
+    let source = data.source || "";
+    let tradeDate = inferTicksTradeDate(data, rawItems);
+
+    if (incremental) {
+      rawItems = mergeTickItems(ticksState.allItems, rawItems);
+    }
+
+    if (!rawItems.length && ticksState.phase !== "live") {
+      const fallback = await loadPreviousSessionTicks();
+      rawItems = fallback.items;
+      if (Number.isFinite(fallback.preClose)) preClose = fallback.preClose;
+      source = fallback.source || source;
+      tradeDate = fallback.day || tradeDate;
+    }
+
+    applyTicksItems(rawItems);
+    ticksState.preClose = Number.isFinite(preClose) ? preClose : null;
+    ticksState.source = source;
+    ticksState.tradeDate = tradeDate || inferTicksTradeDate(data, ticksState.allItems);
+
+    const count = ticksState.items.length;
+    if (!count) {
+      if (!silent) setTicksChartStatus("暂无走势数据", { empty: true });
+      else setTicksChartStatus(ticksState.phase === "live" ? "实时 · 09:15–15:30 · 等待成交" : "暂无走势数据", {
+        empty: ticksState.phase !== "live",
+      });
+      fillTicksQuoteCard(null);
+      renderTicksChart();
+      return;
+    }
+    if (els.ticksChartEmpty) els.ticksChartEmpty.classList.add("hidden");
+    refreshTicksChartWindowStatus();
+    refreshTicksQuoteCard();
+    renderTicksChart();
+  } catch (err) {
+    if (!incremental) {
+      applyTicksItems([]);
+      setTicksChartStatus(err.message || "实时加载失败", { empty: true });
+      fillTicksQuoteCard(null);
+      renderTicksChart();
+    }
+  } finally {
+    ticksState.loading = false;
+  }
+}
+
+function onTicksMarketClock() {
+  if (document.hidden || !code || !els.ticksChart) return;
+  if (ticksState.loading) return;
+  const phase = cnMarketPhase();
+  const wasLive = ticksState.live;
+  ticksState.phase = phase;
+  ticksState.live = phase === "live";
+  if (phase === "live") {
+    loadTicksChart({ silent: true, incremental: wasLive && Boolean(ticksState.allItems.length) });
+    return;
+  }
+  if (wasLive) {
+    loadTicksChart({ silent: true, incremental: false });
+  }
+}
+
+function bindChartPaneInteractions({
+  canvas,
+  wrap,
+  scrollBar,
+  hideHover,
+  updateHover,
+  render,
+  pointerIndexAt,
+  panByPixels,
+  viewWindow,
+  setViewStart,
+  zoomViewport,
+  syncScrollBar,
+  layoutPctAxis = () => false,
+  layoutCompact = false,
+  enablePanZoom = true,
+}) {
+  if (!canvas) return;
+
+  if (scrollBar) {
+    scrollBar.addEventListener("input", () => {
+      hideHover();
+      setViewStart(Number(scrollBar.value) || 0, { render: true });
     });
   }
 
@@ -1871,41 +2615,40 @@ function setupChart() {
       const dx = evt.clientX - pan.lastX;
       if (Math.abs(evt.clientX - pan.originX) > 4) pan.moved = true;
       if (pan.moved && Math.abs(dx) >= 1) {
-        hideHoverCard();
+        hideHover();
         hoverIdx = null;
-        panChartByPixels(dx, pan.width);
+        panByPixels(dx, pan.width);
         pan.lastX = evt.clientX;
       }
       return;
     }
-    const idx = pointerIndex(evt);
-    if (idx === hoverIdx) {
-      return;
-    }
+    const idx = pointerIndexAt(evt);
+    if (idx === hoverIdx) return;
     hoverIdx = idx;
-    updateHoverLabel(idx, evt);
-    renderChart(idx);
+    updateHover(idx, evt);
+    render(idx);
   };
 
   const onLeave = () => {
     if (pan) return;
     hoverIdx = null;
-    hideHoverCard();
-    renderChart();
+    hideHover();
+    render();
   };
 
   const onDown = (evt) => {
+    if (!enablePanZoom) return;
     if (evt.button != null && evt.button !== 0) return;
-    const rect = els.priceChart.getBoundingClientRect();
+    const rect = canvas.getBoundingClientRect();
     pan = {
       originX: evt.clientX,
       lastX: evt.clientX,
       width: rect.width,
       moved: false,
     };
-    els.chartWrap?.classList.add("is-panning");
+    wrap?.classList.add("is-panning");
     try {
-      els.priceChart.setPointerCapture(evt.pointerId);
+      canvas.setPointerCapture(evt.pointerId);
     } catch {
       /* ignore */
     }
@@ -1915,82 +2658,192 @@ function setupChart() {
     if (!pan) return;
     const wasPan = pan.moved;
     pan = null;
-    els.chartWrap?.classList.remove("is-panning");
+    wrap?.classList.remove("is-panning");
     try {
-      els.priceChart.releasePointerCapture(evt.pointerId);
+      canvas.releasePointerCapture(evt.pointerId);
     } catch {
       /* ignore */
     }
     if (!wasPan) {
-      const idx = pointerIndex(evt);
+      const idx = pointerIndexAt(evt);
       hoverIdx = idx;
-      updateHoverLabel(idx, evt);
-      renderChart(idx);
+      updateHover(idx, evt);
+      render(idx);
     } else {
-      hideHoverCard();
+      hideHover();
       hoverIdx = null;
-      renderChart();
+      render();
     }
   };
 
-  els.priceChart.addEventListener("pointerdown", onDown);
-  els.priceChart.addEventListener("pointermove", onMove);
-  els.priceChart.addEventListener("pointerup", onUp);
-  els.priceChart.addEventListener("pointercancel", onUp);
-  els.priceChart.addEventListener("pointerleave", onLeave);
+  canvas.addEventListener("pointerdown", onDown);
+  canvas.addEventListener("pointermove", onMove);
+  canvas.addEventListener("pointerup", onUp);
+  canvas.addEventListener("pointercancel", onUp);
+  canvas.addEventListener("pointerleave", onLeave);
 
-  els.priceChart.addEventListener(
+  canvas.addEventListener(
     "wheel",
     (evt) => {
-      const total = (chartState.allItems || []).length;
-      if (!total) return;
+      if (!enablePanZoom) return;
+      const win = viewWindow();
+      if (!win.total) return;
       evt.preventDefault();
-      hideHoverCard();
+      hideHover();
       hoverIdx = null;
 
-      const rect = els.priceChart.getBoundingClientRect();
-      const layout = chartLayout(rect.width, rect.height);
+      const rect = canvas.getBoundingClientRect();
+      const layout = chartLayout(rect.width, rect.height, {
+        pctAxis: layoutPctAxis(),
+        compact: layoutCompact,
+      });
       const x = evt.clientX - rect.left;
       let anchorRatio = 0.5;
       if (x >= layout.price.x && x <= layout.price.x + layout.price.w) {
         anchorRatio = (x - layout.price.x) / layout.price.w;
       }
 
-      // 横向滚轮/触控板：平移；纵向：以指针为锚点缩放
       if (Math.abs(evt.deltaX) > Math.abs(evt.deltaY) * 1.15) {
-        const { maxStart } = chartViewWindow();
+        const { maxStart } = viewWindow();
         if (maxStart <= 0) return;
         const step = Math.max(1, Math.round(Math.abs(evt.deltaX) / 40));
-        setChartViewStart(chartState.viewStart + (evt.deltaX > 0 ? step : -step), {
-          render: true,
-        });
+        setViewStart(win.start + (evt.deltaX > 0 ? step : -step), { render: true });
         return;
       }
 
       const steps = Math.max(1, Math.min(5, Math.round(Math.abs(evt.deltaY) / 72) || 1));
-      const base = evt.deltaY > 0 ? 1.14 : 1 / 1.14; // 向下：看更多；向上：放大
-      const factor = base ** steps;
-      zoomChartViewport(anchorRatio, factor, { render: true });
+      const base = evt.deltaY > 0 ? 1.14 : 1 / 1.14;
+      zoomViewport(anchorRatio, base ** steps, { render: true });
     },
     { passive: false }
   );
 
-  if (typeof ResizeObserver !== "undefined" && els.chartWrap) {
+  if (typeof ResizeObserver !== "undefined" && wrap) {
     let timer = 0;
     const ro = new ResizeObserver(() => {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
-        syncChartScrollBar();
-        renderChart(hoverIdx);
+        syncScrollBar?.();
+        render(hoverIdx);
       }, 60);
     });
-    ro.observe(els.chartWrap);
+    ro.observe(wrap);
   } else {
     window.addEventListener("resize", () => {
-      syncChartScrollBar();
-      renderChart(hoverIdx);
+      syncScrollBar?.();
+      render(hoverIdx);
     });
   }
+}
+
+async function loadChart(mode = chartState.mode) {
+  if (!code || !els.priceChart) return;
+  const conf = CHART_MODES[mode] || CHART_MODES.day;
+  chartState.mode = mode;
+  chartState.kind = "kline";
+  chartState.loading = true;
+  syncChartModeSelect(mode);
+  syncChartAdjustUi(mode);
+  setChartStatus(`正在加载${conf.label}…`);
+  hideHoverCard();
+
+  try {
+    const qs = new URLSearchParams({
+      code,
+      period: conf.period,
+      adjust: klineAdjustFor(mode),
+      limit: String(conf.limit || 180),
+    });
+    const json = await api(`/api/stocks/line?${qs.toString()}`);
+    const data = json.data || {};
+    resetChartViewport(data.items || [], conf);
+    chartState.preClose = null;
+    chartState.source = data.source || "";
+
+    const count = chartState.allItems.length;
+    if (!count) {
+      setChartStatus("暂无走势数据", { empty: true });
+      renderChart();
+      return;
+    }
+    refreshChartWindowStatus();
+    renderChart();
+    propagateLinkedAxis("kline");
+  } catch (err) {
+    resetChartViewport([], conf);
+    setChartStatus(err.message || "走势加载失败", { empty: true });
+    renderChart();
+  } finally {
+    chartState.loading = false;
+  }
+}
+
+function setupChart() {
+  if (!els.chartModeSelect || !els.priceChart) return;
+
+  els.chartModeSelect.addEventListener("change", () => {
+    const mode = els.chartModeSelect.value;
+    if (!mode || mode === chartState.mode) return;
+    loadChart(mode);
+  });
+
+  els.chartAdjustSelect?.addEventListener("change", () => {
+    if (!isAdjustableKline(chartState.mode)) return;
+    const adjust = els.chartAdjustSelect.value;
+    if (!adjust || adjust === chartState.adjust) return;
+    if (!["none", "qfq", "hfq"].includes(adjust)) return;
+    chartState.adjust = adjust;
+    syncChartAdjustUi();
+    loadChart(chartState.mode);
+  });
+
+  syncChartModeSelect();
+  syncChartAdjustUi();
+
+  bindChartPaneInteractions({
+    canvas: els.priceChart,
+    wrap: els.chartWrap,
+    scrollBar: els.chartScrollBar,
+    hideHover: hideHoverCard,
+    updateHover: updateHoverLabel,
+    render: renderChart,
+    pointerIndexAt: pointerIndex,
+    panByPixels: panChartByPixels,
+    viewWindow: chartViewWindow,
+    setViewStart: setChartViewStart,
+    zoomViewport: zoomChartViewport,
+    syncScrollBar: syncChartScrollBar,
+  });
+}
+
+function setupTicksChart() {
+  if (!els.ticksChart) return;
+
+  bindChartPaneInteractions({
+    canvas: els.ticksChart,
+    wrap: els.ticksChartWrap,
+    scrollBar: els.ticksChartScrollBar,
+    hideHover: hideTicksHoverCard,
+    updateHover: updateTicksHoverLabel,
+    render: renderTicksChart,
+    pointerIndexAt: ticksPointerIndex,
+    panByPixels: panTicksChartByPixels,
+    viewWindow: ticksChartViewWindow,
+    setViewStart: setTicksChartViewStart,
+    zoomViewport: zoomTicksChartViewport,
+    syncScrollBar: syncTicksChartScrollBar,
+    layoutPctAxis: () => Number.isFinite(ticksState.preClose) && ticksState.preClose,
+    layoutCompact: true,
+    enablePanZoom: false,
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    if (cnMarketPhase() === "live") {
+      loadTicksChart({ silent: true, incremental: false });
+    }
+  });
+  window.setInterval(onTicksMarketClock, 1000);
 }
 
 /* ---------- 市盈率曲线 ---------- */
@@ -2002,21 +2855,16 @@ const PE_SERIES = {
   pb: { key: "pb", label: "市净率" },
 };
 
-const PE_RANGES = {
-  y1: { label: "1年", viewSize: 250 },
-  y3: { label: "3年", viewSize: 750 },
-  y5: { label: "5年", viewSize: 1250 },
-  all: { label: "全部", viewSize: 0 },
-};
+/** 未跟行情联动时（如分时 K 线）的默认窗口，接近日 K 默认 90 根。 */
+const METRIC_FALLBACK_VIEW_SIZE = 90;
 
 const peState = {
   series: "ttm",
-  range: "y3",
   loading: false,
   items: [],
   allItems: [],
   viewStart: 0,
-  viewSize: 750,
+  viewSize: METRIC_FALLBACK_VIEW_SIZE,
   source: "",
 };
 
@@ -2095,14 +2943,20 @@ function syncPeScrollBar() {
   bar.style.setProperty("--thumb-w", `${Math.max(28, Math.round(ratio * 220))}px`);
 }
 
-function resetPeViewport(allItems) {
+function resetPeViewport(allItems, { preferLinked = true } = {}) {
   peState.allItems = Array.isArray(allItems) ? allItems : [];
   const total = peState.allItems.length;
-  const conf = PE_RANGES[peState.range] || PE_RANGES.y3;
-  let viewSize = Number(conf.viewSize) || 0;
-  if (viewSize <= 0 || viewSize >= total) viewSize = total;
-  peState.viewSize = viewSize;
-  peState.viewStart = Math.max(0, total - viewSize);
+  const linked = preferLinked && klineJoinsLinkedAxis() ? visibleAxisRange(chartState.items) : null;
+  const vp = linked ? viewportFromAxisRange(peState.allItems, linked) : null;
+  if (vp) {
+    peState.viewStart = vp.viewStart;
+    peState.viewSize = vp.viewSize;
+  } else {
+    let viewSize = METRIC_FALLBACK_VIEW_SIZE;
+    if (viewSize <= 0 || viewSize >= total) viewSize = total;
+    peState.viewSize = viewSize;
+    peState.viewStart = Math.max(0, total - viewSize);
+  }
   peState.items = peViewWindow().items;
   syncPeScrollBar();
 }
@@ -2122,6 +2976,7 @@ function setPeViewStart(nextStart, { render = true, hoverIndex = null } = {}) {
     refreshPeWindowStatus();
     renderPeChart(hoverIndex);
   }
+  propagateLinkedAxis("pe");
   return start;
 }
 
@@ -2141,6 +2996,7 @@ function zoomPeViewport(anchorRatio, factor, { render = true } = {}) {
     refreshPeWindowStatus();
     renderPeChart();
   }
+  propagateLinkedAxis("pe");
 }
 
 function refreshPeWindowStatus() {
@@ -2223,10 +3079,7 @@ function updatePeHoverLabel(index) {
     rank != null ? row("窗口分位", escapeHtml(`${Math.round(rank)}%`)) : "",
     extra,
   ].filter(Boolean);
-  els.peChartHoverCard.innerHTML = `
-    <p class="chart-hover-card-time">${escapeHtml(d.time || "")}</p>
-    <div class="chart-hover-card-rows">${rows.join("")}</div>
-  `;
+  els.peChartHoverCard.innerHTML = `<div class="chart-hover-card-rows chart-hover-card-rows--inline"><span class="chart-hover-card-time">${escapeHtml(d.time || "")}</span>${rows.join("")}</div>`;
   showPeHoverCard();
 }
 
@@ -2278,10 +3131,10 @@ function drawPeRefLine(ctx, price, y, text, color, align = "right") {
   ctx.restore();
 }
 
-function drawPeChart(ctx, layout, items, colors, hoverIndex) {
+function drawMetricChart(ctx, layout, items, getValue, colors, hoverIndex, { formatLabel = fmtNum, yFormat = null, mode = "day" } = {}) {
   const n = items.length;
   if (!n) return;
-  const values = items.map(peValue).filter((v) => v != null);
+  const values = items.map(getValue).filter((v) => v != null);
   if (!values.length) return;
 
   const { price } = layout;
@@ -2319,7 +3172,7 @@ function drawPeChart(ctx, layout, items, colors, hoverIndex) {
   ctx.beginPath();
   let started = false;
   for (let i = 0; i < n; i += 1) {
-    const v = peValue(items[i]);
+    const v = getValue(items[i]);
     if (v == null) {
       started = false;
       continue;
@@ -2337,18 +3190,18 @@ function drawPeChart(ctx, layout, items, colors, hoverIndex) {
   ctx.restore();
 
   if (q50 != null) {
-    drawPeRefLine(ctx, price, yAt(q50), `中 ${fmtNum(q50)}`, "rgba(132, 148, 168, 0.85)");
+    drawPeRefLine(ctx, price, yAt(q50), `中 ${formatLabel(q50)}`, "rgba(132, 148, 168, 0.85)");
   }
   if (q25 != null) {
-    drawPeRefLine(ctx, price, yAt(q25), `25% ${fmtNum(q25)}`, "rgba(61, 214, 140, 0.7)");
+    drawPeRefLine(ctx, price, yAt(q25), `25% ${formatLabel(q25)}`, "rgba(61, 214, 140, 0.7)");
   }
   if (q75 != null) {
-    drawPeRefLine(ctx, price, yAt(q75), `75% ${fmtNum(q75)}`, "rgba(255, 93, 108, 0.7)");
+    drawPeRefLine(ctx, price, yAt(q75), `75% ${formatLabel(q75)}`, "rgba(255, 93, 108, 0.7)");
   }
 
-  const lastIdx = [...items].map(peValue).reduce((acc, v, i) => (v != null ? i : acc), -1);
+  const lastIdx = [...items].map(getValue).reduce((acc, v, i) => (v != null ? i : acc), -1);
   if (lastIdx >= 0) {
-    const last = peValue(items[lastIdx]);
+    const last = getValue(items[lastIdx]);
     ctx.fillStyle = colors.accent;
     ctx.beginPath();
     ctx.arc(xAt(lastIdx), yAt(last), 3.2, 0, Math.PI * 2);
@@ -2357,7 +3210,7 @@ function drawPeChart(ctx, layout, items, colors, hoverIndex) {
 
   if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
     const x = xAt(hoverIndex);
-    const v = peValue(items[hoverIndex]);
+    const v = getValue(items[hoverIndex]);
     ctx.save();
     ctx.strokeStyle = colors.cross;
     ctx.setLineDash([3, 3]);
@@ -2380,7 +3233,11 @@ function drawPeChart(ctx, layout, items, colors, hoverIndex) {
     ctx.restore();
   }
 
-  drawAxesLabels(ctx, layout, priceScale, items, "day", colors);
+  drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { yFormat });
+}
+
+function drawPeChart(ctx, layout, items, colors, hoverIndex) {
+  drawMetricChart(ctx, layout, items, peValue, colors, hoverIndex, { formatLabel: fmtNum, mode: "day" });
 }
 
 function renderPeChart(hoverIndex = null) {
@@ -2412,38 +3269,18 @@ function renderPeChart(hoverIndex = null) {
   drawPeChart(ctx, peChartLayout(cssW, cssH), items, colors, hoverIndex);
 }
 
+function syncPeSeriesSelect(series = peState.series) {
+  if (!els.peSeriesSelect) return;
+  if (els.peSeriesSelect.value !== series) els.peSeriesSelect.value = series;
+}
+
 function applyPeSeries(series) {
   if (!PE_SERIES[series] || series === peState.series) return;
   peState.series = series;
-  els.peChartTabs?.querySelectorAll("[data-series]").forEach((el) => {
-    const active = el.getAttribute("data-series") === series;
-    el.classList.toggle("is-active", active);
-    el.setAttribute("aria-selected", active ? "true" : "false");
-  });
+  syncPeSeriesSelect(series);
   hidePeHoverCard();
   const hasValue = (peState.items || []).some((d) => peValue(d) != null);
   if (!hasValue) {
-    setPeStatus(peEmptyHint(), { empty: true });
-    renderPeChart();
-    return;
-  }
-  setPeStatus("");
-  refreshPeWindowStatus();
-  renderPeChart();
-}
-
-function applyPeRange(range) {
-  if (!PE_RANGES[range]) return;
-  peState.range = range;
-  els.peChartRange?.querySelectorAll("[data-range]").forEach((el) => {
-    const active = el.getAttribute("data-range") === range;
-    el.classList.toggle("is-active", active);
-    el.setAttribute("aria-pressed", active ? "true" : "false");
-  });
-  resetPeViewport(peState.allItems);
-  hidePeHoverCard();
-  const hasValue = (peState.items || []).some((d) => peValue(d) != null);
-  if (!peState.allItems.length || !hasValue) {
     setPeStatus(peEmptyHint(), { empty: true });
     renderPeChart();
     return;
@@ -2483,19 +3320,13 @@ async function loadPeChart() {
 }
 
 function setupPeChart() {
-  if (!els.peChartTabs || !els.peChart) return;
+  if (!els.peSeriesSelect || !els.peChart) return;
 
-  els.peChartTabs.addEventListener("click", (evt) => {
-    const btn = evt.target.closest("[data-series]");
-    if (!btn) return;
-    applyPeSeries(btn.getAttribute("data-series"));
+  els.peSeriesSelect.addEventListener("change", () => {
+    applyPeSeries(els.peSeriesSelect.value);
   });
 
-  els.peChartRange?.addEventListener("click", (evt) => {
-    const btn = evt.target.closest("[data-range]");
-    if (!btn) return;
-    applyPeRange(btn.getAttribute("data-range"));
-  });
+  syncPeSeriesSelect();
 
   if (els.peChartScrollBar) {
     els.peChartScrollBar.addEventListener("input", () => {
@@ -2620,20 +3451,409 @@ function setupPeChart() {
   }
 }
 
+const turnoverState = {
+  loading: false,
+  items: [],
+  allItems: [],
+  viewStart: 0,
+  viewSize: METRIC_FALLBACK_VIEW_SIZE,
+  source: "",
+};
+
+function turnoverValue(d) {
+  const n = Number(d?.turnover);
+  return Number.isFinite(n) ? n : null;
+}
+
+function setTurnoverStatus(message, { empty = false } = {}) {
+  if (els.turnoverChartMeta) els.turnoverChartMeta.textContent = message || "";
+  if (els.turnoverChartEmpty) {
+    els.turnoverChartEmpty.textContent = empty ? message || "暂无换手率数据" : "暂无换手率数据";
+    els.turnoverChartEmpty.classList.toggle("hidden", !empty);
+  }
+}
+
+function turnoverViewWindow() {
+  const all = turnoverState.allItems || [];
+  const total = all.length;
+  let size = Number(turnoverState.viewSize) || 0;
+  if (size <= 0 || size >= total) size = total;
+  const maxStart = Math.max(0, total - size);
+  const start = Math.min(Math.max(0, Number(turnoverState.viewStart) || 0), maxStart);
+  return { total, size, start, maxStart, items: total ? all.slice(start, start + size) : [] };
+}
+
+function syncTurnoverScrollBar() {
+  const bar = els.turnoverChartScrollBar;
+  const wrap = els.turnoverChartAxisScroll;
+  if (!bar || !wrap) return;
+  const { maxStart, start, total, size } = turnoverViewWindow();
+  const disabled = maxStart <= 0;
+  wrap.classList.toggle("is-disabled", disabled);
+  bar.disabled = disabled;
+  bar.min = "0";
+  bar.max = String(maxStart);
+  bar.value = String(start);
+  const ratio = total > 0 ? Math.min(1, size / total) : 1;
+  bar.style.setProperty("--thumb-w", `${Math.max(28, Math.round(ratio * 220))}px`);
+}
+
+function resetTurnoverViewport(allItems, { preferLinked = true } = {}) {
+  turnoverState.allItems = Array.isArray(allItems) ? allItems : [];
+  const total = turnoverState.allItems.length;
+  const linked = preferLinked && klineJoinsLinkedAxis() ? visibleAxisRange(chartState.items) : null;
+  const vp = linked ? viewportFromAxisRange(turnoverState.allItems, linked) : null;
+  if (vp) {
+    turnoverState.viewStart = vp.viewStart;
+    turnoverState.viewSize = vp.viewSize;
+  } else {
+    let viewSize = METRIC_FALLBACK_VIEW_SIZE;
+    if (viewSize <= 0 || viewSize >= total) viewSize = total;
+    turnoverState.viewSize = viewSize;
+    turnoverState.viewStart = Math.max(0, total - viewSize);
+  }
+  turnoverState.items = turnoverViewWindow().items;
+  syncTurnoverScrollBar();
+}
+
+function setTurnoverViewStart(nextStart, { render = true, hoverIndex = null } = {}) {
+  const { maxStart } = turnoverViewWindow();
+  const start = Math.min(Math.max(0, Math.round(nextStart)), maxStart);
+  if (start === turnoverState.viewStart && turnoverState.items.length) {
+    syncTurnoverScrollBar();
+    if (render) renderTurnoverChart(hoverIndex);
+    return start;
+  }
+  turnoverState.viewStart = start;
+  turnoverState.items = turnoverViewWindow().items;
+  syncTurnoverScrollBar();
+  if (render) {
+    refreshTurnoverWindowStatus();
+    renderTurnoverChart(hoverIndex);
+  }
+  propagateLinkedAxis("turnover");
+  return start;
+}
+
+function zoomTurnoverViewport(anchorRatio, factor, { render = true } = {}) {
+  const total = (turnoverState.allItems || []).length;
+  if (total <= 1) return;
+  const win = turnoverViewWindow();
+  const minSize = peMinViewSize(total);
+  const nextSize = Math.min(total, Math.max(minSize, Math.round(win.size * factor)));
+  const anchorIndex = win.start + Math.round(win.size * Math.min(1, Math.max(0, anchorRatio)));
+  const nextStart = Math.round(anchorIndex - nextSize * Math.min(1, Math.max(0, anchorRatio)));
+  turnoverState.viewSize = nextSize;
+  turnoverState.viewStart = nextStart;
+  turnoverState.items = turnoverViewWindow().items;
+  syncTurnoverScrollBar();
+  if (render) {
+    refreshTurnoverWindowStatus();
+    renderTurnoverChart();
+  }
+  propagateLinkedAxis("turnover");
+}
+
+function refreshTurnoverWindowStatus() {
+  const { total, size, items } = turnoverViewWindow();
+  if (!total) return;
+  const values = items.map(turnoverValue).filter((v) => v != null);
+  const last = values.length ? values[values.length - 1] : null;
+  const mid = quantile(values, 0.5);
+  const lo = values.length ? Math.min(...values) : null;
+  const hi = values.length ? Math.max(...values) : null;
+  const rank = percentileRank(values, last);
+  const src = turnoverState.source ? ` · ${turnoverState.source}` : "";
+  const tip =
+    size < total
+      ? ` · 显示 ${size}/${total}，滚轮缩放 · 拖动/滑动平移`
+      : ` · ${total} 日，滚轮可放大`;
+  const stats = [
+    last != null ? `当前 ${fmtPct(last)}` : "",
+    rank != null ? `${Math.round(rank)}%分位` : "",
+    mid != null ? `中位 ${fmtPct(mid)}` : "",
+    lo != null && hi != null ? `区间 ${fmtPct(lo)}–${fmtPct(hi)}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  setTurnoverStatus(`换手率${stats ? ` · ${stats}` : ""}${tip}${src}`);
+}
+
+function hideTurnoverHoverCard() {
+  if (!els.turnoverChartHoverCard) return;
+  els.turnoverChartHoverCard.classList.add("hidden");
+  els.turnoverChartHoverCard.setAttribute("aria-hidden", "true");
+  els.turnoverChartHoverCard.innerHTML = "";
+}
+
+function showTurnoverHoverCard() {
+  if (!els.turnoverChartHoverCard) return;
+  els.turnoverChartHoverCard.classList.remove("hidden");
+  els.turnoverChartHoverCard.setAttribute("aria-hidden", "false");
+}
+
+function updateTurnoverHoverLabel(index) {
+  if (!els.turnoverChartHoverCard) return;
+  const items = turnoverState.items || [];
+  if (index == null || index < 0 || index >= items.length) {
+    hideTurnoverHoverCard();
+    return;
+  }
+  const d = items[index];
+  const to = turnoverValue(d);
+  const values = items.map(turnoverValue).filter((v) => v != null);
+  const rank = percentileRank(values, to);
+  const row = (label, valueHtml, valueCls = "") =>
+    `<span class="chart-hover-item"><span class="k">${escapeHtml(label)}</span><span class="v ${valueCls}">${valueHtml}</span></span>`;
+  const rows = [
+    row("换手率", escapeHtml(fmtPct(to))),
+    Number.isFinite(Number(d.close)) ? row("收盘", escapeHtml(fmtNum(d.close))) : "",
+    rank != null ? row("窗口分位", escapeHtml(`${Math.round(rank)}%`)) : "",
+  ].filter(Boolean);
+  els.turnoverChartHoverCard.innerHTML = `<div class="chart-hover-card-rows chart-hover-card-rows--inline"><span class="chart-hover-card-time">${escapeHtml(d.time || "")}</span>${rows.join("")}</div>`;
+  showTurnoverHoverCard();
+}
+
+function turnoverPointerIndex(evt) {
+  const canvas = els.turnoverChart;
+  const wrap = els.turnoverChartWrap;
+  const items = turnoverState.items || [];
+  if (!canvas || !wrap || !items.length) return null;
+  const rect = canvas.getBoundingClientRect();
+  const x = evt.clientX - rect.left;
+  const layout = peChartLayout(rect.width, rect.height);
+  if (x < layout.price.x || x > layout.price.x + layout.price.w) return null;
+  const t = (x - layout.price.x) / layout.price.w;
+  return Math.min(items.length - 1, Math.max(0, Math.floor(t * items.length)));
+}
+
+function panTurnoverByPixels(dx, canvasWidth) {
+  const { size, maxStart } = turnoverViewWindow();
+  if (maxStart <= 0 || size <= 0) return false;
+  const layout = peChartLayout(canvasWidth, 300);
+  const barW = layout.price.w / size;
+  if (barW <= 0) return false;
+  const deltaBars = Math.round(-dx / barW);
+  if (!deltaBars) return false;
+  setTurnoverViewStart(turnoverState.viewStart + deltaBars, { render: true });
+  return true;
+}
+
+function drawTurnoverChart(ctx, layout, items, colors, hoverIndex) {
+  drawMetricChart(ctx, layout, items, turnoverValue, colors, hoverIndex, {
+    formatLabel: fmtPct,
+    yFormat: (val) => fmtPct(val),
+    mode: "day",
+  });
+}
+
+function renderTurnoverChart(hoverIndex = null) {
+  const canvas = els.turnoverChart;
+  const wrap = els.turnoverChartWrap;
+  if (!canvas || !wrap) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = Math.max(320, wrap.clientWidth || 640);
+  const cssH = Math.max(220, wrap.clientHeight || 280);
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const colors = {
+    accent: cssVar("--accent-hot", "#ffb05c"),
+    muted: cssVar("--muted", "#8494a8"),
+    up: cssVar("--up", "#ff5d6c"),
+    down: cssVar("--down", "#3dd68c"),
+    grid: "rgba(255, 176, 92, 0.08)",
+    cross: "rgba(232, 238, 247, 0.35)",
+  };
+
+  paintChartFrame(ctx, cssW, cssH, colors);
+  const items = turnoverState.items || [];
+  const hasValue = items.some((d) => turnoverValue(d) != null);
+  if (!items.length || !hasValue) return;
+  drawTurnoverChart(ctx, peChartLayout(cssW, cssH), items, colors, hoverIndex);
+}
+
+async function loadTurnoverChart({ refresh = false } = {}) {
+  if (!code || !els.turnoverChart) return;
+  turnoverState.loading = true;
+  setTurnoverStatus("正在加载换手率…");
+  hideTurnoverHoverCard();
+  try {
+    const qs = new URLSearchParams({ code, limit: "1500" });
+    if (refresh) qs.set("refresh", "1");
+    const json = await api(`/api/stocks/turnover?${qs.toString()}`);
+    const data = json.data || {};
+    turnoverState.source = data.source || "";
+    resetTurnoverViewport(data.items || []);
+    const hasValue = (turnoverState.items || []).some((d) => turnoverValue(d) != null);
+    if (!turnoverState.allItems.length || !hasValue) {
+      setTurnoverStatus("暂无换手率数据", { empty: true });
+      renderTurnoverChart();
+      return;
+    }
+    setTurnoverStatus("");
+    refreshTurnoverWindowStatus();
+    renderTurnoverChart();
+  } catch (err) {
+    resetTurnoverViewport([]);
+    setTurnoverStatus(err.message || "换手率加载失败", { empty: true });
+    renderTurnoverChart();
+  } finally {
+    turnoverState.loading = false;
+  }
+}
+
+function setupTurnoverChart() {
+  if (!els.turnoverChart) return;
+
+  if (els.turnoverChartScrollBar) {
+    els.turnoverChartScrollBar.addEventListener("input", () => {
+      hideTurnoverHoverCard();
+      setTurnoverViewStart(Number(els.turnoverChartScrollBar.value) || 0, { render: true });
+    });
+  }
+
+  let hoverIdx = null;
+  let pan = null;
+
+  const onMove = (evt) => {
+    if (pan) {
+      const dx = evt.clientX - pan.lastX;
+      if (Math.abs(evt.clientX - pan.originX) > 4) pan.moved = true;
+      if (pan.moved && Math.abs(dx) >= 1) {
+        hideTurnoverHoverCard();
+        hoverIdx = null;
+        panTurnoverByPixels(dx, pan.width);
+        pan.lastX = evt.clientX;
+      }
+      return;
+    }
+    const idx = turnoverPointerIndex(evt);
+    if (idx === hoverIdx) return;
+    hoverIdx = idx;
+    updateTurnoverHoverLabel(idx);
+    renderTurnoverChart(idx);
+  };
+
+  const onLeave = () => {
+    if (pan) return;
+    hoverIdx = null;
+    hideTurnoverHoverCard();
+    renderTurnoverChart();
+  };
+
+  const onDown = (evt) => {
+    if (evt.button != null && evt.button !== 0) return;
+    const rect = els.turnoverChart.getBoundingClientRect();
+    pan = { originX: evt.clientX, lastX: evt.clientX, width: rect.width, moved: false };
+    els.turnoverChartWrap?.classList.add("is-panning");
+    try {
+      els.turnoverChart.setPointerCapture(evt.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const onUp = (evt) => {
+    if (!pan) return;
+    const wasPan = pan.moved;
+    pan = null;
+    els.turnoverChartWrap?.classList.remove("is-panning");
+    try {
+      els.turnoverChart.releasePointerCapture(evt.pointerId);
+    } catch {
+      /* ignore */
+    }
+    if (!wasPan) {
+      const idx = turnoverPointerIndex(evt);
+      hoverIdx = idx;
+      updateTurnoverHoverLabel(idx);
+      renderTurnoverChart(idx);
+    } else {
+      hideTurnoverHoverCard();
+      hoverIdx = null;
+      renderTurnoverChart();
+    }
+  };
+
+  els.turnoverChart.addEventListener("pointerdown", onDown);
+  els.turnoverChart.addEventListener("pointermove", onMove);
+  els.turnoverChart.addEventListener("pointerup", onUp);
+  els.turnoverChart.addEventListener("pointercancel", onUp);
+  els.turnoverChart.addEventListener("pointerleave", onLeave);
+
+  els.turnoverChart.addEventListener(
+    "wheel",
+    (evt) => {
+      const total = (turnoverState.allItems || []).length;
+      if (!total) return;
+      evt.preventDefault();
+      hideTurnoverHoverCard();
+      hoverIdx = null;
+      const rect = els.turnoverChart.getBoundingClientRect();
+      const layout = peChartLayout(rect.width, rect.height);
+      const x = evt.clientX - rect.left;
+      let anchorRatio = 0.5;
+      if (x >= layout.price.x && x <= layout.price.x + layout.price.w) {
+        anchorRatio = (x - layout.price.x) / layout.price.w;
+      }
+      if (Math.abs(evt.deltaX) > Math.abs(evt.deltaY) * 1.15) {
+        const { maxStart } = turnoverViewWindow();
+        if (maxStart <= 0) return;
+        const step = Math.max(1, Math.round(Math.abs(evt.deltaX) / 40));
+        setTurnoverViewStart(turnoverState.viewStart + (evt.deltaX > 0 ? step : -step), { render: true });
+        return;
+      }
+      const steps = Math.max(1, Math.min(5, Math.round(Math.abs(evt.deltaY) / 72) || 1));
+      const base = evt.deltaY > 0 ? 1.14 : 1 / 1.14;
+      zoomTurnoverViewport(anchorRatio, base ** steps, { render: true });
+    },
+    { passive: false }
+  );
+
+  if (typeof ResizeObserver !== "undefined" && els.turnoverChartWrap) {
+    let timer = 0;
+    const ro = new ResizeObserver(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        syncTurnoverScrollBar();
+        renderTurnoverChart(hoverIdx);
+      }, 60);
+    });
+    ro.observe(els.turnoverChartWrap);
+  } else {
+    window.addEventListener("resize", () => {
+      syncTurnoverScrollBar();
+      renderTurnoverChart(hoverIdx);
+    });
+  }
+}
+
 els.refreshNewsBtn.addEventListener("click", () =>
   loadAllNews({ refresh: true })
 );
 
 setupBackLink();
 setupScrollLoaders();
+setupNewsTabs();
+setupMainTabs();
 setupMetricTips();
 setupChart();
+setupTicksChart();
 setupPeChart();
+setupTurnoverChart();
 (async () => {
   await loadProfile();
+  updateNewsHubMeta(activeNewsKind);
   await Promise.all([
     loadChart("day"),
+    loadTicksChart(),
     loadPeChart(),
+    loadTurnoverChart(),
     loadAllNews({ refresh: false }),
   ]);
+  propagateLinkedAxis("kline");
 })();

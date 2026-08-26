@@ -35,6 +35,7 @@ from company.emotion.xueqiu import (
 )
 from company.line import fetch_kline, fetch_ticks
 from company.statistics.pe_history import fetch_pe_history
+from company.statistics.turnover_history import fetch_turnover_history
 from company.news.feed import collect_company_messages
 from company.news.profile import query_company_profile
 from company.news.taxonomy.constants import ALL_SECTIONS, DEFAULT_SECTIONS
@@ -111,6 +112,25 @@ def stocks_pe(
         return err("缺少参数 code", 400)
     try:
         data = fetch_pe_history(code, limit=limit, force=refresh == "1")
+        return ok(data)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/stocks/turnover")
+def stocks_turnover(
+    code: str = Query("", description="股票代码，如 601881"),
+    limit: int = Query(2500, ge=1, le=5000, description="最近交易日数量"),
+    refresh: str = Query("0"),
+):
+    """历史换手率曲线：成交量 ÷ 自由流通股。"""
+    code = code.strip()
+    if not code:
+        return err("缺少参数 code", 400)
+    try:
+        data = fetch_turnover_history(code, limit=limit, force=refresh == "1")
         return ok(data)
     except ValueError as exc:
         return err(str(exc), 400)
