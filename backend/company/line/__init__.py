@@ -12,6 +12,8 @@ from company.line.eastmoney_kline import (
 )
 from company.line.eastmoney_ticks import fetch_ticks as fetch_eastmoney_ticks
 from company.line.fetcher import fetch_kline, fetch_ticks
+from company.line.original import fetch_orders as fetch_ifind_orders
+from company.line.original import fetch_transactions as fetch_ifind_transactions
 from company.line.period_returns import (
     PERIODS as RETURN_PERIODS,
     calc_period_returns,
@@ -35,6 +37,8 @@ __all__ = [
     "calc_period_returns",
     "fetch_daily_line",
     "fetch_eastmoney_ticks",
+    "fetch_ifind_orders",
+    "fetch_ifind_transactions",
     "fetch_kline",
     "fetch_line",
     "fetch_lines",

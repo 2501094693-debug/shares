@@ -4,6 +4,7 @@
 - 东财 push2 / K 线：``secid``，如 ``1.600519``（沪）/ ``0.000001``（深）
 - 东财 F10 公司概况：``em_code``，如 ``SH600519``
 - 腾讯行情 / 日 K：``tencent_symbol``，如 ``sh600519``
+- 同花顺 iFinD：``ths_code``，如 ``600519.SH``
 
 市场判定：60/68 沪，00/30 深，8/4 北。
 """
@@ -22,6 +23,9 @@ _EM_F10_PREFIX = {"sse": "SH", "szse": "SZ", "bse": "BJ"}
 
 # 腾讯：sh / sz / bj（小写）
 _TENCENT_PREFIX = {"sse": "sh", "szse": "sz", "bse": "bj"}
+
+# 同花顺 iFinD：600519.SH
+_THS_SUFFIX = {"sse": "SH", "szse": "SZ", "bse": "BJ"}
 
 
 def safe_str(value: Any) -> str:
@@ -88,3 +92,13 @@ def tencent_symbol(code: str) -> str:
     market = detect_market(c)
     prefix = _TENCENT_PREFIX.get(market, "sh")
     return f"{prefix}{c}"
+
+
+def ths_code(code: str) -> str:
+    """同花顺 iFinD 代码，例如 ``600519.SH``。无效代码返回空串。"""
+    c = normalize_code(code)
+    if not c:
+        return ""
+    market = detect_market(c)
+    suffix = _THS_SUFFIX.get(market, "SH")
+    return f"{c}.{suffix}"

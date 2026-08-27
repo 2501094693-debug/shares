@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from company.statistics import fetch_stock_quote
+from company.statistics import fetch_live_quote, fetch_stock_quote
 from industry.index import METRIC_KEYS
 from industry.service import service as industry
 
 
 def get_stock_profile(
-    code: str, industry_code: str = "", name: str = ""
+    code: str,
+    industry_code: str = "",
+    name: str = "",
+    *,
+    force_quote: bool = False,
+    live_only: bool = False,
 ) -> dict[str, Any]:
     """股票指标 + 申万行业元数据。"""
     code = (code or "").strip()
@@ -63,7 +68,8 @@ def get_stock_profile(
         }
 
     try:
-        quote = fetch_stock_quote(str(stock.get("code") or code))
+        quote_fn = fetch_live_quote if live_only else fetch_stock_quote
+        quote = quote_fn(str(stock.get("code") or code), force=force_quote)
         if quote:
             stock = {**stock, **quote}
             stock["quote_ready"] = True

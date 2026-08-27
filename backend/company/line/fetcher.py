@@ -23,7 +23,7 @@ from core.codes import normalize_code
 logger = logging.getLogger(__name__)
 
 KLINE_TTL = 120
-TICKS_TTL = 8
+TICKS_TTL = 1
 
 _kline_cache = TtlCache(KLINE_TTL)
 _ticks_cache = TtlCache(TICKS_TTL)

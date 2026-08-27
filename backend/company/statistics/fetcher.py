@@ -36,7 +36,9 @@ from core.codes import normalize_code
 logger = logging.getLogger(__name__)
 
 QUOTE_TTL = 60  # 秒
+LIVE_QUOTE_TTL = 1  # 盘中轮询
 _cache = TtlCache(QUOTE_TTL)
+_live_cache = TtlCache(LIVE_QUOTE_TTL)
 
 
 def _apply_free_float(result: dict[str, Any]) -> None:
@@ -139,4 +141,32 @@ def fetch_stock_quote(code: str, *, force: bool = False) -> dict[str, Any]:
 
     if result:
         _cache.put(code, result, cached_at=now)
+    return result
+
+
+def fetch_live_quote(code: str, *, force: bool = False) -> dict[str, Any]:
+    """盘中轮询：仅实时价量，不走 F10 / 区间 / 自由流通。"""
+    code = normalize_code(code)
+    if not code:
+        return {}
+
+    now = time.time()
+    if not force:
+        hit = _live_cache.get(code)
+        if hit is not None:
+            return hit
+
+    result: dict[str, Any] = {}
+    try:
+        realtime = fetch_realtime_quote(code)
+        if realtime.source == "tencent":
+            result.update(realtime.mapped or {})
+        elif realtime.source == "eastmoney" and realtime.raw:
+            result.update(map_push2(realtime.raw))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("live quote failed %s: %s", code, exc)
+        return {}
+
+    if result:
+        _live_cache.put(code, result, cached_at=now)
     return result

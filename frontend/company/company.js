@@ -97,9 +97,12 @@ const chartState = {
   meta: "",
 };
 
-/** @type {{ loading: boolean, items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, live: boolean, phase: string, tradeDate: string, hoverTime: string|null }} */
+/** @type {{ loading: boolean, liveFetching: boolean, liveFetchPending: boolean, liveFetchGen: number, items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, live: boolean, phase: string, tradeDate: string, hoverTime: string|null }} */
 const ticksState = {
   loading: false,
+  liveFetching: false,
+  liveFetchPending: false,
+  liveFetchGen: 0,
   items: [],
   allItems: [],
   viewStart: 0,
@@ -112,7 +115,12 @@ const ticksState = {
   hoverTime: null,
 };
 
-const TICKS_LIVE_POS = -200;
+const livePollState = {
+  profileFetching: false,
+  profilePending: false,
+};
+
+const TICKS_LIVE_POS = -40;
 const TICKS_DRAW_MAX = 1800;
 
 const CHART_MODES = {
@@ -752,38 +760,47 @@ function isQuoteReady(stock) {
   return Boolean(stock.open || stock.prev_close || stock.high || stock.low);
 }
 
-async function loadProfile() {
+async function loadProfile({ silent = false, refresh = false, liveOnly = false } = {}) {
   if (!code) {
     setError("缺少公司代码");
     return null;
   }
 
-  // 标题可用 URL 参数；指标只等接口一次画完，绝不用列表缓存半套数据
-  applyHeaderOnly({ code, name: nameHint });
-  setMetricsLoading();
+  if (!silent) {
+    applyHeaderOnly({ code, name: nameHint });
+    setMetricsLoading();
+  }
 
   try {
     const qs = new URLSearchParams({ code });
     if (industry) qs.set("industry", industry);
     if (nameHint) qs.set("name", nameHint);
+    if (refresh) qs.set("refresh", "1");
+    if (liveOnly) qs.set("live", "1");
     const json = await api(`/api/stocks/profile?${qs.toString()}`);
     const data = json.data || {};
     const stock = data.stock || {};
     if (!isQuoteReady(stock)) {
-      setMetricsLoading("盘口指标暂不可用，请稍后刷新");
-      applyHeaderOnly(stock, data.industry || {});
+      if (!silent) {
+        setMetricsLoading("盘口指标暂不可用，请稍后刷新");
+        applyHeaderOnly(stock, data.industry || {});
+      }
       return stock;
     }
     applyStock(stock, data.industry || {});
-    try {
-      sessionStorage.removeItem(`stock:${code}`);
-    } catch {
-      /* ignore */
+    if (!liveOnly) {
+      try {
+        sessionStorage.removeItem(`stock:${code}`);
+      } catch {
+        /* ignore */
+      }
     }
     return stock;
   } catch (err) {
-    setError(err.message || String(err));
-    setMetricsLoading("指标加载失败");
+    if (!silent) {
+      setError(err.message || String(err));
+      setMetricsLoading("指标加载失败");
+    }
     return null;
   }
 }
@@ -1562,6 +1579,7 @@ function cnNowParts(date = new Date()) {
     weekday,
     minutes,
     dateStr: `${map.year}-${map.month}-${map.day}`,
+    clockStr: `${map.hour}:${map.minute}:${map.second || "00"}`,
   };
 }
 
@@ -2300,14 +2318,13 @@ function ticksChartViewWindow() {
   };
 }
 
-function refreshTicksChartWindowStatus() {
-  const count = (ticksState.items || []).length;
-  if (!count && !ticksState.tradeDate) return;
+function refreshTicksLiveStatus() {
   const src = ticksState.source ? ` · ${ticksState.source}` : "";
   const date = ticksState.tradeDate ? ` · ${ticksState.tradeDate}` : "";
   const axis = "09:15–15:30";
+  const clock = cnNowParts().clockStr;
   if (ticksState.phase === "live") {
-    setTicksChartStatus(`实时 · ${axis} · 每秒刷新${src}`);
+    setTicksChartStatus(`实时 · ${clock} · 每秒刷新${src}`);
     return;
   }
   if (ticksState.phase === "lunch") {
@@ -2320,6 +2337,16 @@ function refreshTicksChartWindowStatus() {
     return;
   }
   setTicksChartStatus(`上一交易日${date} · ${axis}${src}`);
+}
+
+function refreshTicksChartWindowStatus() {
+  if (ticksState.phase === "live") {
+    refreshTicksLiveStatus();
+    return;
+  }
+  const count = (ticksState.items || []).length;
+  if (!count && !ticksState.tradeDate) return;
+  refreshTicksLiveStatus();
 }
 
 function syncTicksChartScrollBar() {
@@ -2496,7 +2523,25 @@ async function loadPreviousSessionTicks() {
   };
 }
 
-async function loadTicksChart({ silent = false, incremental = false } = {}) {
+async function bootstrapTicksFromMinuteKline() {
+  if (ticksState.allItems.length) return;
+  try {
+    const fallback = await loadPreviousSessionTicks();
+    if (!fallback.items.length) return;
+    applyTicksItems(fallback.items);
+    ticksState.preClose = fallback.preClose;
+    ticksState.source = fallback.source;
+    ticksState.tradeDate = fallback.day;
+    if (els.ticksChartEmpty) els.ticksChartEmpty.classList.add("hidden");
+    refreshTicksLiveStatus();
+    refreshTicksQuoteCard();
+    renderTicksChart();
+  } catch {
+    /* 1m 兜底失败不影响后续全量逐笔 */
+  }
+}
+
+async function loadTicksChart({ silent = false } = {}) {
   if (!code || !els.ticksChart) return;
   if (ticksState.loading) return;
   ticksState.loading = true;
@@ -2507,12 +2552,13 @@ async function loadTicksChart({ silent = false, incremental = false } = {}) {
     hideTicksHoverCard();
   }
 
+  if (ticksState.phase === "live" && !ticksState.allItems.length) {
+    void bootstrapTicksFromMinuteKline();
+  }
+
   try {
     const qs = new URLSearchParams({ code });
-    if (incremental) {
-      qs.set("pos", String(TICKS_LIVE_POS));
-      qs.set("refresh", "1");
-    } else if (ticksState.phase === "live") {
+    if (ticksState.phase === "live") {
       qs.set("refresh", "1");
     }
     const json = await api(`/api/stocks/ticks?${qs.toString()}`);
@@ -2521,10 +2567,6 @@ async function loadTicksChart({ silent = false, incremental = false } = {}) {
     let preClose = Number(data.pre_price);
     let source = data.source || "";
     let tradeDate = inferTicksTradeDate(data, rawItems);
-
-    if (incremental) {
-      rawItems = mergeTickItems(ticksState.allItems, rawItems);
-    }
 
     if (!rawItems.length && ticksState.phase !== "live") {
       const fallback = await loadPreviousSessionTicks();
@@ -2554,30 +2596,110 @@ async function loadTicksChart({ silent = false, incremental = false } = {}) {
     refreshTicksQuoteCard();
     renderTicksChart();
   } catch (err) {
-    if (!incremental) {
-      applyTicksItems([]);
-      setTicksChartStatus(err.message || "实时加载失败", { empty: true });
-      fillTicksQuoteCard(null);
-      renderTicksChart();
-    }
+    applyTicksItems([]);
+    setTicksChartStatus(err.message || "实时加载失败", { empty: true });
+    fillTicksQuoteCard(null);
+    renderTicksChart();
   } finally {
     ticksState.loading = false;
   }
 }
 
+async function pollTicksLive() {
+  if (!code || !els.ticksChart || !ticksState.live) return;
+  if (ticksState.liveFetching) {
+    ticksState.liveFetchPending = true;
+    return;
+  }
+
+  ticksState.liveFetching = true;
+  const gen = ++ticksState.liveFetchGen;
+  const incremental = Boolean(ticksState.allItems.length);
+
+  try {
+    const qs = new URLSearchParams({ code, refresh: "1" });
+    if (incremental) {
+      qs.set("pos", String(TICKS_LIVE_POS));
+    } else if (ticksState.loading) {
+      return;
+    }
+    const json = await api(`/api/stocks/ticks?${qs.toString()}`);
+    if (gen !== ticksState.liveFetchGen) return;
+
+    const data = json.data || {};
+    let rawItems = Array.isArray(data.items) ? data.items : [];
+    let preClose = Number(data.pre_price);
+    let source = data.source || "";
+    let tradeDate = inferTicksTradeDate(data, rawItems);
+
+    if (incremental) {
+      rawItems = mergeTickItems(ticksState.allItems, rawItems);
+    }
+    if (!rawItems.length) return;
+
+    applyTicksItems(rawItems);
+    if (Number.isFinite(preClose)) ticksState.preClose = preClose;
+    if (source) ticksState.source = source;
+    ticksState.tradeDate = tradeDate || inferTicksTradeDate(data, ticksState.allItems);
+    if (els.ticksChartEmpty) els.ticksChartEmpty.classList.add("hidden");
+    refreshTicksQuoteCard();
+    if (activeMainPanel === "charts") {
+      renderTicksChart();
+    }
+  } catch {
+    /* 盘中轮询失败不打断 UI */
+  } finally {
+    ticksState.liveFetching = false;
+    if (ticksState.liveFetchPending && ticksState.live) {
+      ticksState.liveFetchPending = false;
+      void pollTicksLive();
+    }
+  }
+}
+
+async function pollProfileLive() {
+  if (!code || cnMarketPhase() !== "live") return;
+  if (livePollState.profileFetching) {
+    livePollState.profilePending = true;
+    return;
+  }
+  livePollState.profileFetching = true;
+  try {
+    await loadProfile({ silent: true, refresh: true, liveOnly: true });
+  } catch {
+    /* ignore */
+  } finally {
+    livePollState.profileFetching = false;
+    if (livePollState.profilePending && cnMarketPhase() === "live") {
+      livePollState.profilePending = false;
+      void pollProfileLive();
+    }
+  }
+}
+
 function onTicksMarketClock() {
-  if (document.hidden || !code || !els.ticksChart) return;
-  if (ticksState.loading) return;
+  if (document.hidden || !code) return;
   const phase = cnMarketPhase();
   const wasLive = ticksState.live;
   ticksState.phase = phase;
   ticksState.live = phase === "live";
+
   if (phase === "live") {
-    loadTicksChart({ silent: true, incremental: wasLive && Boolean(ticksState.allItems.length) });
+    refreshTicksLiveStatus();
+    if (activeMainPanel === "charts" && els.ticksChart) {
+      renderTicksChart();
+    }
+    void pollTicksLive();
+    void pollProfileLive();
     return;
   }
+
   if (wasLive) {
-    loadTicksChart({ silent: true, incremental: false });
+    ticksState.liveFetchPending = false;
+    livePollState.profilePending = false;
+    if (els.ticksChart) {
+      loadTicksChart({ silent: true });
+    }
   }
 }
 
@@ -2840,10 +2962,12 @@ function setupTicksChart() {
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) return;
     if (cnMarketPhase() === "live") {
-      loadTicksChart({ silent: true, incremental: false });
+      void pollTicksLive();
+      void pollProfileLive();
     }
   });
   window.setInterval(onTicksMarketClock, 1000);
+  onTicksMarketClock();
 }
 
 /* ---------- 市盈率曲线 ---------- */
