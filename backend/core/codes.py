@@ -37,6 +37,7 @@ def safe_str(value: Any) -> str:
         return value.strftime("%Y-%m-%d %H:%M:%S")
     if isinstance(value, date):
         return value.strftime("%Y-%m-%d")
+
     return str(value).strip()
 
 

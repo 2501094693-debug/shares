@@ -134,18 +134,26 @@ _HOSTS = (
 
 _HEADERS = {"Referer": "https://quote.eastmoney.com/"}
 _UT = "fa5fd1943c7b386f172d6893dbfba10b"
+
+# data 顶层元数据（返回时已换成具名键，不是 f1/f2）：
+# f1 代码 code、f2 市场 market、f3 名称 name、f4 小数位 decimal、
+# f5 K 线总数 dktotal、f6 前 K 收盘 preKPrice、f7 昨收 prePrice；f8–f13 其余元数据
 _FIELDS1 = "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13"
+# klines 各列 → _parse_row：日期,开,收,高,低,成交量(手),成交额(元),振幅(%),涨跌幅(%),涨跌额,换手率(%)
 _FIELDS2 = "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"
+
 _END_OPEN = "20500101"
 _MAX_LMT = 10000
 
 _PREFIX_MARKET = {"SH": "1", "SZ": "0", "BJ": "0"}
+
 # 6 位代码里现有 detect_market 覆盖不到的基金 / 指数
 _SSE_HEADS = ("50", "51", "52", "56", "58", "60", "68")
 _SZSE_HEADS = ("00", "15", "16", "18", "20", "30", "39")
 
 _SECID_RE = re.compile(r"^\d+\.[A-Za-z0-9]+$")
 _BK_RE = re.compile(r"^(?:90\.)?BK(\d{3,6})$", re.I)
+
 _PREFIX_RE = re.compile(r"^(SH|SZ|BJ)(\d{6})$", re.I)
 _SUFFIX_RE = re.compile(r"^(\d{6})\.(SH|SZ|BJ)$", re.I)
 
@@ -192,9 +200,11 @@ def resolve_secid(code: str) -> str:
     raw = (code or "").strip()
     if not raw:
         return ""
+
     bk = _BK_RE.match(raw)
     if bk:
         return f"90.BK{bk.group(1).zfill(4)}"
+
     compact = raw.upper().replace(" ", "")
     prefixed = _PREFIX_RE.match(compact)
     if prefixed:
@@ -202,8 +212,10 @@ def resolve_secid(code: str) -> str:
     suffixed = _SUFFIX_RE.match(compact)
     if suffixed:
         return f"{_PREFIX_MARKET[suffixed.group(2)]}.{suffixed.group(1)}"
+
     if _SECID_RE.match(raw):
         return raw
+
     digits = re.sub(r"[^0-9]", "", raw)
     if len(digits) == 6:
         if digits.startswith(_SSE_HEADS):
@@ -212,39 +224,8 @@ def resolve_secid(code: str) -> str:
             return f"0.{digits}"
         if digits.startswith(("8", "4", "92")):
             return f"0.{digits}"
+
     return _stock_secid(raw)
-
-
-def _parse_row(line: str) -> dict[str, Any] | None:
-    """东财 klines 一行：date,open,close,high,low,volume,amount,..."""
-    parts = str(line).split(",")
-    if len(parts) < 5:
-        return None
-    open_ = to_float(parts[1])
-    close = to_float(parts[2])
-    high = to_float(parts[3])
-    low = to_float(parts[4])
-    if close is None and open_ is None:
-        return None
-    item: dict[str, Any] = {
-        "time": str(parts[0]).strip(),
-        "open": open_,
-        "close": close,
-        "high": high,
-        "low": low,
-        "volume": to_float(parts[5]) if len(parts) > 5 else None,
-        "amount": to_float(parts[6]) if len(parts) > 6 else None,
-    }
-    if len(parts) > 7:
-        item["amplitude"] = to_float(parts[7])
-    if len(parts) > 8:
-        item["pct_chg"] = to_float(parts[8])
-    if len(parts) > 9:
-        item["change"] = to_float(parts[9])
-    if len(parts) > 10:
-        item["turnover"] = to_float(parts[10])
-    return item
-
 
 def _build_params(
     *,
@@ -263,15 +244,54 @@ def _build_params(
         "fqt": str(fqt),
         "ut": _UT,
     }
+
     finish = end or _END_OPEN
     params["end"] = finish
+
     if beg:
         params["beg"] = beg
         params["lmt"] = str(_MAX_LMT)
         return params, "range"
+
     params["lmt"] = str(limit)
     return params, "last"
 
+def _parse_row(line: str) -> dict[str, Any] | None:
+    """解析东财 klines 的一行 CSV。列不够或开收都缺则返回 None。
+
+    字段顺序（``fields2=f51..f61``）：
+    日期/时间, 开, 收, 高, 低, 成交量(手), 成交额(元), 振幅(%), 涨跌幅(%), 涨跌额, 换手率(%)
+    """
+    parts = str(line).split(",")
+    if len(parts) < 5:
+        return None
+
+    open_ = to_float(parts[1])
+    close = to_float(parts[2])
+    high = to_float(parts[3])
+    low = to_float(parts[4])
+
+    if close is None and open_ is None:
+        return None
+
+    item: dict[str, Any] = {
+        "time": str(parts[0]).strip(),
+        "open": open_,
+        "close": close,
+        "high": high,
+        "low": low,
+        "volume": to_float(parts[5]) if len(parts) > 5 else None,  # 成交量（手）
+        "amount": to_float(parts[6]) if len(parts) > 6 else None,  # 成交额（元）
+    }
+    if len(parts) > 7:
+        item["amplitude"] = to_float(parts[7])  # 振幅 %：(最高-最低)/昨收×100
+    if len(parts) > 8:
+        item["pct_chg"] = to_float(parts[8])  # 涨跌幅 %
+    if len(parts) > 9:
+        item["change"] = to_float(parts[9])  # 涨跌额：收盘-昨收
+    if len(parts) > 10:
+        item["turnover"] = to_float(parts[10])  # 换手率 %
+    return item
 
 def fetch_line(
     code: str,
@@ -311,15 +331,16 @@ def fetch_line(
         sid=sid, klt=klt, fqt=fqt, limit=cap, beg=beg, end=end
     )
 
-    name = ""
-    market: int | None = None
-    decimal: int | None = None
-    dktotal: int | None = None
-    pre_k_price: float | None = None
-    pre_price: float | None = None
-    out_code = normalize_code(code) or sid
-    items: list[dict[str, Any]] = []
-    last_exc: Exception | None = None
+    # 先占位；某个 host 成功后再用 data 覆盖。全部失败则带着这些默认值返回。
+    name = ""  # 证券简称
+    market: int | None = None  # 市场：1 沪、0 深/北
+    decimal: int | None = None  # 价格小数位
+    dktotal: int | None = None  # 该周期历史 K 线总根数
+    pre_k_price: float | None = None  # 前一根收盘 preKPrice
+    pre_price: float | None = None  # 昨收 prePrice
+    out_code = normalize_code(code) or sid  # 对外代码；接口有 code 时再覆盖
+    items: list[dict[str, Any]] = []  # 解析后的 K 线
+    last_exc: Exception | None = None  # 最后一个 host 的异常，K 线全空时再抛
 
     for host in _HOSTS:
         try:
@@ -329,22 +350,29 @@ def fetch_line(
                 headers=_HEADERS,
                 timeout=12,
             )
+
             data = payload.get("data") if isinstance(payload, dict) else None
             if not isinstance(data, dict):
                 continue
+
             klines = data.get("klines") or []
             if not klines:
                 continue
+
             parsed: list[dict[str, Any]] = []
             for line in klines:
                 row = _parse_row(str(line))
                 if row:
                     parsed.append(row)
+
             if not parsed:
                 continue
+
             if query == "last" and len(parsed) > cap:
                 parsed = parsed[-cap:]
+
             items = parsed
+
             name = str(data.get("name") or "").strip()
             out_code = str(data.get("code") or out_code).strip()
             market = data.get("market")
@@ -353,7 +381,7 @@ def fetch_line(
             pre_k_price = to_float(data.get("preKPrice"))
             pre_price = to_float(data.get("prePrice"))
             break
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             last_exc = exc
             logger.info("eastmoney line skip %s %s %s: %s", sid, period, host, exc)
             continue
@@ -396,6 +424,7 @@ def fetch_lines(
 
     chosen = tuple(periods) if periods else DEFAULT_PERIODS
     canon = [_normalize_period(p) for p in chosen]
+
     fqt = _normalize_adjust(adjust)
 
     result: dict[str, Any] = {
@@ -428,6 +457,7 @@ def fetch_lines(
             result["name"] = pack["name"]
             result["code"] = pack.get("code") or result["code"]
             break
+
     if not result["code"]:
         result["code"] = normalize_code(code) or sid
     return result

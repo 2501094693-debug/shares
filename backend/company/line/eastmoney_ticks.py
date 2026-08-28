@@ -9,7 +9,8 @@
 - 正数：当作最近 N 笔（``20`` 等同 ``-20``）
 
 每条 ``details``：``时间,成交价,成交量(手),笔数,方向``。
-方向：``1`` 买盘、``2`` 卖盘、``4`` 集合竞价。昨收在 ``prePrice``。
+方向：``1`` 买盘、``2`` 卖盘、``4`` 集合竞价。
+昨收在 ``prePrice``。
 
     python company/line/eastmoney_ticks.py 600519
     python company/line/eastmoney_ticks.py 600519 --pos -20
@@ -46,7 +47,9 @@ _HOSTS = (
 
 _HEADERS = {"Referer": "https://quote.eastmoney.com/"}
 _UT = "fa5fd1943c7b386f172d6893dbfba10b"
+# data 顶层元数据（返回时已换成具名键）：f1 代码 code、f2 市场 market、f3 名称 name、f4 小数位 decimal
 _FIELDS1 = "f1,f2,f3,f4"
+# details 各列 → _parse_row：时间,成交价,成交量(手),笔数,方向(1买/2卖/4竞价)
 _FIELDS2 = "f51,f52,f53,f54,f55"
 
 SIDE_LABEL = {
@@ -79,14 +82,17 @@ def _parse_row(line: str) -> dict[str, Any] | None:
     parts = str(line).split(",")
     if len(parts) < 3:
         return None
+
     price = to_float(parts[1])
     if price is None:
         return None
+
     side = None
     if len(parts) > 4:
         raw = str(parts[4]).strip()
         if raw.isdigit() or (raw.startswith("-") and raw[1:].isdigit()):
             side = int(raw)
+
     return {
         "time": str(parts[0]).strip(),
         "price": price,
@@ -111,6 +117,7 @@ def fetch_ticks(
         raise ValueError("无效股票代码")
 
     pos_s = _normalize_pos(pos)
+
     params = {
         "secid": sid,
         "fields1": _FIELDS1,
@@ -137,6 +144,7 @@ def fetch_ticks(
             data = payload.get("data") if isinstance(payload, dict) else None
             if not isinstance(data, dict):
                 continue
+
             rows = data.get("details") or []
             parsed: list[dict[str, Any]] = []
             for line in rows:
@@ -145,7 +153,9 @@ def fetch_ticks(
                     parsed.append(row)
             if not parsed:
                 continue
+
             items = parsed
+
             out_code = str(data.get("code") or out_code).strip()
             market = data.get("market")
             decimal = data.get("decimal")
