@@ -14,7 +14,7 @@ from urllib.parse import quote
 from core.codes import normalize_code, safe_str
 from core.http import browser_get
 
-from company.news.tonghuashun._common import (  # noqa: F401
+from company.news.platforms.tonghuashun._common import (  # noqa: F401
     REQUEST_PAUSE_SEC,
     SOURCE,
     TZ_CN,

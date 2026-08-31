@@ -1,4 +1,4 @@
-"""雪球社区共用：会话走 ``company.news.xueqiu``，这里补社区字段和频道名。
+"""雪球社区共用：会话走 ``company.news.platforms.xueqiu``，这里补社区字段和频道名。
 
 雪球没有文档化的公开社区 API。讨论 / 搜索 / 正文 / 评论 / 热股都是官网前端 XHR，
 必须带 ``xq_a_token``。token 优先 ``XUEQIU_TOKEN`` / ``XUEQIU_COOKIES``，否则预热首页。
@@ -10,7 +10,7 @@ from typing import Any
 
 from core.codes import safe_str
 
-from company.news.xueqiu._common import (  # noqa: F401
+from company.news.platforms.xueqiu._common import (  # noqa: F401
     API_HOST,
     REQUEST_PAUSE_SEC,
     SOURCE,

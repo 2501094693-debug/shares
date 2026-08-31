@@ -5,7 +5,7 @@
 
 数据源分工：
 - 实时盘口：东财 push2，失败再腾讯 qt.gtimg.cn
-- 区间涨幅：``company.line.period_returns``（腾讯日 K 优先，东财补充）
+- 区间涨幅：``company.statistics.period_returns.fetch_period_returns``（腾讯日 K 优先，东财补充）
 - 历史/52 周高低：腾讯前复权日 K（按年并行）
 - 现手：``company.line.fetcher.fetch_ticks`` 最近一笔
 - F10：注册资本、发行股本
@@ -35,7 +35,7 @@ from core.fmt import (
 )
 from core.http import get_json, get_text
 from company.line.fetcher import fetch_ticks as fetch_kline_ticks
-from company.line.period_returns import fetch_period_returns as fetch_kline_period_returns
+from company.statistics.period_returns import fetch_period_returns as fetch_kline_period_returns
 from company.statistics.free_float import calc as calc_free_float
 from core.codes import normalize_code, safe_str
 
@@ -292,7 +292,7 @@ def map_push2(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def fetch_period_returns(code: str) -> dict[str, Any]:
-    """区间涨幅。走 ``company.line.period_returns``（腾讯日 K 优先）。"""
+    """区间涨幅。走 ``company.statistics.period_returns.fetch_period_returns``（腾讯日 K 优先）。"""
     try:
         pack = fetch_kline_period_returns(code, adjust="qfq")
     except Exception as exc:  # noqa: BLE001

@@ -16,7 +16,7 @@ from typing import Any
 from core.codes import normalize_code, safe_str
 from core.http import browser_post
 
-from company.news.eastmoney._common import (  # noqa: F401
+from company.news.platforms.eastmoney._common import (  # noqa: F401
     REQUEST_PAUSE_SEC,
     SOURCE,
     TZ_CN,

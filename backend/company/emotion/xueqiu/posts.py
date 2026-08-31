@@ -17,7 +17,7 @@ from company.emotion.xueqiu._common import (
     stock_page_url,
     to_int,
 )
-from company.news.xueqiu.search import (
+from company.news.platforms.xueqiu.search import (
     SEARCH_SOURCES,
     fetch_discuss,
     query_page,

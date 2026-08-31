@@ -15,6 +15,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 _BACKEND = Path(__file__).resolve().parents[2]
 if str(_BACKEND) not in sys.path:
@@ -38,17 +39,30 @@ def _print_rows(rows: list, *, limit: int) -> None:
             print(f"       {row['url']}")
 
 
+def _emit(
+    payload: dict[str, Any],
+    groups: list[tuple[str, list]],
+    *,
+    as_json: bool,
+    limit: int,
+    header: str = "",
+) -> int:
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+    if header:
+        print(header)
+    for title, rows in groups:
+        print(f"\n[{title}] n={len(rows)}")
+        _print_rows(rows, limit=limit)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="个股资讯集成：详情页分组 / 画像 / 七网 / 监管"
-    )
+    parser = argparse.ArgumentParser(description="个股资讯：详情页分组 / 画像 / 七网 / 监管")
     parser.add_argument("code", help="股票代码或公司名，如 600519 / 贵州茅台")
     parser.add_argument("--name", default="", help="公司简称（可选）")
-    parser.add_argument(
-        "--kind",
-        default="",
-        help="详情页分组: " + ",".join(VALID_KINDS) + "；空为全部",
-    )
+    parser.add_argument("--kind", default="", help="详情页分组: " + ",".join(VALID_KINDS) + "；空为全部")
     parser.add_argument("--days", type=int, default=None, help="回溯天数")
     parser.add_argument("--max-pages", type=int, default=3, help="画像/七网翻页上限")
     parser.add_argument("--limit", type=int, default=5, help="每组打印条数，0=全部")
@@ -58,12 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--sections",
         default="default",
-        help=(
-            "画像采集段：default="
-            + ",".join(DEFAULT_SECTIONS)
-            + "；all 或逗号组合="
-            + ",".join(ALL_SECTIONS)
-        ),
+        help="画像采集段：default=" + ",".join(DEFAULT_SECTIONS) + "；all 或逗号组合=" + ",".join(ALL_SECTIONS),
     )
     parser.add_argument("--press", action="store_true", help="只查七家指定披露媒体官网")
     parser.add_argument(
@@ -88,20 +97,20 @@ def main(argv: list[str] | None = None) -> int:
             sections=args.sections,
             max_pages=args.max_pages,
         )
-        if args.json:
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-            return 0
-        print(
+        header = (
             f"code={payload.get('code')} name={payload.get('name')} "
-            f"days={payload.get('days')} sections={payload.get('sections')}"
+            f"days={payload.get('days')} sections={payload.get('sections')} "
+            f"counts={payload.get('counts')}"
         )
-        print(f"counts={payload.get('counts')}")
         if payload.get("errors"):
-            print(f"errors={payload.get('errors')}")
-        for cat, rows in (payload.get("groups") or {}).items():
-            print(f"\n[{cat}] n={len(rows)}")
-            _print_rows(rows, limit=args.limit)
-        return 0
+            header += f"\nerrors={payload.get('errors')}"
+        return _emit(
+            payload,
+            [(cat, rows) for cat, rows in (payload.get("groups") or {}).items()],
+            as_json=args.json,
+            limit=args.limit,
+            header=header,
+        )
 
     if args.press:
         payload = query_press(
@@ -110,41 +119,35 @@ def main(argv: list[str] | None = None) -> int:
             days=args.days if args.days is not None else 31,
             max_pages=args.max_pages,
         )
-        if args.json:
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-            return 0
-        print(
-            f"code={payload.get('code')} name={payload.get('name')} "
-            f"keyword={payload.get('keyword')} total={payload.get('count')}"
-        )
+        wanted = {x.strip() for x in args.outlet.split(",")} if args.outlet != "all" else None
         outlets = payload.get("outlets") or {}
-        for o in PRESS_OUTLETS:
-            rows = outlets.get(o["id"]) or []
-            if args.outlet != "all" and o["id"] not in args.outlet:
-                continue
-            print(f"\n[{o['name']}/{o['paper']}] n={len(rows)}")
-            _print_rows(rows, limit=args.limit)
-        return 0
+        groups = [
+            (f"{o['name']}/{o['paper']}", outlets.get(o["id"]) or [])
+            for o in PRESS_OUTLETS
+            if not wanted or o["id"] in wanted
+        ]
+        return _emit(
+            payload,
+            groups,
+            as_json=args.json,
+            limit=args.limit,
+            header=(
+                f"code={payload.get('code')} name={payload.get('name')} "
+                f"keyword={payload.get('keyword')} total={payload.get('count')}"
+            ),
+        )
 
     if args.regulatory:
         code = normalize_code(args.code) or args.code
-        items = query_regulatory(
-            code,
-            days=args.days if args.days is not None else 365,
-            max_pages=args.max_pages,
+        items = query_regulatory(code, days=args.days if args.days is not None else 365, max_pages=args.max_pages)
+        payload = {"code": code, "market": detect_market(code), "regulatory": items, "regulatory_count": len(items)}
+        return _emit(
+            payload,
+            [("regulatory", items)],
+            as_json=args.json,
+            limit=args.limit,
+            header=f"code={code} market={payload['market']} regulatory={len(items)}",
         )
-        payload = {
-            "code": code,
-            "market": detect_market(code),
-            "regulatory": items,
-            "regulatory_count": len(items),
-        }
-        if args.json:
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-            return 0
-        print(f"code={code} market={payload['market']} regulatory={len(items)}")
-        _print_rows(items, limit=args.limit)
-        return 0
 
     if args.kind or args.days is not None or args.refresh:
         payload = collect_company_messages(
@@ -154,25 +157,18 @@ def main(argv: list[str] | None = None) -> int:
             days=args.days if args.days is not None else 3,
             kind=args.kind,
         )
-        if args.json:
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-            return 0
-        print(
-            f"code={payload.get('code')} name={payload.get('name')} "
-            f"kind={payload.get('kind')} days={payload.get('days')} "
-            f"counts={payload.get('counts')}"
-        )
         groups = payload.get("groups") or {}
-        for key in VALID_KINDS:
-            rows = groups.get(key) or []
-            if args.kind and key != args.kind and args.kind not in {"news", "notices", "official"}:
-                if key not in (args.kind,):
-                    continue
-            if not rows and args.kind and key != payload.get("kind"):
-                continue
-            print(f"\n[{key}] n={len(rows)}")
-            _print_rows(rows, limit=args.limit)
-        return 0
+        return _emit(
+            payload,
+            [(key, groups.get(key) or []) for key in VALID_KINDS],
+            as_json=args.json,
+            limit=args.limit,
+            header=(
+                f"code={payload.get('code')} name={payload.get('name')} "
+                f"kind={payload.get('kind')} days={payload.get('days')} "
+                f"counts={payload.get('counts')}"
+            ),
+        )
 
     payload = query_company_messages(
         args.code,
@@ -181,19 +177,16 @@ def main(argv: list[str] | None = None) -> int:
         days=args.days if args.days is not None else 365,
         max_pages=args.max_pages,
     )
-    if args.json:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-        return 0
-    print(
-        f"code={payload.get('code')} market={payload.get('market')} "
-        f"notices={payload.get('notice_count')} "
-        f"regulatory={payload.get('regulatory_count')}"
+    return _emit(
+        payload,
+        [("notices", payload.get("notices") or []), ("regulatory", payload.get("regulatory") or [])],
+        as_json=args.json,
+        limit=args.limit,
+        header=(
+            f"code={payload.get('code')} market={payload.get('market')} "
+            f"notices={payload.get('notice_count')} regulatory={payload.get('regulatory_count')}"
+        ),
     )
-    print(f"\n[notices] n={payload.get('notice_count')}")
-    _print_rows(payload.get("notices") or [], limit=args.limit)
-    print(f"\n[regulatory] n={payload.get('regulatory_count')}")
-    _print_rows(payload.get("regulatory") or [], limit=args.limit)
-    return 0
 
 
 if __name__ == "__main__":

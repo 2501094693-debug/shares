@@ -12,8 +12,8 @@ from company.emotion.xueqiu._common import (
     empty_pack,
     status_id_of,
 )
-from company.news.xueqiu.article import fetch_article as fetch_status
-from company.news.xueqiu.article import query_show
+from company.news.platforms.xueqiu.article import fetch_article as fetch_status
+from company.news.platforms.xueqiu.article import query_show
 
 
 def fetch_article(

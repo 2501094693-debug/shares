@@ -1,6 +1,6 @@
 """申万分类 / 检索门面。
 
-行业树 + 成分股索引。个股盘口、K 线、资讯不在这里。
+行业树 + 具体公司索引。个股盘口、K 线、资讯不在这里。
 """
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.paths import ensure_cache_dirs
-from industry.index import StockStore
+from industry.stocks import StockStore
 from industry.tree import IndustryTree
 
 

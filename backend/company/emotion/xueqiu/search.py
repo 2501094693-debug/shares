@@ -6,7 +6,7 @@ from datetime import date, datetime
 from typing import Any
 
 from company.emotion.xueqiu._common import CHANNEL_SEARCH, community_item
-from company.news.xueqiu.search import (
+from company.news.platforms.xueqiu.search import (
     query_keyword_page,
     resolve_sort,
     search_posts as search_statuses,

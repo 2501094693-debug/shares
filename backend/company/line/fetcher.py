@@ -1,9 +1,11 @@
 """K 线 / 逐笔的统一入口：双源 fallback + 短 TTL。
 
-- ``fetch_kline``：日/周/月/分钟，腾讯优先、东财兜底（季/半年/年/120m 只走东财）
-- ``fetch_ticks``：当日成交明细，东财优先、腾讯兜底
+- ``fetch_kline``：腾讯优先、东财兜底。
+  腾讯没有季 / 半年 / 年 / 120 分钟，这些周期会直接走东财。
+- ``fetch_ticks``：东财优先、腾讯兜底。
 
-不提供分时 trends2。
+两边返回字段不完全一样，K 线 / 逐笔会先收成同一套再给 API / 统计用。
+不提供分时 trends2。区间涨跌见 ``company.statistics.period_returns``。
 """
 
 from __future__ import annotations
@@ -13,15 +15,15 @@ import time
 from typing import Any
 
 from core.cache import TtlCache
+from core.codes import normalize_code
 from company.line.eastmoney_kline import fetch_line as fetch_eastmoney_line
 from company.line.eastmoney_ticks import fetch_ticks as fetch_eastmoney_ticks
-from company.line.tencent_kline import ALL_PERIODS as TENCENT_PERIODS
 from company.line.tencent_kline import fetch_line as fetch_tencent_line
 from company.line.tencent_ticks import fetch_ticks as fetch_tencent_ticks
-from core.codes import normalize_code
 
 logger = logging.getLogger(__name__)
 
+# K 线盘中变化慢，缓存 2 分钟；逐笔要跟上成交，只缓存 8 秒。
 KLINE_TTL = 120
 TICKS_TTL = 1
 
@@ -30,6 +32,7 @@ _ticks_cache = TtlCache(TICKS_TTL)
 
 
 def _kline_payload(pack: dict[str, Any], *, source: str) -> dict[str, Any]:
+    """去掉腾讯 / 东财各自多出来的字段，收成对外 K 线包。"""
     items = list(pack.get("items") or [])
     return {
         "code": pack.get("code") or "",
@@ -44,6 +47,7 @@ def _kline_payload(pack: dict[str, Any], *, source: str) -> dict[str, Any]:
 
 
 def _ticks_payload(pack: dict[str, Any], *, source: str) -> dict[str, Any]:
+    """去掉腾讯 / 东财各自多出来的字段，收成对外逐笔包。最后一条即最新成交。"""
     items = list(pack.get("items") or [])
     last = items[-1] if items else {}
     return {
@@ -59,31 +63,11 @@ def _ticks_payload(pack: dict[str, Any], *, source: str) -> dict[str, Any]:
     }
 
 
-def _tencent_period_ok(period: str) -> bool:
-    key = (period or "day").strip().lower()
-    return key in TENCENT_PERIODS or key in {
-        "d",
-        "daily",
-        "w",
-        "weekly",
-        "m",
-        "monthly",
-        "1",
-        "1min",
-        "5",
-        "5min",
-        "15",
-        "15min",
-        "30",
-        "30min",
-        "60",
-        "60min",
-        "1h",
-        "hour",
-        "101",
-        "102",
-        "103",
-    }
+def _cache_get(cache: TtlCache, key: str, force: bool) -> Any | None:
+    """force=True 跳过缓存，用于手动刷新。"""
+    if force:
+        return None
+    return cache.get(key)
 
 
 def fetch_kline(
@@ -105,18 +89,18 @@ def fetch_kline(
     if not code:
         raise ValueError("无效股票代码")
 
+    # 缓存 key 用规范化后的值，避免 2024-01-01 和 20240101 各存一份。
     period_key = (period or "day").strip().lower()
     fqt = str(adjust if adjust is not None else "qfq").strip().lower()
     cap = int(limit or 320)
     beg_s = (beg or "").replace("-", "").strip()
     end_s = (end or "").replace("-", "").strip()
-
     cache_key = f"{code}:{period_key}:{fqt}:{cap}:{beg_s}:{end_s}"
     now = time.time()
-    if not force:
-        hit = _kline_cache.get(cache_key)
-        if hit is not None:
-            return hit
+
+    hit = _cache_get(_kline_cache, cache_key, force)
+    if hit is not None:
+        return hit
 
     kwargs = {
         "period": period,
@@ -126,20 +110,22 @@ def fetch_kline(
         "end": end_s,
     }
 
+    # 腾讯不支持的周期会立刻 ValueError（文案含「不支持」），不当失败、直接改走东财。
+    # 其它错误（超时、空数据）也落到东财，只打日志。
     pack: dict[str, Any] = {}
-    if _tencent_period_ok(period_key):
-        try:
-            pack = fetch_tencent_line(code, **kwargs)
-            if pack.get("items"):
-                result = _kline_payload(pack, source="tencent")
-                _kline_cache.put(cache_key, result, cached_at=now)
-                return result
-        except ValueError as exc:
-            if "不支持" not in str(exc):
-                logger.info("tencent kline skip %s: %s", code, exc)
-        except Exception as exc:  # noqa: BLE001
-            logger.info("tencent kline failed %s: %s", code, exc)
+    try:
+        pack = fetch_tencent_line(code, **kwargs)
+        if pack.get("items"):
+            result = _kline_payload(pack, source="tencent")
+            _kline_cache.put(cache_key, result, cached_at=now)
+            return result
+    except ValueError as exc:
+        if "不支持" not in str(exc):
+            logger.info("tencent kline skip %s: %s", code, exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("tencent kline failed %s: %s", code, exc)
 
+    # 东财是兜底。入参不合法继续往外抛；网络/解析失败则返回空包，source 为空。
     try:
         pack = fetch_eastmoney_line(code, **kwargs)
     except ValueError:
@@ -174,10 +160,9 @@ def fetch_ticks(
 
     cache_key = f"{code}:{pos}"
     now = time.time()
-    if not force:
-        hit = _ticks_cache.get(cache_key)
-        if hit is not None:
-            return hit
+    hit = _cache_get(_ticks_cache, cache_key, force)
+    if hit is not None:
+        return hit
 
     pack: dict[str, Any] = {}
     try:

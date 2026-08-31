@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Query
 
 from core.api import err, ok
-from industry.geo import enrich_codes
+from industry.address import enrich_codes
 from industry.service import service
 
 router = APIRouter()

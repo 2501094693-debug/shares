@@ -1,4 +1,4 @@
-"""基于 company.news 采集源的统一查询：公告、监管、七网、画像用扁平列表。"""
+"""统一查询：公告、监管、七网、市场新闻、研报。"""
 
 from __future__ import annotations
 
@@ -9,9 +9,21 @@ from typing import Any, Callable, Iterable, Literal
 
 from core.codes import detect_market, normalize_code, safe_str
 
-from company.news.cninfo import fetch_announcements as fetch_cninfo_announcements
-from company.news.cninfo import resolve_org
-from company.news.exchange import (
+from company.news._items import (
+    as_news,
+    as_notice,
+    as_press,
+    as_regulatory,
+    as_report,
+    default_start,
+    dedupe,
+    sort_key,
+    unpack,
+    within_range,
+)
+from company.news.official.cninfo import fetch_announcements as fetch_cninfo_announcements
+from company.news.official.cninfo import resolve_org
+from company.news.official.exchange import (
     fetch_bse_announcements,
     fetch_bse_inquiries,
     fetch_sse_announcements,
@@ -19,7 +31,7 @@ from company.news.exchange import (
     fetch_szse_announcements,
     fetch_szse_inquiries,
 )
-from company.news.press import (
+from company.news.official.press import (
     fetch_chinadaily_news,
     fetch_cnstock_news,
     fetch_cs_news,
@@ -28,18 +40,13 @@ from company.news.press import (
     fetch_stcn_news,
     fetch_zqrb_news,
 )
+from company.news.platforms.eastmoney.search import fetch_news as fetch_eastmoney_news
+from company.news.platforms.tonghuashun.news import fetch_news as fetch_ths_news
+from company.news.platforms.tonghuashun.reports import fetch_reports as fetch_ths_reports
+from company.news.platforms.xueqiu.news import fetch_news as fetch_xq_news
+from company.news.platforms.xueqiu.reports import fetch_reports as fetch_xq_reports
 from company.news.taxonomy.constants import PRESS_OUTLETS, REGULATORY_TITLE_KEYWORDS
 from company.news.taxonomy.keywords import infer_subcategory
-from company.news._items import (
-    as_notice,
-    as_press,
-    as_regulatory,
-    default_start,
-    dedupe,
-    sort_key,
-    unpack,
-    within_range,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -104,14 +111,17 @@ def _resolve_channels(code: str, channel: Channel | str) -> list[str]:
 
 def _fetch_pack(
     fetcher: Callable[..., dict[str, Any]],
-    code: str,
+    target: str,
     *,
-    start: datetime | None,
-    end: datetime | None,
-    days: int | None,
-    max_pages: int,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    days: int | None = None,
+    max_pages: int | None = None,
+    **extra: Any,
 ) -> list[dict[str, Any]]:
-    kwargs: dict[str, Any] = {"max_pages": max_pages}
+    kwargs: dict[str, Any] = dict(extra)
+    if max_pages is not None:
+        kwargs["max_pages"] = max_pages
     if start is not None:
         kwargs["start"] = start
     if end is not None:
@@ -121,10 +131,23 @@ def _fetch_pack(
     elif start is not None:
         kwargs["days"] = None
     try:
-        return unpack(fetcher(code, **kwargs))
+        return unpack(fetcher(target, **kwargs))
     except TypeError:
         kwargs.pop("days", None)
-        return unpack(fetcher(code, **kwargs))
+        if "max_pages" in kwargs:
+            try:
+                return unpack(fetcher(target, **kwargs))
+            except TypeError:
+                kwargs.pop("max_pages", None)
+        return unpack(fetcher(target, **kwargs))
+
+
+def _safe_unpack(fetcher: Callable[..., dict[str, Any]], target: str, **kwargs: Any) -> list[dict[str, Any]]:
+    try:
+        return _fetch_pack(fetcher, target, **kwargs)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("%s 失败 %s: %s", getattr(fetcher, "__name__", fetcher), target, exc)
+        return []
 
 
 def query_announcements(
@@ -284,14 +307,123 @@ def query_company_messages(
     }
 
 
-def query_multi(codes: Iterable[str], **kwargs: Any) -> dict[str, dict[str, Any]]:
-    out: dict[str, dict[str, Any]] = {}
-    for raw in codes:
-        code = normalize_code(raw)
-        if not code:
-            continue
-        out[code] = query_company_messages(code, **kwargs)
-    return out
+def query_market_news(
+    code: str,
+    name: str = "",
+    *,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    days: int | None = 365,
+    max_pages: int = 5,
+    em_kind: str = "old",
+) -> list[dict[str, Any]]:
+    """东方财富 / 同花顺 / 雪球新闻。"""
+    code = normalize_code(code) or safe_str(code)
+    name = safe_str(name)
+    target = code or name
+    if not target:
+        return []
+    if start is None and days is not None:
+        start = default_start(days)
+
+    side_pages = min(max_pages, 8)
+    jobs: list[Callable[[], list[dict[str, Any]]]] = [
+        lambda: _safe_unpack(
+            fetch_eastmoney_news,
+            target,
+            start=start,
+            end=end,
+            days=days,
+            max_pages=max_pages,
+            kind=em_kind,
+        ),
+    ]
+    if name and name != target:
+        jobs.append(
+            lambda: _safe_unpack(
+                fetch_eastmoney_news,
+                name,
+                start=start,
+                end=end,
+                days=days,
+                max_pages=max_pages,
+                kind=em_kind,
+            )
+        )
+    if code:
+        jobs.extend(
+            [
+                lambda: _safe_unpack(
+                    fetch_ths_news,
+                    code,
+                    start=start,
+                    end=end,
+                    days=days,
+                    max_pages=side_pages,
+                ),
+                lambda: _safe_unpack(
+                    fetch_xq_news,
+                    code,
+                    start=start,
+                    end=end,
+                    days=days,
+                    max_pages=side_pages,
+                ),
+            ]
+        )
+
+    collected: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=min(4, len(jobs))) as pool:
+        for fut in as_completed([pool.submit(fn) for fn in jobs]):
+            collected.extend(fut.result())
+
+    tagged = [as_news(x, code=code, name=name) for x in collected]
+    return sorted(dedupe([x for x in tagged if within_range(x, start, end)]), key=sort_key)
+
+
+def query_reports(
+    code: str,
+    name: str = "",
+    *,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    days: int | None = None,
+    max_pages: int = 8,
+) -> list[dict[str, Any]]:
+    """同花顺 / 雪球研报。"""
+    code = normalize_code(code) or safe_str(code)
+    name = safe_str(name)
+    if not code:
+        return []
+    if start is None and days is not None:
+        start = default_start(days)
+
+    collected: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futs = [
+            pool.submit(
+                _safe_unpack,
+                fetch_ths_reports,
+                code,
+                start=start,
+                end=end,
+                days=days,
+            ),
+            pool.submit(
+                _safe_unpack,
+                fetch_xq_reports,
+                code,
+                start=start,
+                end=end,
+                days=days,
+                max_pages=min(max_pages, 8),
+            ),
+        ]
+        for fut in as_completed(futs):
+            collected.extend(fut.result())
+
+    tagged = [as_report(x, code=code, name=name) for x in collected]
+    return sorted(dedupe([x for x in tagged if within_range(x, start, end)]), key=sort_key)
 
 
 def _select_outlets(outlet: str | Iterable[str] | None) -> list[dict[str, str]]:
@@ -427,7 +559,3 @@ def query_press(
         "count": len(flat),
         "errors": errors,
     }
-
-
-def query_press_flat(code_or_name: str, **kwargs: Any) -> list[dict[str, Any]]:
-    return list(query_press(code_or_name, **kwargs).get("items") or [])

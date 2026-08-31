@@ -66,7 +66,7 @@ from company.emotion.xueqiu._common import (
     set_token,
     stock_page_url,
 )
-from company.news.xueqiu.search import SORTS, resolve_sort
+from company.news.platforms.xueqiu.search import SORTS, resolve_sort
 
 __all__ = [
     "CHANNEL_POSTS",
