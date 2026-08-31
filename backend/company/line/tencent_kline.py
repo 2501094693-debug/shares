@@ -175,8 +175,10 @@ def resolve_symbol(code: str) -> str:
     raw = (code or "").strip()
     if not raw:
         return ""
+
     if _TX_RE.match(raw):
         return raw.lower()
+
     compact = raw.upper().replace(" ", "")
     prefixed = _PREFIX_RE.match(compact)
     if prefixed:
@@ -184,10 +186,12 @@ def resolve_symbol(code: str) -> str:
     suffixed = _SUFFIX_RE.match(compact)
     if suffixed:
         return f"{_PREFIX_MARKET[suffixed.group(2)]}{suffixed.group(1)}"
+
     secid = _SECID_RE.match(raw)
     if secid:
         prefix = "sh" if secid.group(1) == "1" else "sz"
         return f"{prefix}{secid.group(2)}"
+
     digits = re.sub(r"[^0-9]", "", raw)
     if len(digits) == 6:
         if digits.startswith(_SSE_HEADS):
@@ -196,6 +200,7 @@ def resolve_symbol(code: str) -> str:
             return f"sz{digits}"
         if digits.startswith(("8", "4", "92")):
             return f"bj{digits}"
+
     return _stock_symbol(raw)
 
 
@@ -209,16 +214,19 @@ def _format_minute_time(raw: Any) -> str:
 def _parse_row(row: Any, *, minute: bool = False) -> dict[str, Any] | None:
     if not isinstance(row, (list, tuple)) or len(row) < 5:
         return None
+
     open_ = to_float(row[1])
     close = to_float(row[2])
+    if open_ is None and close is None:
+        return None
+
     high = to_float(row[3])
     low = to_float(row[4])
-    if close is None and open_ is None:
-        return None
     time_s = _format_minute_time(row[0]) if minute else str(row[0])[:19].strip()
     amount = None
     if len(row) > 6 and not isinstance(row[6], dict):
         amount = to_float(row[6])
+
     return {
         "time": time_s,
         "open": open_,
@@ -261,11 +269,17 @@ def _extract_name(node: dict[str, Any], symbol: str) -> str:
 
 
 def _pick_bar_rows(node: dict[str, Any], tx_period: str, fqt: int) -> list[Any]:
+    """从腾讯节点里按优先级取出 K 线数组。
+
+    日/周/月数据可能落在 ``day`` / ``qfqday`` / ``hfqweek`` 等不同键上，
+    指数还常常只有不复权。先试请求的复权键，再退到周期本身和日线兜底。
+    """
     keys: list[str] = []
     if fqt == 1:
-        keys.append(f"qfq{tx_period}")
+        keys.append(f"qfq{tx_period}")  # 前复权：qfqday / qfqweek / qfqmonth
     elif fqt == 2:
-        keys.append(f"hfq{tx_period}")
+        keys.append(f"hfq{tx_period}")  # 后复权：hfqday / hfqweek / hfqmonth
+    # 不复权周期本身，再退到最常见的日线三套
     keys.extend((tx_period, "day", "qfqday", "hfqday"))
     for key in keys:
         rows = node.get(key)
@@ -298,20 +312,27 @@ def fetch_line(
     period: 1m|5m|15m|30m|60m|day|week|month
     adjust: none|qfq|hfq（或 0|1|2），默认前复权；分钟线忽略复权。
     不传 ``beg`` 时按最近 ``limit`` 根拉；传了 ``beg`` 则按日期区间（仅日/周/月）。
+
+    分钟走 ``mkline``，日/周/月走 ``fqkline``。返回统一结构，
+    ``source`` 在没解析出任何一根时为空字符串。
     """
+    # 各种写法收成腾讯码，例如 600519 → sh600519
     symbol = resolve_symbol(code)
     if not symbol:
         raise ValueError("无效股票代码")
 
     period = _normalize_period(period)
-    tx_period = PERIOD_TX[period]
+    tx_period = PERIOD_TX[period]  # 规范名 → 接口周期：5m→m5，day→day
     fqt = _normalize_adjust(adjust)
+
     cap = int(limit) if limit is not None else 320
     if cap <= 0:
         cap = _MAX_LMT
     cap = max(1, min(cap, _MAX_LMT))
+
     beg = _normalize_date(beg)
     end = _normalize_date(end)
+    # 有起始日且不是分钟才按区间查；分钟接口不支持按日过滤
     minute = period in PERIOD_TX and period in MINUTE_PERIODS
     query = "range" if beg and not minute else "last"
 
@@ -321,6 +342,7 @@ def fetch_line(
 
     try:
         if minute:
+            # mkline: param = symbol,m5,,limit
             payload = _request(_MKLINE_URL, f"{symbol},{tx_period},,{cap}")
             node = ((payload.get("data") or {}) if isinstance(payload.get("data"), dict) else {}).get(
                 symbol
@@ -334,6 +356,8 @@ def fetch_line(
                         if parsed:
                             items.append(parsed)
         else:
+            # fqkline: param = symbol,day,start,end,limit,qfq
+            # 缺的日期位留空；fq 为空表示不复权
             start = _ymd(beg)
             finish = _ymd(end)
             fq = _fq_flag(fqt)
@@ -359,6 +383,7 @@ def fetch_line(
         logger.exception("tencent line failed %s %s", symbol, period)
         raise
 
+    # 区间查询再按日期裁一遍（接口可能多给边界外的 K）
     if query == "range" and items:
         lo = _ymd(beg)
         hi = _ymd(end)
@@ -372,9 +397,9 @@ def fetch_line(
             clipped.append(item)
         items = clipped
     elif cap and len(items) > cap:
-        items = items[-cap:]
+        items = items[-cap:]  # 最近 N 根：接口超量时只留末尾
 
-    _fill_change(items)
+    _fill_change(items)  # 用上一根收盘补涨跌额 / 涨跌幅 / 振幅
     digits = re.sub(r"[^0-9]", "", symbol) or symbol
 
     return {
