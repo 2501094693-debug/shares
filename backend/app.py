@@ -1,8 +1,9 @@
 """申万三级行业浏览器 — FastAPI 后端。
 
-两套业务：
+三套业务：
 - ``industry``：申万分类、成分股检索、地图标注
 - ``company``：单只股票的盘口、K 线、资讯
+- ``market``：申万行业涨跌、资金流向、行业轮动
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from company.api import router as company_router
 from industry.api import router as industry_router
 from industry.service import service as industry_service
+from market.api import router as market_router
 
 ROOT = _BACKEND_DIR.parent
 FRONTEND = ROOT / "frontend"
@@ -101,6 +103,7 @@ app.add_middleware(
 
 app.include_router(industry_router)
 app.include_router(company_router)
+app.include_router(market_router)
 
 
 @app.get("/api/health")
@@ -111,6 +114,42 @@ def health():
 @app.get("/")
 def index():
     return FileResponse(FRONTEND / "industry" / "index.html")
+
+
+@app.get("/market")
+@app.get("/market.html")
+def market_page():
+    return FileResponse(
+        FRONTEND / "market" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/market.js")
+def js_market():
+    return FileResponse(
+        FRONTEND / "market" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/steep")
+@app.get("/steep.html")
+def steep_page():
+    return FileResponse(
+        FRONTEND / "market" / "steep.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/steep.js")
+def js_steep():
+    return FileResponse(
+        FRONTEND / "market" / "steep.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 @app.get("/company")

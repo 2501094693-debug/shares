@@ -364,6 +364,11 @@ class StockStore:
         if not building and self.needs_full_build():
             self.start_build(force=False)
 
+    def all_stocks(self) -> list[dict[str, Any]]:
+        """全市场索引拷贝，给行业涨跌 / 资金汇总用。"""
+        with self._lock:
+            return [dict(item) for item in self._stocks]
+
     def get_by_code(self, code: str) -> dict[str, Any] | None:
         """按代码取一条索引（返回拷贝）。"""
         code_l = (code or "").strip().lower()

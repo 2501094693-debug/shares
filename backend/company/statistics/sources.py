@@ -357,12 +357,23 @@ def fetch_tencent_day_rows(
         param = f"{symbol},day,{start},{end},{limit},{adj}"
     else:
         param = f"{symbol},day,,,{limit},{adj}"
-    payload = get_json(
-        "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
-        params={"param": param},
-        headers={"Referer": "https://gu.qq.com/"},
-        timeout=12,
-    ) or {}
+    payload: dict[str, Any] = {}
+    for url in (
+        "https://ifzq.gtimg.cn/appstock/app/fqkline/get",
+        "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get",
+    ):
+        try:
+            pack = get_json(
+                url,
+                params={"param": param},
+                headers={"Referer": "https://gu.qq.com/"},
+                timeout=12,
+            ) or {}
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(pack, dict) and pack.get("data"):
+            payload = pack
+            break
     node = ((payload.get("data") or {}) if isinstance(payload.get("data"), dict) else {}).get(
         symbol
     ) or {}

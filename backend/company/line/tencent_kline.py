@@ -1,9 +1,10 @@
 """腾讯 ``fqkline`` / ``mkline`` K 线接入。
 
-日 / 周 / 月：``https://web.ifzq.gtimg.cn/appstock/app/fqkline/get``
+日 / 周 / 月：``https://ifzq.gtimg.cn/appstock/app/fqkline/get``
 - param: ``sh600519,day,start,end,limit,qfq``
 - 周期：day / week / month
 - 复权：空=不复权，``qfq`` 前复权，``hfq`` 后复权（指数通常只有不复权）
+- ``web.ifzq.gtimg.cn`` 的 fqkline 现会返回 501 挑战页，主站改用 ``ifzq.gtimg.cn``
 
 分钟：``https://ifzq.gtimg.cn/appstock/app/kline/mkline``
 - param: ``sh600519,m5,,limit``
@@ -80,8 +81,16 @@ _ADJUST = {
 _ADJUST_LABEL = {0: "none", 1: "qfq", 2: "hfq"}
 _FQ_FLAG = {0: "", 1: "qfq", 2: "hfq"}
 
-_FQKLINE_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
-_MKLINE_URL = "https://ifzq.gtimg.cn/appstock/app/kline/mkline"
+# web.ifzq 的 fqkline 现返回 501 HTML；ifzq 主站与 proxy 仍可用。
+_FQKLINE_URLS = (
+    "https://ifzq.gtimg.cn/appstock/app/fqkline/get",
+    "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get",
+    "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
+)
+_MKLINE_URLS = (
+    "https://ifzq.gtimg.cn/appstock/app/kline/mkline",
+    "https://web.ifzq.gtimg.cn/appstock/app/kline/mkline",
+)
 _HEADERS = {"Referer": "https://gu.qq.com/"}
 _MAX_LMT = 10000
 
@@ -193,9 +202,9 @@ def _params(
     tx = PERIOD_TX[period]
     minute = period in MINUTE_PERIODS
     if minute:
-        url, param = _MKLINE_URL, f"{symbol},{tx},,{cap}"
+        urls, param = list(_MKLINE_URLS), f"{symbol},{tx},,{cap}"
     else:
-        url = _FQKLINE_URL
+        urls = list(_FQKLINE_URLS)
         param = f"{symbol},{tx},{_ymd(beg)},{_ymd(end)},{cap},{_FQ_FLAG.get(fqt, '')}"
 
     return {
@@ -209,7 +218,7 @@ def _params(
         "minute": minute,
         "query": "range" if beg and not minute else "last",
         "adjust": "none" if minute else _ADJUST_LABEL.get(fqt, "none"),
-        "url": url,
+        "urls": urls,
         "param": param,
     }
 
@@ -218,9 +227,20 @@ def _params(
 # 2. 请求数据
 # ---------------------------------------------------------------------------
 
-def _request(url: str, param: str) -> dict[str, Any]:
-    payload = get_json(url, params={"param": param}, headers=_HEADERS, timeout=12) or {}
-    return payload if isinstance(payload, dict) else {}
+def _request(urls: list[str], param: str) -> dict[str, Any]:
+    last_exc: Exception | None = None
+    for url in urls:
+        try:
+            payload = get_json(url, params={"param": param}, headers=_HEADERS, timeout=12) or {}
+            if isinstance(payload, dict) and payload.get("data"):
+                return payload
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            logger.info("tencent kline skip %s: %s", url, exc)
+            continue
+    if last_exc:
+        raise last_exc
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +398,7 @@ def fetch_line(
     """
     params = _params(code, period=period, adjust=adjust, limit=limit, beg=beg, end=end)
     try:
-        payload = _request(params["url"], params["param"])
+        payload = _request(params["urls"], params["param"])
     except Exception:
         logger.exception("tencent line failed %s %s", params["symbol"], params["period"])
         raise

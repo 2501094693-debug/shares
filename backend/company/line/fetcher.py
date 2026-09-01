@@ -140,7 +140,9 @@ def fetch_kline(
         result["code"] = code
     if not result.get("period"):
         result["period"] = period_key
-    _kline_cache.put(cache_key, result, cached_at=now)
+    # 空包不缓存：源站短暂失败时避免把「暂无走势」钉死两分钟。
+    if result.get("items"):
+        _kline_cache.put(cache_key, result, cached_at=now)
     return result
 
 
