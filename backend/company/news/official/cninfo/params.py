@@ -119,6 +119,7 @@ def resolve_org(code_or_name: str) -> dict[str, str] | None:
     if not raw:
         return None
     code = normalize_code(raw)
+
     cache_key = code or raw
     cached = _ORG_CACHE.get(cache_key)
     if cached:
@@ -126,6 +127,7 @@ def resolve_org(code_or_name: str) -> dict[str, str] | None:
 
     keyword = code or raw
     rows = search_orgs(keyword, max_num=10)
+
     picked: dict[str, str] | None = None
     if code:
         for row in rows:

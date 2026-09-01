@@ -93,6 +93,7 @@ def parse_org_row(row: Any) -> dict[str, str] | None:
     org_id = safe_str(row.get("orgId"))
     if not org_id:
         return None
+
     code = normalize_code(safe_str(row.get("code"))) or safe_str(row.get("code"))
     return {
         "code": code,

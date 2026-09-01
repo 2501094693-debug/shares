@@ -67,6 +67,7 @@ def load_org_map(*, force: bool = False) -> dict[str, dict[str, str]]:
     global _STOCK_MAP
     if _STOCK_MAP is not None and not force:
         return _STOCK_MAP
+
     mapping: dict[str, dict[str, str]] = {}
     for url in STOCK_LIST_URLS:
         try:
