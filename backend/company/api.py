@@ -34,8 +34,6 @@ from company.emotion.xueqiu import (
     search_posts as search_xq_posts,
 )
 from company.line import fetch_kline, fetch_ticks
-from company.line.original import IFindError, fetch_orders, fetch_transactions
-from company.line.original.client import has_credentials
 from company.statistics.pe_history import fetch_pe_history
 from company.statistics.turnover_history import fetch_turnover_history
 from company.news.feed import collect_company_messages
@@ -163,55 +161,6 @@ def stocks_ticks(
         return ok(data)
     except ValueError as exc:
         return err(str(exc), 400)
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/stocks/l2/transactions")
-@router.get("/api/stocks/l2/ticks")
-def stocks_l2_transactions(
-    code: str = Query("", description="股票代码，如 600519"),
-    pos: str = Query("0", description="0=当天全部；-20 或 20=最近 20 笔"),
-    start: str = Query("", description="开始时间，默认当天 09:15"),
-    end: str = Query("", description="结束时间，默认当天 15:15"),
-):
-    """iFinD 逐笔成交（数据接口 zb_*）。需要 IFIND_USER 或 IFIND_REFRESH_TOKEN。"""
-    code = code.strip()
-    if not code:
-        return err("缺少参数 code", 400)
-    if not has_credentials():
-        return err("未配置 iFinD 账号（IFIND_USER / IFIND_PASSWORD 或 IFIND_REFRESH_TOKEN）", 400)
-    try:
-        data = fetch_transactions(code, pos=pos, start=start, end=end)
-        return ok(data)
-    except ValueError as exc:
-        return err(str(exc), 400)
-    except IFindError as exc:
-        return err(str(exc), 502)
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/stocks/l2/orders")
-def stocks_l2_orders(
-    code: str = Query("", description="股票代码，如 600519"),
-    pos: str = Query("0", description="0=当天全部；-20 或 20=最近 20 笔"),
-    start: str = Query("", description="开始时间，默认当天 09:15"),
-    end: str = Query("", description="结束时间，默认当天 15:15"),
-):
-    """iFinD 逐笔委托。标准数据接口通常无此指标，需超级命令确认或 DataFeed。"""
-    code = code.strip()
-    if not code:
-        return err("缺少参数 code", 400)
-    if not has_credentials():
-        return err("未配置 iFinD 账号（IFIND_USER / IFIND_PASSWORD 或 IFIND_REFRESH_TOKEN）", 400)
-    try:
-        data = fetch_orders(code, pos=pos, start=start, end=end)
-        return ok(data)
-    except ValueError as exc:
-        return err(str(exc), 400)
-    except IFindError as exc:
-        return err(str(exc), 502)
     except Exception as exc:  # noqa: BLE001
         return err(str(exc), 500)
 
