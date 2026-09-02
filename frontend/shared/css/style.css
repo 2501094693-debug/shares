@@ -4166,7 +4166,37 @@ body.market-page-root {
   display: none;
 }
 
-.lhb-date-box input,
+.lhb-date-box {
+  position: relative;
+  min-width: 168px;
+}
+
+.lhb-date-text {
+  display: block;
+  min-width: 168px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(4, 8, 14, 0.65);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.92rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.lhb-date-box input[type="date"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .lhb-stock-box input,
 .lhb-filter-box input {
   min-width: 180px;
@@ -4371,7 +4401,8 @@ body.market-page-root {
     grid-template-columns: 1fr;
   }
 
-  .lhb-date-box input,
+  .lhb-date-box,
+  .lhb-date-text,
   .lhb-stock-box input,
   .lhb-filter-box input {
     min-width: 0;

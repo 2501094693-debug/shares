@@ -78,6 +78,25 @@
     return `${y}-${m}-${day}`;
   }
 
+  const WEEK = "日一二三四五六";
+
+  function fmtTradeDate(date) {
+    const raw = String(date || "").trim();
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return raw || "选择日期";
+    const d = new Date(`${raw}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return raw;
+    return `${m[1]}-${m[2]}-${m[3]} 周${WEEK[d.getDay()]}`;
+  }
+
+  function syncDateView(date) {
+    const value = String(date || "").trim();
+    const input = $("dateInput");
+    const text = $("dateText");
+    if (input && value) input.value = value;
+    if (text) text.textContent = fmtTradeDate(value || input?.value);
+  }
+
   function skipWeekend(date, dir) {
     let next = shiftDate(date, dir);
     for (let i = 0; i < 4; i += 1) {
@@ -341,7 +360,7 @@
       items: data.items || [],
       selected: "",
     });
-    $("dateInput").value = state.date;
+    syncDateView(state.date);
     const url = new URL(window.location.href);
     url.searchParams.set("mode", "daily");
     url.searchParams.set("date", state.date);
