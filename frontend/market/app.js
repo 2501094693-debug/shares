@@ -97,7 +97,7 @@
       .map((n) => {
         const active = n.code === selected ? " is-active" : "";
         return `<tr class="is-row${active}" data-code="${n.code}">
-          <td>${n.name}</td>
+          <td class="market-name">${n.name || n.code || "—"}</td>
           <td class="num" data-tone="${tone(n.change_pct)}">${fmtPct(n.change_pct)}</td>
           ${limitCells(n)}
           ${fundCells(n)}
@@ -112,7 +112,7 @@
     return rows
       .map((n) => {
         return `<tr class="is-row is-stock" data-code="${n.code}" data-industry="${n.parent_code || ""}">
-          <td><span class="market-stock-name">${n.name}</span><span class="market-stock-code">${n.code}</span></td>
+          <td><span class="market-stock-name">${n.name || "—"}</span><span class="market-stock-code">${n.code}</span></td>
           <td class="num" data-tone="${tone(n.change_pct)}">${fmtPct(n.change_pct)}</td>
           <td class="num">${fmtRatio(n.pe_ttm)}</td>
           <td class="num">${fmtRatio(n.pb)}</td>

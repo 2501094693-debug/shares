@@ -8,7 +8,7 @@ from typing import Any
 
 from core.cache import TtlCache
 from industry.service import service as industry_service
-from .em_limit_pool import fetch_limit_pools
+from .em_limit_pool import fetch_limit_pools, guess_limit_pools
 from .em_stock_flow import fetch_stock_flows
 from .fund_flow import (
     FLOW_NET_KEYS,
@@ -177,19 +177,26 @@ class MarketService:
         buckets: dict[str, dict[str, Any]] = {}
         limit_pools: dict[str, set[str]] = {"limit_up": set(), "limit_down": set()}
 
+        def _sw_layer(level: int) -> dict[str, dict[str, Any]]:
+            nodes_lv = filter_level(nodes, level)
+            try:
+                return attach_sw_quotes(nodes_lv, level)
+            except Exception as exc:  # noqa: BLE001
+                fallback = aggregate_from_stocks(
+                    nodes_lv, stocks, level, tree=nodes
+                )
+                if fallback:
+                    return fallback
+                errors.append(f"{'申万一级' if level == 1 else '申万二级'}: {exc}")
+                return {}
+
         def _sw1() -> None:
             nonlocal sw1
-            try:
-                sw1 = attach_sw_quotes(filter_level(nodes, 1), 1)
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"申万一级: {exc}")
+            sw1 = _sw_layer(1)
 
         def _sw2() -> None:
             nonlocal sw2
-            try:
-                sw2 = attach_sw_quotes(filter_level(nodes, 2), 2)
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"申万二级: {exc}")
+            sw2 = _sw_layer(2)
 
         def _agg() -> None:
             nonlocal agg3, counts12
@@ -217,17 +224,27 @@ class MarketService:
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"资金流: {exc}")
 
+        limit_exc: Exception | None = None
+
         def _limits() -> None:
-            nonlocal limit_pools
+            nonlocal limit_pools, limit_exc
             try:
                 limit_pools = self._raw_limit_pools(force=force)
             except Exception as exc:  # noqa: BLE001
-                errors.append(f"涨跌停池: {exc}")
+                limit_exc = exc
 
         with ThreadPoolExecutor(max_workers=5) as pool:
             futs = [pool.submit(fn) for fn in (_sw1, _sw2, _agg, _flow, _limits)]
             for fut in futs:
                 fut.result()
+
+        if limit_exc:
+            flows = self._stock_flows.get("all") or {}
+            if flows:
+                limit_pools = guess_limit_pools(flows, stocks)
+                self._limit_pools.put("today", limit_pools)
+            else:
+                errors.append(f"涨跌停池: {limit_exc}")
 
         rows: list[dict[str, Any]] = []
         for node in nodes:
@@ -257,7 +274,7 @@ class MarketService:
         stock_nodes = 0
         try:
             stock_nodes = _attach_stocks(
-                tree, stocks, self._raw_stock_flows(force=False)
+                tree, stocks, self._stock_flows.get("all") or {}
             )
             _roll_up_l3(tree)
             _roll_up_stock_counts(tree, limit_pools)

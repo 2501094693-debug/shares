@@ -10,6 +10,7 @@
     sortKey: "board",
     sortDir: "desc",
     open: new Set(),
+    collapsed: { up: false, down: false },
     fetching: false,
     pendingLoad: null,
     pollTimer: 0,
@@ -27,6 +28,17 @@
     const n = Number(value);
     if (!Number.isFinite(n)) return "—";
     return `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
+  }
+
+  function fmtYi(value) {
+    if (value == null || value === "") return "—";
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    const abs = Math.abs(n);
+    const sign = n < 0 ? "-" : "";
+    if (abs >= 1e8) return `${sign}${(abs / 1e8).toFixed(2)}亿`;
+    if (abs >= 1e4) return `${sign}${(abs / 1e4).toFixed(1)}万`;
+    return `${sign}${abs.toFixed(0)}`;
   }
 
   function fmtMd(date) {
@@ -76,7 +88,44 @@
   }
 
   function emptyRow(text) {
-    return `<tr class="is-empty"><td colspan="3">${text}</td></tr>`;
+    return `<tr class="is-empty"><td colspan="8">${text}</td></tr>`;
+  }
+
+  function fmtTime(value) {
+    const text = String(value || "").trim();
+    return text || "—";
+  }
+
+  function extraCells(row, kind) {
+    if (kind === "down") {
+      const opens = Number(row.open_count);
+      return `
+      <td class="num steep-time">${fmtTime(row.last_seal)}</td>
+      <td class="num steep-money">${fmtYi(row.seal_fund)}</td>
+      <td class="num">${Number.isFinite(opens) ? opens : "—"}</td>
+      <td class="num steep-money">${fmtYi(row.board_amount)}</td>`;
+    }
+    const breaks = Number(row.break_count);
+    return `
+      <td class="num steep-time">${fmtTime(row.first_seal)}</td>
+      <td class="num steep-time">${fmtTime(row.last_seal)}</td>
+      <td class="num steep-money">${fmtYi(row.seal_fund)}</td>
+      <td class="num">${Number.isFinite(breaks) ? breaks : "—"}</td>`;
+  }
+
+  function extraHeads(kind) {
+    if (kind === "down") {
+      return `
+          <th class="num steep-time">最后</th>
+          <th class="num steep-money">封单</th>
+          <th class="num">开板</th>
+          <th class="num steep-money">板上</th>`;
+    }
+    return `
+          <th class="num steep-time">首次</th>
+          <th class="num steep-time">最后</th>
+          <th class="num steep-money">封单</th>
+          <th class="num">炸板</th>`;
   }
 
   function stockRow(row, kind) {
@@ -89,8 +138,10 @@
         <span class="market-stock-code">${row.code || ""}</span>
         <span class="steep-sw-line">${industry}</span>
       </td>
-      <td class="num" data-tone="${tone(row.change_pct)}">${fmtPct(row.change_pct)}</td>
+      ${extraCells(row, kind)}
       <td class="num steep-board-n" data-tone="${tone(row.change_pct)}">${boardText}</td>
+      <td class="num steep-money">${fmtYi(row.amount)}</td>
+      <td class="num steep-money">${fmtYi(row.float_mv)}</td>
     </tr>`;
   }
 
@@ -103,8 +154,10 @@
       <thead>
         <tr>
           <th>名称</th>
-          <th class="num">涨跌</th>
+          ${extraHeads(kind)}
           <th class="num">${boardTitle}</th>
+          <th class="num steep-money">成交额</th>
+          <th class="num steep-money">流通</th>
         </tr>
       </thead>
       <tbody>${body}</tbody>
@@ -168,6 +221,54 @@
     );
   }
 
+  const FOLD_KEY = "steep-row-fold";
+
+  function loadFold() {
+    try {
+      const data = JSON.parse(sessionStorage.getItem(FOLD_KEY) || "null");
+      if (!data || typeof data !== "object") return;
+      state.collapsed.up = !!data.up;
+      state.collapsed.down = !!data.down;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function saveFold() {
+    try {
+      sessionStorage.setItem(FOLD_KEY, JSON.stringify(state.collapsed));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function applyRowFold() {
+    for (const kind of ["up", "down"]) {
+      const row = $(`${kind}Row`);
+      const collapsed = !!state.collapsed[kind];
+      row.classList.toggle("is-collapsed", collapsed);
+      const label = row.querySelector(".steep-matrix-label");
+      if (!label) continue;
+      label.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      label.title = collapsed
+        ? kind === "up"
+          ? "展开涨停"
+          : "展开跌停"
+        : kind === "up"
+          ? "折叠涨停"
+          : "折叠跌停";
+      const caret = label.querySelector(".steep-row-caret");
+      if (caret) caret.textContent = collapsed ? "▸" : "▾";
+    }
+  }
+
+  function toggleRow(kind) {
+    if (kind !== "up" && kind !== "down") return;
+    state.collapsed[kind] = !state.collapsed[kind];
+    applyRowFold();
+    saveFold();
+  }
+
   function renderTracks() {
     const left = $("upScroll").scrollLeft || $("downScroll").scrollLeft || 0;
     $("upTrack").innerHTML = state.items.map((day) => dayCard(day, "up")).join("");
@@ -182,6 +283,7 @@
     renderSort();
     renderSummary();
     renderTracks();
+    applyRowFold();
   }
 
   function togglePane(dateRaw, kind) {
@@ -303,6 +405,8 @@
       const btn = ev.target.closest("button[data-days]");
       if (btn) setDays(btn.dataset.days);
     });
+    $("upRow").querySelector(".steep-matrix-label")?.addEventListener("click", () => toggleRow("up"));
+    $("downRow").querySelector(".steep-matrix-label")?.addEventListener("click", () => toggleRow("down"));
     $("refreshBtn").addEventListener("click", () => void load({ silent: true, refresh: true }));
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) void load({ silent: true });
@@ -322,6 +426,8 @@
     if (head) togglePane(head.dataset.date, head.dataset.kind);
   }
 
+  loadFold();
+  applyRowFold();
   bind();
   void load().then(startPoll);
 })();

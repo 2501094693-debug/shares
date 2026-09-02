@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -21,10 +22,28 @@ _FIELDS = (
 )
 _HEADERS = {"Referer": "https://data.eastmoney.com/zjlx/detail.html"}
 _PAGE = 200
+# push2 当前常被对端直接掐；delay 节点可用。DNS 11001 由 core.http 走 DoH+IP。
 _HOSTS = (
-    "https://push2.eastmoney.com/api/qt/clist/get",
     "https://push2delay.eastmoney.com/api/qt/clist/get",
+    "https://push2.eastmoney.com/api/qt/clist/get",
+    "https://82.push2.eastmoney.com/api/qt/clist/get",
+    "https://88.push2.eastmoney.com/api/qt/clist/get",
+    "https://79.push2.eastmoney.com/api/qt/clist/get",
 )
+
+
+_good_lock = threading.Lock()
+_good_host: str | None = None
+
+
+def _hosts() -> list[str]:
+    with _good_lock:
+        preferred = _good_host
+    hosts = list(_HOSTS)
+    if preferred in hosts:
+        hosts.remove(preferred)
+        hosts.insert(0, preferred)
+    return hosts
 
 
 def _page(pn: int) -> dict[str, Any]:
@@ -41,11 +60,20 @@ def _page(pn: int) -> dict[str, Any]:
         "ut": _UT,
     }
     last_error: Exception | None = None
-    for url in _HOSTS:
+    global _good_host
+    for url in _hosts():
         try:
-            return get_json(url, params=params, headers=_HEADERS, timeout=20)
+            payload = get_json(
+                url, params=params, headers=_HEADERS, timeout=(4, 12), retries=0
+            )
         except Exception as exc:  # noqa: BLE001
             last_error = exc
+            continue
+        if isinstance(payload, dict):
+            with _good_lock:
+                _good_host = url
+            return payload
+        last_error = RuntimeError("东财个股资金流返回非 JSON")
     raise RuntimeError(f"东财个股资金流失败: {last_error}")
 
 

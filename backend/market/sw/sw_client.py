@@ -2,6 +2,7 @@
 
 官方只发布到二级行业；三级没有对应指数。
 站点证书经常不完整，与 akshare 一样关闭校验。
+二级约 124 条，``page_size=200`` 一页拿完，避免连打 3 页时盘中读超时。
 """
 
 from __future__ import annotations
@@ -10,35 +11,27 @@ import math
 from datetime import date, timedelta
 from typing import Any
 
-import requests
-import urllib3
-
 from core.fmt import to_float
+from core.http import get_json
 from .parse import bare_code, change_from_close
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-)
 _LEVEL_TYPE = {1: "一级行业", 2: "二级行业"}
-_PAGE_SIZE = 50
-
-
-def _session() -> requests.Session:
-    sess = requests.Session()
-    sess.trust_env = False
-    sess.verify = False
-    sess.headers.update({"User-Agent": _UA})
-    return sess
+_PAGE_SIZE = 200
+_HEADERS = {
+    "Referer": "https://www.swsresearch.com/institute_sw/allIndex/releasedIndex",
+    "Accept": "application/json, text/plain, */*",
+}
 
 
 def _get_json(url: str, params: dict[str, Any]) -> dict[str, Any]:
-    sess = _session()
-    resp = sess.get(url, params=params, timeout=20)
-    resp.raise_for_status()
-    payload = resp.json()
+    payload = get_json(
+        url,
+        params=params,
+        headers=_HEADERS,
+        timeout=(5, 15),
+        retries=2,
+        verify=False,
+    )
     if not isinstance(payload, dict):
         raise RuntimeError("申万接口返回非 JSON 对象")
     return payload

@@ -4,6 +4,7 @@
 - ``industry``：申万分类、成分股检索、地图标注
 - ``company``：单只股票的盘口、K 线、资讯
 - ``market``：申万行业涨跌、资金流向、行业轮动
+- ``list``：龙虎榜每日上榜与个股历史
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from company.api import router as company_router
 from industry.api import router as industry_router
 from industry.service import service as industry_service
+from list.api import router as list_router
 from market.api import router as market_router
 
 ROOT = _BACKEND_DIR.parent
@@ -104,6 +106,7 @@ app.add_middleware(
 app.include_router(industry_router)
 app.include_router(company_router)
 app.include_router(market_router)
+app.include_router(list_router)
 
 
 @app.get("/api/health")
@@ -138,7 +141,7 @@ def js_market():
 @app.get("/steep.html")
 def steep_page():
     return FileResponse(
-        FRONTEND / "market" / "steep.html",
+        FRONTEND / "steep" / "index.html",
         headers={"Cache-Control": "no-store, max-age=0"},
     )
 
@@ -146,7 +149,26 @@ def steep_page():
 @app.get("/js/steep.js")
 def js_steep():
     return FileResponse(
-        FRONTEND / "market" / "steep.js",
+        FRONTEND / "steep" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+
+@app.get("/list")
+@app.get("/list.html")
+def list_page():
+    return FileResponse(
+        FRONTEND / "list" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/list.js")
+def js_list():
+    return FileResponse(
+        FRONTEND / "list" / "app.js",
         media_type="application/javascript",
         headers={"Cache-Control": "no-store, max-age=0"},
     )
@@ -183,6 +205,11 @@ def js_company():
 # Static assets after API / page routes.
 app.mount("/css", StaticFiles(directory=str(FRONTEND / "shared" / "css")), name="css")
 app.mount("/geo", StaticFiles(directory=str(FRONTEND / "shared" / "geo")), name="geo")
+app.mount(
+    "/js/shared",
+    StaticFiles(directory=str(FRONTEND / "shared" / "js")),
+    name="js_shared",
+)
 # 行业页 ES modules：/js/industry/app.js → ./map/*.js
 app.mount(
     "/js/industry",

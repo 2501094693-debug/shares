@@ -19,6 +19,8 @@
   --l3: #2ad4b8;
   --shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
   --radius: 4px;
+  --rail-w: 76px;
+  --rail-h: 0px;
   --font: "Noto Sans SC", "PingFang SC", sans-serif;
   --display: "Oxanium", "Noto Sans SC", sans-serif;
   --mono: "JetBrains Mono", "Consolas", monospace;
@@ -63,6 +65,237 @@ body {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
+}
+
+/* —— 应用壳：左侧模块导航 —— */
+html.app-shell-root,
+html.app-shell-root body.app-shell {
+  height: 100%;
+}
+
+body.app-shell {
+  display: flex;
+  min-height: 100dvh;
+}
+
+body.app-shell.market-page-root,
+body.app-shell.lhb-page-root,
+html.map-app-root body.app-shell.map-app {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.app-rail {
+  flex: 0 0 var(--rail-w);
+  width: var(--rail-w);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 8px;
+  z-index: 30;
+  background:
+    var(--grid),
+    linear-gradient(180deg, rgba(42, 212, 184, 0.08), transparent 32%),
+    rgba(7, 11, 18, 0.96);
+  background-size: 22px 22px, auto, auto;
+  border-right: 1px solid var(--line);
+  box-shadow: inset -1px 0 0 rgba(42, 212, 184, 0.04);
+}
+
+.app-rail-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px 10px;
+  text-decoration: none;
+  color: var(--accent);
+  border-bottom: 1px solid var(--line);
+}
+
+.app-rail-mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 16px rgba(42, 212, 184, 0.16);
+  font-family: var(--display);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.app-rail-word {
+  font-family: var(--display);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+
+.app-rail-links {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.app-rail-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--muted);
+  text-decoration: none;
+  font-family: var(--display);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.app-rail-link:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--line);
+}
+
+.app-rail-link.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--line-strong);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.app-rail-ico {
+  font-size: 0.95rem;
+  line-height: 1;
+  opacity: 0.9;
+}
+
+.app-stage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+body.app-shell.company-page-root:not(.market-page-root) {
+  height: auto;
+  min-height: 100dvh;
+  overflow: auto;
+}
+
+body.app-shell.company-page-root:not(.market-page-root) .app-stage {
+  overflow: visible;
+  height: auto;
+}
+
+body.app-shell.company-page-root:has(.company-panel[data-panel="charts"].is-active) {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body.app-shell.company-page-root:has(.company-panel[data-panel="charts"].is-active) .app-stage {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+body.app-shell.company-page-root:has(.company-panel[data-panel="charts"].is-active) .app.company-page {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  max-height: none;
+}
+
+body.app-shell.market-page-root .app-stage {
+  display: flex;
+  flex-direction: column;
+}
+
+body.app-shell .market-page {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+body.app-shell .company-page.app {
+  min-height: 0;
+}
+
+body.app-shell.company-page-root:not(.market-page-root) .company-page.app {
+  min-height: calc(100dvh - 0px);
+}
+
+body.app-shell .topbar .brand-mark {
+  display: none;
+}
+
+body.app-shell .market-page .topbar {
+  padding: 10px 14px;
+}
+
+body.app-shell .market-page .brand h1 {
+  font-size: 1.1rem;
+}
+
+@media (max-width: 800px) {
+  :root {
+    --rail-w: 0px;
+    --rail-h: 58px;
+  }
+
+  body.app-shell {
+    flex-direction: column;
+  }
+
+  .app-rail {
+    order: 2;
+    flex: 0 0 var(--rail-h);
+    width: 100%;
+    height: var(--rail-h);
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-right: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .app-rail-brand {
+    display: none;
+  }
+
+  .app-rail-links {
+    flex: 1;
+    flex-direction: row;
+  }
+
+  .app-rail-link {
+    flex: 1;
+    padding: 6px 4px;
+  }
+
+  .app-rail-link.is-active {
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+
+  body.app-shell.market-page-root,
+  body.app-shell.lhb-page-root,
+  html.map-app-root body.app-shell.map-app {
+    height: 100dvh;
+  }
+
+  body.app-shell .app-stage {
+    height: calc(100dvh - var(--rail-h));
+  }
 }
 
 .app {
@@ -2433,9 +2666,9 @@ body.map-app {
   color: var(--ink);
 }
 
-body.map-app::before {
+body.map-app .app-stage::before {
   content: "";
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
@@ -2444,9 +2677,9 @@ body.map-app::before {
     linear-gradient(180deg, rgba(42, 212, 184, 0.04), transparent 18%, transparent 82%, rgba(5, 8, 15, 0.35));
 }
 
-body.map-app::after {
+body.map-app .app-stage::after {
   content: "";
-  position: fixed;
+  position: absolute;
   inset: 10px;
   z-index: 1;
   pointer-events: none;
@@ -2457,12 +2690,11 @@ body.map-app::after {
 }
 
 body.map-app .map-stage {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 0;
-  width: 100vw;
-  height: 100vh;
-  height: 100dvh;
+  width: 100%;
+  height: 100%;
   margin: 0;
   padding: 0;
   touch-action: none;
@@ -2493,7 +2725,7 @@ body.map-app .map-stage .amap-copyright {
 }
 
 body.map-app .hud {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 2;
   pointer-events: none;
@@ -3516,13 +3748,18 @@ body.market-page-root {
 .market-table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout: auto;
   font-size: 0.84rem;
+}
+
+.market-pane .market-table {
+  width: max-content;
+  min-width: 100%;
 }
 
 .market-table th,
 .market-table td {
-  padding: 8px 10px;
+  padding: 8px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -3535,15 +3772,46 @@ body.market-page-root {
   font-family: var(--display);
   font-size: 0.68rem;
   font-weight: 500;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.market-pane .market-table thead th:first-child,
+.market-pane .market-table .is-row td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 5.6rem;
+  max-width: 7.2rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #090e18;
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.06);
+}
+
+.market-pane .market-table thead th:first-child {
+  z-index: 3;
+  background: rgba(9, 14, 24, 0.96);
+}
+
+.market-pane .market-table .is-row:hover td:first-child {
+  background: #101a22;
+}
+
+.market-pane .market-table .is-row.is-active td:first-child {
+  background: #10241e;
 }
 
 .market-table th.num,
 .market-table td.num {
-  width: 5.4rem;
+  min-width: 3.6rem;
+  padding-left: 6px;
+  padding-right: 8px;
   text-align: right;
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .market-table td.num[data-tone="up"] {
@@ -3642,19 +3910,55 @@ body.market-page-root {
   overflow: hidden;
 }
 
+.steep-matrix-row.is-collapsed {
+  flex: 0 0 2.2rem;
+  min-height: 2.2rem;
+  height: 2.2rem;
+}
+
 .steep-matrix-label {
+  appearance: none;
   flex: none;
   width: 2.4rem;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
   writing-mode: vertical-rl;
   letter-spacing: 0.18em;
   font-family: var(--display);
   font-size: 0.82rem;
   font-weight: 600;
+  border: 0;
   border-right: 1px solid var(--line);
   background: rgba(9, 14, 24, 0.96);
+  color: inherit;
+  cursor: pointer;
+}
+
+.steep-matrix-label:hover {
+  background: rgba(42, 212, 184, 0.08);
+}
+
+.steep-row-caret {
+  writing-mode: horizontal-tb;
+  letter-spacing: 0;
+  font-size: 0.72rem;
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.steep-matrix-row.is-collapsed .steep-matrix-label {
+  writing-mode: horizontal-tb;
+  width: 100%;
+  letter-spacing: 0.2em;
+  border-right: 0;
+}
+
+.steep-matrix-row.is-collapsed .steep-matrix-scroll {
+  display: none;
 }
 
 .steep-matrix-label[data-tone="up"] {
@@ -3672,6 +3976,12 @@ body.market-page-root {
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.steep-matrix-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .steep-matrix-track {
@@ -3700,7 +4010,7 @@ body.market-page-root {
 }
 
 .steep-day.is-open {
-  width: 520px;
+  width: 860px;
 }
 
 .steep-day-head {
@@ -3773,7 +4083,12 @@ body.market-page-root {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.steep-day-body::-webkit-scrollbar {
+  display: none;
 }
 
 .steep-day-body[hidden] {
@@ -3786,7 +4101,17 @@ body.market-page-root {
 
 .steep-mini th.num,
 .steep-mini td.num {
-  width: 3.8rem;
+  min-width: 3.6rem;
+}
+
+.steep-mini th.num.steep-money,
+.steep-mini td.num.steep-money {
+  min-width: 4.4rem;
+}
+
+.steep-mini th.num.steep-time,
+.steep-mini td.num.steep-time {
+  min-width: 4.8rem;
 }
 
 .steep-sw-line {
@@ -3814,6 +4139,242 @@ body.market-page-root {
   }
 
   .steep-day.is-open {
-    width: 420px;
+    width: 720px;
+  }
+}
+
+
+/* —— 龙虎榜 —— */
+.lhb-page-root {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.lhb-page .lhb-toolbar {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.lhb-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lhb-controls.hidden,
+.lhb-suggest.hidden {
+  display: none;
+}
+
+.lhb-date-box input,
+.lhb-stock-box input,
+.lhb-filter-box input {
+  min-width: 180px;
+}
+
+.lhb-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.lhb-list-pane,
+.lhb-detail-pane {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.lhb-pane-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.lhb-pane-head h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.lhb-list-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lhb-list-scroll,
+.lhb-detail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.lhb-list-scroll::-webkit-scrollbar,
+.lhb-detail-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.lhb-detail-scroll {
+  padding: 12px;
+}
+
+.lhb-table {
+  width: 100%;
+}
+
+.lhb-table .lhb-name {
+  display: block;
+  font-weight: 600;
+}
+
+.lhb-date {
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.lhb-detail-identity h2 {
+  margin: 0;
+}
+
+.lhb-detail-identity p {
+  margin: 4px 0 0;
+}
+
+.lhb-detail-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.lhb-detail-empty {
+  padding: 48px 16px;
+  text-align: center;
+}
+
+.lhb-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 14px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.lhb-metrics b {
+  color: var(--ink);
+  font-family: var(--mono);
+}
+
+.lhb-metrics [data-tone="up"] b {
+  color: var(--up);
+}
+
+.lhb-metrics [data-tone="down"] b {
+  color: var(--down);
+}
+
+.lhb-listing + .lhb-listing {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.lhb-reason-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.lhb-seat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.lhb-seats h4 {
+  margin: 0 0 8px;
+  font-family: var(--display);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.lhb-seat-table {
+  font-size: 0.8rem;
+}
+
+.lhb-dept-type {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-size: 0.68rem;
+  color: var(--accent);
+}
+
+.lhb-dept-type[data-type="机构"] {
+  color: var(--accent-hot);
+  border-color: rgba(240, 180, 41, 0.4);
+}
+
+.lhb-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.lhb-suggest-item {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: rgba(42, 212, 184, 0.06);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.lhb-suggest-item:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (max-width: 1100px) {
+  .lhb-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(220px, 38vh) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .lhb-seat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lhb-date-box input,
+  .lhb-stock-box input,
+  .lhb-filter-box input {
+    min-width: 0;
+    width: 100%;
   }
 }

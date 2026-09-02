@@ -9,6 +9,7 @@ CACHE_DIR = Path(__file__).resolve().parents[1] / "cache"
 
 CONS_CACHE_DIR = CACHE_DIR / "cons"
 NEWS_CACHE_DIR = CACHE_DIR / "news"
+LIST_CACHE_DIR = CACHE_DIR / "list"
 
 TREE_CACHE = CACHE_DIR / "industry_tree.json"
 STOCK_INDEX_CACHE = CACHE_DIR / "stocks_index.json"
@@ -24,6 +25,7 @@ def ensure_cache_dirs() -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     CONS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     NEWS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    LIST_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def cons_cache_path(l3_code: str) -> Path:

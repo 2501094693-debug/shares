@@ -1,26 +1,51 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="app-shell-root">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>公司详情</title>
+  <title>ORBIT · 公司详情</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=company-hover-right-20260826" />
+  <link rel="stylesheet" href="/css/style.css?v=orbit-shell-20260902" />
 </head>
-<body class="company-page-root">
+<body class="app-shell company-page-root">
+  <nav class="app-rail" aria-label="主导航">
+    <a class="app-rail-brand" href="/" title="ORBIT 申万终端">
+      <span class="app-rail-mark">OR</span>
+      <span class="app-rail-word">ORBIT</span>
+    </a>
+    <div class="app-rail-links">
+      <a class="app-rail-link" href="/" data-nav="industry" title="行业树 · 地图与分类">
+        <span class="app-rail-ico" aria-hidden="true">◈</span>
+        <span>行业树</span>
+      </a>
+      <a class="app-rail-link" href="/market" data-nav="market" title="行业行情 · 涨跌与资金">
+        <span class="app-rail-ico" aria-hidden="true">▣</span>
+        <span>行情</span>
+      </a>
+      <a class="app-rail-link" href="/steep" data-nav="steep" title="涨跌停 · 多日名单">
+        <span class="app-rail-ico" aria-hidden="true">↕</span>
+        <span>涨跌停</span>
+      </a>
+      <a class="app-rail-link" href="/list" data-nav="list" title="龙虎榜 · 席位明细">
+        <span class="app-rail-ico" aria-hidden="true">≡</span>
+        <span>龙虎榜</span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="app-stage">
   <div class="app company-page">
     <header class="topbar company-topbar">
       <div class="brand">
-        <span class="brand-mark">SW</span>
         <div>
           <h1 id="pageTitle">公司详情</h1>
           <p id="pageSub" class="company-page-sub">概览 · 走势 · 资讯</p>
         </div>
       </div>
       <div class="top-actions">
-        <a id="backLink" class="btn ghost" href="/">返回列表</a>
+        <a id="backLink" class="btn ghost" href="/">返回行业树</a>
         <button id="refreshNewsBtn" class="btn ghost" type="button" hidden>刷新资讯</button>
       </div>
     </header>
@@ -296,7 +321,9 @@
 
     <div id="errorBox" class="error hidden"></div>
   </div>
+  </div>
 
+  <script src="/js/shared/nav.js?v=orbit-shell-20260902"></script>
   <script src="/js/company.js?v=company-live-poll-20260827"></script>
 </body>
 </html>

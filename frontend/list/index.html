@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="app-shell-root">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ORBIT · 龙虎榜</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css?v=orbit-shell-20260902" />
+</head>
+<body class="app-shell company-page-root market-page-root lhb-page-root" data-nav="list">
+  <nav class="app-rail" aria-label="主导航">
+    <a class="app-rail-brand" href="/" title="ORBIT 申万终端">
+      <span class="app-rail-mark">OR</span>
+      <span class="app-rail-word">ORBIT</span>
+    </a>
+    <div class="app-rail-links">
+      <a class="app-rail-link" href="/" data-nav="industry" title="行业树 · 地图与分类">
+        <span class="app-rail-ico" aria-hidden="true">◈</span>
+        <span>行业树</span>
+      </a>
+      <a class="app-rail-link" href="/market" data-nav="market" title="行业行情 · 涨跌与资金">
+        <span class="app-rail-ico" aria-hidden="true">▣</span>
+        <span>行情</span>
+      </a>
+      <a class="app-rail-link" href="/steep" data-nav="steep" title="涨跌停 · 多日名单">
+        <span class="app-rail-ico" aria-hidden="true">↕</span>
+        <span>涨跌停</span>
+      </a>
+      <a class="app-rail-link" href="/list" data-nav="list" title="龙虎榜 · 席位明细">
+        <span class="app-rail-ico" aria-hidden="true">≡</span>
+        <span>龙虎榜</span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="app-stage">
+    <div class="app company-page market-page lhb-page">
+      <header class="topbar company-topbar">
+        <div class="brand">
+          <div>
+            <h1>龙虎榜</h1>
+            <p class="company-page-sub">左侧选股票，右侧看买卖席位；也可按一只股票回看历史上榜</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button id="refreshBtn" class="btn ghost" type="button">刷新</button>
+        </div>
+      </header>
+
+      <div class="market-toolbar lhb-toolbar">
+        <div id="modeSeg" class="market-seg" role="tablist" aria-label="查询方式">
+          <button type="button" data-mode="daily" class="is-active">每日上榜</button>
+          <button type="button" data-mode="stock">个股历史</button>
+        </div>
+        <div id="dailyControls" class="lhb-controls">
+          <button id="prevDayBtn" class="btn ghost" type="button" title="上一日">‹</button>
+          <label class="search-box lhb-date-box">
+            <span class="sr-only">交易日</span>
+            <input id="dateInput" type="date" />
+          </label>
+          <button id="nextDayBtn" class="btn ghost" type="button" title="下一日">›</button>
+        </div>
+        <div id="stockControls" class="lhb-controls hidden">
+          <label class="search-box lhb-stock-box">
+            <span class="sr-only">股票代码或名称</span>
+            <input id="stockInput" type="search" placeholder="代码或名称，如 000001 / 平安银行" autocomplete="off" />
+          </label>
+          <button id="stockSearchBtn" class="btn ghost" type="button">查询</button>
+        </div>
+        <div class="market-toolbar-tail">
+          <div id="summaryBar" class="market-summary"></div>
+          <span id="liveDot" class="market-live" data-state="idle">IDLE</span>
+          <span id="marketMeta" class="muted market-meta"></span>
+        </div>
+      </div>
+
+      <div id="errorBox" class="error hidden"></div>
+      <div id="loading" class="loading hidden">正在加载…</div>
+      <div id="suggestBox" class="lhb-suggest hidden"></div>
+
+      <div class="lhb-layout">
+        <aside class="lhb-list-pane">
+          <header class="lhb-pane-head">
+            <h2 id="listTitle">上榜股票</h2>
+            <div class="lhb-list-tools">
+              <label class="search-box lhb-filter-box">
+                <span class="sr-only">筛选</span>
+                <input id="filterInput" type="search" placeholder="筛选代码 / 名称 / 行业 / 原因" autocomplete="off" />
+              </label>
+              <div id="sortSeg" class="market-seg" role="group" aria-label="排序">
+                <button type="button" data-sort="date">日期</button>
+                <button type="button" data-sort="net" class="is-active">净买</button>
+                <button type="button" data-sort="change">涨跌</button>
+                <button type="button" data-sort="turnover">换手</button>
+              </div>
+            </div>
+          </header>
+          <div class="lhb-list-scroll">
+            <table class="market-table lhb-table">
+              <thead id="tableHead"></thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+        </aside>
+        <section class="lhb-detail-pane">
+          <header class="lhb-pane-head" id="detailHead">
+            <h2>买卖席位</h2>
+            <p class="muted">点左侧一行查看买入 / 卖出营业部</p>
+          </header>
+          <div id="detailBody" class="lhb-detail-scroll"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+  <script src="/js/shared/nav.js?v=orbit-shell-20260902"></script>
+  <script src="/js/list.js?v=orbit-shell-20260902"></script>
+</body>
+</html>

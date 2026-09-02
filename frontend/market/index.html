@@ -1,133 +1,158 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="app-shell-root">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>申万行业行情</title>
+  <title>ORBIT · 行业行情</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=market-limit-count-20260901" />
+  <link rel="stylesheet" href="/css/style.css?v=orbit-shell-20260902" />
 </head>
-<body class="company-page-root market-page-root">
-  <div class="app company-page market-page">
-    <header class="topbar company-topbar">
-      <div class="brand">
-        <span class="brand-mark">SW</span>
-        <div>
-          <h1>行业行情</h1>
-          <p class="company-page-sub">一级 → 二级 → 三级 → 成分股，每张表按涨跌排序</p>
-        </div>
-      </div>
-      <div class="top-actions">
-        <a class="btn ghost" href="/steep">涨跌停</a>
-        <a class="btn ghost" href="/">返回星图</a>
-        <button id="refreshBtn" class="btn ghost" type="button">刷新</button>
-      </div>
-    </header>
-
-    <div class="market-toolbar">
-      <div id="summaryBar" class="market-summary"></div>
-      <div class="market-toolbar-tail">
-        <span id="liveDot" class="market-live" data-state="idle">LIVE</span>
-        <span id="marketMeta" class="muted market-meta"></span>
-      </div>
+<body class="app-shell company-page-root market-page-root" data-nav="market">
+  <nav class="app-rail" aria-label="主导航">
+    <a class="app-rail-brand" href="/" title="ORBIT 申万终端">
+      <span class="app-rail-mark">OR</span>
+      <span class="app-rail-word">ORBIT</span>
+    </a>
+    <div class="app-rail-links">
+      <a class="app-rail-link" href="/" data-nav="industry" title="行业树 · 地图与分类">
+        <span class="app-rail-ico" aria-hidden="true">◈</span>
+        <span>行业树</span>
+      </a>
+      <a class="app-rail-link" href="/market" data-nav="market" title="行业行情 · 涨跌与资金">
+        <span class="app-rail-ico" aria-hidden="true">▣</span>
+        <span>行情</span>
+      </a>
+      <a class="app-rail-link" href="/steep" data-nav="steep" title="涨跌停 · 多日名单">
+        <span class="app-rail-ico" aria-hidden="true">↕</span>
+        <span>涨跌停</span>
+      </a>
+      <a class="app-rail-link" href="/list" data-nav="list" title="龙虎榜 · 席位明细">
+        <span class="app-rail-ico" aria-hidden="true">≡</span>
+        <span>龙虎榜</span>
+      </a>
     </div>
+  </nav>
 
-    <div id="errorBox" class="error hidden"></div>
-    <div id="loading" class="loading hidden">正在加载…</div>
+  <div class="app-stage">
+    <div class="app company-page market-page">
+      <header class="topbar company-topbar">
+        <div class="brand">
+          <div>
+            <h1>行业行情</h1>
+            <p class="company-page-sub">一级 → 二级 → 三级 → 成分股，每张表按涨跌排序</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button id="refreshBtn" class="btn ghost" type="button">刷新</button>
+        </div>
+      </header>
 
-    <div class="market-board">
-      <section class="market-pane" data-level="1">
-        <header class="market-pane-head">
-          <h2>一级行业</h2>
-          <span id="l1Hint" class="market-pane-hint">按涨跌</span>
-        </header>
-        <div class="market-pane-scroll">
-          <table class="market-table">
-            <thead>
-              <tr>
-                <th>名称</th>
-                <th class="num">涨跌</th>
-                <th class="num">上涨(涨停)</th>
-                <th class="num">下跌(跌停)</th>
-                <th class="num">今日资金</th>
-                <th class="num">5日资金</th>
-                <th class="num">10日资金</th>
-              </tr>
-            </thead>
-            <tbody id="l1Body"></tbody>
-          </table>
+      <div class="market-toolbar">
+        <div id="summaryBar" class="market-summary"></div>
+        <div class="market-toolbar-tail">
+          <span id="liveDot" class="market-live" data-state="idle">LIVE</span>
+          <span id="marketMeta" class="muted market-meta"></span>
         </div>
-      </section>
-      <section class="market-pane" data-level="2">
-        <header class="market-pane-head">
-          <h2>二级行业</h2>
-          <span id="l2Hint" class="market-pane-hint">点一级后展开</span>
-        </header>
-        <div class="market-pane-scroll">
-          <table class="market-table">
-            <thead>
-              <tr>
-                <th>名称</th>
-                <th class="num">涨跌</th>
-                <th class="num">上涨(涨停)</th>
-                <th class="num">下跌(跌停)</th>
-                <th class="num">今日资金</th>
-                <th class="num">5日资金</th>
-                <th class="num">10日资金</th>
-              </tr>
-            </thead>
-            <tbody id="l2Body"></tbody>
-          </table>
-        </div>
-      </section>
-      <section class="market-pane" data-level="3">
-        <header class="market-pane-head">
-          <h2>三级行业</h2>
-          <span id="l3Hint" class="market-pane-hint">点二级后展开</span>
-        </header>
-        <div class="market-pane-scroll">
-          <table class="market-table">
-            <thead>
-              <tr>
-                <th>名称</th>
-                <th class="num">涨跌</th>
-                <th class="num">上涨(涨停)</th>
-                <th class="num">下跌(跌停)</th>
-                <th class="num">今日资金</th>
-                <th class="num">5日资金</th>
-                <th class="num">10日资金</th>
-              </tr>
-            </thead>
-            <tbody id="l3Body"></tbody>
-          </table>
-        </div>
-      </section>
-      <section class="market-pane" data-level="4">
-        <header class="market-pane-head">
-          <h2>成分股</h2>
-          <span id="l4Hint" class="market-pane-hint">点三级后展开</span>
-        </header>
-        <div class="market-pane-scroll">
-          <table class="market-table">
-            <thead>
-              <tr>
-                <th>名称</th>
-                <th class="num">涨跌</th>
-                <th class="num">PE(TTM)</th>
-                <th class="num">PB</th>
-                <th class="num">今日资金</th>
-                <th class="num">5日资金</th>
-                <th class="num">10日资金</th>
-              </tr>
-            </thead>
-            <tbody id="l4Body"></tbody>
-          </table>
-        </div>
-      </section>
+      </div>
+
+      <div id="errorBox" class="error hidden"></div>
+      <div id="loading" class="loading hidden">正在加载…</div>
+
+      <div class="market-board">
+        <section class="market-pane" data-level="1">
+          <header class="market-pane-head">
+            <h2>一级行业</h2>
+            <span id="l1Hint" class="market-pane-hint">按涨跌</span>
+          </header>
+          <div class="market-pane-scroll">
+            <table class="market-table">
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th class="num">涨跌</th>
+                  <th class="num">涨(停)</th>
+                  <th class="num">跌(停)</th>
+                  <th class="num">今日</th>
+                  <th class="num">5日</th>
+                  <th class="num">10日</th>
+                </tr>
+              </thead>
+              <tbody id="l1Body"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="market-pane" data-level="2">
+          <header class="market-pane-head">
+            <h2>二级行业</h2>
+            <span id="l2Hint" class="market-pane-hint">点一级后展开</span>
+          </header>
+          <div class="market-pane-scroll">
+            <table class="market-table">
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th class="num">涨跌</th>
+                  <th class="num">涨(停)</th>
+                  <th class="num">跌(停)</th>
+                  <th class="num">今日</th>
+                  <th class="num">5日</th>
+                  <th class="num">10日</th>
+                </tr>
+              </thead>
+              <tbody id="l2Body"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="market-pane" data-level="3">
+          <header class="market-pane-head">
+            <h2>三级行业</h2>
+            <span id="l3Hint" class="market-pane-hint">点二级后展开</span>
+          </header>
+          <div class="market-pane-scroll">
+            <table class="market-table">
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th class="num">涨跌</th>
+                  <th class="num">涨(停)</th>
+                  <th class="num">跌(停)</th>
+                  <th class="num">今日</th>
+                  <th class="num">5日</th>
+                  <th class="num">10日</th>
+                </tr>
+              </thead>
+              <tbody id="l3Body"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="market-pane" data-level="4">
+          <header class="market-pane-head">
+            <h2>成分股</h2>
+            <span id="l4Hint" class="market-pane-hint">点三级后展开</span>
+          </header>
+          <div class="market-pane-scroll">
+            <table class="market-table">
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th class="num">涨跌</th>
+                  <th class="num">PE</th>
+                  <th class="num">PB</th>
+                  <th class="num">今日</th>
+                  <th class="num">5日</th>
+                  <th class="num">10日</th>
+                </tr>
+              </thead>
+              <tbody id="l4Body"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </div>
   </div>
-  <script src="/js/market.js?v=market-em-limitpool-20260901"></script>
+  <script src="/js/shared/nav.js?v=orbit-shell-20260902"></script>
+  <script src="/js/market.js?v=orbit-shell-20260902"></script>
 </body>
 </html>

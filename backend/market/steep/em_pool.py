@@ -13,7 +13,7 @@ _UT = "7eea3edcaed734bea9cbfc24409ed989"
 _DPT = "wz.ztzt"
 _BASE = "https://push2ex.eastmoney.com"
 _HEADERS = {"Referer": "https://quote.eastmoney.com/ztb/"}
-_PAGE_SIZE = 10000
+_PAGE_SIZE = 500
 
 _ZT = ("getTopicZTPool", "fbt:asc")
 _DT = ("getTopicDTPool", "fund:asc")
@@ -66,7 +66,13 @@ def _fetch(endpoint: str, sort: str, date: str) -> list[dict[str, Any]]:
         "date": date,
         "_": str(int(time.time() * 1000)),
     }
-    payload = get_json(f"{_BASE}/{endpoint}", params=params, headers=_HEADERS, timeout=20)
+    payload = get_json(
+        f"{_BASE}/{endpoint}",
+        params=params,
+        headers=_HEADERS,
+        timeout=(5, 12),
+        retries=2,
+    )
     if not isinstance(payload, dict):
         return []
     return _rows(payload)
@@ -113,8 +119,12 @@ def _parse_limit_down(item: dict[str, Any]) -> dict[str, Any] | None:
         {
             "down_days": int(to_float(item.get("days")) or 0),
             "open_count": int(to_float(item.get("oc")) or 0),
+            "first_seal": _fmt_time(item.get("fbt")),
             "last_seal": _fmt_time(item.get("lbt")),
             "seal_fund": to_float(item.get("fund")),
+            "break_count": int(
+                to_float(item.get("zbc")) or to_float(item.get("oc")) or 0
+            ),
             "board_amount": to_float(item.get("fba")),
             "pe": to_float(item.get("pe")),
         }
