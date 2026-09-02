@@ -4,32 +4,193 @@ const nameHint = (params.get("name") || "").trim();
 const industry = (params.get("industry") || "").trim();
 
 const DEFAULT_DAYS = 3;
-/** 后端未返回 full_days 时的兜底（约 50 年） */
-const FULL_DAYS = 365 * 50 + 5;
+const CNINFO_DEFAULT_DAYS = 365;
+const EXCHANGE_DEFAULT_DAYS = 365;
+const PRESS_DEFAULT_DAYS = 30;
+const PLATFORM_DEFAULT_DAYS = 30;
+const CNINFO_TAB_LABELS = {
+  fulltext: "公告",
+  relation: "调研",
+  supervise: "督导",
+};
+const EXCHANGE_TAB_LABELS = {
+  bulletin: "公告",
+  inquiries: "问询",
+};
+const EXCHANGE_MARKET_TITLES = {
+  sse: "上交所公告",
+  szse: "深交所公告",
+  bse: "北交所公告",
+};
 
-const KINDS = [
-  { key: "exchange", title: "交易所公告", empty: "暂无交易所公告" },
-  { key: "cninfo", title: "巨潮公告", empty: "暂无巨潮公告" },
-  { key: "designated_press", title: "七报七网", empty: "暂无指定披露媒体新闻" },
-  { key: "official_news", title: "官方新闻", empty: "暂无官方新闻" },
-  { key: "other_news", title: "其他新闻", empty: "暂无其他外部新闻" },
-  { key: "reports", title: "机构研报", empty: "暂无机构研报" },
+const PRESS_OUTLETS = [
+  {
+    id: "cs",
+    name: "中证网",
+    paper: "中国证券报",
+    filters: [
+      { key: "field", label: "范围", options: [["all", "全部"], ["title", "标题"], ["content", "正文"]] },
+      { key: "sort", label: "排序", options: [["time", "时间"], ["relevance", "相关度"]] },
+    ],
+  },
+  {
+    id: "cnstock",
+    name: "中国证券网",
+    paper: "上海证券报",
+    filters: [
+      {
+        key: "type",
+        label: "类型",
+        options: [
+          ["news", "新闻"],
+          ["all", "全部"],
+          ["video", "视频"],
+          ["topic", "专题"],
+          ["activity", "活动"],
+          ["roadshow", "路演"],
+          ["stock", "股票"],
+        ],
+      },
+    ],
+  },
+  {
+    id: "stcn",
+    name: "证券时报网",
+    paper: "证券时报",
+    filters: [
+      {
+        key: "type",
+        label: "类型",
+        options: [
+          ["news", "资讯"],
+          ["all", "全部"],
+          ["report", "公告"],
+          ["activity", "直播"],
+          ["video", "视频"],
+          ["topic", "专题"],
+          ["stock", "股票"],
+        ],
+      },
+      { key: "sort", label: "排序", options: [["time", "时间"], ["relevance", "相关度"]] },
+    ],
+  },
+  {
+    id: "zqrb",
+    name: "证券日报网",
+    paper: "证券日报",
+    filters: [
+      { key: "src", label: "来源", options: [["news", "新闻"], ["all", "全部"], ["epaper", "电子报"]] },
+      { key: "field", label: "范围", options: [["title", "标题"], ["all", "全文"], ["author", "作者"]] },
+      { key: "sort", label: "排序", options: [["time", "时间"], ["relevance", "相关度"]] },
+    ],
+  },
+  {
+    id: "financialnews",
+    name: "金融时报网",
+    paper: "金融时报",
+    filters: [
+      { key: "field", label: "范围", options: [["all", "全文"], ["title", "标题"], ["content", "正文"], ["author", "作者"]] },
+      { key: "sort", label: "排序", options: [["time", "时间"], ["relevance", "相关度"]] },
+    ],
+  },
+  { id: "jjckb", name: "经济参考网", paper: "经济参考报", filters: [] },
+  {
+    id: "chinadaily",
+    name: "中国日报网",
+    paper: "中国日报",
+    filters: [
+      { key: "type", label: "类型", options: [["story", "文章"], ["comment", "评论"], ["blog", "博客"], ["photo", "图片"]] },
+      { key: "sort", label: "排序", options: [["time", "最新"], ["oldest", "最早"], ["relevance", "相关度"]] },
+    ],
+  },
 ];
 
-/** @type {Record<string, { days: number, fullDays: number, items: any[], loading: boolean, exhausted: boolean, updatedAt: string }>} */
-const sectionState = Object.fromEntries(
-  KINDS.map(({ key }) => [
-    key,
-    {
-      days: DEFAULT_DAYS,
-      fullDays: FULL_DAYS,
-      items: [],
-      loading: false,
-      exhausted: false,
-      updatedAt: "",
+const PLATFORM_HUBS = [
+  {
+    id: "ths",
+    name: "同花顺",
+    tabs: [
+      { id: "news", label: "新闻" },
+      { id: "notices", label: "公告" },
+      { id: "reports", label: "研报" },
+    ],
+    extras: {
+      notices: [
+        {
+          key: "classify",
+          label: "分类",
+          options: [
+            ["all", "全部"],
+            ["earnings", "业绩"],
+            ["major", "重大事项"],
+            ["share", "股份变动"],
+            ["resolution", "决议"],
+          ],
+        },
+      ],
     },
-  ])
-);
+  },
+  {
+    id: "xueqiu",
+    name: "雪球",
+    tabs: [
+      { id: "news", label: "资讯" },
+      { id: "notices", label: "公告" },
+      { id: "reports", label: "研报" },
+    ],
+    extras: {
+      reports: [
+        {
+          key: "sort",
+          label: "排序",
+          options: [
+            ["time", "时间"],
+            ["alpha", "热度"],
+            ["reply", "评论"],
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: "eastmoney",
+    name: "东方财富",
+    tabs: [
+      { id: "news", label: "新闻" },
+      { id: "f10", label: "F10" },
+      { id: "notices", label: "公告" },
+    ],
+    extras: {
+      news: [
+        {
+          key: "type",
+          label: "类型",
+          options: [
+            ["old", "新闻索引"],
+            ["web", "网页"],
+            ["all", "全部"],
+          ],
+        },
+        {
+          key: "scope",
+          label: "范围",
+          options: [
+            ["default", "A股"],
+            ["global", "全球"],
+          ],
+        },
+        {
+          key: "sort",
+          label: "排序",
+          options: [
+            ["time", "时间"],
+            ["relevance", "相关度"],
+          ],
+        },
+      ],
+    },
+  },
+];
 
 const els = {
   pageTitle: document.getElementById("pageTitle"),
@@ -58,6 +219,7 @@ const els = {
   ticksChartAxisScroll: document.getElementById("ticksChartAxisScroll"),
   ticksChartScrollBar: document.getElementById("ticksChartScrollBar"),
   peSeriesSelect: document.getElementById("peSeriesSelect"),
+  peSeriesWrap: document.getElementById("peSeriesWrap"),
   peChartMeta: document.getElementById("peChartMeta"),
   peChartHoverCard: document.getElementById("peChartHoverCard"),
   peChartWrap: document.getElementById("peChartWrap"),
@@ -74,15 +236,112 @@ const els = {
   turnoverChartScrollBar: document.getElementById("turnoverChartScrollBar"),
   refreshNewsBtn: document.getElementById("refreshNewsBtn"),
   companyMainTabs: document.getElementById("companyMainTabs"),
-  newsTabs: document.getElementById("newsTabs"),
-  newsHubMeta: document.getElementById("newsHubMeta"),
+  exchangeForm: document.getElementById("exchangeForm"),
+  exchangeTabs: document.getElementById("exchangeTabs"),
+  exchangeTitle: document.getElementById("exchangeTitle"),
+  exchangeCategory: document.getElementById("exchangeCategory"),
+  exchangeDays: document.getElementById("exchangeDays"),
+  exchangeStart: document.getElementById("exchangeStart"),
+  exchangeEnd: document.getElementById("exchangeEnd"),
+  exchangeStartWrap: document.getElementById("exchangeStartWrap"),
+  exchangeEndWrap: document.getElementById("exchangeEndWrap"),
+  exchangeKeyword: document.getElementById("exchangeKeyword"),
+  exchangeQueryBtn: document.getElementById("exchangeQueryBtn"),
+  exchangeMeta: document.getElementById("exchangeMeta"),
+  exchangeHint: document.getElementById("exchangeHint"),
+  exchangeBody: document.getElementById("exchangeBody"),
+  exchangeList: document.getElementById("exchangeList"),
+  pressForm: document.getElementById("pressForm"),
+  pressTabs: document.getElementById("pressTabs"),
+  pressTitle: document.getElementById("pressTitle"),
+  pressExtraRow: document.getElementById("pressExtraRow"),
+  pressDays: document.getElementById("pressDays"),
+  pressStart: document.getElementById("pressStart"),
+  pressEnd: document.getElementById("pressEnd"),
+  pressStartWrap: document.getElementById("pressStartWrap"),
+  pressEndWrap: document.getElementById("pressEndWrap"),
+  pressKeyword: document.getElementById("pressKeyword"),
+  pressQueryBtn: document.getElementById("pressQueryBtn"),
+  pressMeta: document.getElementById("pressMeta"),
+  pressHint: document.getElementById("pressHint"),
+  pressBody: document.getElementById("pressBody"),
+  pressList: document.getElementById("pressList"),
+  cninfoForm: document.getElementById("cninfoForm"),
+  cninfoTabs: document.getElementById("cninfoTabs"),
+  cninfoCategory: document.getElementById("cninfoCategory"),
+  cninfoDays: document.getElementById("cninfoDays"),
+  cninfoStart: document.getElementById("cninfoStart"),
+  cninfoEnd: document.getElementById("cninfoEnd"),
+  cninfoStartWrap: document.getElementById("cninfoStartWrap"),
+  cninfoEndWrap: document.getElementById("cninfoEndWrap"),
+  cninfoKeyword: document.getElementById("cninfoKeyword"),
+  cninfoQueryBtn: document.getElementById("cninfoQueryBtn"),
+  cninfoMeta: document.getElementById("cninfoMeta"),
+  cninfoHint: document.getElementById("cninfoHint"),
+  cninfoBody: document.getElementById("cninfoBody"),
+  cninfoList: document.getElementById("cninfoList"),
   errorBox: document.getElementById("errorBox"),
 };
 
-let activeNewsKind = "exchange";
-let activeMainPanel = "overview";
+let activeMainPanel = "quotes";
+let cninfoTab = "fulltext";
+let exchangeTab = "bulletin";
+let pressOutlet = "cs";
+const cninfoState = {
+  loading: false,
+  items: [],
+  count: 0,
+  total: 0,
+  seDate: "",
+  category: "",
+  keyword: "",
+  tab: "fulltext",
+  error: "",
+  updatedAt: "",
+};
+const exchangeState = {
+  loading: false,
+  items: [],
+  count: 0,
+  total: 0,
+  seDate: "",
+  category: "",
+  keyword: "",
+  tab: "bulletin",
+  market: "",
+  marketLabel: "",
+  error: "",
+  updatedAt: "",
+};
+const pressState = {
+  loading: false,
+  items: [],
+  count: 0,
+  total: 0,
+  seDate: "",
+  outlet: "cs",
+  keyword: "",
+  error: "",
+  updatedAt: "",
+};
+const platformTabs = { ths: "news", xueqiu: "news", eastmoney: "news" };
+const platformState = {
+  ths: { loading: false, items: [], count: 0, total: 0, seDate: "", tab: "news", keyword: "", error: "", updatedAt: "" },
+  xueqiu: { loading: false, items: [], count: 0, total: 0, seDate: "", tab: "news", keyword: "", error: "", updatedAt: "" },
+  eastmoney: { loading: false, items: [], count: 0, total: 0, seDate: "", tab: "news", keyword: "", error: "", updatedAt: "" },
+};
 
-/** @type {{ mode: string, adjust: 'qfq'|'hfq'|'none', loading: boolean, kind: 'kline', items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, meta: string }} */
+function normalizeMainPanel(panelId) {
+  if (panelId === "quotes" || panelId === "charts" || panelId === "overview") return "quotes";
+  if (panelId === "news") return "news";
+  return "";
+}
+
+function isQuotesPanel(panelId = activeMainPanel) {
+  return panelId === "quotes";
+}
+
+/** @type {{ mode: string, adjust: 'qfq'|'hfq'|'none', loading: boolean, kind: 'kline', items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, meta: string, hoverAbsIndex: number|null }} */
 const chartState = {
   mode: "day",
   adjust: "qfq",
@@ -95,6 +354,7 @@ const chartState = {
   preClose: null,
   source: "",
   meta: "",
+  hoverAbsIndex: null,
 };
 
 /** @type {{ loading: boolean, liveFetching: boolean, liveFetchPending: boolean, liveFetchGen: number, items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, live: boolean, phase: string, tradeDate: string, hoverTime: string|null }} */
@@ -163,6 +423,18 @@ function syncChartAdjustUi(mode = chartState.mode) {
   if (!els.chartAdjustSelect) return;
   els.chartAdjustSelect.disabled = !show;
   els.chartAdjustSelect.value = klineAdjustFor(mode);
+  syncComboLegend(mode);
+}
+
+function comboPanesEnabled(mode = chartState.mode) {
+  return !isMinuteKline(mode);
+}
+
+function syncComboLegend(mode = chartState.mode) {
+  const card = document.querySelector(".chart-card--kline");
+  const combo = comboPanesEnabled(mode);
+  if (card) card.classList.toggle("is-combo", combo);
+  if (els.peSeriesWrap) els.peSeriesWrap.classList.toggle("hidden", !combo);
 }
 
 function syncChartModeSelect(mode = chartState.mode) {
@@ -271,15 +543,6 @@ function setError(message) {
   els.errorBox.classList.remove("hidden");
 }
 
-function sectionEls(kind) {
-  return {
-    meta: document.querySelector(`[data-meta="${kind}"]`),
-    body: document.querySelector(`[data-body="${kind}"]`),
-    list: document.querySelector(`[data-list="${kind}"]`),
-    hint: document.querySelector(`[data-hint="${kind}"]`),
-  };
-}
-
 function daysLabel(days) {
   if (days <= DEFAULT_DAYS) return "最新";
   if (days >= 360) {
@@ -288,25 +551,6 @@ function daysLabel(days) {
     return `近约 ${rounded} 年`;
   }
   return `近 ${days} 天`;
-}
-
-/** 逐步放大窗口；接近上限时一次拉满，便于尽量深回溯 */
-function nextDayWindow(current, fullDays) {
-  const cur = Math.max(1, Number(current) || DEFAULT_DAYS);
-  const cap = Math.max(cur, Number(fullDays) || FULL_DAYS);
-  if (cur >= cap) return null;
-
-  let next;
-  if (cur < 14) next = 14;
-  else if (cur < 30) next = 30;
-  else if (cur < 90) next = 90;
-  else if (cur < 180) next = 180;
-  else if (cur < 365) next = 365;
-  else if (cur < 730) next = 730;
-  else next = Math.ceil(cur * 1.5);
-
-  if (next >= cap * 0.9) next = cap;
-  return Math.min(Math.max(next, cur + 1), cap);
 }
 
 /** 指标含义说明（点击展示，尽量白话） */
@@ -395,18 +639,72 @@ function metricCell([label, value, cls = ""]) {
     </div>`;
 }
 
+function metricTipLayer() {
+  let el = document.getElementById("metricTipFloat");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "metricTipFloat";
+    el.className = "metric-tip-float hidden";
+    el.setAttribute("role", "tooltip");
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function hideMetricTipLayer() {
+  const el = document.getElementById("metricTipFloat");
+  if (!el) return;
+  el.classList.add("hidden");
+  el.textContent = "";
+}
+
+function placeMetricTip(cell) {
+  const text = cell?.getAttribute("data-tip") || "";
+  if (!text) {
+    hideMetricTipLayer();
+    return;
+  }
+  const layer = metricTipLayer();
+  layer.textContent = text;
+  layer.classList.remove("hidden");
+  layer.style.left = "0px";
+  layer.style.top = "0px";
+  const rect = cell.getBoundingClientRect();
+  const tip = layer.getBoundingClientRect();
+  const pad = 8;
+  let left = rect.left;
+  let top = rect.bottom + 6;
+  if (left + tip.width > window.innerWidth - pad) {
+    left = rect.right - tip.width;
+  }
+  left = Math.min(Math.max(pad, left), window.innerWidth - tip.width - pad);
+  if (top + tip.height > window.innerHeight - pad) {
+    top = rect.top - tip.height - 6;
+  }
+  top = Math.min(Math.max(pad, top), window.innerHeight - tip.height - pad);
+  layer.style.left = `${Math.round(left)}px`;
+  layer.style.top = `${Math.round(top)}px`;
+}
+
 function closeMetricTips(except = null) {
   document.querySelectorAll(".stat-cell.has-tip.is-tip-open").forEach((el) => {
     if (except && el === except) return;
     el.classList.remove("is-tip-open");
     el.setAttribute("aria-expanded", "false");
   });
+  if (!except) hideMetricTipLayer();
 }
 
 function setupMetricTips() {
   const root = document.querySelector(".company-hero");
   if (!root || root.dataset.tipBound === "1") return;
   root.dataset.tipBound = "1";
+
+  const syncOpenTip = () => {
+    const open = root.querySelector(".stat-cell.has-tip.is-tip-open");
+    if (open) placeMetricTip(open);
+    else hideMetricTipLayer();
+  };
 
   root.addEventListener("click", (event) => {
     const cell = event.target.closest(".stat-cell.has-tip");
@@ -416,6 +714,8 @@ function setupMetricTips() {
     closeMetricTips(opening ? cell : null);
     cell.classList.toggle("is-tip-open", opening);
     cell.setAttribute("aria-expanded", opening ? "true" : "false");
+    if (opening) placeMetricTip(cell);
+    else hideMetricTipLayer();
   });
 
   root.addEventListener("keydown", (event) => {
@@ -426,8 +726,12 @@ function setupMetricTips() {
     cell.click();
   });
 
+  root.addEventListener("scroll", syncOpenTip, { passive: true });
+  window.addEventListener("resize", syncOpenTip);
+
   document.addEventListener("click", (event) => {
     if (event.target.closest(".stat-cell.has-tip")) return;
+    if (event.target.closest(".metric-tip-float")) return;
     closeMetricTips();
   });
 
@@ -467,7 +771,7 @@ function renderInlineMetricRows(title, rows, { highlightFirst = false, rowOpts =
           ]
             .filter(Boolean)
             .join(" ");
-          const style = opts.cols ? ` style="--metrics-cols:${opts.cols}"` : "";
+          const style = ` style="--metrics-cols:${opts.cols || items.length}"`;
           return `<div class="${rowCls}"${style}>${items.map(metricCell).join("")}</div>`;
         })
         .join("")}
@@ -482,20 +786,26 @@ function renderMetrics(stock) {
     stock.total_market_cap ||
     (stock.market_cap ? `${displayValue(stock.market_cap)}亿` : "");
 
-  const periodItems = [
+  const periodNear = [
     ["近3日", stock.change_3d, changeClass(stock.change_3d)],
     ["5日", stock.change_5d, changeClass(stock.change_5d)],
     ["10日", stock.change_10d, changeClass(stock.change_10d)],
     ["20日", stock.change_20d, changeClass(stock.change_20d)],
+  ].filter(([, v]) => displayValue(v) !== "-");
+
+  const periodFar = [
     ["60日", stock.change_60d, changeClass(stock.change_60d)],
     ["近半年", stock.change_half_year, changeClass(stock.change_half_year)],
     ["近1年", stock.change_1y, changeClass(stock.change_1y)],
     ["今年", stock.change_ytd, changeClass(stock.change_ytd)],
   ].filter(([, v]) => displayValue(v) !== "-");
 
-  const extremeItems = [
+  const weekRange = [
     ["52周最高", stock.high_52w],
     ["52周最低", stock.low_52w],
+  ].filter(([, v]) => displayValue(v) !== "-");
+
+  const allRange = [
     ["历史最高", stock.high_all],
     ["历史最低", stock.low_all],
   ].filter(([, v]) => displayValue(v) !== "-");
@@ -509,25 +819,33 @@ function renderMetrics(stock) {
     [
       ["今开", stock.open],
       ["昨收", stock.prev_close],
+      ["均价", stock.avg_price],
+    ],
+    [
       ["最低", stock.low],
       ["最高", stock.high],
-      ["均价", stock.avg_price],
+      ["振幅", stock.amplitude],
+    ],
+    [
       ["涨停", stock.limit_up],
       ["跌停", stock.limit_down],
+      ["实体涨幅", stock.solid_change, changeClass(stock.solid_change)],
     ],
     [
       ["总手", stock.volume],
       ["金额", stock.amount],
+      ["现手", stock.current_volume],
+    ],
+    [
       ["换手", stock.turnover],
       ["换手(实)", stock.turnover_real],
-      ["振幅", stock.amplitude],
       ["量比", stock.volume_ratio],
-      ["现手", stock.current_volume],
-      ["实体涨幅", stock.solid_change, changeClass(stock.solid_change)],
     ],
     [
       ["外盘", stock.outer_vol],
       ["内盘", stock.inner_vol],
+    ],
+    [
       ["委买", stock.bid_vol],
       ["委卖", stock.ask_vol],
       ["委差", stock.bid_ask_diff, changeClass(stock.bid_ask_diff)],
@@ -540,56 +858,59 @@ function renderMetrics(stock) {
     ],
   ], { highlightFirst: true });
 
-  const periodSection = renderInlineMetricRows("区间涨幅", [periodItems, extremeItems], {
-    rowOpts: [
-      { class: "metrics-period-row", cols: periodItems.length || 8 },
-      { class: "metrics-extreme-row", cols: extremeItems.length || 4 },
-    ],
-  });
+  const periodSection = renderInlineMetricRows("区间涨幅", [
+    periodNear,
+    periodFar,
+    weekRange,
+    allRange,
+  ]);
 
   const valuationSection = renderInlineMetricRows("估值与每股", [
     [
       ["市盈率(动)", stock.pe],
       ["市盈率(静)", stock.pe_static],
       ["市盈率(TTM)", stock.pe_ttm],
+    ],
+    [
       ["市净率", stock.pb],
+      ["每股净资产", stock.bvps],
+      ["净资产收益率", stock.roe],
+    ],
+    [
       ["市销率(TTM)", stock.ps_ttm],
     ],
     [
       ["股息(TTM)", stock.dividend_ttm],
       ["股息率", stock.dividend_yield],
-      ["净利增速", stock.profit_growth || stock.profit_yoy],
-      ["营收增速", stock.revenue_growth || stock.revenue_yoy],
+      ["每股收益", stock.eps],
     ],
     [
-      ["每股收益", stock.eps],
-      ["每股净资产", stock.bvps],
-      ["净资产收益率", stock.roe],
+      ["净利增速", stock.profit_growth || stock.profit_yoy],
+      ["营收增速", stock.revenue_growth || stock.revenue_yoy],
     ],
   ]);
 
   const capitalSection = renderInlineMetricRows("股本与市值", [
     [
+      ["上市时间", stock.list_date],
+      ["注册资本", stock.registered_capital],
+      ["发行股本", stock.issued_shares],
+    ],
+    [
       ["总股本", stock.total_shares],
       ["流通股", stock.float_shares],
       ["自由流通股", stock.free_float_shares],
-      ["发行股本", stock.issued_shares],
     ],
     [
       ["总市值", mcap],
       ["流通市值", stock.float_market_cap],
       ["自由流通市值", stock.free_float_market_cap],
     ],
-    [
-      ["注册资本", stock.registered_capital],
-      ["上市时间", stock.list_date],
-      ["纳入时间", stock.include_date],
-    ],
   ]);
 
   const html = [
-    periodSection,
     daySection,
+    periodSection,
     valuationSection,
     capitalSection,
   ]
@@ -623,6 +944,75 @@ function applyStock(stock, industryMeta = {}) {
   renderMetrics(stock);
 }
 
+function cninfoWhy(item) {
+  const tab = String(item?.tab || cninfoTab || "fulltext");
+  const tabLabel = CNINFO_TAB_LABELS[tab] || "公告";
+  const why = String(item?.why || item?.category || "").trim();
+  if (tab === "relation" || tab === "supervise") {
+    if (!why || why === "公告") return tabLabel;
+    if (why === tabLabel || why.startsWith(`${tabLabel} ·`) || why.startsWith(`${tabLabel}·`)) {
+      return why;
+    }
+    return `${tabLabel} · ${why}`;
+  }
+  return why || tabLabel;
+}
+
+function renderCninfoList(items) {
+  if (!items.length) {
+    return renderNewsList(items, "暂无匹配的巨潮公告");
+  }
+  return renderNewsList(
+    items.map((item) => {
+      const why = cninfoWhy(item);
+      const summary = String(item.summary || "").trim();
+      return {
+        ...item,
+        why,
+        summary: summary && summary !== why && summary !== "公告" ? summary : "",
+      };
+    }),
+    "暂无匹配的巨潮公告"
+  );
+}
+
+function detectExchangeMarket(stockCode = code) {
+  const digits = String(stockCode || "").replace(/\D/g, "");
+  if (!digits) return "";
+  const c = digits.padStart(6, "0");
+  if (/^(60|68|90)/.test(c)) return "sse";
+  if (/^(00|30|20)/.test(c)) return "szse";
+  if (/^[84]/.test(c) || c.startsWith("92")) return "bse";
+  return "";
+}
+
+function exchangeTitleText(market = exchangeState.market) {
+  return EXCHANGE_MARKET_TITLES[market] || EXCHANGE_MARKET_TITLES[detectExchangeMarket()] || "交易所公告";
+}
+
+function exchangeWhy(item) {
+  return String(item?.why || item?.category || item?.heading || "").trim()
+    || (exchangeTab === "inquiries" ? "问询函" : "公告");
+}
+
+function renderExchangeList(items) {
+  if (!items.length) {
+    return renderNewsList(items, "暂无匹配的交易所公告");
+  }
+  return renderNewsList(
+    items.map((item) => {
+      const why = exchangeWhy(item);
+      const summary = String(item.summary || "").trim();
+      return {
+        ...item,
+        why,
+        summary: summary && summary !== why && summary !== "公告" ? summary : "",
+      };
+    }),
+    "暂无匹配的交易所公告"
+  );
+}
+
 function renderNewsList(items, emptyText) {
   if (!items.length) {
     return `<p class="muted">${escapeHtml(emptyText)}</p>`;
@@ -653,74 +1043,6 @@ function renderNewsList(items, emptyText) {
       `;
     })
     .join("");
-}
-
-function newestPublished(items) {
-  let newest = "";
-  for (const item of items || []) {
-    const day = String(item.published_at || "").slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
-    if (!newest || day > newest) newest = day;
-  }
-  return newest;
-}
-
-function updateNewsHubMeta(kind = activeNewsKind) {
-  if (!els.newsHubMeta) return;
-  const ui = sectionEls(kind);
-  const text = ui.meta?.textContent?.trim();
-  els.newsHubMeta.textContent = text || "";
-}
-
-function updateSectionMeta(kind) {
-  const ui = sectionEls(kind);
-  const st = sectionState[kind];
-  const conf = KINDS.find((k) => k.key === kind);
-  if (!ui.meta || !st || !conf) return;
-
-  const from = oldestPublished(st.items);
-  const to = newestPublished(st.items);
-  const span = from && to ? `${from} ~ ${to}` : daysLabel(st.days);
-
-  ui.meta.textContent = `${daysLabel(st.days)} · ${span} · ${st.items.length} 条 · 更新于 ${st.updatedAt || "-"}`;
-
-  if (kind === activeNewsKind) {
-    updateNewsHubMeta(kind);
-  }
-
-  if (!ui.hint) return;
-  if (st.loading) {
-    ui.hint.textContent = `正在加载${daysLabel(st.days)}…`;
-  } else if (st.exhausted) {
-    ui.hint.textContent = st.items.length
-      ? "已加载全部可查区间"
-      : conf.empty;
-  } else {
-    ui.hint.textContent = "下滑加载更早消息";
-  }
-}
-
-function paintSection(kind) {
-  const ui = sectionEls(kind);
-  const conf = KINDS.find((k) => k.key === kind);
-  const st = sectionState[kind];
-  if (!ui.list || !conf || !st) return;
-  ui.list.innerHTML = renderNewsList(st.items, conf.empty);
-  updateSectionMeta(kind);
-}
-
-function needsMoreContent(kind) {
-  const ui = sectionEls(kind);
-  const st = sectionState[kind];
-  if (!ui.body || !st || st.exhausted || st.loading) return false;
-  if (!st.items.length) return true;
-  return ui.body.scrollHeight <= ui.body.clientHeight + 8;
-}
-
-function nearBottom(kind) {
-  const ui = sectionEls(kind);
-  if (!ui.body) return false;
-  return ui.body.scrollTop + ui.body.clientHeight >= ui.body.scrollHeight - 48;
 }
 
 function setMetricsLoading(message = "正在加载指标…") {
@@ -805,224 +1127,1133 @@ async function loadProfile({ silent = false, refresh = false, liveOnly = false }
   }
 }
 
-async function fetchNewsKind(kind, days, { refresh = false } = {}) {
-  const qs = new URLSearchParams({
-    code,
-    name: nameHint || els.companyName.textContent || "",
-    days: String(days),
-    kind,
-  });
-  if (refresh) qs.set("refresh", "1");
-  const json = await api(`/api/stocks/news?${qs.toString()}`);
-  return json.data || {};
-}
-
-function oldestPublished(items) {
-  let oldest = "";
-  for (const item of items || []) {
-    const day = String(item.published_at || "").slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
-    if (!oldest || day < oldest) oldest = day;
-  }
-  return oldest;
-}
-
-async function loadNewsKind(kind, days, { refresh = false } = {}) {
-  const ui = sectionEls(kind);
-  const conf = KINDS.find((k) => k.key === kind);
-  const st = sectionState[kind];
-  if (!ui.body || !conf || !st || st.loading) return;
-
-  st.loading = true;
-  st.days = days;
-  updateSectionMeta(kind);
-  if (!st.items.length) {
-    ui.list.innerHTML = `<p class="muted">正在加载${daysLabel(days)}…</p>`;
-  }
-
-  try {
-    const data = await fetchNewsKind(kind, days, { refresh });
-    const groups = data.groups || {};
-    const items = groups[kind] || [];
-    const fullDays = Number(data.full_days) || FULL_DAYS;
-
-    st.fullDays = fullDays;
-    st.days = Number(data.days) || days;
-    st.updatedAt = data.updated_at || "";
-    st.items = items;
-    // 相邻窗口没新增更早条目，只说明中间有空窗（例如 3→14 天无公告），
-    // 不能当成数据源见底；否则会在「近 14 天」提前 exhausted，再也拉不到年报等历史。
-    st.exhausted =
-      st.days >= fullDays - 5 || Boolean(data.source_capped);
-    paintSection(kind);
-  } catch (err) {
-    st.loading = false;
-    if (!st.items.length) {
-      ui.list.innerHTML = `<p class="news-error">${escapeHtml(err.message || String(err))}</p>`;
-    }
-    if (ui.hint) ui.hint.textContent = "加载失败，下滑重试";
-    ui.meta.textContent = "加载失败";
-    throw err;
-  } finally {
-    st.loading = false;
-    updateSectionMeta(kind);
-  }
-
-  // 内容不足以滚动时自动继续向更早窗口拉取
-  if (needsMoreContent(kind)) {
-    await loadOlder(kind);
-  }
-}
-
-async function loadOlder(kind) {
-  const st = sectionState[kind];
-  if (!st || st.loading || st.exhausted) return;
-
-  const next = nextDayWindow(st.days, st.fullDays);
-  if (next == null) {
-    st.exhausted = true;
-    updateSectionMeta(kind);
-    return;
-  }
-
-  const prevCount = st.items.length;
-  const prevOldest = oldestPublished(st.items);
-  try {
-    await loadNewsKind(kind, next, { refresh: false });
-  } catch {
-    return;
-  }
-
-  const st2 = sectionState[kind];
-  const newestOldest = oldestPublished(st2.items);
-  if (
-    !st2.exhausted &&
-    !st2.loading &&
-    st2.items.length === prevCount &&
-    newestOldest &&
-    prevOldest &&
-    newestOldest >= prevOldest &&
-    needsMoreContent(kind)
-  ) {
-    // 仍无更深数据则继续扩大窗口；若已接近上限会在 nextDayWindow 停住
-    await loadOlder(kind);
-  }
-}
-
 async function loadAllNews({ refresh = false } = {}) {
   if (!code) return;
-  els.refreshNewsBtn.disabled = true;
-  await Promise.all(
-    KINDS.map(async ({ key }) => {
-      const st = sectionState[key];
-      st.days = DEFAULT_DAYS;
-      st.items = [];
-      st.exhausted = false;
-      st.updatedAt = "";
-      try {
-        await loadNewsKind(key, DEFAULT_DAYS, { refresh });
-      } catch {
-        /* 单栏失败不阻断其他栏 */
-      }
-    })
-  );
-  els.refreshNewsBtn.disabled = false;
+  if (els.refreshNewsBtn) els.refreshNewsBtn.disabled = true;
+  await Promise.all([
+    loadExchange(),
+    loadCninfo(),
+    loadPress(),
+    ...PLATFORM_HUBS.map((hub) => loadPlatform(hub.id)),
+  ]);
+  if (els.refreshNewsBtn) els.refreshNewsBtn.disabled = false;
 }
 
-function setupScrollLoaders() {
-  KINDS.forEach(({ key }) => {
-    const ui = sectionEls(key);
-    if (!ui.body) return;
-    ui.body.addEventListener(
-      "scroll",
-      () => {
-        if (key !== activeNewsKind) return;
-        if (nearBottom(key)) loadOlder(key);
-      },
-      { passive: true }
-    );
+function cninfoDaysMode() {
+  return (els.cninfoDays?.value || String(CNINFO_DEFAULT_DAYS)).trim();
+}
+
+function isCninfoCustomRange() {
+  return cninfoDaysMode() === "custom";
+}
+
+function isoDay(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function fillCustomDateInputs(startEl, endEl, days) {
+  if (!startEl || !endEl) return;
+  const today = new Date();
+  if (!String(endEl.value || "").trim()) endEl.value = isoDay(today);
+  if (!String(startEl.value || "").trim()) {
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    start.setDate(start.getDate() - Math.max(1, Number(days) || 365));
+    startEl.value = isoDay(start);
+  }
+}
+
+function syncCninfoDateFields() {
+  const custom = isCninfoCustomRange();
+  els.cninfoStartWrap?.classList.toggle("hidden", !custom);
+  els.cninfoEndWrap?.classList.toggle("hidden", !custom);
+  if (custom) fillCustomDateInputs(els.cninfoStart, els.cninfoEnd, CNINFO_DEFAULT_DAYS);
+}
+
+function syncCninfoCategoryEnabled() {
+  const wrap = els.cninfoCategory?.closest(".cninfo-field");
+  const locked = cninfoTab !== "fulltext";
+  if (els.cninfoCategory) els.cninfoCategory.disabled = locked;
+  wrap?.classList.toggle("is-disabled", locked);
+}
+
+function cninfoQueryParams() {
+  const custom = isCninfoCustomRange();
+  const daysRaw = Number(cninfoDaysMode());
+  const days = custom ? CNINFO_DEFAULT_DAYS : daysRaw || CNINFO_DEFAULT_DAYS;
+  const start = custom ? (els.cninfoStart?.value || "").trim() : "";
+  const end = custom ? (els.cninfoEnd?.value || "").trim() : "";
+  const category = cninfoTab === "fulltext" ? (els.cninfoCategory?.value || "").trim() : "";
+  return {
+    tab: cninfoTab || "fulltext",
+    category,
+    keyword: (els.cninfoKeyword?.value || "").trim(),
+    days,
+    start,
+    end,
+  };
+}
+
+function cninfoCategoryLabel(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "全部分类";
+  const opt = els.cninfoCategory
+    ? Array.from(els.cninfoCategory.options).find((item) => item.value === raw)
+    : null;
+  return opt?.textContent?.trim() || raw;
+}
+
+function cninfoRangeLabel(query, seDate) {
+  if (query.start || query.end) {
+    return seDate || `${query.start || "?"} ~ ${query.end || "今天"}`;
+  }
+  return daysLabel(query.days);
+}
+
+function paintCninfo() {
+  if (!els.cninfoList) return;
+  const st = cninfoState;
+  const query = cninfoQueryParams();
+  const tabLabel = CNINFO_TAB_LABELS[st.tab] || CNINFO_TAB_LABELS[query.tab] || "公告";
+  const showCategory = (st.tab || query.tab) === "fulltext";
+  const catLabel = showCategory ? cninfoCategoryLabel(st.category || query.category) : "";
+  const range = cninfoRangeLabel(query, st.seDate);
+  const totalBit =
+    st.total && st.total !== st.count ? `${st.count}/${st.total}` : String(st.count || st.items.length);
+  if (els.cninfoMeta) {
+    const bits = [tabLabel, catLabel || null, range, `${totalBit} 条`, st.updatedAt || "-"].filter(Boolean);
+    els.cninfoMeta.textContent = st.loading ? `正在查询${tabLabel}…` : bits.join(" · ");
+  }
+  if (els.cninfoHint) {
+    if (st.loading) {
+      els.cninfoHint.textContent = "正在从巨潮拉取公告…";
+    } else if (st.error) {
+      els.cninfoHint.textContent = st.error;
+    } else if (!st.items.length) {
+      els.cninfoHint.textContent = "暂无匹配公告，可换分类、关键词或拉长区间";
+    } else if (st.total > st.count) {
+      els.cninfoHint.textContent = `已显示 ${st.count} / 共 ${st.total} 条，可缩小分类或缩短区间`;
+    } else {
+      els.cninfoHint.textContent = query.keyword ? `标题含「${query.keyword}」` : "";
+    }
+  }
+  if (st.loading && !st.items.length) {
+    els.cninfoList.innerHTML = `<p class="muted">正在查询巨潮${escapeHtml(tabLabel)}…</p>`;
+    return;
+  }
+  if (st.error && !st.items.length) {
+    els.cninfoList.innerHTML = `<p class="news-error">${escapeHtml(st.error)}</p>`;
+    return;
+  }
+  els.cninfoList.innerHTML = renderCninfoList(st.items);
+}
+
+async function loadCninfo() {
+  if (!code || !els.cninfoList || cninfoState.loading) return;
+  const query = cninfoQueryParams();
+  if (isCninfoCustomRange() && !query.start && !query.end) {
+    cninfoState.error = "自定义区间请填写开始或结束日期";
+    paintCninfo();
+    return;
+  }
+
+  cninfoState.loading = true;
+  cninfoState.error = "";
+  cninfoState.tab = query.tab;
+  cninfoState.category = query.category;
+  cninfoState.keyword = query.keyword;
+  if (els.cninfoQueryBtn) els.cninfoQueryBtn.disabled = true;
+  paintCninfo();
+
+  const qs = new URLSearchParams({
+    code,
+    tab: query.tab,
+    days: String(query.days),
   });
+  if (query.category) qs.set("category", query.category);
+  if (query.keyword) qs.set("keyword", query.keyword);
+  if (query.start) qs.set("start", query.start);
+  if (query.end) qs.set("end", query.end);
+
+  try {
+    const json = await api(`/api/stocks/cninfo?${qs.toString()}`);
+    const data = json.data || {};
+    cninfoState.items = Array.isArray(data.items) ? data.items : [];
+    cninfoState.count = Number(data.count) || cninfoState.items.length;
+    cninfoState.total = Number(data.total) || cninfoState.count;
+    cninfoState.seDate = data.se_date || "";
+    cninfoState.category = query.category;
+    cninfoState.keyword = data.keyword || query.keyword;
+    cninfoState.tab = data.tab || query.tab;
+    cninfoState.error = data.error || "";
+    cninfoState.updatedAt = new Date().toLocaleString("zh-CN", { hour12: false });
+    if (els.cninfoBody) els.cninfoBody.scrollTop = 0;
+    paintCninfo();
+  } catch (err) {
+    cninfoState.items = [];
+    cninfoState.count = 0;
+    cninfoState.total = 0;
+    cninfoState.error = err.message || String(err);
+    paintCninfo();
+  } finally {
+    cninfoState.loading = false;
+    if (els.cninfoQueryBtn) els.cninfoQueryBtn.disabled = false;
+    paintCninfo();
+  }
 }
 
-function switchNewsKind(kind) {
-  if (!kind || kind === activeNewsKind) return;
-  activeNewsKind = kind;
-
-  if (els.newsTabs) {
-    els.newsTabs.querySelectorAll("[data-kind]").forEach((tab) => {
-      const active = tab.getAttribute("data-kind") === kind;
-      tab.classList.toggle("is-active", active);
-      tab.setAttribute("aria-selected", active ? "true" : "false");
+function setCninfoTab(tab) {
+  const next = CNINFO_TAB_LABELS[tab] ? tab : "fulltext";
+  if (next === cninfoTab && els.cninfoTabs?.dataset.ready === "1") {
+    return;
+  }
+  cninfoTab = next;
+  if (els.cninfoTabs) {
+    els.cninfoTabs.querySelectorAll("[data-tab]").forEach((btn) => {
+      const active = btn.getAttribute("data-tab") === cninfoTab;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
     });
   }
+  syncCninfoCategoryEnabled();
+}
 
-  document.querySelectorAll(".news-panel[data-panel]").forEach((panel) => {
-    const active = panel.getAttribute("data-panel") === kind;
-    panel.classList.toggle("is-active", active);
-    panel.hidden = !active;
+function setupCninfoBox() {
+  if (!els.cninfoForm || els.cninfoForm.dataset.bound === "1") return;
+  els.cninfoForm.dataset.bound = "1";
+  syncCninfoDateFields();
+  syncCninfoCategoryEnabled();
+
+  els.cninfoTabs?.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-tab]");
+    if (!btn || !els.cninfoTabs.contains(btn)) return;
+    setCninfoTab(btn.getAttribute("data-tab") || "fulltext");
+    loadCninfo();
   });
+  els.cninfoTabs && (els.cninfoTabs.dataset.ready = "1");
 
-  updateNewsHubMeta(kind);
+  els.cninfoDays?.addEventListener("change", () => {
+    syncCninfoDateFields();
+    if (!isCninfoCustomRange()) loadCninfo();
+  });
+  els.cninfoCategory?.addEventListener("change", () => loadCninfo());
+  els.cninfoForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    loadCninfo();
+  });
+}
 
-  const ui = sectionEls(kind);
-  if (ui.body) {
-    ui.body.scrollTop = 0;
+function exchangeDaysMode() {
+  return (els.exchangeDays?.value || String(EXCHANGE_DEFAULT_DAYS)).trim();
+}
+
+function isExchangeCustomRange() {
+  return exchangeDaysMode() === "custom";
+}
+
+function syncExchangeDateFields() {
+  const custom = isExchangeCustomRange();
+  els.exchangeStartWrap?.classList.toggle("hidden", !custom);
+  els.exchangeEndWrap?.classList.toggle("hidden", !custom);
+  if (custom) fillCustomDateInputs(els.exchangeStart, els.exchangeEnd, EXCHANGE_DEFAULT_DAYS);
+}
+
+function syncExchangeCategoryEnabled() {
+  const wrap = els.exchangeCategory?.closest(".cninfo-field");
+  const locked = exchangeTab !== "bulletin";
+  if (els.exchangeCategory) els.exchangeCategory.disabled = locked;
+  wrap?.classList.toggle("is-disabled", locked);
+}
+
+function exchangeQueryParams() {
+  const custom = isExchangeCustomRange();
+  const daysRaw = Number(exchangeDaysMode());
+  const days = custom ? EXCHANGE_DEFAULT_DAYS : daysRaw || EXCHANGE_DEFAULT_DAYS;
+  const start = custom ? (els.exchangeStart?.value || "").trim() : "";
+  const end = custom ? (els.exchangeEnd?.value || "").trim() : "";
+  const category = exchangeTab === "bulletin" ? (els.exchangeCategory?.value || "").trim() : "";
+  return {
+    tab: exchangeTab || "bulletin",
+    category,
+    keyword: (els.exchangeKeyword?.value || "").trim(),
+    days,
+    start,
+    end,
+  };
+}
+
+function exchangeCategoryLabel(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "全部分类";
+  const opt = els.exchangeCategory
+    ? Array.from(els.exchangeCategory.options).find((item) => item.value === raw)
+    : null;
+  return opt?.textContent?.trim() || raw;
+}
+
+function exchangeRangeLabel(query, seDate) {
+  if (query.start || query.end) {
+    return seDate || `${query.start || "?"} ~ ${query.end || "今天"}`;
   }
-  if (needsMoreContent(kind)) {
-    loadOlder(kind);
+  return daysLabel(query.days);
+}
+
+function paintExchange() {
+  if (!els.exchangeList) return;
+  const st = exchangeState;
+  const query = exchangeQueryParams();
+  const tabLabel = EXCHANGE_TAB_LABELS[st.tab] || EXCHANGE_TAB_LABELS[query.tab] || "公告";
+  const showCategory = (st.tab || query.tab) === "bulletin";
+  const catLabel = showCategory ? exchangeCategoryLabel(st.category || query.category) : "";
+  const range = exchangeRangeLabel(query, st.seDate);
+  const totalBit =
+    st.total && st.total !== st.count ? `${st.count}/${st.total}` : String(st.count || st.items.length);
+  const title = exchangeTitleText(st.market);
+  if (els.exchangeTitle) els.exchangeTitle.textContent = title;
+  if (els.exchangeMeta) {
+    const bits = [tabLabel, catLabel || null, range, `${totalBit} 条`, st.updatedAt || "-"].filter(Boolean);
+    els.exchangeMeta.textContent = st.loading ? `正在查询${tabLabel}…` : bits.join(" · ");
+  }
+  if (els.exchangeHint) {
+    if (st.loading) {
+      const venue = title.replace(/公告$/, "") || "交易所";
+      els.exchangeHint.textContent = `正在从${venue}拉取${tabLabel}…`;
+    } else if (st.error) {
+      els.exchangeHint.textContent = st.error;
+    } else if (!st.items.length) {
+      els.exchangeHint.textContent = "暂无匹配公告，可换分类、关键词或拉长区间";
+    } else if (st.total > st.count) {
+      els.exchangeHint.textContent = `已显示 ${st.count} / 共 ${st.total} 条，可缩小分类或缩短区间`;
+    } else {
+      els.exchangeHint.textContent = query.keyword ? `标题含「${query.keyword}」` : "";
+    }
+  }
+  if (st.loading && !st.items.length) {
+    els.exchangeList.innerHTML = `<p class="muted">正在查询${escapeHtml(title)} · ${escapeHtml(tabLabel)}…</p>`;
+    return;
+  }
+  if (st.error && !st.items.length) {
+    els.exchangeList.innerHTML = `<p class="news-error">${escapeHtml(st.error)}</p>`;
+    return;
+  }
+  els.exchangeList.innerHTML = renderExchangeList(st.items);
+}
+
+async function loadExchange() {
+  if (!code || !els.exchangeList || exchangeState.loading) return;
+  const query = exchangeQueryParams();
+  if (isExchangeCustomRange() && !query.start && !query.end) {
+    exchangeState.error = "自定义区间请填写开始或结束日期";
+    paintExchange();
+    return;
+  }
+
+  exchangeState.loading = true;
+  exchangeState.error = "";
+  exchangeState.tab = query.tab;
+  exchangeState.category = query.category;
+  exchangeState.keyword = query.keyword;
+  exchangeState.market = detectExchangeMarket();
+  if (els.exchangeQueryBtn) els.exchangeQueryBtn.disabled = true;
+  paintExchange();
+
+  const qs = new URLSearchParams({
+    code,
+    tab: query.tab,
+    days: String(query.days),
+  });
+  if (query.category) qs.set("category", query.category);
+  if (query.keyword) qs.set("keyword", query.keyword);
+  if (query.start) qs.set("start", query.start);
+  if (query.end) qs.set("end", query.end);
+
+  try {
+    const json = await api(`/api/stocks/exchange?${qs.toString()}`);
+    const data = json.data || {};
+    exchangeState.items = Array.isArray(data.items) ? data.items : [];
+    exchangeState.count = Number(data.count) || exchangeState.items.length;
+    exchangeState.total = Number(data.total) || exchangeState.count;
+    exchangeState.seDate = data.se_date || "";
+    exchangeState.category = query.category;
+    exchangeState.keyword = data.keyword || query.keyword;
+    exchangeState.tab = data.tab || query.tab;
+    exchangeState.market = data.market || exchangeState.market;
+    exchangeState.marketLabel = data.market_label || "";
+    exchangeState.error = data.error || "";
+    exchangeState.updatedAt = new Date().toLocaleString("zh-CN", { hour12: false });
+    if (els.exchangeBody) els.exchangeBody.scrollTop = 0;
+    paintExchange();
+  } catch (err) {
+    exchangeState.items = [];
+    exchangeState.count = 0;
+    exchangeState.total = 0;
+    exchangeState.error = err.message || String(err);
+    paintExchange();
+  } finally {
+    exchangeState.loading = false;
+    if (els.exchangeQueryBtn) els.exchangeQueryBtn.disabled = false;
+    paintExchange();
   }
 }
 
-function setupNewsTabs() {
-  if (!els.newsTabs || els.newsTabs.dataset.bound === "1") return;
-  els.newsTabs.dataset.bound = "1";
+function setExchangeTab(tab) {
+  const next = EXCHANGE_TAB_LABELS[tab] ? tab : "bulletin";
+  if (next === exchangeTab && els.exchangeTabs?.dataset.ready === "1") {
+    return;
+  }
+  exchangeTab = next;
+  if (els.exchangeTabs) {
+    els.exchangeTabs.querySelectorAll("[data-tab]").forEach((btn) => {
+      const active = btn.getAttribute("data-tab") === exchangeTab;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+  }
+  syncExchangeCategoryEnabled();
+}
 
-  els.newsTabs.addEventListener("click", (event) => {
-    const tab = event.target.closest("[data-kind]");
-    if (!tab || !els.newsTabs.contains(tab)) return;
-    switchNewsKind(tab.getAttribute("data-kind"));
+function setupExchangeBox() {
+  if (!els.exchangeForm || els.exchangeForm.dataset.bound === "1") return;
+  els.exchangeForm.dataset.bound = "1";
+  if (els.exchangeTitle) els.exchangeTitle.textContent = exchangeTitleText();
+  syncExchangeDateFields();
+  syncExchangeCategoryEnabled();
+
+  els.exchangeTabs?.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-tab]");
+    if (!btn || !els.exchangeTabs.contains(btn)) return;
+    setExchangeTab(btn.getAttribute("data-tab") || "bulletin");
+    loadExchange();
   });
+  els.exchangeTabs && (els.exchangeTabs.dataset.ready = "1");
+
+  els.exchangeDays?.addEventListener("change", () => {
+    syncExchangeDateFields();
+    if (!isExchangeCustomRange()) loadExchange();
+  });
+  els.exchangeCategory?.addEventListener("change", () => loadExchange());
+  els.exchangeForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    loadExchange();
+  });
+}
+
+function pressOutletConf(id = pressOutlet) {
+  return PRESS_OUTLETS.find((item) => item.id === id) || PRESS_OUTLETS[0];
+}
+
+function pressDaysMode() {
+  return (els.pressDays?.value || String(PRESS_DEFAULT_DAYS)).trim();
+}
+
+function isPressCustomRange() {
+  return pressDaysMode() === "custom";
+}
+
+function syncPressDateFields() {
+  const custom = isPressCustomRange();
+  els.pressStartWrap?.classList.toggle("hidden", !custom);
+  els.pressEndWrap?.classList.toggle("hidden", !custom);
+  if (custom) fillCustomDateInputs(els.pressStart, els.pressEnd, PRESS_DEFAULT_DAYS);
+}
+
+function renderPressExtraFilters() {
+  const row = els.pressExtraRow;
+  if (!row) return;
+  const conf = pressOutletConf();
+  const filters = conf.filters || [];
+  row.innerHTML = filters
+    .map((filter) => {
+      const options = (filter.options || [])
+        .map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`)
+        .join("");
+      return `<label class="cninfo-field">
+        <span>${escapeHtml(filter.label)}</span>
+        <select class="chart-select cninfo-select" data-press-filter="${escapeHtml(filter.key)}" aria-label="${escapeHtml(filter.label)}">${options}</select>
+      </label>`;
+    })
+    .join("");
+  row.querySelectorAll("[data-press-filter]").forEach((select) => {
+    select.addEventListener("change", () => loadPress());
+  });
+}
+
+function pressExtraParams() {
+  const params = {};
+  els.pressExtraRow?.querySelectorAll("[data-press-filter]").forEach((select) => {
+    const key = select.getAttribute("data-press-filter");
+    const value = String(select.value || "").trim();
+    if (key && value) params[key] = value;
+  });
+  return params;
+}
+
+function pressQueryParams() {
+  const custom = isPressCustomRange();
+  const daysRaw = Number(pressDaysMode());
+  const days = custom ? PRESS_DEFAULT_DAYS : daysRaw || PRESS_DEFAULT_DAYS;
+  return {
+    outlet: pressOutlet || "cs",
+    keyword: (els.pressKeyword?.value || "").trim(),
+    days,
+    start: custom ? (els.pressStart?.value || "").trim() : "",
+    end: custom ? (els.pressEnd?.value || "").trim() : "",
+    extra: pressExtraParams(),
+  };
+}
+
+function pressRangeLabel(query, seDate) {
+  if (query.start || query.end) {
+    return seDate || `${query.start || "?"} ~ ${query.end || "今天"}`;
+  }
+  return daysLabel(query.days);
+}
+
+function extraFilterLabels(extra) {
+  const conf = pressOutletConf();
+  return (conf.filters || [])
+    .map((filter) => {
+      const value = extra[filter.key];
+      if (!value) return "";
+      const hit = (filter.options || []).find(([id]) => id === value);
+      return hit ? hit[1] : value;
+    })
+    .filter(Boolean);
+}
+
+function renderPressList(items) {
+  if (!items.length) {
+    return renderNewsList(items, "暂无匹配的指定披露媒体新闻");
+  }
+  return renderNewsList(
+    items.map((item) => {
+      const why = String(item?.why || item?.paper || item?.source || "").trim();
+      const summary = String(item.summary || "").trim();
+      return {
+        ...item,
+        why,
+        summary: summary && summary !== why ? summary : "",
+      };
+    }),
+    "暂无匹配的指定披露媒体新闻"
+  );
+}
+
+function paintPress() {
+  if (!els.pressList) return;
+  const st = pressState;
+  const query = pressQueryParams();
+  const conf = pressOutletConf(st.outlet || query.outlet);
+  const range = pressRangeLabel(query, st.seDate);
+  const extras = extraFilterLabels(query.extra);
+  const totalBit =
+    st.total && st.total !== st.count ? `${st.count}/${st.total}` : String(st.count || st.items.length);
+  if (els.pressTitle) els.pressTitle.textContent = conf.paper ? `${conf.name}` : "七报七网";
+  if (els.pressMeta) {
+    const bits = [conf.name, ...extras, range, `${totalBit} 条`, st.updatedAt || "-"].filter(Boolean);
+    els.pressMeta.textContent = st.loading ? `正在查询${conf.name}…` : bits.join(" · ");
+  }
+  if (els.pressHint) {
+    if (st.loading) {
+      els.pressHint.textContent = `正在从${conf.name}拉取新闻…`;
+    } else if (st.error) {
+      els.pressHint.textContent = st.error;
+    } else if (!st.items.length) {
+      els.pressHint.textContent = "暂无匹配新闻，可换类型、关键词或拉长区间";
+    } else {
+      els.pressHint.textContent = query.keyword ? `标题含「${query.keyword}」` : conf.paper || "";
+    }
+  }
+  if (st.loading && !st.items.length) {
+    els.pressList.innerHTML = `<p class="muted">正在查询${escapeHtml(conf.name)}…</p>`;
+    return;
+  }
+  if (st.error && !st.items.length) {
+    els.pressList.innerHTML = `<p class="news-error">${escapeHtml(st.error)}</p>`;
+    return;
+  }
+  els.pressList.innerHTML = renderPressList(st.items);
+}
+
+async function loadPress() {
+  if (!code || !els.pressList || pressState.loading) return;
+  const query = pressQueryParams();
+  if (isPressCustomRange() && !query.start && !query.end) {
+    pressState.error = "自定义区间请填写开始或结束日期";
+    paintPress();
+    return;
+  }
+
+  pressState.loading = true;
+  pressState.error = "";
+  pressState.outlet = query.outlet;
+  pressState.keyword = query.keyword;
+  if (els.pressQueryBtn) els.pressQueryBtn.disabled = true;
+  paintPress();
+
+  const qs = new URLSearchParams({
+    code,
+    outlet: query.outlet,
+    days: String(query.days),
+  });
+  if (nameHint) qs.set("name", nameHint);
+  if (query.keyword) qs.set("keyword", query.keyword);
+  if (query.start) qs.set("start", query.start);
+  if (query.end) qs.set("end", query.end);
+  Object.entries(query.extra).forEach(([key, value]) => {
+    if (value) qs.set(key, value);
+  });
+
+  try {
+    const json = await api(`/api/stocks/press?${qs.toString()}`);
+    const data = json.data || {};
+    pressState.items = Array.isArray(data.items) ? data.items : [];
+    pressState.count = Number(data.count) || pressState.items.length;
+    pressState.total = Number(data.total) || pressState.count;
+    pressState.seDate = data.se_date || "";
+    pressState.outlet = data.outlet || query.outlet;
+    pressState.keyword = data.keyword || query.keyword;
+    pressState.error = data.error || "";
+    pressState.updatedAt = new Date().toLocaleString("zh-CN", { hour12: false });
+    if (els.pressBody) els.pressBody.scrollTop = 0;
+    paintPress();
+  } catch (err) {
+    pressState.items = [];
+    pressState.count = 0;
+    pressState.total = 0;
+    pressState.error = err.message || String(err);
+    paintPress();
+  } finally {
+    pressState.loading = false;
+    if (els.pressQueryBtn) els.pressQueryBtn.disabled = false;
+    paintPress();
+  }
+}
+
+function setPressOutlet(id) {
+  const next = PRESS_OUTLETS.some((item) => item.id === id) ? id : "cs";
+  const changed = next !== pressOutlet || els.pressTabs?.dataset.ready !== "1";
+  pressOutlet = next;
+  if (els.pressTabs) {
+    els.pressTabs.querySelectorAll("[data-outlet]").forEach((btn) => {
+      const active = btn.getAttribute("data-outlet") === pressOutlet;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+  }
+  if (changed) renderPressExtraFilters();
+  return changed;
+}
+
+function setupPressBox() {
+  if (!els.pressForm || els.pressForm.dataset.bound === "1") return;
+  els.pressForm.dataset.bound = "1";
+  if (els.pressTabs && !els.pressTabs.children.length) {
+    els.pressTabs.innerHTML = PRESS_OUTLETS.map(
+      (item, index) =>
+        `<button type="button" class="news-tab${index === 0 ? " is-active" : ""}" data-outlet="${item.id}" role="tab" aria-selected="${index === 0 ? "true" : "false"}">${item.name}</button>`
+    ).join("");
+  }
+  setPressOutlet(pressOutlet);
+  syncPressDateFields();
+
+  els.pressTabs?.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-outlet]");
+    if (!btn || !els.pressTabs.contains(btn)) return;
+    const changed = setPressOutlet(btn.getAttribute("data-outlet") || "cs");
+    if (changed) loadPress();
+  });
+  els.pressTabs && (els.pressTabs.dataset.ready = "1");
+
+  els.pressDays?.addEventListener("change", () => {
+    syncPressDateFields();
+    if (!isPressCustomRange()) loadPress();
+  });
+  els.pressForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    loadPress();
+  });
+}
+
+function platformConf(source) {
+  return PLATFORM_HUBS.find((item) => item.id === source) || PLATFORM_HUBS[0];
+}
+
+function platformEls(source) {
+  const root = document.querySelector(`.platform-hub[data-source="${source}"]`);
+  if (!root) return {};
+  return {
+    root,
+    form: root.querySelector("[data-platform-form]"),
+    tabs: root.querySelector("[data-platform-tabs]"),
+    extra: root.querySelector("[data-platform-extra]"),
+    days: root.querySelector("[data-platform-days]"),
+    start: root.querySelector("[data-platform-start]"),
+    end: root.querySelector("[data-platform-end]"),
+    startWrap: root.querySelector("[data-platform-start-wrap]"),
+    endWrap: root.querySelector("[data-platform-end-wrap]"),
+    keyword: root.querySelector("[data-platform-keyword]"),
+    btn: root.querySelector("[data-platform-query]"),
+    meta: root.querySelector("[data-platform-meta]"),
+    hint: root.querySelector("[data-platform-hint]"),
+    body: root.querySelector("[data-platform-body]"),
+    list: root.querySelector("[data-platform-list]"),
+  };
+}
+
+function platformTabLabel(source, tab) {
+  const hit = (platformConf(source).tabs || []).find((item) => item.id === tab);
+  return hit?.label || tab || "";
+}
+
+function platformDaysMode(source) {
+  const ui = platformEls(source);
+  return (ui.days?.value || String(PLATFORM_DEFAULT_DAYS)).trim();
+}
+
+function isPlatformCustomRange(source) {
+  return platformDaysMode(source) === "custom";
+}
+
+function syncPlatformDateFields(source) {
+  const ui = platformEls(source);
+  const custom = isPlatformCustomRange(source);
+  ui.startWrap?.classList.toggle("hidden", !custom);
+  ui.endWrap?.classList.toggle("hidden", !custom);
+  if (custom) fillCustomDateInputs(ui.start, ui.end, PLATFORM_DEFAULT_DAYS);
+}
+
+function renderPlatformExtraFilters(source) {
+  const ui = platformEls(source);
+  const row = ui.extra;
+  if (!row) return;
+  const tab = platformTabs[source] || "news";
+  const filters = (platformConf(source).extras || {})[tab] || [];
+  if (!filters.length) {
+    row.innerHTML = "";
+    return;
+  }
+  row.innerHTML = filters
+    .map((filter) => {
+      const options = (filter.options || [])
+        .map(([id, label], index) => `<option value="${escapeHtml(id)}"${index === 0 ? " selected" : ""}>${escapeHtml(label)}</option>`)
+        .join("");
+      return `<label class="cninfo-field">
+        <span>${escapeHtml(filter.label)}</span>
+        <select class="chart-select cninfo-select" data-platform-filter="${escapeHtml(filter.key)}" aria-label="${escapeHtml(filter.label)}">${options}</select>
+      </label>`;
+    })
+    .join("");
+  row.querySelectorAll("[data-platform-filter]").forEach((select) => {
+    select.addEventListener("change", () => loadPlatform(source));
+  });
+}
+
+function platformExtraParams(source) {
+  const ui = platformEls(source);
+  const params = {};
+  ui.extra?.querySelectorAll("[data-platform-filter]").forEach((select) => {
+    const key = select.getAttribute("data-platform-filter");
+    const value = String(select.value || "").trim();
+    if (key && value) params[key] = value;
+  });
+  return params;
+}
+
+function extraFilterValueLabels(source, extra) {
+  const tab = platformTabs[source] || "news";
+  const filters = (platformConf(source).extras || {})[tab] || [];
+  return filters
+    .map((filter) => {
+      const value = extra[filter.key];
+      if (!value) return "";
+      const hit = (filter.options || []).find(([id]) => id === value);
+      return hit ? hit[1] : value;
+    })
+    .filter(Boolean);
+}
+
+function platformQueryParams(source) {
+  const ui = platformEls(source);
+  const custom = isPlatformCustomRange(source);
+  const daysRaw = Number(platformDaysMode(source));
+  const days = custom ? PLATFORM_DEFAULT_DAYS : daysRaw || PLATFORM_DEFAULT_DAYS;
+  return {
+    source,
+    tab: platformTabs[source] || "news",
+    keyword: (ui.keyword?.value || "").trim(),
+    days,
+    start: custom ? (ui.start?.value || "").trim() : "",
+    end: custom ? (ui.end?.value || "").trim() : "",
+    extra: platformExtraParams(source),
+  };
+}
+
+function platformRangeLabel(query, seDate) {
+  if (query.start || query.end) {
+    return seDate || `${query.start || "?"} ~ ${query.end || "今天"}`;
+  }
+  return daysLabel(query.days);
+}
+
+function paintPlatform(source) {
+  const ui = platformEls(source);
+  if (!ui.list) return;
+  const conf = platformConf(source);
+  const st = platformState[source];
+  const query = platformQueryParams(source);
+  const tabLabel = platformTabLabel(source, st.tab || query.tab);
+  const range = platformRangeLabel(query, st.seDate);
+  const extras = extraFilterValueLabels(source, query.extra);
+  const totalBit =
+    st.total && st.total !== st.count ? `${st.count}/${st.total}` : String(st.count || st.items.length);
+  if (ui.meta) {
+    const bits = [tabLabel, ...extras, range, `${totalBit} 条`, st.updatedAt || "-"].filter(Boolean);
+    ui.meta.textContent = st.loading ? `正在查询${conf.name}${tabLabel}…` : bits.join(" · ");
+  }
+  if (ui.hint) {
+    if (st.loading) {
+      ui.hint.textContent = `正在从${conf.name}拉取${tabLabel}…`;
+    } else if (st.error) {
+      ui.hint.textContent = st.error;
+    } else if (!st.items.length) {
+      ui.hint.textContent = "暂无匹配内容，可换页签、关键词或拉长区间";
+    } else {
+      ui.hint.textContent = query.keyword ? `标题含「${query.keyword}」` : "";
+    }
+  }
+  if (st.loading && !st.items.length) {
+    ui.list.innerHTML = `<p class="muted">正在查询${escapeHtml(conf.name)}${escapeHtml(tabLabel)}…</p>`;
+    return;
+  }
+  if (st.error && !st.items.length) {
+    ui.list.innerHTML = `<p class="news-error">${escapeHtml(st.error)}</p>`;
+    return;
+  }
+  ui.list.innerHTML = renderNewsList(st.items, `暂无匹配的${conf.name}${tabLabel}`);
+}
+
+async function loadPlatform(source) {
+  const ui = platformEls(source);
+  const st = platformState[source];
+  if (!code || !ui.list || !st || st.loading) return;
+  const query = platformQueryParams(source);
+  if (isPlatformCustomRange(source) && !query.start && !query.end) {
+    st.error = "自定义区间请填写开始或结束日期";
+    paintPlatform(source);
+    return;
+  }
+
+  st.loading = true;
+  st.error = "";
+  st.tab = query.tab;
+  st.keyword = query.keyword;
+  if (ui.btn) ui.btn.disabled = true;
+  paintPlatform(source);
+
+  const qs = new URLSearchParams({
+    code,
+    source: query.source,
+    tab: query.tab,
+    days: String(query.days),
+  });
+  if (nameHint) qs.set("name", nameHint);
+  if (query.keyword) qs.set("keyword", query.keyword);
+  if (query.start) qs.set("start", query.start);
+  if (query.end) qs.set("end", query.end);
+  Object.entries(query.extra).forEach(([key, value]) => {
+    if (value) qs.set(key, value);
+  });
+
+  try {
+    const json = await api(`/api/stocks/platform?${qs.toString()}`);
+    const data = json.data || {};
+    st.items = Array.isArray(data.items) ? data.items : [];
+    st.count = Number(data.count) || st.items.length;
+    st.total = Number(data.total) || st.count;
+    st.seDate = data.se_date || "";
+    st.tab = data.tab || query.tab;
+    st.keyword = data.keyword || query.keyword;
+    st.error = data.error || "";
+    st.updatedAt = new Date().toLocaleString("zh-CN", { hour12: false });
+    if (ui.body) ui.body.scrollTop = 0;
+    paintPlatform(source);
+  } catch (err) {
+    st.items = [];
+    st.count = 0;
+    st.total = 0;
+    st.error = err.message || String(err);
+    paintPlatform(source);
+  } finally {
+    st.loading = false;
+    if (ui.btn) ui.btn.disabled = false;
+    paintPlatform(source);
+  }
+}
+
+function setPlatformTab(source, tab) {
+  const conf = platformConf(source);
+  const next = (conf.tabs || []).some((item) => item.id === tab) ? tab : conf.tabs?.[0]?.id || "news";
+  const changed = next !== platformTabs[source];
+  platformTabs[source] = next;
+  const ui = platformEls(source);
+  ui.tabs?.querySelectorAll("[data-tab]").forEach((btn) => {
+    const active = btn.getAttribute("data-tab") === next;
+    btn.classList.toggle("is-active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  if (changed) renderPlatformExtraFilters(source);
+  return changed;
+}
+
+function setupPlatformBox(source) {
+  const ui = platformEls(source);
+  if (!ui.form || ui.form.dataset.bound === "1") return;
+  ui.form.dataset.bound = "1";
+  const conf = platformConf(source);
+  if (ui.tabs && !ui.tabs.children.length) {
+    ui.tabs.innerHTML = (conf.tabs || [])
+      .map(
+        (item, index) =>
+          `<button type="button" class="news-tab${index === 0 ? " is-active" : ""}" data-tab="${item.id}" role="tab" aria-selected="${index === 0 ? "true" : "false"}">${item.label}</button>`
+      )
+      .join("");
+  }
+  setPlatformTab(source, platformTabs[source]);
+  renderPlatformExtraFilters(source);
+  syncPlatformDateFields(source);
+
+  ui.tabs?.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-tab]");
+    if (!btn || !ui.tabs.contains(btn)) return;
+    const changed = setPlatformTab(source, btn.getAttribute("data-tab") || "news");
+    if (changed) loadPlatform(source);
+  });
+
+  ui.days?.addEventListener("change", () => {
+    syncPlatformDateFields(source);
+    if (!isPlatformCustomRange(source)) loadPlatform(source);
+  });
+  ui.form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    loadPlatform(source);
+  });
+}
+
+function setupPlatformBoxes() {
+  PLATFORM_HUBS.forEach((hub) => setupPlatformBox(hub.id));
+}
+
+function newsFoldEls() {
+  return {
+    layout: document.querySelector(".news-layout"),
+    folded: document.querySelector(".news-folded"),
+    open: document.querySelector(".news-open"),
+  };
+}
+
+function newsHubId(hub) {
+  return hub?.dataset.fold || hub?.dataset.source || hub?.getAttribute("aria-label") || "";
+}
+
+const NEWS_HUB_ORDER = ["exchange", "cninfo", "press", "ths", "xueqiu", "eastmoney"];
+
+function placeOpenHub(hub) {
+  const { open } = newsFoldEls();
+  if (!open || !hub) return;
+  const rank = NEWS_HUB_ORDER.indexOf(newsHubId(hub));
+  const next = [...open.querySelectorAll(":scope > .cninfo-hub")].find((item) => {
+    if (item === hub) return false;
+    const other = NEWS_HUB_ORDER.indexOf(newsHubId(item));
+    return rank >= 0 && other > rank;
+  });
+  if (next) open.insertBefore(hub, next);
+  else open.appendChild(hub);
+}
+
+function newsFoldStorageKey() {
+  return `orbit-news-folded:${code || "default"}`;
+}
+
+function readFoldedHubs() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(newsFoldStorageKey()) || "[]");
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeFoldedHubs() {
+  const ids = [...document.querySelectorAll(".news-layout .cninfo-hub.is-collapsed")]
+    .map(newsHubId)
+    .filter(Boolean);
+  try {
+    sessionStorage.setItem(newsFoldStorageKey(), JSON.stringify(ids));
+  } catch {
+    /* ignore */
+  }
+}
+
+function preferredNewsCols(n) {
+  if (window.matchMedia("(max-width: 1100px)").matches) return 1;
+  if (n <= 1) return 1;
+  if (n === 2 || n === 4) return 2;
+  return Math.min(3, Math.max(1, n));
+}
+
+function syncNewsHubLayout() {
+  const { folded, open } = newsFoldEls();
+  if (!open || !folded) return;
+  const hubs = [...open.querySelectorAll(":scope > .cninfo-hub")];
+  const n = hubs.length;
+  folded.hidden = folded.children.length === 0;
+  if (!n) {
+    open.style.gridTemplateRows = "";
+    return;
+  }
+  const cols = preferredNewsCols(n);
+  const rows = Math.max(1, Math.ceil(n / cols));
+  const units = 6;
+  open.style.gridTemplateColumns = `repeat(${units}, minmax(0, 1fr))`;
+  open.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+  hubs.forEach((hub, i) => {
+    const lastRowCount = n - cols * (rows - 1);
+    const inLastRow = i >= cols * (rows - 1);
+    const span = inLastRow && lastRowCount < cols ? units / lastRowCount : units / cols;
+    hub.style.gridColumn = `span ${span}`;
+  });
+}
+
+function setNewsHubCollapsed(hub, collapsed) {
+  const { folded, open } = newsFoldEls();
+  if (!hub || !folded || !open) return;
+  hub.classList.toggle("is-collapsed", collapsed);
+  const btn = hub.querySelector(".news-fold-btn");
+  if (btn) {
+    btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    btn.setAttribute("aria-label", collapsed ? "展开" : "折叠");
+    btn.title = collapsed ? "展开" : "折叠";
+    btn.textContent = collapsed ? "▸" : "▾";
+  }
+  if (collapsed && hub.parentElement !== folded) folded.appendChild(hub);
+  else if (!collapsed) placeOpenHub(hub);
+}
+
+function toggleNewsHub(hub) {
+  setNewsHubCollapsed(hub, !hub.classList.contains("is-collapsed"));
+  writeFoldedHubs();
+  syncNewsHubLayout();
+}
+
+function setupNewsFolding() {
+  const { layout, open } = newsFoldEls();
+  if (!layout || !open || layout.dataset.foldBound === "1") return;
+  layout.dataset.foldBound = "1";
+  const saved = new Set(readFoldedHubs());
+  [...open.querySelectorAll(":scope > .cninfo-hub")].forEach((hub) => {
+    const head = hub.querySelector(".cninfo-hub-head");
+    if (!head) return;
+    if (!head.querySelector(".news-fold-btn")) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "news-fold-btn";
+      head.appendChild(btn);
+    }
+    head.addEventListener("click", (event) => {
+      if (event.target.closest("a, input, select, textarea, label")) return;
+      event.preventDefault();
+      toggleNewsHub(hub);
+    });
+    setNewsHubCollapsed(hub, saved.has(newsHubId(hub)));
+  });
+  syncNewsHubLayout();
+}
+
+function syncChartsViewportClass() {
+  document.documentElement.classList.add("company-charts-on");
+  document.body.classList.add("company-charts-on");
+}
+
+function fitChartsToViewport() {
+  const panels = document.querySelector(".company-panels");
+  const tabs = els.companyMainTabs;
+  const rail = document.querySelector(".app-rail");
+  if (!panels || !tabs) return;
+
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const railBox = rail ? rail.getBoundingClientRect() : { width: 0, height: 0, top: 0, right: 0 };
+  const tabsBox = tabs.getBoundingClientRect();
+  const railIsSide = railBox.width > 0 && railBox.right < vw / 2;
+  const railIsBottom = railBox.height > 0 && railBox.top > vh / 2;
+  const left = `${railIsSide ? Math.round(railBox.right) : 0}px`;
+  const top = `${Math.round(tabsBox.bottom)}px`;
+  const right = "0px";
+  const bottom = `${railIsBottom ? Math.max(0, Math.round(vh - railBox.top)) : 0}px`;
+  if (
+    panels.style.position === "fixed" &&
+    panels.style.left === left &&
+    panels.style.top === top &&
+    panels.style.right === right &&
+    panels.style.bottom === bottom
+  ) {
+    return;
+  }
+  const set = (prop, value) => panels.style.setProperty(prop, value, "important");
+  set("position", "fixed");
+  set("left", left);
+  set("top", top);
+  set("right", right);
+  set("bottom", bottom);
+  set("width", "auto");
+  set("height", "auto");
+  set("z-index", "4");
+  set("overflow", "hidden");
 }
 
 function refreshChartsLayout() {
-  window.requestAnimationFrame(() => {
+  const paint = () => {
+    fitChartsToViewport();
     syncChartScrollBar();
     renderChart();
     syncTicksChartScrollBar();
     renderTicksChart();
-    syncPeScrollBar();
-    renderPeChart();
-    syncTurnoverScrollBar();
-    renderTurnoverChart();
+  };
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(paint);
   });
 }
 
 function switchMainPanel(panelId) {
-  if (!panelId || panelId === activeMainPanel) return;
-  activeMainPanel = panelId;
+  const next = normalizeMainPanel(panelId);
+  if (!next || next === activeMainPanel) return;
+  activeMainPanel = next;
 
   if (els.companyMainTabs) {
     els.companyMainTabs.querySelectorAll("[data-panel]").forEach((tab) => {
-      const active = tab.getAttribute("data-panel") === panelId;
+      const active = tab.getAttribute("data-panel") === next;
       tab.classList.toggle("is-active", active);
       tab.setAttribute("aria-selected", active ? "true" : "false");
     });
   }
 
   document.querySelectorAll(".company-panel[data-panel]").forEach((panel) => {
-    const active = panel.getAttribute("data-panel") === panelId;
+    const active = panel.getAttribute("data-panel") === next;
     panel.classList.toggle("is-active", active);
     panel.hidden = !active;
   });
 
   if (els.refreshNewsBtn) {
-    els.refreshNewsBtn.hidden = panelId !== "news";
+    els.refreshNewsBtn.hidden = next !== "news";
   }
 
-  if (panelId === "charts") {
+  if (isQuotesPanel(next)) {
     refreshChartsLayout();
-  } else if (panelId === "news" && needsMoreContent(activeNewsKind)) {
-    loadOlder(activeNewsKind);
+  } else if (next === "news") {
+    syncNewsHubLayout();
   }
 }
 
@@ -1121,8 +2352,11 @@ function dayBreakIndices(items) {
   return breaks;
 }
 
+function setChartSource(text) {
+  if (els.chartMeta) els.chartMeta.textContent = text || "";
+}
+
 function setChartStatus(message, { empty = false } = {}) {
-  if (els.chartMeta) els.chartMeta.textContent = message || "";
   if (els.chartEmpty) {
     els.chartEmpty.textContent = empty ? message || "暂无走势数据" : "暂无走势数据";
     els.chartEmpty.classList.toggle("hidden", !empty);
@@ -1153,18 +2387,8 @@ function chartMinViewSize(total, { ticks = false } = {}) {
 }
 
 function refreshChartWindowStatus() {
-  const conf = CHART_MODES[chartState.mode] || CHART_MODES.day;
-  const { total, size } = chartViewWindow();
-  if (!total) return;
-  const src = chartState.source ? ` · ${chartState.source}` : "";
-  const adj = isAdjustableKline(chartState.mode)
-    ? ` · ${adjustLabel(chartState.adjust)}`
-    : "";
-  const tip =
-    size < total
-      ? ` · 显示 ${size}/${total}，滚轮缩放 · 拖动/滑动平移`
-      : ` · ${total} 点，滚轮可放大`;
-  setChartStatus(`${conf.label}${tip}${adj}${src}`);
+  if (!(chartState.allItems || []).length) return;
+  setChartSource(chartState.source || "");
 }
 
 function setChartViewStart(nextStart, { render = true, hoverIndex = null } = {}) {
@@ -1340,28 +2564,62 @@ function propagateLinkedAxis(source) {
   }
 }
 
-function chartLayout(w, h, { pctAxis = false, compact = false } = {}) {
+function chartLayout(w, h, { pctAxis = false, compact = false, combo = false } = {}) {
   const pad = {
-    top: 14,
-    right: pctAxis ? (compact ? 46 : 52) : compact ? 26 : 30,
-    bottom: compact ? 24 : 28,
-    left: compact ? 48 : 60,
+    top: 8,
+    right: pctAxis ? 52 : 8,
+    bottom: compact ? 20 : 22,
+    left: 52,
   };
   const innerW = Math.max(10, w - pad.left - pad.right);
   const innerH = Math.max(10, h - pad.top - pad.bottom);
-  const volH = Math.max(36, Math.floor(innerH * 0.16));
-  const gap = 10;
-  const priceH = Math.max(100, innerH - volH - gap);
-  return {
-    pad,
-    price: { x: pad.left, y: pad.top, w: innerW, h: priceH },
-    volume: {
-      x: pad.left,
-      y: pad.top + priceH + gap,
-      w: innerW,
-      h: volH,
-    },
-  };
+  if (!combo) {
+    const volH = Math.max(36, Math.floor(innerH * 0.16));
+    const gap = 10;
+    const priceH = Math.max(100, innerH - volH - gap);
+    return {
+      pad,
+      price: { x: pad.left, y: pad.top, w: innerW, h: priceH },
+      volume: {
+        x: pad.left,
+        y: pad.top + priceH + gap,
+        w: innerW,
+        h: volH,
+      },
+    };
+  }
+  const gap = 8;
+  const volH = Math.max(32, Math.floor(innerH * 0.12));
+  const peH = Math.max(72, Math.floor(innerH * 0.24));
+  const priceH = Math.max(110, innerH - volH - peH - gap * 2);
+  let y = pad.top;
+  const price = { x: pad.left, y, w: innerW, h: priceH };
+  y += priceH + gap;
+  const volume = { x: pad.left, y, w: innerW, h: volH };
+  y += volH + gap;
+  const pe = { x: pad.left, y, w: innerW, h: peH };
+  return { pad, price, volume, pe };
+}
+
+function alignMetricsToKline(klineItems, metricItems) {
+  const map = new Map();
+  for (const d of metricItems || []) {
+    const key = itemAxisDate(d);
+    if (key) map.set(key, d);
+  }
+  return (klineItems || []).map((d) => {
+    const hit = map.get(itemAxisDate(d));
+    return hit ? { ...hit, time: d.time } : { time: d.time };
+  });
+}
+
+function metricValueAtTime(allItems, getValue, time) {
+  const key = itemAxisDate({ time });
+  if (!key || !Array.isArray(allItems)) return null;
+  for (let i = allItems.length - 1; i >= 0; i -= 1) {
+    if (itemAxisDate(allItems[i]) === key) return getValue(allItems[i]);
+  }
+  return null;
 }
 
 /** 取 1/2/5×10^n 漂亮步长 */
@@ -1632,10 +2890,10 @@ function drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { preClose
     } else {
       ctx.fillStyle = colors.muted;
     }
-    ctx.fillText(yFormat ? yFormat(val, priceScale.step) : fmtAxisPrice(val, priceScale.step), price.x - 8, y);
+    ctx.fillText(yFormat ? yFormat(val, priceScale.step) : fmtAxisPrice(val, priceScale.step), price.x - 6, y);
   }
 
-  // 分时：右侧涨跌幅刻度，与左侧价格对齐
+  // 分时：右侧涨跌幅刻度放在图外，避免挡住走势
   if (mode === "ticks" && Number.isFinite(preClose) && preClose) {
     ctx.textAlign = "left";
     for (const val of ticks) {
@@ -2023,17 +3281,20 @@ function drawKlineChart(ctx, layout, items, mode, colors, hoverIndex) {
 
   if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
     const x = xAt(hoverIndex);
+    const crossBottom = layout.pe ? layout.pe.y + layout.pe.h : volume.y + volume.h;
     ctx.save();
     ctx.strokeStyle = colors.cross;
     ctx.setLineDash([3, 3]);
     ctx.beginPath();
     ctx.moveTo(x, price.y);
-    ctx.lineTo(x, volume.y + volume.h);
+    ctx.lineTo(x, crossBottom);
     ctx.stroke();
     ctx.restore();
   }
 
-  drawAxesLabels(ctx, layout, priceScale, items, mode, colors);
+  drawAxesLabels(ctx, layout, priceScale, items, mode, colors, {
+    skipTimeLabels: Boolean(layout.pe),
+  });
 }
 
 function chartColors() {
@@ -2069,31 +3330,69 @@ function renderChart(hoverIndex = null) {
   const items = chartState.items || [];
   if (!items.length) return;
 
-  const layout = chartLayout(cssW, cssH);
+  const combo = comboPanesEnabled();
+  const layout = chartLayout(cssW, cssH, { combo });
   drawKlineChart(ctx, layout, items, chartState.mode, colors, hoverIndex);
+  if (!combo || !layout.pe) return;
+
+  const peColors = {
+    accent: cssVar("--accent", "#2ad4b8"),
+    muted: colors.muted,
+    up: colors.up,
+    down: colors.down,
+    grid: colors.grid,
+    cross: colors.cross,
+  };
+  const peItems = alignMetricsToKline(items, peState.allItems);
+  const pePane = {
+    price: layout.pe,
+    volume: { x: layout.pe.x, y: layout.pe.y + layout.pe.h, w: layout.pe.w, h: 0 },
+  };
+  if (peItems.some((d) => peValue(d) != null)) {
+    drawMetricChart(ctx, pePane, peItems, peValue, peColors, hoverIndex, {
+      formatLabel: fmtNum,
+      mode: chartState.mode,
+      skipHoverHair: true,
+      compactRefs: true,
+    });
+  } else {
+    drawPaneLabel(ctx, layout.pe, peState.loading ? "估值加载中…" : "暂无估值", peColors);
+  }
 }
 
-function hideHoverCard() {
-  if (!els.chartHoverCard) return;
-  els.chartHoverCard.classList.add("hidden");
-  els.chartHoverCard.setAttribute("aria-hidden", "true");
-  els.chartHoverCard.innerHTML = "";
+function drawPaneLabel(ctx, rect, text, colors) {
+  if (!rect || !text) return;
+  ctx.save();
+  ctx.fillStyle = colors.muted || "#8494a8";
+  ctx.font = '10px "JetBrains Mono", Consolas, monospace';
+  ctx.textAlign = "right";
+  ctx.textBaseline = "top";
+  ctx.fillText(text, rect.x - 6, rect.y + 4);
+  ctx.restore();
 }
 
-function showHoverCard() {
-  if (!els.chartHoverCard) return;
-  els.chartHoverCard.classList.remove("hidden");
-  els.chartHoverCard.setAttribute("aria-hidden", "false");
+function klineLatestAbsIndex() {
+  const all = chartState.allItems || [];
+  return all.length ? all.length - 1 : -1;
 }
 
-function updateHoverLabel(index, evt = null) {
+function klineQuoteAbsIndex() {
+  const all = chartState.allItems || [];
+  const hover = chartState.hoverAbsIndex;
+  if (hover != null && hover >= 0 && hover < all.length) return hover;
+  return klineLatestAbsIndex();
+}
+
+function fillKlineQuoteCard(absIndex) {
   if (!els.chartHoverCard) return;
-  const items = chartState.items || [];
-  if (index == null || index < 0 || index >= items.length) {
-    hideHoverCard();
+  const all = chartState.allItems || [];
+  if (absIndex == null || absIndex < 0 || absIndex >= all.length) {
+    els.chartHoverCard.classList.add("hidden");
+    els.chartHoverCard.setAttribute("aria-hidden", "true");
+    els.chartHoverCard.innerHTML = "";
     return;
   }
-  const d = items[index];
+  const d = all[absIndex];
 
   const row = (label, valueHtml, valueCls = "") =>
     `<span class="chart-hover-item"><span class="k">${escapeHtml(label)}</span><span class="v ${valueCls}">${valueHtml}</span></span>`;
@@ -2106,10 +3405,9 @@ function updateHoverLabel(index, evt = null) {
     return { text: `${sign}${n.toFixed(2)}%`, cls: `chart-hover-pct ${cls}` };
   };
 
-  let rows = [];
   let pct = Number(d.pct_chg);
-  if (!Number.isFinite(pct) && index > 0) {
-    const prevClose = Number(items[index - 1].close);
+  if (!Number.isFinite(pct) && absIndex > 0) {
+    const prevClose = Number(all[absIndex - 1].close);
     const close = Number(d.close);
     if (Number.isFinite(prevClose) && prevClose && Number.isFinite(close)) {
       pct = ((close - prevClose) / prevClose) * 100;
@@ -2122,7 +3420,6 @@ function updateHoverLabel(index, evt = null) {
         ? "change-down"
         : "";
   const p = pctText(pct);
-  const absIndex = (Number(chartState.viewStart) || 0) + index;
   const { full: maFull } = getKlineMaBundle();
   const maRows = KLINE_MA_LINES.map((line) => {
     const v = maPoint(maFull[line.key] || [], absIndex);
@@ -2132,7 +3429,7 @@ function updateHoverLabel(index, evt = null) {
       `<span style="color:${line.color}">${escapeHtml(fmtNum(v))}</span>`
     );
   }).filter(Boolean);
-  rows = [
+  const rows = [
     row("开盘", escapeHtml(fmtNum(d.open))),
     row("最低", escapeHtml(fmtNum(d.low))),
     row("最高", escapeHtml(fmtNum(d.high))),
@@ -2141,9 +3438,45 @@ function updateHoverLabel(index, evt = null) {
     ...maRows,
     row("成交量", escapeHtml(fmtVol(d.volume))),
   ].filter(Boolean);
+  if (comboPanesEnabled()) {
+    const pe = metricValueAtTime(peState.allItems, peValue, d.time);
+    if (pe != null) {
+      rows.push(
+        row(
+          peSeriesConf().label,
+          `<span style="color:var(--accent)">${escapeHtml(fmtNum(pe))}</span>`
+        )
+      );
+    }
+  }
 
   els.chartHoverCard.innerHTML = `<div class="chart-hover-card-rows chart-hover-card-rows--inline"><span class="chart-hover-card-time">${escapeHtml(d.time || "")}</span>${rows.join("")}</div>`;
   showHoverCard();
+}
+
+function refreshKlineQuoteCard() {
+  fillKlineQuoteCard(klineQuoteAbsIndex());
+}
+
+function hideHoverCard() {
+  chartState.hoverAbsIndex = null;
+  refreshKlineQuoteCard();
+}
+
+function showHoverCard() {
+  if (!els.chartHoverCard) return;
+  els.chartHoverCard.classList.remove("hidden");
+  els.chartHoverCard.setAttribute("aria-hidden", "false");
+}
+
+function updateHoverLabel(index, evt = null) {
+  const items = chartState.items || [];
+  if (index == null || index < 0 || index >= items.length) {
+    hideHoverCard();
+    return;
+  }
+  chartState.hoverAbsIndex = (Number(chartState.viewStart) || 0) + index;
+  fillKlineQuoteCard(chartState.hoverAbsIndex);
 }
 
 function pointerIndex(evt) {
@@ -2153,7 +3486,7 @@ function pointerIndex(evt) {
   if (!canvas || !wrap || !items.length) return null;
   const rect = canvas.getBoundingClientRect();
   const x = evt.clientX - rect.left;
-  const layout = chartLayout(rect.width, rect.height);
+  const layout = chartLayout(rect.width, rect.height, { combo: comboPanesEnabled() });
   if (x < layout.price.x || x > layout.price.x + layout.price.w) return null;
   const t = (x - layout.price.x) / layout.price.w;
   const idx = Math.min(items.length - 1, Math.max(0, Math.floor(t * items.length)));
@@ -2643,7 +3976,7 @@ async function pollTicksLive() {
     ticksState.tradeDate = tradeDate || inferTicksTradeDate(data, ticksState.allItems);
     if (els.ticksChartEmpty) els.ticksChartEmpty.classList.add("hidden");
     refreshTicksQuoteCard();
-    if (activeMainPanel === "charts") {
+    if (isQuotesPanel()) {
       renderTicksChart();
     }
   } catch {
@@ -2686,7 +4019,7 @@ function onTicksMarketClock() {
 
   if (phase === "live") {
     refreshTicksLiveStatus();
-    if (activeMainPanel === "charts" && els.ticksChart) {
+    if (isQuotesPanel() && els.ticksChart) {
       renderTicksChart();
     }
     void pollTicksLive();
@@ -2866,6 +4199,7 @@ async function loadChart(mode = chartState.mode) {
   chartState.loading = true;
   syncChartModeSelect(mode);
   syncChartAdjustUi(mode);
+  setChartSource("加载中…");
   setChartStatus(`正在加载${conf.label}…`);
   hideHoverCard();
 
@@ -2884,16 +4218,22 @@ async function loadChart(mode = chartState.mode) {
 
     const count = chartState.allItems.length;
     if (!count) {
+      setChartSource("");
       setChartStatus("暂无走势数据", { empty: true });
+      hideHoverCard();
       renderChart();
       return;
     }
     refreshChartWindowStatus();
+    hideHoverCard();
     renderChart();
     propagateLinkedAxis("kline");
   } catch (err) {
     resetChartViewport([], conf);
+    chartState.source = "";
+    setChartSource("");
     setChartStatus(err.message || "走势加载失败", { empty: true });
+    hideHoverCard();
     renderChart();
   } finally {
     chartState.loading = false;
@@ -2973,9 +4313,9 @@ function setupTicksChart() {
 /* ---------- 市盈率曲线 ---------- */
 
 const PE_SERIES = {
-  dyn: { key: "pe_dyn", label: "市盈率(动)" },
-  ttm: { key: "pe_ttm", label: "市盈率(TTM)" },
-  static: { key: "pe_static", label: "市盈率(静)" },
+  dyn: { key: "pe_dyn", label: "市盈率动" },
+  ttm: { key: "pe_ttm", label: "市盈率TTM" },
+  static: { key: "pe_static", label: "市盈率静" },
   pb: { key: "pb", label: "市净率" },
 };
 
@@ -3150,7 +4490,7 @@ function refreshPeWindowStatus() {
 }
 
 function peChartLayout(w, h) {
-  const pad = { top: 14, right: 56, bottom: 28, left: 60 };
+  const pad = { top: 8, right: 8, bottom: 22, left: 8 };
   const innerW = Math.max(10, w - pad.left - pad.right);
   const innerH = Math.max(10, h - pad.top - pad.bottom);
   return {
@@ -3246,8 +4586,8 @@ function drawPeRefLine(ctx, price, y, text, color, align = "right") {
   ctx.font = '10px "JetBrains Mono", Consolas, monospace';
   ctx.textBaseline = "middle";
   if (align === "right") {
-    ctx.textAlign = "left";
-    ctx.fillText(text, price.x + price.w + 6, y);
+    ctx.textAlign = "right";
+    ctx.fillText(text, price.x + price.w - 6, y);
   } else {
     ctx.textAlign = "left";
     ctx.fillText(text, price.x + 6, y + 8);
@@ -3255,7 +4595,7 @@ function drawPeRefLine(ctx, price, y, text, color, align = "right") {
   ctx.restore();
 }
 
-function drawMetricChart(ctx, layout, items, getValue, colors, hoverIndex, { formatLabel = fmtNum, yFormat = null, mode = "day" } = {}) {
+function drawMetricChart(ctx, layout, items, getValue, colors, hoverIndex, { formatLabel = fmtNum, yFormat = null, mode = "day", skipTimeLabels = false, skipHoverHair = false, paneLabel = "", compactRefs = false } = {}) {
   const n = items.length;
   if (!n) return;
   const values = items.map(getValue).filter((v) => v != null);
@@ -3316,11 +4656,13 @@ function drawMetricChart(ctx, layout, items, getValue, colors, hoverIndex, { for
   if (q50 != null) {
     drawPeRefLine(ctx, price, yAt(q50), `中 ${formatLabel(q50)}`, "rgba(132, 148, 168, 0.85)");
   }
-  if (q25 != null) {
-    drawPeRefLine(ctx, price, yAt(q25), `25% ${formatLabel(q25)}`, "rgba(61, 214, 140, 0.7)");
-  }
-  if (q75 != null) {
-    drawPeRefLine(ctx, price, yAt(q75), `75% ${formatLabel(q75)}`, "rgba(255, 93, 108, 0.7)");
+  if (!compactRefs) {
+    if (q25 != null) {
+      drawPeRefLine(ctx, price, yAt(q25), `25% ${formatLabel(q25)}`, "rgba(61, 214, 140, 0.7)");
+    }
+    if (q75 != null) {
+      drawPeRefLine(ctx, price, yAt(q75), `75% ${formatLabel(q75)}`, "rgba(255, 93, 108, 0.7)");
+    }
   }
 
   const lastIdx = [...items].map(getValue).reduce((acc, v, i) => (v != null ? i : acc), -1);
@@ -3338,10 +4680,12 @@ function drawMetricChart(ctx, layout, items, getValue, colors, hoverIndex, { for
     ctx.save();
     ctx.strokeStyle = colors.cross;
     ctx.setLineDash([3, 3]);
-    ctx.beginPath();
-    ctx.moveTo(x, price.y);
-    ctx.lineTo(x, price.y + price.h);
-    ctx.stroke();
+    if (!skipHoverHair) {
+      ctx.beginPath();
+      ctx.moveTo(x, price.y);
+      ctx.lineTo(x, price.y + price.h);
+      ctx.stroke();
+    }
     if (v != null) {
       const y = yAt(v);
       ctx.beginPath();
@@ -3357,7 +4701,8 @@ function drawMetricChart(ctx, layout, items, getValue, colors, hoverIndex, { for
     ctx.restore();
   }
 
-  drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { yFormat });
+  if (paneLabel) drawPaneLabel(ctx, price, paneLabel, colors);
+  drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { yFormat, skipTimeLabels });
 }
 
 function drawPeChart(ctx, layout, items, colors, hoverIndex) {
@@ -3365,37 +4710,20 @@ function drawPeChart(ctx, layout, items, colors, hoverIndex) {
 }
 
 function renderPeChart(hoverIndex = null) {
-  const canvas = els.peChart;
-  const wrap = els.peChartWrap;
-  if (!canvas || !wrap) return;
-
-  const dpr = window.devicePixelRatio || 1;
-  const cssW = Math.max(320, wrap.clientWidth || 640);
-  const cssH = Math.max(220, wrap.clientHeight || 280);
-  canvas.width = Math.floor(cssW * dpr);
-  canvas.height = Math.floor(cssH * dpr);
-  const ctx = canvas.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  const colors = {
-    accent: cssVar("--accent", "#2ad4b8"),
-    muted: cssVar("--muted", "#8494a8"),
-    up: cssVar("--up", "#ff5d6c"),
-    down: cssVar("--down", "#3dd68c"),
-    grid: "rgba(42, 212, 184, 0.08)",
-    cross: "rgba(232, 238, 247, 0.35)",
-  };
-
-  paintChartFrame(ctx, cssW, cssH, colors);
-  const items = peState.items || [];
-  const hasValue = items.some((d) => peValue(d) != null);
-  if (!items.length || !hasValue) return;
-  drawPeChart(ctx, peChartLayout(cssW, cssH), items, colors, hoverIndex);
+  if (els.priceChart) renderChart(hoverIndex);
 }
 
 function syncPeSeriesSelect(series = peState.series) {
   if (!els.peSeriesSelect) return;
   if (els.peSeriesSelect.value !== series) els.peSeriesSelect.value = series;
+}
+
+function setupPeChart() {
+  if (!els.peSeriesSelect) return;
+  els.peSeriesSelect.addEventListener("change", () => {
+    applyPeSeries(els.peSeriesSelect.value);
+  });
+  syncPeSeriesSelect();
 }
 
 function applyPeSeries(series) {
@@ -3407,15 +4735,17 @@ function applyPeSeries(series) {
   if (!hasValue) {
     setPeStatus(peEmptyHint(), { empty: true });
     renderPeChart();
+    refreshKlineQuoteCard();
     return;
   }
   setPeStatus("");
   refreshPeWindowStatus();
   renderPeChart();
+  refreshKlineQuoteCard();
 }
 
 async function loadPeChart() {
-  if (!code || !els.peChart) return;
+  if (!code) return;
   peState.loading = true;
   setPeStatus("正在加载估值…");
   hidePeHoverCard();
@@ -3429,149 +4759,19 @@ async function loadPeChart() {
     if (!peState.allItems.length || !hasValue) {
       setPeStatus(peEmptyHint(), { empty: true });
       renderPeChart();
+      refreshKlineQuoteCard();
       return;
     }
     setPeStatus("");
     refreshPeWindowStatus();
     renderPeChart();
+    refreshKlineQuoteCard();
   } catch (err) {
     resetPeViewport([]);
     setPeStatus(err.message || "估值加载失败", { empty: true });
     renderPeChart();
   } finally {
     peState.loading = false;
-  }
-}
-
-function setupPeChart() {
-  if (!els.peSeriesSelect || !els.peChart) return;
-
-  els.peSeriesSelect.addEventListener("change", () => {
-    applyPeSeries(els.peSeriesSelect.value);
-  });
-
-  syncPeSeriesSelect();
-
-  if (els.peChartScrollBar) {
-    els.peChartScrollBar.addEventListener("input", () => {
-      hidePeHoverCard();
-      setPeViewStart(Number(els.peChartScrollBar.value) || 0, { render: true });
-    });
-  }
-
-  let hoverIdx = null;
-  let pan = null;
-
-  const onMove = (evt) => {
-    if (pan) {
-      const dx = evt.clientX - pan.lastX;
-      if (Math.abs(evt.clientX - pan.originX) > 4) pan.moved = true;
-      if (pan.moved && Math.abs(dx) >= 1) {
-        hidePeHoverCard();
-        hoverIdx = null;
-        panPeByPixels(dx, pan.width);
-        pan.lastX = evt.clientX;
-      }
-      return;
-    }
-    const idx = pePointerIndex(evt);
-    if (idx === hoverIdx) return;
-    hoverIdx = idx;
-    updatePeHoverLabel(idx);
-    renderPeChart(idx);
-  };
-
-  const onLeave = () => {
-    if (pan) return;
-    hoverIdx = null;
-    hidePeHoverCard();
-    renderPeChart();
-  };
-
-  const onDown = (evt) => {
-    if (evt.button != null && evt.button !== 0) return;
-    const rect = els.peChart.getBoundingClientRect();
-    pan = { originX: evt.clientX, lastX: evt.clientX, width: rect.width, moved: false };
-    els.peChartWrap?.classList.add("is-panning");
-    try {
-      els.peChart.setPointerCapture(evt.pointerId);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const onUp = (evt) => {
-    if (!pan) return;
-    const wasPan = pan.moved;
-    pan = null;
-    els.peChartWrap?.classList.remove("is-panning");
-    try {
-      els.peChart.releasePointerCapture(evt.pointerId);
-    } catch {
-      /* ignore */
-    }
-    if (!wasPan) {
-      const idx = pePointerIndex(evt);
-      hoverIdx = idx;
-      updatePeHoverLabel(idx);
-      renderPeChart(idx);
-    } else {
-      hidePeHoverCard();
-      hoverIdx = null;
-      renderPeChart();
-    }
-  };
-
-  els.peChart.addEventListener("pointerdown", onDown);
-  els.peChart.addEventListener("pointermove", onMove);
-  els.peChart.addEventListener("pointerup", onUp);
-  els.peChart.addEventListener("pointercancel", onUp);
-  els.peChart.addEventListener("pointerleave", onLeave);
-
-  els.peChart.addEventListener(
-    "wheel",
-    (evt) => {
-      const total = (peState.allItems || []).length;
-      if (!total) return;
-      evt.preventDefault();
-      hidePeHoverCard();
-      hoverIdx = null;
-      const rect = els.peChart.getBoundingClientRect();
-      const layout = peChartLayout(rect.width, rect.height);
-      const x = evt.clientX - rect.left;
-      let anchorRatio = 0.5;
-      if (x >= layout.price.x && x <= layout.price.x + layout.price.w) {
-        anchorRatio = (x - layout.price.x) / layout.price.w;
-      }
-      if (Math.abs(evt.deltaX) > Math.abs(evt.deltaY) * 1.15) {
-        const { maxStart } = peViewWindow();
-        if (maxStart <= 0) return;
-        const step = Math.max(1, Math.round(Math.abs(evt.deltaX) / 40));
-        setPeViewStart(peState.viewStart + (evt.deltaX > 0 ? step : -step), { render: true });
-        return;
-      }
-      const steps = Math.max(1, Math.min(5, Math.round(Math.abs(evt.deltaY) / 72) || 1));
-      const base = evt.deltaY > 0 ? 1.14 : 1 / 1.14;
-      zoomPeViewport(anchorRatio, base ** steps, { render: true });
-    },
-    { passive: false }
-  );
-
-  if (typeof ResizeObserver !== "undefined" && els.peChartWrap) {
-    let timer = 0;
-    const ro = new ResizeObserver(() => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        syncPeScrollBar();
-        renderPeChart(hoverIdx);
-      }, 60);
-    });
-    ro.observe(els.peChartWrap);
-  } else {
-    window.addEventListener("resize", () => {
-      syncPeScrollBar();
-      renderPeChart(hoverIdx);
-    });
   }
 }
 
@@ -3772,36 +4972,11 @@ function drawTurnoverChart(ctx, layout, items, colors, hoverIndex) {
 }
 
 function renderTurnoverChart(hoverIndex = null) {
-  const canvas = els.turnoverChart;
-  const wrap = els.turnoverChartWrap;
-  if (!canvas || !wrap) return;
-
-  const dpr = window.devicePixelRatio || 1;
-  const cssW = Math.max(320, wrap.clientWidth || 640);
-  const cssH = Math.max(220, wrap.clientHeight || 280);
-  canvas.width = Math.floor(cssW * dpr);
-  canvas.height = Math.floor(cssH * dpr);
-  const ctx = canvas.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  const colors = {
-    accent: cssVar("--accent-hot", "#ffb05c"),
-    muted: cssVar("--muted", "#8494a8"),
-    up: cssVar("--up", "#ff5d6c"),
-    down: cssVar("--down", "#3dd68c"),
-    grid: "rgba(255, 176, 92, 0.08)",
-    cross: "rgba(232, 238, 247, 0.35)",
-  };
-
-  paintChartFrame(ctx, cssW, cssH, colors);
-  const items = turnoverState.items || [];
-  const hasValue = items.some((d) => turnoverValue(d) != null);
-  if (!items.length || !hasValue) return;
-  drawTurnoverChart(ctx, peChartLayout(cssW, cssH), items, colors, hoverIndex);
+  if (els.priceChart) renderChart(hoverIndex);
 }
 
 async function loadTurnoverChart({ refresh = false } = {}) {
-  if (!code || !els.turnoverChart) return;
+  if (!code) return;
   turnoverState.loading = true;
   setTurnoverStatus("正在加载换手率…");
   hideTurnoverHoverCard();
@@ -3960,10 +5135,30 @@ els.refreshNewsBtn.addEventListener("click", () =>
   loadAllNews({ refresh: true })
 );
 
+function setupChartsViewport() {
+  const relayout = () => {
+    fitChartsToViewport();
+    syncNewsHubLayout();
+  };
+  window.addEventListener("resize", relayout);
+  if (typeof ResizeObserver !== "undefined") {
+    const stage = document.querySelector(".app-stage");
+    if (stage) new ResizeObserver(relayout).observe(stage);
+  }
+  syncChartsViewportClass();
+  const tab = normalizeMainPanel((params.get("tab") || "").trim());
+  if (tab) switchMainPanel(tab);
+  fitChartsToViewport();
+}
+
 setupBackLink();
-setupScrollLoaders();
-setupNewsTabs();
+setupExchangeBox();
+setupPressBox();
+setupPlatformBoxes();
+setupCninfoBox();
+setupNewsFolding();
 setupMainTabs();
+setupChartsViewport();
 setupMetricTips();
 setupChart();
 setupTicksChart();
@@ -3971,13 +5166,12 @@ setupPeChart();
 setupTurnoverChart();
 (async () => {
   await loadProfile();
-  updateNewsHubMeta(activeNewsKind);
   await Promise.all([
     loadChart("day"),
     loadTicksChart(),
     loadPeChart(),
-    loadTurnoverChart(),
     loadAllNews({ refresh: false }),
   ]);
   propagateLinkedAxis("kline");
+  if (isQuotesPanel()) refreshChartsLayout();
 })();

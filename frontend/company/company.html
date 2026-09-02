@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="app-shell-root">
+<html lang="zh-CN" class="app-shell-root company-charts-on">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,9 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=orbit-shell-20260902" />
+  <link rel="stylesheet" href="/css/style.css?v=orbit-news-fold-20260902" />
 </head>
-<body class="app-shell company-page-root">
+<body class="app-shell company-page-root company-charts-on">
   <nav class="app-rail" aria-label="主导航">
     <a class="app-rail-brand" href="/" title="ORBIT 申万终端">
       <span class="app-rail-mark">OR</span>
@@ -41,7 +41,7 @@
       <div class="brand">
         <div>
           <h1 id="pageTitle">公司详情</h1>
-          <p id="pageSub" class="company-page-sub">概览 · 走势 · 资讯</p>
+          <p id="pageSub" class="company-page-sub">行情 · 资讯</p>
         </div>
       </div>
       <div class="top-actions">
@@ -51,29 +51,26 @@
     </header>
 
     <nav id="companyMainTabs" class="company-main-tabs" aria-label="主面板">
-      <button type="button" class="company-main-tab is-active" data-panel="overview" role="tab" aria-selected="true">概览</button>
-      <button type="button" class="company-main-tab" data-panel="charts" role="tab" aria-selected="false">走势</button>
+      <button type="button" class="company-main-tab is-active" data-panel="quotes" role="tab" aria-selected="true">行情</button>
       <button type="button" class="company-main-tab" data-panel="news" role="tab" aria-selected="false">资讯</button>
     </nav>
 
     <div class="company-panels">
-      <div id="panel-overview" class="company-panel is-active" data-panel="overview" role="tabpanel">
-        <section class="company-hero">
-          <div class="company-hero-identity">
-            <p id="companyBreadcrumb" class="breadcrumb">-</p>
-            <div class="company-hero-title-row">
-              <h2 id="companyName">-</h2>
-              <span id="companyCodeChip" class="company-code-chip"></span>
+      <div id="panel-quotes" class="company-panel is-active" data-panel="quotes" role="tabpanel">
+        <div class="quotes-layout">
+          <section class="company-hero">
+            <div class="company-hero-identity">
+              <p id="companyBreadcrumb" class="breadcrumb">-</p>
+              <div class="company-hero-title-row">
+                <h2 id="companyName">-</h2>
+                <span id="companyCodeChip" class="company-code-chip"></span>
+              </div>
             </div>
-          </div>
-          <div id="metricsPanels" class="company-metrics-panels">
-            <div id="metricsGrid" class="company-metrics"></div>
-          </div>
-        </section>
-      </div>
-
-      <div id="panel-charts" class="company-panel" data-panel="charts" role="tabpanel" hidden>
-        <div class="charts-deck">
+            <div id="metricsPanels" class="company-metrics-panels">
+              <div id="metricsGrid" class="company-metrics"></div>
+            </div>
+          </section>
+          <div class="charts-deck">
           <article class="chart-card chart-card--ticks" aria-label="实时走势">
             <header class="chart-card__head">
               <div class="chart-card__head-main">
@@ -108,41 +105,51 @@
             </footer>
           </article>
 
-          <article class="chart-card chart-card--kline" aria-label="行情走势">
+          <article class="chart-card chart-card--kline is-combo" aria-label="走势">
             <header class="chart-card__head">
               <div class="chart-card__head-main">
                 <div class="chart-card__title">
                   <span class="chart-card__mark" aria-hidden="true"></span>
-                  <h3>行情走势</h3>
+                  <h3>走势</h3>
                 </div>
-                <p id="chartMeta" class="chart-card__meta muted">加载中…</p>
-              </div>
-              <div class="chart-card__controls">
-                <label class="chart-select-wrap" aria-label="周期">
-                  <select id="chartModeSelect" class="chart-select">
-                    <option value="day">日K</option>
-                    <option value="week">周K</option>
-                    <option value="month">月K</option>
-                    <option value="1m">1分</option>
-                    <option value="5m">5分</option>
-                    <option value="15m">15分</option>
-                    <option value="30m">30分</option>
-                    <option value="60m">60分</option>
-                  </select>
-                </label>
                 <div id="chartHoverCard" class="chart-kline-hover chart-hover-card hidden" aria-hidden="true"></div>
-                <label id="chartAdjustWrap" class="chart-select-wrap" aria-label="复权">
-                  <select id="chartAdjustSelect" class="chart-select">
-                    <option value="qfq">前复权</option>
-                    <option value="none">不复权</option>
-                    <option value="hfq">后复权</option>
-                  </select>
-                </label>
+              </div>
+              <p id="chartMeta" class="chart-card__meta muted"></p>
+              <div class="chart-card__controls">
+                <div class="chart-select-group">
+                  <label class="chart-select-wrap" aria-label="周期">
+                    <select id="chartModeSelect" class="chart-select">
+                      <option value="day">日K</option>
+                      <option value="week">周K</option>
+                      <option value="month">月K</option>
+                      <option value="1m">1分</option>
+                      <option value="5m">5分</option>
+                      <option value="15m">15分</option>
+                      <option value="30m">30分</option>
+                      <option value="60m">60分</option>
+                    </select>
+                  </label>
+                  <label id="chartAdjustWrap" class="chart-select-wrap" aria-label="复权">
+                    <select id="chartAdjustSelect" class="chart-select">
+                      <option value="qfq">前复权</option>
+                      <option value="none">不复权</option>
+                      <option value="hfq">后复权</option>
+                    </select>
+                  </label>
+                  <label id="peSeriesWrap" class="chart-select-wrap" aria-label="估值口径">
+                    <select id="peSeriesSelect" class="chart-select">
+                      <option value="dyn">市盈率动</option>
+                      <option value="ttm" selected>市盈率TTM</option>
+                      <option value="static">市盈率静</option>
+                      <option value="pb">市净率</option>
+                    </select>
+                  </label>
+                </div>
               </div>
             </header>
             <div class="chart-card__stage">
               <div id="chartWrap" class="chart-canvas-wrap">
-                <canvas id="priceChart" width="960" height="360" aria-label="价格走势图"></canvas>
+                <canvas id="priceChart" width="960" height="360" aria-label="行情估值走势图"></canvas>
                 <p id="chartEmpty" class="muted chart-empty hidden">暂无走势数据</p>
               </div>
             </div>
@@ -162,160 +169,311 @@
               </div>
             </footer>
           </article>
-
-          <article class="chart-card chart-card--pe" aria-label="估值走势">
-            <header class="chart-card__head">
-              <div class="chart-card__head-main">
-                <div class="chart-card__title">
-                  <span class="chart-card__mark" aria-hidden="true"></span>
-                  <h3>估值走势</h3>
-                </div>
-                <p id="peChartMeta" class="chart-card__meta muted">加载中…</p>
-              </div>
-              <div class="chart-card__controls">
-                <label class="chart-select-wrap" aria-label="估值口径">
-                  <select id="peSeriesSelect" class="chart-select">
-                    <option value="dyn">市盈率动</option>
-                    <option value="ttm" selected>市盈率TTM</option>
-                    <option value="static">市盈率静</option>
-                    <option value="pb">市净率</option>
-                  </select>
-                </label>
-                <div id="peChartHoverCard" class="chart-pe-hover chart-hover-card hidden" aria-hidden="true"></div>
-              </div>
-            </header>
-            <div class="chart-card__stage">
-              <div id="peChartWrap" class="chart-canvas-wrap">
-                <canvas id="peChart" width="960" height="320" aria-label="估值曲线图"></canvas>
-                <p id="peChartEmpty" class="muted chart-empty hidden">暂无估值数据</p>
-              </div>
-            </div>
-            <footer class="chart-card__foot">
-              <div id="peChartAxisScroll" class="chart-axis-scroll is-disabled">
-                <input
-                  id="peChartScrollBar"
-                  class="chart-scroll-bar"
-                  type="range"
-                  min="0"
-                  max="0"
-                  value="0"
-                  step="1"
-                  aria-label="估值时间轴滑动"
-                  disabled
-                />
-              </div>
-            </footer>
-          </article>
-
-          <article class="chart-card chart-card--turnover" aria-label="换手率走势">
-            <header class="chart-card__head">
-              <div class="chart-card__head-main">
-                <div class="chart-card__title">
-                  <span class="chart-card__mark" aria-hidden="true"></span>
-                  <h3>换手率走势</h3>
-                </div>
-                <p id="turnoverChartMeta" class="chart-card__meta muted">加载中…</p>
-              </div>
-              <div class="chart-card__controls">
-                <div id="turnoverChartHoverCard" class="chart-turnover-hover chart-hover-card hidden" aria-hidden="true"></div>
-              </div>
-            </header>
-            <div class="chart-card__stage">
-              <div id="turnoverChartWrap" class="chart-canvas-wrap">
-                <canvas id="turnoverChart" width="960" height="320" aria-label="换手率曲线图"></canvas>
-                <p id="turnoverChartEmpty" class="muted chart-empty hidden">暂无换手率数据</p>
-              </div>
-            </div>
-            <footer class="chart-card__foot">
-              <div id="turnoverChartAxisScroll" class="chart-axis-scroll is-disabled">
-                <input
-                  id="turnoverChartScrollBar"
-                  class="chart-scroll-bar"
-                  type="range"
-                  min="0"
-                  max="0"
-                  value="0"
-                  step="1"
-                  aria-label="换手率时间轴滑动"
-                  disabled
-                />
-              </div>
-            </footer>
-          </article>
+        </div>
         </div>
       </div>
 
       <div id="panel-news" class="company-panel" data-panel="news" role="tabpanel" hidden>
-        <section class="company-section news-hub" aria-label="资讯">
-          <div class="section-head news-hub-head">
-            <h3>资讯</h3>
-            <p id="newsHubMeta" class="muted news-hub-meta"></p>
+        <div class="news-layout">
+        <div class="news-folded" hidden></div>
+        <div class="news-open">
+        <section class="company-section cninfo-hub" data-fold="exchange" aria-label="交易所公告">
+          <div class="section-head cninfo-hub-head">
+            <h3 id="exchangeTitle">交易所公告</h3>
+            <p id="exchangeMeta" class="muted news-hub-meta"></p>
           </div>
-          <div id="newsTabs" class="news-tab-bar" role="tablist" aria-label="资讯分类">
-            <button type="button" class="news-tab is-active" data-kind="exchange" role="tab" aria-selected="true">交易所公告</button>
-            <button type="button" class="news-tab" data-kind="cninfo" role="tab" aria-selected="false">巨潮公告</button>
-            <button type="button" class="news-tab" data-kind="designated_press" role="tab" aria-selected="false">七报七网</button>
-            <button type="button" class="news-tab" data-kind="official_news" role="tab" aria-selected="false">官方新闻</button>
-            <button type="button" class="news-tab" data-kind="other_news" role="tab" aria-selected="false">其他新闻</button>
-            <button type="button" class="news-tab" data-kind="reports" role="tab" aria-selected="false">机构研报</button>
-          </div>
-          <div class="news-panels">
-            <div class="news-panel is-active" data-panel="exchange">
-              <p class="muted news-section-meta" data-meta="exchange"></p>
-              <div class="company-news-body" data-body="exchange" tabindex="0">
-                <div class="news-list" data-list="exchange">
-                  <p class="muted">正在加载最新…</p>
-                </div>
-                <p class="muted news-scroll-hint" data-hint="exchange"></p>
-              </div>
+          <form id="exchangeForm" class="cninfo-filters" autocomplete="off">
+            <div id="exchangeTabs" class="news-tab-bar cninfo-tab-bar" role="tablist" aria-label="交易所页签">
+              <button type="button" class="news-tab is-active" data-tab="bulletin" role="tab" aria-selected="true">公告</button>
+              <button type="button" class="news-tab" data-tab="inquiries" role="tab" aria-selected="false">问询</button>
             </div>
-            <div class="news-panel" data-panel="cninfo" hidden>
-              <p class="muted news-section-meta" data-meta="cninfo"></p>
-              <div class="company-news-body" data-body="cninfo" tabindex="0">
-                <div class="news-list" data-list="cninfo">
-                  <p class="muted">正在加载最新…</p>
-                </div>
-                <p class="muted news-scroll-hint" data-hint="cninfo"></p>
-              </div>
+            <div class="cninfo-filter-row">
+              <label class="cninfo-field">
+                <span>分类</span>
+                <select id="exchangeCategory" class="chart-select cninfo-select" aria-label="公告分类">
+                  <option value="">全部</option>
+                  <option value="定期">定期报告</option>
+                  <option value="年报">年报</option>
+                  <option value="半年报">半年报</option>
+                  <option value="一季报">一季报</option>
+                  <option value="三季报">三季报</option>
+                  <option value="临时">临时公告</option>
+                </select>
+              </label>
+              <label class="cninfo-field">
+                <span>区间</span>
+                <select id="exchangeDays" class="chart-select cninfo-select" aria-label="回溯区间">
+                  <option value="7">近 7 天</option>
+                  <option value="30">近 30 天</option>
+                  <option value="90">近 90 天</option>
+                  <option value="365" selected>近 1 年</option>
+                  <option value="1825">近 5 年</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </label>
+              <label id="exchangeStartWrap" class="cninfo-field cninfo-date-field hidden">
+                <span>起</span>
+                <input id="exchangeStart" type="date" class="cninfo-date" aria-label="开始日期" />
+              </label>
+              <label id="exchangeEndWrap" class="cninfo-field cninfo-date-field hidden">
+                <span>止</span>
+                <input id="exchangeEnd" type="date" class="cninfo-date" aria-label="结束日期" />
+              </label>
+              <label class="cninfo-field cninfo-keyword-field">
+                <span>关键词</span>
+                <input id="exchangeKeyword" type="search" class="cninfo-keyword" placeholder="标题，如 减持 / 问询函" maxlength="80" />
+              </label>
+              <button id="exchangeQueryBtn" class="btn" type="submit">查询</button>
             </div>
-            <div class="news-panel" data-panel="designated_press" hidden>
-              <p class="muted news-section-meta" data-meta="designated_press"></p>
-              <div class="company-news-body" data-body="designated_press" tabindex="0">
-                <div class="news-list" data-list="designated_press">
-                  <p class="muted">正在加载最新…</p>
-                </div>
-                <p class="muted news-scroll-hint" data-hint="designated_press"></p>
-              </div>
-            </div>
-            <div class="news-panel" data-panel="official_news" hidden>
-              <p class="muted news-section-meta" data-meta="official_news"></p>
-              <div class="company-news-body" data-body="official_news" tabindex="0">
-                <div class="news-list" data-list="official_news">
-                  <p class="muted">正在加载最新…</p>
-                </div>
-                <p class="muted news-scroll-hint" data-hint="official_news"></p>
-              </div>
-            </div>
-            <div class="news-panel" data-panel="other_news" hidden>
-              <p class="muted news-section-meta" data-meta="other_news"></p>
-              <div class="company-news-body" data-body="other_news" tabindex="0">
-                <div class="news-list" data-list="other_news">
-                  <p class="muted">正在加载最新…</p>
-                </div>
-                <p class="muted news-scroll-hint" data-hint="other_news"></p>
-              </div>
-            </div>
-            <div class="news-panel" data-panel="reports" hidden>
-              <p class="muted news-section-meta" data-meta="reports"></p>
-              <div class="company-news-body" data-body="reports" tabindex="0">
-                <div class="news-list" data-list="reports">
-                  <p class="muted">正在加载最新…</p>
-                </div>
-                <p class="muted news-scroll-hint" data-hint="reports"></p>
-              </div>
+          </form>
+          <p id="exchangeHint" class="muted news-scroll-hint cninfo-hint"></p>
+          <div id="exchangeBody" class="company-news-body cninfo-body" tabindex="0">
+            <div id="exchangeList" class="news-list">
+              <p class="muted">正在加载交易所公告…</p>
             </div>
           </div>
         </section>
+        <section class="company-section cninfo-hub" data-fold="cninfo" aria-label="巨潮公告">
+          <div class="section-head cninfo-hub-head">
+            <h3>巨潮公告</h3>
+            <p id="cninfoMeta" class="muted news-hub-meta"></p>
+          </div>
+          <form id="cninfoForm" class="cninfo-filters" autocomplete="off">
+            <div id="cninfoTabs" class="news-tab-bar cninfo-tab-bar" role="tablist" aria-label="巨潮页签">
+              <button type="button" class="news-tab is-active" data-tab="fulltext" role="tab" aria-selected="true">公告</button>
+              <button type="button" class="news-tab" data-tab="relation" role="tab" aria-selected="false">调研</button>
+              <button type="button" class="news-tab" data-tab="supervise" role="tab" aria-selected="false">督导</button>
+            </div>
+            <div class="cninfo-filter-row">
+              <label class="cninfo-field">
+                <span>分类</span>
+                <select id="cninfoCategory" class="chart-select cninfo-select" aria-label="公告分类">
+                  <option value="">全部</option>
+                  <option value="年报,半年报,一季报,三季报">定期报告</option>
+                  <option value="年报">年报</option>
+                  <option value="半年报">半年报</option>
+                  <option value="一季报">一季报</option>
+                  <option value="三季报">三季报</option>
+                  <option value="业绩预告">业绩预告</option>
+                  <option value="权益分派">权益分派</option>
+                  <option value="董事会">董事会</option>
+                  <option value="监事会">监事会</option>
+                  <option value="股东大会">股东大会</option>
+                  <option value="日常经营">日常经营</option>
+                  <option value="公司治理">公司治理</option>
+                  <option value="中介报告">中介报告</option>
+                  <option value="首发">首发</option>
+                  <option value="增发">增发</option>
+                  <option value="股权变动">股权变动</option>
+                  <option value="解禁">解禁</option>
+                  <option value="可转债">可转债</option>
+                  <option value="配股">配股</option>
+                  <option value="其他融资">其他融资</option>
+                  <option value="股权激励">股权激励</option>
+                  <option value="特别处理">特别处理</option>
+                  <option value="退市整理">退市整理</option>
+                  <option value="补充更正">补充更正</option>
+                </select>
+              </label>
+              <label class="cninfo-field">
+                <span>区间</span>
+                <select id="cninfoDays" class="chart-select cninfo-select" aria-label="回溯区间">
+                  <option value="7">近 7 天</option>
+                  <option value="30">近 30 天</option>
+                  <option value="90">近 90 天</option>
+                  <option value="365" selected>近 1 年</option>
+                  <option value="1825">近 5 年</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </label>
+              <label id="cninfoStartWrap" class="cninfo-field cninfo-date-field hidden">
+                <span>起</span>
+                <input id="cninfoStart" type="date" class="cninfo-date" aria-label="开始日期" />
+              </label>
+              <label id="cninfoEndWrap" class="cninfo-field cninfo-date-field hidden">
+                <span>止</span>
+                <input id="cninfoEnd" type="date" class="cninfo-date" aria-label="结束日期" />
+              </label>
+              <label class="cninfo-field cninfo-keyword-field">
+                <span>关键词</span>
+                <input id="cninfoKeyword" type="search" class="cninfo-keyword" placeholder="标题，如 问询函" maxlength="80" />
+              </label>
+              <button id="cninfoQueryBtn" class="btn" type="submit">查询</button>
+            </div>
+          </form>
+          <p id="cninfoHint" class="muted news-scroll-hint cninfo-hint"></p>
+          <div id="cninfoBody" class="company-news-body cninfo-body" tabindex="0">
+            <div id="cninfoList" class="news-list">
+              <p class="muted">正在加载巨潮公告…</p>
+            </div>
+          </div>
+        </section>
+        <section class="company-section cninfo-hub" data-fold="press" aria-label="七报七网">
+          <div class="section-head cninfo-hub-head">
+            <h3 id="pressTitle">七报七网</h3>
+            <p id="pressMeta" class="muted news-hub-meta"></p>
+          </div>
+          <form id="pressForm" class="cninfo-filters" autocomplete="off">
+            <div id="pressTabs" class="news-tab-bar cninfo-tab-bar press-tab-bar" role="tablist" aria-label="指定披露媒体"></div>
+            <div id="pressExtraRow" class="cninfo-filter-row press-extra-row"></div>
+            <div class="cninfo-filter-row">
+              <label class="cninfo-field">
+                <span>区间</span>
+                <select id="pressDays" class="chart-select cninfo-select" aria-label="回溯区间">
+                  <option value="7">近 7 天</option>
+                  <option value="30" selected>近 30 天</option>
+                  <option value="90">近 90 天</option>
+                  <option value="365">近 1 年</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </label>
+              <label id="pressStartWrap" class="cninfo-field cninfo-date-field hidden">
+                <span>起</span>
+                <input id="pressStart" type="date" class="cninfo-date" aria-label="开始日期" />
+              </label>
+              <label id="pressEndWrap" class="cninfo-field cninfo-date-field hidden">
+                <span>止</span>
+                <input id="pressEnd" type="date" class="cninfo-date" aria-label="结束日期" />
+              </label>
+              <label class="cninfo-field cninfo-keyword-field">
+                <span>关键词</span>
+                <input id="pressKeyword" type="search" class="cninfo-keyword" placeholder="标题，可选" maxlength="80" />
+              </label>
+              <button id="pressQueryBtn" class="btn" type="submit">查询</button>
+            </div>
+          </form>
+          <p id="pressHint" class="muted news-scroll-hint cninfo-hint"></p>
+          <div id="pressBody" class="company-news-body cninfo-body" tabindex="0">
+            <div id="pressList" class="news-list">
+              <p class="muted">正在加载指定披露媒体…</p>
+            </div>
+          </div>
+        </section>
+        <section class="company-section cninfo-hub platform-hub" data-source="ths" aria-label="同花顺新闻">
+          <div class="section-head cninfo-hub-head">
+            <h3>同花顺</h3>
+            <p class="muted news-hub-meta" data-platform-meta></p>
+          </div>
+          <form class="cninfo-filters" autocomplete="off" data-platform-form>
+            <div class="news-tab-bar cninfo-tab-bar" role="tablist" aria-label="同花顺页签" data-platform-tabs></div>
+            <div class="cninfo-filter-row press-extra-row" data-platform-extra></div>
+            <div class="cninfo-filter-row">
+              <label class="cninfo-field">
+                <span>区间</span>
+                <select class="chart-select cninfo-select" data-platform-days aria-label="回溯区间">
+                  <option value="7">近 7 天</option>
+                  <option value="30" selected>近 30 天</option>
+                  <option value="90">近 90 天</option>
+                  <option value="365">近 1 年</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </label>
+              <label class="cninfo-field cninfo-date-field hidden" data-platform-start-wrap>
+                <span>起</span>
+                <input type="date" class="cninfo-date" data-platform-start aria-label="开始日期" />
+              </label>
+              <label class="cninfo-field cninfo-date-field hidden" data-platform-end-wrap>
+                <span>止</span>
+                <input type="date" class="cninfo-date" data-platform-end aria-label="结束日期" />
+              </label>
+              <label class="cninfo-field cninfo-keyword-field">
+                <span>关键词</span>
+                <input type="search" class="cninfo-keyword" data-platform-keyword placeholder="标题，可选" maxlength="80" />
+              </label>
+              <button class="btn" type="submit" data-platform-query>查询</button>
+            </div>
+          </form>
+          <p class="muted news-scroll-hint cninfo-hint" data-platform-hint></p>
+          <div class="company-news-body cninfo-body" tabindex="0" data-platform-body>
+            <div class="news-list" data-platform-list>
+              <p class="muted">正在加载同花顺新闻…</p>
+            </div>
+          </div>
+        </section>
+        <section class="company-section cninfo-hub platform-hub" data-source="xueqiu" aria-label="雪球新闻">
+          <div class="section-head cninfo-hub-head">
+            <h3>雪球</h3>
+            <p class="muted news-hub-meta" data-platform-meta></p>
+          </div>
+          <form class="cninfo-filters" autocomplete="off" data-platform-form>
+            <div class="news-tab-bar cninfo-tab-bar" role="tablist" aria-label="雪球页签" data-platform-tabs></div>
+            <div class="cninfo-filter-row press-extra-row" data-platform-extra></div>
+            <div class="cninfo-filter-row">
+              <label class="cninfo-field">
+                <span>区间</span>
+                <select class="chart-select cninfo-select" data-platform-days aria-label="回溯区间">
+                  <option value="7">近 7 天</option>
+                  <option value="30" selected>近 30 天</option>
+                  <option value="90">近 90 天</option>
+                  <option value="365">近 1 年</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </label>
+              <label class="cninfo-field cninfo-date-field hidden" data-platform-start-wrap>
+                <span>起</span>
+                <input type="date" class="cninfo-date" data-platform-start aria-label="开始日期" />
+              </label>
+              <label class="cninfo-field cninfo-date-field hidden" data-platform-end-wrap>
+                <span>止</span>
+                <input type="date" class="cninfo-date" data-platform-end aria-label="结束日期" />
+              </label>
+              <label class="cninfo-field cninfo-keyword-field">
+                <span>关键词</span>
+                <input type="search" class="cninfo-keyword" data-platform-keyword placeholder="标题，可选" maxlength="80" />
+              </label>
+              <button class="btn" type="submit" data-platform-query>查询</button>
+            </div>
+          </form>
+          <p class="muted news-scroll-hint cninfo-hint" data-platform-hint></p>
+          <div class="company-news-body cninfo-body" tabindex="0" data-platform-body>
+            <div class="news-list" data-platform-list>
+              <p class="muted">正在加载雪球新闻…</p>
+            </div>
+          </div>
+        </section>
+        <section class="company-section cninfo-hub platform-hub" data-source="eastmoney" aria-label="东方财富新闻">
+          <div class="section-head cninfo-hub-head">
+            <h3>东方财富</h3>
+            <p class="muted news-hub-meta" data-platform-meta></p>
+          </div>
+          <form class="cninfo-filters" autocomplete="off" data-platform-form>
+            <div class="news-tab-bar cninfo-tab-bar" role="tablist" aria-label="东方财富页签" data-platform-tabs></div>
+            <div class="cninfo-filter-row press-extra-row" data-platform-extra></div>
+            <div class="cninfo-filter-row">
+              <label class="cninfo-field">
+                <span>区间</span>
+                <select class="chart-select cninfo-select" data-platform-days aria-label="回溯区间">
+                  <option value="7">近 7 天</option>
+                  <option value="30" selected>近 30 天</option>
+                  <option value="90">近 90 天</option>
+                  <option value="365">近 1 年</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </label>
+              <label class="cninfo-field cninfo-date-field hidden" data-platform-start-wrap>
+                <span>起</span>
+                <input type="date" class="cninfo-date" data-platform-start aria-label="开始日期" />
+              </label>
+              <label class="cninfo-field cninfo-date-field hidden" data-platform-end-wrap>
+                <span>止</span>
+                <input type="date" class="cninfo-date" data-platform-end aria-label="结束日期" />
+              </label>
+              <label class="cninfo-field cninfo-keyword-field">
+                <span>关键词</span>
+                <input type="search" class="cninfo-keyword" data-platform-keyword placeholder="标题，可选" maxlength="80" />
+              </label>
+              <button class="btn" type="submit" data-platform-query>查询</button>
+            </div>
+          </form>
+          <p class="muted news-scroll-hint cninfo-hint" data-platform-hint></p>
+          <div class="company-news-body cninfo-body" tabindex="0" data-platform-body>
+            <div class="news-list" data-platform-list>
+              <p class="muted">正在加载东方财富新闻…</p>
+            </div>
+          </div>
+        </section>
+        </div>
+        </div>
       </div>
     </div>
 
@@ -324,6 +482,6 @@
   </div>
 
   <script src="/js/shared/nav.js?v=orbit-shell-20260902"></script>
-  <script src="/js/company.js?v=company-live-poll-20260827"></script>
+  <script src="/js/company.js?v=company-news-fold-20260902"></script>
 </body>
 </html>

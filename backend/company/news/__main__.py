@@ -133,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
             limit=args.limit,
             header=(
                 f"code={payload.get('code')} name={payload.get('name')} "
-                f"keyword={payload.get('keyword')} total={payload.get('count')}"
+                f"keyword={payload.get('search_keyword') or payload.get('keyword')} total={payload.get('count')}"
             ),
         )
 

@@ -9,7 +9,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 from core.codes import normalize_code, safe_str
-from company.news.official.cninfo.constants import PDF_PREFIX, TZ_CN
+from company.news.official.cninfo.constants import PDF_PREFIX, TAB_LABELS, TZ_CN
 
 
 def strip_em(text: str) -> str:
@@ -104,6 +104,22 @@ def parse_org_row(row: Any) -> dict[str, str] | None:
     }
 
 
+def item_why(tab: str, category: str = "") -> str:
+    """页签标识：调研 / 督导用页签名；公告优先用巨潮细分类。"""
+    tab_key = safe_str(tab) or "fulltext"
+    tab_label = TAB_LABELS.get(tab_key, "公告")
+    cat = safe_str(category)
+    if tab_key == "relation":
+        if cat and cat not in {tab_label, "公告", "投资者关系", "调研记录"}:
+            return f"{tab_label} · {cat}"
+        return tab_label
+    if tab_key == "supervise":
+        if cat and cat not in {tab_label, "公告", "持续督导"}:
+            return f"{tab_label} · {cat}"
+        return tab_label
+    return cat or tab_label
+
+
 def parse_item(
     row: dict[str, Any],
     *,
@@ -118,6 +134,8 @@ def parse_item(
         return None
     adjunct = safe_str(row.get("adjunctUrl"))
     published = parse_announcement_time(row.get("announcementTime"))
+    category = safe_str(row.get("announcementTypeName"))
+    why = item_why(tab, category)
     return {
         "code": safe_str(row.get("secCode")) or fallback_code,
         "name": safe_str(row.get("secName")) or fallback_name,
@@ -132,10 +150,11 @@ def parse_item(
         "adjunct_url": adjunct,
         "adjunct_type": safe_str(row.get("adjunctType")) or "PDF",
         "adjunct_size": row.get("adjunctSize"),
-        "category": safe_str(row.get("announcementTypeName")),
+        "category": category,
         "category_code": safe_str(row.get("announcementType")),
         "column": column,
         "tab": tab,
+        "why": why,
         "source": "巨潮资讯",
     }
 

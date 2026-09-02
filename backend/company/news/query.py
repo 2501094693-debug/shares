@@ -1,4 +1,4 @@
-"""统一查询：公告、监管、七网、市场新闻、研报。"""
+"""统一查询：交易所 / 巨潮公告、监管、七网、市场新闻、研报。"""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from company.news._items import (
 )
 from company.news.official.cninfo import fetch_announcements as fetch_cninfo_announcements
 from company.news.official.cninfo import resolve_org
+from company.news.official.cninfo.parse import item_why
 from company.news.official.exchange import (
     fetch_bse_announcements,
     fetch_bse_inquiries,
@@ -40,10 +41,14 @@ from company.news.official.press import (
     fetch_stcn_news,
     fetch_zqrb_news,
 )
+from company.news.platforms.eastmoney.f10 import fetch_f10 as fetch_eastmoney_f10
+from company.news.platforms.eastmoney.notices import fetch_notices as fetch_eastmoney_notices
 from company.news.platforms.eastmoney.search import fetch_news as fetch_eastmoney_news
 from company.news.platforms.tonghuashun.news import fetch_news as fetch_ths_news
+from company.news.platforms.tonghuashun.notices import fetch_notices as fetch_ths_notices
 from company.news.platforms.tonghuashun.reports import fetch_reports as fetch_ths_reports
 from company.news.platforms.xueqiu.news import fetch_news as fetch_xq_news
+from company.news.platforms.xueqiu.notices import fetch_notices as fetch_xq_notices
 from company.news.platforms.xueqiu.reports import fetch_reports as fetch_xq_reports
 from company.news.taxonomy.constants import PRESS_OUTLETS, REGULATORY_TITLE_KEYWORDS
 from company.news.taxonomy.keywords import infer_subcategory
@@ -72,6 +77,11 @@ _INQUIRY_FETCH = {
     "sse": fetch_sse_inquiries,
     "szse": fetch_szse_inquiries,
     "bse": fetch_bse_inquiries,
+}
+_EXCHANGE_LABELS = {
+    "sse": "上海证券交易所",
+    "szse": "深圳证券交易所",
+    "bse": "北京证券交易所",
 }
 
 
@@ -196,6 +206,180 @@ def query_announcements(
 
     filtered = [x for x in collected if within_range(x, start, end)]
     return sorted(dedupe(filtered), key=sort_key)
+
+
+def query_cninfo(
+    code: str,
+    *,
+    tab: str = "fulltext",
+    category: str | None = None,
+    keyword: str = "",
+    start: datetime | str | None = None,
+    end: datetime | str | None = None,
+    days: int | None = 365,
+    plate: str = "",
+    column: str | None = None,
+    max_pages: int = 20,
+    limit: int = 0,
+) -> dict[str, Any]:
+    """巨潮公告：页签 / 分类 / 关键词 / 日期，保持原包字段并收成统一公告条目。"""
+    raw = safe_str(code)
+    stock = normalize_code(raw) or raw
+    if not stock:
+        raise ValueError("缺少公司代码 code")
+    pack = fetch_cninfo_announcements(
+        stock,
+        start=start,
+        end=end,
+        days=days,
+        column=column,
+        tab=tab or "fulltext",
+        category=category or None,
+        keyword=keyword,
+        plate=plate,
+        max_pages=max_pages,
+    )
+    name = safe_str(pack.get("name"))
+    tab_name = safe_str(pack.get("tab")) or (tab or "fulltext")
+    items = []
+    for row in unpack(pack):
+        if isinstance(row, dict):
+            row["tab"] = row.get("tab") or tab_name
+            row["why"] = item_why(row.get("tab") or tab_name, safe_str(row.get("category")))
+        items.append(
+            as_notice(row, channel="cninfo", code=safe_str(pack.get("code")) or stock, name=name)
+        )
+    if limit > 0:
+        items = items[: int(limit)]
+    out = dict(pack)
+    out["kind"] = "cninfo"
+    out["items"] = items
+    out["count"] = len(items)
+    return out
+
+
+def _normalize_exchange_tab(tab: str | None) -> str:
+    raw = safe_str(tab).lower()
+    if raw in {"inquiry", "inquiries", "问询", "问询函", "监管"}:
+        return "inquiries"
+    return "bulletin"
+
+
+def _exchange_empty(
+    code: str,
+    *,
+    market: str,
+    tab: str,
+    category: str = "",
+    keyword: str = "",
+    error: str = "",
+) -> dict[str, Any]:
+    return {
+        "code": code,
+        "name": "",
+        "kind": "exchange",
+        "market": market,
+        "market_label": _EXCHANGE_LABELS.get(market, ""),
+        "tab": tab,
+        "category": category,
+        "keyword": keyword,
+        "items": [],
+        "count": 0,
+        "total": 0,
+        "error": error,
+        "se_date": "",
+        "page": "",
+    }
+
+
+def query_exchange(
+    code: str,
+    *,
+    tab: str = "bulletin",
+    category: str | None = None,
+    keyword: str = "",
+    start: datetime | str | None = None,
+    end: datetime | str | None = None,
+    days: int | None = 365,
+    max_pages: int = 20,
+    limit: int = 0,
+) -> dict[str, Any]:
+    """按股票所属交易所查一手公告：分类 / 关键词 / 日期 / 问询函。"""
+    raw = safe_str(code)
+    stock = normalize_code(raw) or raw
+    if not stock:
+        raise ValueError("缺少公司代码 code")
+    tab_name = _normalize_exchange_tab(tab)
+    cat = safe_str(category)
+    kw = safe_str(keyword)
+    market = detect_market(stock)
+    if market not in _EXCHANGE_FETCH:
+        return _exchange_empty(
+            stock,
+            market=market or "unknown",
+            tab=tab_name,
+            category=cat,
+            keyword=kw,
+            error="无法识别所属交易所，仅支持沪深北上市公司",
+        )
+
+    if tab_name == "inquiries":
+        fetcher = _INQUIRY_FETCH[market]
+        kwargs: dict[str, Any] = {
+            "start": start,
+            "end": end,
+            "days": days,
+            "max_pages": max_pages,
+        }
+        if market == "bse":
+            kwargs["keyword"] = "问询函"
+        pack = fetcher(stock, **kwargs)
+    else:
+        pack = _EXCHANGE_FETCH[market](
+            stock,
+            start=start,
+            end=end,
+            days=days,
+            category=cat or None,
+            keyword=kw,
+            max_pages=max_pages,
+        )
+
+    name = safe_str(pack.get("name"))
+    items: list[dict[str, Any]] = []
+    for row in unpack(pack):
+        title = safe_str(row.get("title"))
+        if tab_name == "inquiries" and kw and kw not in title:
+            continue
+        if isinstance(row, dict) and not row.get("why"):
+            row["why"] = safe_str(row.get("category") or row.get("heading")) or (
+                "问询函" if tab_name == "inquiries" else "公告"
+            )
+        items.append(
+            as_notice(
+                row,
+                channel=market,
+                code=safe_str(pack.get("code")) or stock,
+                name=name,
+            )
+        )
+    if limit > 0:
+        items = items[: int(limit)]
+
+    begin = safe_str(pack.get("begin_date"))
+    finish = safe_str(pack.get("end_date"))
+    out = dict(pack)
+    out["kind"] = "exchange"
+    out["market"] = market
+    out["market_label"] = _EXCHANGE_LABELS.get(market, "")
+    out["tab"] = tab_name
+    out["category"] = cat
+    out["keyword"] = kw
+    out["items"] = items
+    out["count"] = len(items)
+    out["total"] = int(pack.get("total") or 0) or len(items)
+    out["se_date"] = f"{begin} ~ {finish}" if begin or finish else ""
+    return out
 
 
 def _regulatory_kind(title: str) -> str:
@@ -445,16 +629,40 @@ def _select_outlets(outlet: str | Iterable[str] | None) -> list[dict[str, str]]:
     return selected
 
 
+_OUTLET_EXTRA_KEYS: dict[str, tuple[str, ...]] = {
+    "cs": ("field", "sort"),
+    "cnstock": ("type_",),
+    "stcn": ("type_", "sort"),
+    "zqrb": ("src", "field", "sort", "fuzzy"),
+    "financialnews": ("field", "sort"),
+    "jjckb": (),
+    "chinadaily": ("type_", "sort"),
+}
+
+
+def _outlet_extras(outlet_id: str, extra: dict[str, Any]) -> dict[str, Any]:
+    allowed = _OUTLET_EXTRA_KEYS.get(outlet_id, ())
+    out: dict[str, Any] = {}
+    type_val = extra.get("type_") or extra.get("type")
+    for key in allowed:
+        val = type_val if key == "type_" else extra.get(key)
+        if val is None or val == "":
+            continue
+        out[key] = val
+    return out
+
+
 def _fetch_outlet(
     outlet: dict[str, str],
     keyword: str,
     *,
-    start: datetime | None,
-    end: datetime | None,
+    start: datetime | str | None,
+    end: datetime | str | None,
     days: int | None,
     max_pages: int,
     code: str,
     name: str,
+    extra: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     fetcher = PRESS_FETCHERS.get(outlet["id"])
     if fetcher is None:
@@ -468,7 +676,13 @@ def _fetch_outlet(
         kwargs["days"] = days
     elif start is not None:
         kwargs["days"] = None
-    pack = fetcher(keyword, **kwargs)
+    kwargs.update(_outlet_extras(outlet["id"], extra or {}))
+    try:
+        pack = fetcher(keyword, **kwargs)
+    except TypeError:
+        for key in _OUTLET_EXTRA_KEYS.get(outlet["id"], ()):
+            kwargs.pop(key, None)
+        pack = fetcher(keyword, **kwargs)
     rows = unpack(pack)
     return [
         as_press(
@@ -486,21 +700,31 @@ def query_press(
     code_or_name: str,
     *,
     outlet: str | Iterable[str] | None = "all",
-    start: datetime | None = None,
-    end: datetime | None = None,
+    start: datetime | str | None = None,
+    end: datetime | str | None = None,
     days: int | None = 365,
     max_pages: int = 4,
+    keyword: str = "",
+    field: str | None = None,
+    type_: str | None = None,
+    sort: str | None = None,
+    src: str | None = None,
+    fuzzy: bool | None = None,
+    limit: int = 0,
 ) -> dict[str, Any]:
     """查询指定公司在七家指定披露媒体官网上的相关消息。"""
     resolved = resolve_keywords(code_or_name)
     code = resolved["code"]
     name = resolved["name"]
-    keyword = resolved["keyword"]
-    if not keyword:
+    search_kw = resolved["keyword"]
+    title_kw = safe_str(keyword)
+    if not search_kw:
         return {
             "code": code,
             "name": name,
-            "keyword": keyword,
+            "keyword": title_kw,
+            "search_keyword": search_kw,
+            "kind": "press",
             "outlets": {},
             "items": [],
             "count": 0,
@@ -511,6 +735,13 @@ def query_press(
     if start is None and days is not None:
         start = default_start(days)
 
+    extra = {
+        "field": field,
+        "type_": type_,
+        "sort": sort,
+        "src": src,
+        "fuzzy": fuzzy,
+    }
     outlets = _select_outlets(outlet)
     by_outlet: dict[str, list[dict[str, Any]]] = {}
     errors: dict[str, str] = {}
@@ -519,14 +750,17 @@ def query_press(
         try:
             rows = _fetch_outlet(
                 o,
-                keyword,
+                search_kw,
                 start=start,
                 end=end,
                 days=days,
                 max_pages=max_pages,
                 code=code,
                 name=name,
+                extra=extra,
             )
+            if title_kw:
+                rows = [x for x in rows if title_kw in safe_str(x.get("title"))]
             return o["id"], sorted(dedupe(rows), key=sort_key), ""
         except Exception as exc:  # noqa: BLE001
             logger.warning("七网采集失败 %s: %s", o["id"], exc)
@@ -548,14 +782,267 @@ def query_press(
     for rows in by_outlet.values():
         flat.extend(rows)
     flat = sorted(dedupe(flat), key=sort_key)
+    if limit > 0:
+        flat = flat[: int(limit)]
+    begin = safe_str(start)[:10]
+    finish = safe_str(end)[:10]
+    se_date = f"{begin} ~ {finish}" if begin or finish else ""
 
     return {
         "code": code,
         "name": name,
-        "keyword": keyword,
+        "keyword": title_kw,
+        "search_keyword": search_kw,
+        "kind": "press",
+        "outlet": outlets[0]["id"] if len(outlets) == 1 else "all",
         "outlets": by_outlet,
         "counts": {oid: len(rows) for oid, rows in by_outlet.items()},
         "items": flat,
         "count": len(flat),
+        "total": len(flat),
         "errors": errors,
+        "error": next(iter(errors.values()), "") if len(outlets) == 1 else "",
+        "se_date": se_date,
+    }
+
+
+_PLATFORM_ALIASES = {
+    "ths": "tonghuashun",
+    "tonghuashun": "tonghuashun",
+    "10jqka": "tonghuashun",
+    "xq": "xueqiu",
+    "xueqiu": "xueqiu",
+    "snowball": "xueqiu",
+    "em": "eastmoney",
+    "eastmoney": "eastmoney",
+}
+_PLATFORM_TABS = {
+    "tonghuashun": ("news", "notices", "reports"),
+    "xueqiu": ("news", "notices", "reports"),
+    "eastmoney": ("news", "f10", "notices"),
+}
+_PLATFORM_LABELS = {
+    "tonghuashun": "同花顺",
+    "xueqiu": "雪球",
+    "eastmoney": "东方财富",
+}
+_PLATFORM_FETCHERS: dict[str, dict[str, Callable[..., dict[str, Any]]]] = {
+    "tonghuashun": {
+        "news": fetch_ths_news,
+        "notices": fetch_ths_notices,
+        "reports": fetch_ths_reports,
+    },
+    "xueqiu": {
+        "news": fetch_xq_news,
+        "notices": fetch_xq_notices,
+        "reports": fetch_xq_reports,
+    },
+    "eastmoney": {
+        "news": fetch_eastmoney_news,
+        "f10": fetch_eastmoney_f10,
+        "notices": fetch_eastmoney_notices,
+    },
+}
+
+
+def resolve_platform(source: str) -> str:
+    key = (source or "").strip().lower()
+    if key not in _PLATFORM_ALIASES:
+        raise ValueError("未知平台；可选 ths / xueqiu / eastmoney")
+    return _PLATFORM_ALIASES[key]
+
+
+def _platform_extra(
+    source: str,
+    tab: str,
+    *,
+    classify: str | None = None,
+    kind: str | None = None,
+    scope: str | None = None,
+    sort: str | None = None,
+    strict: bool = False,
+) -> dict[str, Any]:
+    extra: dict[str, Any] = {}
+    if source == "tonghuashun" and tab == "notices":
+        if classify:
+            extra["classify"] = classify
+    if source == "eastmoney" and tab == "news":
+        extra["kind"] = kind or "old"
+        extra["scope"] = scope or "default"
+        extra["sort"] = sort or "time"
+    if source == "xueqiu" and tab == "reports" and sort:
+        extra["sort"] = sort
+    if tab in {"news", "notices"} and source != "eastmoney":
+        extra["strict"] = bool(strict)
+    elif source == "eastmoney" and tab == "news":
+        extra["strict"] = bool(strict)
+    return extra
+
+
+def _call_platform_fetcher(
+    fetcher: Callable[..., dict[str, Any]],
+    target: str,
+    *,
+    start: datetime | str | None,
+    end: datetime | str | None,
+    days: int | None,
+    max_pages: int,
+    extra: dict[str, Any],
+) -> dict[str, Any]:
+    kwargs: dict[str, Any] = dict(extra)
+    kwargs["max_pages"] = max_pages
+    if start is not None:
+        kwargs["start"] = start
+    if end is not None:
+        kwargs["end"] = end
+    if days is not None and start is None:
+        kwargs["days"] = days
+    elif start is not None:
+        kwargs["days"] = None
+    try:
+        pack = fetcher(target, **kwargs)
+    except TypeError:
+        for key in list(kwargs):
+            if key not in {"start", "end", "days", "max_pages"}:
+                kwargs.pop(key, None)
+        try:
+            pack = fetcher(target, **kwargs)
+        except TypeError:
+            kwargs.pop("max_pages", None)
+            kwargs.pop("days", None)
+            pack = fetcher(target, **kwargs)
+    return pack if isinstance(pack, dict) else {"items": [], "error": "返回格式异常"}
+
+
+def _tag_platform_item(
+    row: dict[str, Any],
+    *,
+    tab: str,
+    source: str,
+    code: str,
+    name: str,
+) -> dict[str, Any]:
+    channel = safe_str(row.get("channel"))
+    if tab == "reports" or channel == "report":
+        return as_report(row, code=code, name=name)
+    if tab == "notices" or channel in {"notice", "f10_notice"}:
+        return as_notice(row, channel=source, code=code, name=name)
+    tagged = as_news(row, code=code, name=name)
+    if channel == "f10_news":
+        tagged["why"] = tagged.get("why") or "F10资讯"
+    return tagged
+
+
+def query_platform(
+    code_or_name: str,
+    *,
+    source: str,
+    tab: str = "news",
+    start: datetime | str | None = None,
+    end: datetime | str | None = None,
+    days: int | None = 31,
+    max_pages: int = 8,
+    keyword: str = "",
+    classify: str | None = None,
+    kind: str | None = None,
+    scope: str | None = None,
+    sort: str | None = None,
+    strict: bool = False,
+    limit: int = 0,
+) -> dict[str, Any]:
+    """按同花顺 / 雪球 / 东方财富各自的新闻查询方式拉个股资讯。"""
+    src = resolve_platform(source)
+    tab_name = (tab or "news").strip().lower()
+    allowed = _PLATFORM_TABS[src]
+    if tab_name not in allowed:
+        raise ValueError(f"{_PLATFORM_LABELS[src]}不支持页签 {tab}；可选 {', '.join(allowed)}")
+
+    resolved = resolve_keywords(code_or_name)
+    code = resolved["code"]
+    name = resolved["name"]
+    target = code or resolved["keyword"] or safe_str(code_or_name)
+    title_kw = safe_str(keyword)
+    label = _PLATFORM_LABELS[src]
+    begin = safe_str(start)[:10]
+    finish = safe_str(end)[:10]
+    se_date = f"{begin} ~ {finish}" if begin or finish else ""
+    empty = {
+        "code": code,
+        "name": name,
+        "keyword": title_kw,
+        "search_keyword": resolved["keyword"],
+        "kind": "platform",
+        "source": src,
+        "source_label": label,
+        "tab": tab_name,
+        "items": [],
+        "count": 0,
+        "total": 0,
+        "se_date": se_date,
+        "error": "",
+    }
+    if not target:
+        empty["error"] = "缺少股票代码"
+        return empty
+
+    if start is None and days is not None:
+        start = default_start(days)
+
+    fetcher = _PLATFORM_FETCHERS[src][tab_name]
+    extra = _platform_extra(
+        src,
+        tab_name,
+        classify=classify,
+        kind=kind,
+        scope=scope,
+        sort=sort,
+        strict=strict,
+    )
+    try:
+        pack = _call_platform_fetcher(
+            fetcher,
+            target,
+            start=start,
+            end=end,
+            days=days,
+            max_pages=max_pages,
+            extra=extra,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("%s %s 采集失败 %s: %s", src, tab_name, target, exc)
+        empty["error"] = str(exc)
+        return empty
+
+    rows = unpack(pack)
+    items = [
+        _tag_platform_item(row, tab=tab_name, source=src, code=code or safe_str(row.get("code")), name=name or safe_str(row.get("name")))
+        for row in rows
+    ]
+    if title_kw:
+        items = [x for x in items if title_kw in safe_str(x.get("title"))]
+    items = sorted(dedupe(items), key=sort_key)
+    if limit > 0:
+        items = items[: int(limit)]
+
+    begin = safe_str(pack.get("begin_date")) or begin
+    finish = safe_str(pack.get("end_date")) or finish
+    return {
+        "code": pack.get("code") or code,
+        "name": pack.get("name") or name,
+        "keyword": title_kw,
+        "search_keyword": pack.get("keyword") or resolved["keyword"],
+        "kind": "platform",
+        "source": src,
+        "source_label": label,
+        "tab": tab_name,
+        "classify": extra.get("classify") or "",
+        "em_kind": extra.get("kind") or "",
+        "scope": extra.get("scope") or "",
+        "sort": extra.get("sort") or "",
+        "items": items,
+        "count": len(items),
+        "total": int(pack.get("total") or 0) or len(items),
+        "page": pack.get("page") or "",
+        "se_date": f"{begin} ~ {finish}" if begin or finish else se_date,
+        "error": safe_str(pack.get("error")),
     }

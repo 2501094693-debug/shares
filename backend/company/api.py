@@ -36,8 +36,11 @@ from company.emotion.xueqiu import (
 from company.line import fetch_kline, fetch_ticks
 from company.statistics.pe_history import fetch_pe_history
 from company.statistics.turnover_history import fetch_turnover_history
-from company.news.feed import collect_company_messages
+from company.news.feed import collect_company_messages, pages_for_days
+from company.news.official.cninfo.constants import MAX_PAGES as CNINFO_MAX_PAGES
+from company.news.official.exchange.sse import MAX_PAGES as EXCHANGE_MAX_PAGES
 from company.news.profile import query_company_profile
+from company.news.query import query_cninfo, query_exchange, query_platform, query_press
 from company.news.taxonomy.constants import ALL_SECTIONS, DEFAULT_SECTIONS
 from company.profile import get_stock_profile
 from core.api import err, ok
@@ -158,6 +161,170 @@ def stocks_ticks(
         return err("缺少参数 code", 400)
     try:
         data = fetch_ticks(code, pos=pos, force=refresh == "1")
+        return ok(data)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/stocks/exchange")
+def stocks_exchange(
+    code: str = Query(""),
+    tab: str = Query("bulletin", description="bulletin 公告 | inquiries 问询函"),
+    category: str = Query("", description="分类别名，如 年报 / annual / periodic / interim"),
+    keyword: str = Query("", description="标题关键词"),
+    start: str = Query("", description="开始日期 YYYY-MM-DD"),
+    end: str = Query("", description="结束日期 YYYY-MM-DD"),
+    days: int = Query(365, ge=1, le=20000),
+    max_pages: int = Query(0, ge=0, le=50, description="翻页上限；0 按天数自动"),
+    limit: int = Query(0, ge=0, le=2000, description="截断条数；0 为全部"),
+):
+    """交易所公告独立查询：按股票所属交易所走上交所 / 深交所 / 北交所。"""
+    code = code.strip()
+    if not code:
+        return err("缺少参数 code", 400)
+    pages = max_pages or min(pages_for_days(days), EXCHANGE_MAX_PAGES)
+    try:
+        data = query_exchange(
+            code,
+            tab=tab.strip() or "bulletin",
+            category=category.strip() or None,
+            keyword=keyword.strip(),
+            start=start.strip() or None,
+            end=end.strip() or None,
+            days=days,
+            max_pages=pages,
+            limit=limit,
+        )
+        return ok(data)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/stocks/press")
+def stocks_press(
+    code: str = Query(""),
+    outlet: str = Query("cs", description="七网 id：cs / cnstock / stcn / zqrb / financialnews / jjckb / chinadaily"),
+    keyword: str = Query("", description="标题关键词，叠加在公司简称检索上"),
+    start: str = Query("", description="开始日期 YYYY-MM-DD"),
+    end: str = Query("", description="结束日期 YYYY-MM-DD"),
+    days: int = Query(30, ge=1, le=20000),
+    field: str = Query("", description="检索范围：title / content / all / author"),
+    type_: str = Query("", alias="type", description="内容类型：news / all / story 等，视媒体而定"),
+    sort: str = Query("", description="排序：time / relevance / oldest"),
+    src: str = Query("", description="证券日报来源：news / all / epaper"),
+    max_pages: int = Query(0, ge=0, le=20, description="翻页上限；0 按天数自动"),
+    limit: int = Query(0, ge=0, le=500, description="截断条数；0 为全部"),
+):
+    """七报七网独立查询：按指定官网检索，带各自的分类 / 排序参数。"""
+    code = code.strip()
+    if not code:
+        return err("缺少参数 code", 400)
+    pages = max_pages or min(pages_for_days(days), 8)
+    try:
+        data = query_press(
+            code,
+            outlet=outlet.strip() or "cs",
+            keyword=keyword.strip(),
+            start=start.strip() or None,
+            end=end.strip() or None,
+            days=days,
+            field=field.strip() or None,
+            type_=type_.strip() or None,
+            sort=sort.strip() or None,
+            src=src.strip() or None,
+            max_pages=pages,
+            limit=limit,
+        )
+        return ok(data)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/stocks/platform")
+def stocks_platform(
+    code: str = Query(""),
+    source: str = Query("ths", description="ths 同花顺 | xueqiu 雪球 | eastmoney 东方财富"),
+    tab: str = Query("news", description="ths/xueqiu: news|notices|reports；eastmoney: news|f10|notices"),
+    keyword: str = Query("", description="标题关键词，叠加在公司检索上"),
+    start: str = Query("", description="开始日期 YYYY-MM-DD"),
+    end: str = Query("", description="结束日期 YYYY-MM-DD"),
+    days: int = Query(30, ge=1, le=20000),
+    classify: str = Query("", description="同花顺公告分类：all / earnings / major / share / resolution"),
+    type_: str = Query("", alias="type", description="东财搜索类型：old / web / all"),
+    scope: str = Query("", description="东财搜索范围：default / global"),
+    sort: str = Query("", description="东财新闻 time|relevance；雪球研报 time|alpha|reply"),
+    strict: str = Query("0", description="1 时标题或摘要必须命中简称/代码"),
+    max_pages: int = Query(0, ge=0, le=20, description="翻页上限；0 按天数自动"),
+    limit: int = Query(0, ge=0, le=500, description="截断条数；0 为全部"),
+):
+    """同花顺 / 雪球 / 东方财富新闻独立查询：页签与筛选对齐各站查询方式。"""
+    code = code.strip()
+    if not code:
+        return err("缺少参数 code", 400)
+    pages = max_pages or min(pages_for_days(days), 8)
+    try:
+        data = query_platform(
+            code,
+            source=source.strip() or "ths",
+            tab=tab.strip() or "news",
+            keyword=keyword.strip(),
+            start=start.strip() or None,
+            end=end.strip() or None,
+            days=days,
+            classify=classify.strip() or None,
+            kind=type_.strip() or None,
+            scope=scope.strip() or None,
+            sort=sort.strip() or None,
+            strict=strict.strip() in {"1", "true", "True", "yes"},
+            max_pages=pages,
+            limit=limit,
+        )
+        return ok(data)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/stocks/cninfo")
+def stocks_cninfo(
+    code: str = Query(""),
+    tab: str = Query("fulltext", description="fulltext 公告 | relation 调研 | supervise 持续督导"),
+    category: str = Query("", description="分类别名，如 年报 / annual；多个用逗号分隔"),
+    keyword: str = Query("", description="标题关键词"),
+    start: str = Query("", description="开始日期 YYYY-MM-DD"),
+    end: str = Query("", description="结束日期 YYYY-MM-DD"),
+    days: int = Query(365, ge=1, le=20000),
+    plate: str = Query("", description="板块，如 szmb / shkcp；个股通常留空"),
+    column: str = Query("auto", description="sse / szse / bj / auto"),
+    max_pages: int = Query(0, ge=0, le=50, description="翻页上限；0 按天数自动"),
+    limit: int = Query(0, ge=0, le=2000, description="截断条数；0 为全部"),
+):
+    """巨潮公告独立查询：页签、分类、关键词、日期。"""
+    code = code.strip()
+    if not code:
+        return err("缺少参数 code", 400)
+    pages = max_pages or min(pages_for_days(days), CNINFO_MAX_PAGES)
+    try:
+        data = query_cninfo(
+            code,
+            tab=tab.strip() or "fulltext",
+            category=category.strip() or None,
+            keyword=keyword.strip(),
+            start=start.strip() or None,
+            end=end.strip() or None,
+            days=days,
+            plate=plate.strip(),
+            column=column.strip() or "auto",
+            max_pages=pages,
+            limit=limit,
+        )
         return ok(data)
     except ValueError as exc:
         return err(str(exc), 400)

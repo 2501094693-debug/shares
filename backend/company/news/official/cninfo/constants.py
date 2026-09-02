@@ -54,6 +54,12 @@ TABS: dict[str, str] = {
     "持续督导": "supervise",
 }
 
+TAB_LABELS: dict[str, str] = {
+    "fulltext": "公告",
+    "relation": "调研",
+    "supervise": "督导",
+}
+
 # 板块过滤；查单股通常留空
 PLATES: dict[str, str] = {
     "szmb": "深圳主板",

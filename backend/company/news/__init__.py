@@ -5,7 +5,7 @@
   platforms    东方财富 / 同花顺 / 雪球
 
 根目录只做集成：
-  query      公告 / 监管 / 七网 / 市场新闻 / 研报
+  query      交易所 / 巨潮公告 / 监管 / 七网 / 市场新闻 / 研报
   feed       详情页分组 → /api/stocks/news
   profile    分类画像 → /api/stocks/profile-messages
   taxonomy   category / source_tier / subcategory
@@ -17,8 +17,11 @@ from company.news.feed import VALID_KINDS, collect_company_messages
 from company.news.profile import query_company_profile
 from company.news.query import (
     query_announcements,
+    query_cninfo,
     query_company_messages,
+    query_exchange,
     query_market_news,
+    query_platform,
     query_press,
     query_regulatory,
     query_reports,
@@ -32,9 +35,12 @@ __all__ = [
     "classify_item",
     "collect_company_messages",
     "query_announcements",
+    "query_cninfo",
     "query_company_messages",
     "query_company_profile",
+    "query_exchange",
     "query_market_news",
+    "query_platform",
     "query_press",
     "query_regulatory",
     "query_reports",
