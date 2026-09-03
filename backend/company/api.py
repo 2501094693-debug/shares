@@ -409,7 +409,7 @@ def stocks_emotion(
         description="东财帖子分类 all|news|...|hot；雪球 user|trans|all；同花顺仅手机讨论流",
     ),
     sort: str = Query("time", description="time|reply|hot；雪球另有 alpha"),
-    days: int = Query(3, ge=1, le=20000),
+    days: int = Query(3, ge=0, le=20000, description="回溯天数；0 表示不按日期过滤"),
     max_pages: int = Query(3, ge=1, le=20),
     replies: str = Query("0", description="1=帖子列表附带评论，或正文附带评论"),
     post_id: str = Query("", description="帖子 ID / URL，配合 channel=article|replies"),
@@ -422,6 +422,7 @@ def stocks_emotion(
     channel = channel.strip().lower() or "posts"
     src = source.strip().lower() or "eastmoney"
     with_replies = replies == "1"
+    feed_days = days if days > 0 else None
     try:
         if src in {"xueqiu", "xq", "snowball"}:
             data = _emotion_xueqiu(
@@ -429,7 +430,7 @@ def stocks_emotion(
                 channel=channel,
                 kind=kind,
                 sort=sort,
-                days=days,
+                days=feed_days if feed_days is not None else days,
                 max_pages=max_pages,
                 with_replies=with_replies,
                 post_id=post_id.strip(),
@@ -442,7 +443,7 @@ def stocks_emotion(
                 channel=channel,
                 kind=kind,
                 sort=sort,
-                days=days,
+                days=feed_days if feed_days is not None else days,
                 max_pages=max_pages,
                 with_replies=with_replies,
                 post_id=post_id.strip(),
@@ -451,7 +452,13 @@ def stocks_emotion(
         elif channel == "search":
             if not q.strip() and not code:
                 return err("缺少参数 q 或 code", 400)
-            data = search_guba_posts(q.strip() or code, code=code, days=days, sort=sort, max_pages=max_pages)
+            data = search_guba_posts(
+                q.strip() or code,
+                code=code,
+                days=feed_days,
+                sort=sort,
+                max_pages=max_pages,
+            )
         elif channel == "rank":
             data = fetch_rank(code) if code else fetch_hot_list()
         elif channel == "scores":
@@ -478,7 +485,7 @@ def stocks_emotion(
                 code,
                 kind=kind,
                 sort=sort,
-                days=days,
+                days=feed_days,
                 max_pages=max_pages,
                 with_replies=with_replies,
             )
@@ -489,7 +496,7 @@ def stocks_emotion(
                 code,
                 kind=kind,
                 sort=sort,
-                days=days,
+                days=feed_days,
                 max_pages=max_pages,
                 with_replies=with_replies,
             )

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=orbit-news-fold-20260902" />
+  <link rel="stylesheet" href="/css/style.css?v=orbit-news-eastmoney-head-20260903" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
   <nav class="app-rail" aria-label="主导航">
@@ -41,18 +41,20 @@
       <div class="brand">
         <div>
           <h1 id="pageTitle">公司详情</h1>
-          <p id="pageSub" class="company-page-sub">行情 · 资讯</p>
+          <p id="pageSub" class="company-page-sub">行情 · 资讯 · 情绪</p>
         </div>
       </div>
       <div class="top-actions">
         <a id="backLink" class="btn ghost" href="/">返回行业树</a>
         <button id="refreshNewsBtn" class="btn ghost" type="button" hidden>刷新资讯</button>
+        <button id="refreshEmotionBtn" class="btn ghost" type="button" hidden>刷新情绪</button>
       </div>
     </header>
 
     <nav id="companyMainTabs" class="company-main-tabs" aria-label="主面板">
       <button type="button" class="company-main-tab is-active" data-panel="quotes" role="tab" aria-selected="true">行情</button>
       <button type="button" class="company-main-tab" data-panel="news" role="tab" aria-selected="false">资讯</button>
+      <button type="button" class="company-main-tab" data-panel="emotion" role="tab" aria-selected="false">情绪</button>
     </nav>
 
     <div class="company-panels">
@@ -173,11 +175,15 @@
         </div>
       </div>
 
-      <div id="panel-news" class="company-panel" data-panel="news" role="tabpanel" hidden>
+      <div id="panel-news" class="company-panel" data-panel="news" data-news-source="official" role="tabpanel" hidden>
         <div class="news-layout">
+        <nav id="newsSourceBar" class="emotion-source-bar news-source-bar" aria-label="资讯分类">
+          <button type="button" class="emotion-source-btn is-active" data-source="official">官方</button>
+          <button type="button" class="emotion-source-btn" data-source="other">其他</button>
+        </nav>
         <div class="news-folded" hidden></div>
         <div class="news-open">
-        <section class="company-section cninfo-hub" data-fold="exchange" aria-label="交易所公告">
+        <section class="company-section cninfo-hub" data-fold="exchange" data-news-group="official" aria-label="交易所公告">
           <div class="section-head cninfo-hub-head">
             <h3 id="exchangeTitle">交易所公告</h3>
             <p id="exchangeMeta" class="muted news-hub-meta"></p>
@@ -233,7 +239,7 @@
             </div>
           </div>
         </section>
-        <section class="company-section cninfo-hub" data-fold="cninfo" aria-label="巨潮公告">
+        <section class="company-section cninfo-hub" data-fold="cninfo" data-news-group="official" aria-label="巨潮公告">
           <div class="section-head cninfo-hub-head">
             <h3>巨潮公告</h3>
             <p id="cninfoMeta" class="muted news-hub-meta"></p>
@@ -308,7 +314,7 @@
             </div>
           </div>
         </section>
-        <section class="company-section cninfo-hub" data-fold="press" aria-label="七报七网">
+        <section class="company-section cninfo-hub" data-fold="press" data-news-group="official" aria-label="七报七网">
           <div class="section-head cninfo-hub-head">
             <h3 id="pressTitle">七报七网</h3>
             <p id="pressMeta" class="muted news-hub-meta"></p>
@@ -349,89 +355,7 @@
             </div>
           </div>
         </section>
-        <section class="company-section cninfo-hub platform-hub" data-source="ths" aria-label="同花顺新闻">
-          <div class="section-head cninfo-hub-head">
-            <h3>同花顺</h3>
-            <p class="muted news-hub-meta" data-platform-meta></p>
-          </div>
-          <form class="cninfo-filters" autocomplete="off" data-platform-form>
-            <div class="news-tab-bar cninfo-tab-bar" role="tablist" aria-label="同花顺页签" data-platform-tabs></div>
-            <div class="cninfo-filter-row press-extra-row" data-platform-extra></div>
-            <div class="cninfo-filter-row">
-              <label class="cninfo-field">
-                <span>区间</span>
-                <select class="chart-select cninfo-select" data-platform-days aria-label="回溯区间">
-                  <option value="7">近 7 天</option>
-                  <option value="30" selected>近 30 天</option>
-                  <option value="90">近 90 天</option>
-                  <option value="365">近 1 年</option>
-                  <option value="custom">自定义</option>
-                </select>
-              </label>
-              <label class="cninfo-field cninfo-date-field hidden" data-platform-start-wrap>
-                <span>起</span>
-                <input type="date" class="cninfo-date" data-platform-start aria-label="开始日期" />
-              </label>
-              <label class="cninfo-field cninfo-date-field hidden" data-platform-end-wrap>
-                <span>止</span>
-                <input type="date" class="cninfo-date" data-platform-end aria-label="结束日期" />
-              </label>
-              <label class="cninfo-field cninfo-keyword-field">
-                <span>关键词</span>
-                <input type="search" class="cninfo-keyword" data-platform-keyword placeholder="标题，可选" maxlength="80" />
-              </label>
-              <button class="btn" type="submit" data-platform-query>查询</button>
-            </div>
-          </form>
-          <p class="muted news-scroll-hint cninfo-hint" data-platform-hint></p>
-          <div class="company-news-body cninfo-body" tabindex="0" data-platform-body>
-            <div class="news-list" data-platform-list>
-              <p class="muted">正在加载同花顺新闻…</p>
-            </div>
-          </div>
-        </section>
-        <section class="company-section cninfo-hub platform-hub" data-source="xueqiu" aria-label="雪球新闻">
-          <div class="section-head cninfo-hub-head">
-            <h3>雪球</h3>
-            <p class="muted news-hub-meta" data-platform-meta></p>
-          </div>
-          <form class="cninfo-filters" autocomplete="off" data-platform-form>
-            <div class="news-tab-bar cninfo-tab-bar" role="tablist" aria-label="雪球页签" data-platform-tabs></div>
-            <div class="cninfo-filter-row press-extra-row" data-platform-extra></div>
-            <div class="cninfo-filter-row">
-              <label class="cninfo-field">
-                <span>区间</span>
-                <select class="chart-select cninfo-select" data-platform-days aria-label="回溯区间">
-                  <option value="7">近 7 天</option>
-                  <option value="30" selected>近 30 天</option>
-                  <option value="90">近 90 天</option>
-                  <option value="365">近 1 年</option>
-                  <option value="custom">自定义</option>
-                </select>
-              </label>
-              <label class="cninfo-field cninfo-date-field hidden" data-platform-start-wrap>
-                <span>起</span>
-                <input type="date" class="cninfo-date" data-platform-start aria-label="开始日期" />
-              </label>
-              <label class="cninfo-field cninfo-date-field hidden" data-platform-end-wrap>
-                <span>止</span>
-                <input type="date" class="cninfo-date" data-platform-end aria-label="结束日期" />
-              </label>
-              <label class="cninfo-field cninfo-keyword-field">
-                <span>关键词</span>
-                <input type="search" class="cninfo-keyword" data-platform-keyword placeholder="标题，可选" maxlength="80" />
-              </label>
-              <button class="btn" type="submit" data-platform-query>查询</button>
-            </div>
-          </form>
-          <p class="muted news-scroll-hint cninfo-hint" data-platform-hint></p>
-          <div class="company-news-body cninfo-body" tabindex="0" data-platform-body>
-            <div class="news-list" data-platform-list>
-              <p class="muted">正在加载雪球新闻…</p>
-            </div>
-          </div>
-        </section>
-        <section class="company-section cninfo-hub platform-hub" data-source="eastmoney" aria-label="东方财富新闻">
+        <section class="company-section cninfo-hub platform-hub" data-source="eastmoney" data-news-group="other" aria-label="东方财富新闻">
           <div class="section-head cninfo-hub-head">
             <h3>东方财富</h3>
             <p class="muted news-hub-meta" data-platform-meta></p>
@@ -472,8 +396,338 @@
             </div>
           </div>
         </section>
+        <section class="company-section cninfo-hub platform-hub" data-source="ths" data-news-group="other" aria-label="同花顺新闻">
+          <div class="section-head cninfo-hub-head">
+            <h3>同花顺</h3>
+            <p class="muted news-hub-meta" data-platform-meta></p>
+          </div>
+          <form class="cninfo-filters" autocomplete="off" data-platform-form>
+            <div class="news-tab-bar cninfo-tab-bar" role="tablist" aria-label="同花顺页签" data-platform-tabs></div>
+            <div class="cninfo-filter-row press-extra-row" data-platform-extra></div>
+            <div class="cninfo-filter-row">
+              <label class="cninfo-field">
+                <span>区间</span>
+                <select class="chart-select cninfo-select" data-platform-days aria-label="回溯区间">
+                  <option value="7">近 7 天</option>
+                  <option value="30" selected>近 30 天</option>
+                  <option value="90">近 90 天</option>
+                  <option value="365">近 1 年</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </label>
+              <label class="cninfo-field cninfo-date-field hidden" data-platform-start-wrap>
+                <span>起</span>
+                <input type="date" class="cninfo-date" data-platform-start aria-label="开始日期" />
+              </label>
+              <label class="cninfo-field cninfo-date-field hidden" data-platform-end-wrap>
+                <span>止</span>
+                <input type="date" class="cninfo-date" data-platform-end aria-label="结束日期" />
+              </label>
+              <label class="cninfo-field cninfo-keyword-field">
+                <span>关键词</span>
+                <input type="search" class="cninfo-keyword" data-platform-keyword placeholder="标题，可选" maxlength="80" />
+              </label>
+              <button class="btn" type="submit" data-platform-query>查询</button>
+            </div>
+          </form>
+          <p class="muted news-scroll-hint cninfo-hint" data-platform-hint></p>
+          <div class="company-news-body cninfo-body" tabindex="0" data-platform-body>
+            <div class="news-list" data-platform-list>
+              <p class="muted">正在加载同花顺新闻…</p>
+            </div>
+          </div>
+        </section>
+        <section class="company-section cninfo-hub platform-hub" data-source="xueqiu" data-news-group="other" aria-label="雪球新闻">
+          <div class="section-head cninfo-hub-head">
+            <h3>雪球</h3>
+            <p class="muted news-hub-meta" data-platform-meta></p>
+          </div>
+          <form class="cninfo-filters" autocomplete="off" data-platform-form>
+            <div class="news-tab-bar cninfo-tab-bar" role="tablist" aria-label="雪球页签" data-platform-tabs></div>
+            <div class="cninfo-filter-row press-extra-row" data-platform-extra></div>
+            <div class="cninfo-filter-row">
+              <label class="cninfo-field">
+                <span>区间</span>
+                <select class="chart-select cninfo-select" data-platform-days aria-label="回溯区间">
+                  <option value="7">近 7 天</option>
+                  <option value="30" selected>近 30 天</option>
+                  <option value="90">近 90 天</option>
+                  <option value="365">近 1 年</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </label>
+              <label class="cninfo-field cninfo-date-field hidden" data-platform-start-wrap>
+                <span>起</span>
+                <input type="date" class="cninfo-date" data-platform-start aria-label="开始日期" />
+              </label>
+              <label class="cninfo-field cninfo-date-field hidden" data-platform-end-wrap>
+                <span>止</span>
+                <input type="date" class="cninfo-date" data-platform-end aria-label="结束日期" />
+              </label>
+              <label class="cninfo-field cninfo-keyword-field">
+                <span>关键词</span>
+                <input type="search" class="cninfo-keyword" data-platform-keyword placeholder="标题，可选" maxlength="80" />
+              </label>
+              <button class="btn" type="submit" data-platform-query>查询</button>
+            </div>
+          </form>
+          <p class="muted news-scroll-hint cninfo-hint" data-platform-hint></p>
+          <div class="company-news-body cninfo-body" tabindex="0" data-platform-body>
+            <div class="news-list" data-platform-list>
+              <p class="muted">正在加载雪球新闻…</p>
+            </div>
+          </div>
+        </section>
         </div>
         </div>
+      </div>
+
+      <div id="panel-emotion" class="company-panel" data-panel="emotion" data-emotion-source="eastmoney" role="tabpanel" hidden>
+        <div class="emotion-layout news-layout">
+          <nav id="emotionSourceBar" class="emotion-source-bar" aria-label="情绪数据源">
+            <button type="button" class="emotion-source-btn is-active" data-source="eastmoney">东方财富</button>
+            <button type="button" class="emotion-source-btn" data-source="tonghuashun">同花顺</button>
+            <button type="button" class="emotion-source-btn" data-source="xueqiu">雪球</button>
+          </nav>
+          <div class="emotion-open news-open">
+            <section class="company-section cninfo-hub emotion-hub" data-emotion="scores" aria-label="情绪评分">
+              <div class="section-head cninfo-hub-head">
+                <h3 id="emotionScoresTitle">千股千评</h3>
+                <p id="emotionScoresMeta" class="muted news-hub-meta"></p>
+              </div>
+              <p id="emotionScoresHint" class="muted news-scroll-hint cninfo-hint"></p>
+              <div id="emotionScoresBody" class="company-news-body cninfo-body emotion-scores-body" tabindex="0">
+                <div id="emotionScoresContent" class="emotion-scores-content">
+                  <p class="muted">正在加载…</p>
+                </div>
+              </div>
+            </section>
+            <section class="company-section cninfo-hub emotion-hub" data-emotion="rank" aria-label="人气排名">
+              <div class="section-head cninfo-hub-head">
+                <h3 id="emotionRankTitle">人气排名</h3>
+                <p id="emotionRankMeta" class="muted news-hub-meta"></p>
+              </div>
+              <p id="emotionRankHint" class="muted news-scroll-hint cninfo-hint"></p>
+              <div id="emotionRankBody" class="company-news-body cninfo-body" tabindex="0">
+                <div id="emotionRankList" class="news-list">
+                  <p class="muted">正在加载…</p>
+                </div>
+              </div>
+            </section>
+            <section class="company-section cninfo-hub emotion-hub" data-emotion="posts" aria-label="社区帖子">
+              <div class="section-head cninfo-hub-head">
+                <h3 id="emotionPostsTitle">股吧帖子</h3>
+                <p id="emotionPostsMeta" class="muted news-hub-meta"></p>
+              </div>
+              <form id="emotionPostsForm" class="cninfo-filters" autocomplete="off">
+                <div class="cninfo-filter-row">
+                  <label class="cninfo-field emotion-em-only">
+                    <span>分类</span>
+                    <select id="emotionPostsKind" class="chart-select cninfo-select" aria-label="帖子分类">
+                      <option value="all">全部</option>
+                      <option value="news">新闻</option>
+                      <option value="reports">研报</option>
+                      <option value="notices">公告</option>
+                      <option value="margin">融资融券</option>
+                      <option value="other">其他</option>
+                      <option value="qa">问董秘</option>
+                      <option value="meeting">说明会</option>
+                      <option value="hot">热门</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-em-only">
+                    <span>排序</span>
+                    <select id="emotionPostsSort" class="chart-select cninfo-select" aria-label="排序">
+                      <option value="time">发帖时间</option>
+                      <option value="reply">最新回复</option>
+                      <option value="hot">热门</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-ths-only">
+                    <span>排序</span>
+                    <select id="emotionPostsSortThs" class="chart-select cninfo-select" aria-label="排序">
+                      <option value="hot" selected>推荐</option>
+                      <option value="time">最新</option>
+                      <option value="reply">回复</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-em-only">
+                    <span>区间</span>
+                    <select id="emotionPostsDays" class="chart-select cninfo-select" aria-label="回溯区间">
+                      <option value="0">不限</option>
+                      <option value="3" selected>近 3 天</option>
+                      <option value="7">近 7 天</option>
+                      <option value="30">近 30 天</option>
+                      <option value="90">近 90 天</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-ths-only">
+                    <span>页数</span>
+                    <select id="emotionPostsPages" class="chart-select cninfo-select" aria-label="翻页数">
+                      <option value="1">1 页</option>
+                      <option value="3" selected>3 页</option>
+                      <option value="5">5 页</option>
+                      <option value="10">10 页</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-xq-only">
+                    <span>来源</span>
+                    <select id="emotionPostsKindXq" class="chart-select cninfo-select" aria-label="讨论来源">
+                      <option value="user" selected>讨论</option>
+                      <option value="trans">交易</option>
+                      <option value="all">全部</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-xq-only">
+                    <span>排序</span>
+                    <select id="emotionPostsSortXq" class="chart-select cninfo-select" aria-label="排序">
+                      <option value="time" selected>最新</option>
+                      <option value="alpha">热门</option>
+                      <option value="reply">评论</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-xq-only">
+                    <span>区间</span>
+                    <select id="emotionPostsDaysXq" class="chart-select cninfo-select" aria-label="回溯区间">
+                      <option value="0">不限</option>
+                      <option value="3" selected>近 3 天</option>
+                      <option value="7">近 7 天</option>
+                      <option value="30">近 30 天</option>
+                      <option value="90">近 90 天</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-xq-only">
+                    <span>页数</span>
+                    <select id="emotionPostsPagesXq" class="chart-select cninfo-select" aria-label="翻页数">
+                      <option value="1">1 页</option>
+                      <option value="3" selected>3 页</option>
+                      <option value="5">5 页</option>
+                      <option value="10">10 页</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-xq-only">
+                    <span>热股市场</span>
+                    <select id="emotionPostsMarketXq" class="chart-select cninfo-select" aria-label="热股市场">
+                      <option value="cn" selected>沪深</option>
+                      <option value="hk">港股</option>
+                      <option value="us">美股</option>
+                      <option value="global">全球</option>
+                      <option value="follow">关注</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field cninfo-check-field">
+                    <span>评论</span>
+                    <input id="emotionPostsReplies" type="checkbox" aria-label="附带评论" />
+                  </label>
+                  <button id="emotionPostsQueryBtn" class="btn" type="submit">查询</button>
+                </div>
+              </form>
+              <p id="emotionPostsHint" class="muted news-scroll-hint cninfo-hint"></p>
+              <div id="emotionPostsBody" class="company-news-body cninfo-body" tabindex="0">
+                <div id="emotionPostsList" class="news-list">
+                  <p class="muted">正在加载…</p>
+                </div>
+              </div>
+            </section>
+            <section class="company-section cninfo-hub emotion-hub" data-emotion="search" aria-label="社区搜索">
+              <div class="section-head cninfo-hub-head">
+                <h3 id="emotionSearchTitle">股吧搜索</h3>
+                <p id="emotionSearchMeta" class="muted news-hub-meta"></p>
+              </div>
+              <form id="emotionSearchForm" class="cninfo-filters" autocomplete="off">
+                <div class="cninfo-filter-row">
+                  <label class="cninfo-field cninfo-keyword-field">
+                    <span>关键词</span>
+                    <input id="emotionSearchKeyword" type="search" class="cninfo-keyword" placeholder="搜帖，默认可用公司名" maxlength="80" />
+                  </label>
+                  <label class="cninfo-field emotion-em-only">
+                    <span>排序</span>
+                    <select id="emotionSearchSort" class="chart-select cninfo-select" aria-label="搜索排序">
+                      <option value="time">时间</option>
+                      <option value="default">相关度</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-ths-only">
+                    <span>排序</span>
+                    <select id="emotionSearchSortThs" class="chart-select cninfo-select" aria-label="搜索排序">
+                      <option value="hot" selected>推荐</option>
+                      <option value="time">最新</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-em-only">
+                    <span>区间</span>
+                    <select id="emotionSearchDays" class="chart-select cninfo-select" aria-label="搜索区间">
+                      <option value="0">不限</option>
+                      <option value="3">近 3 天</option>
+                      <option value="7" selected>近 7 天</option>
+                      <option value="30">近 30 天</option>
+                      <option value="90">近 90 天</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-ths-only">
+                    <span>页数</span>
+                    <select id="emotionSearchPages" class="chart-select cninfo-select" aria-label="搜索翻页数">
+                      <option value="1">1 页</option>
+                      <option value="3" selected>3 页</option>
+                      <option value="5">5 页</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-xq-only">
+                    <span>排序</span>
+                    <select id="emotionSearchSortXq" class="chart-select cninfo-select" aria-label="搜索排序">
+                      <option value="time" selected>最新</option>
+                      <option value="alpha">热门</option>
+                      <option value="reply">评论</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-xq-only">
+                    <span>区间</span>
+                    <select id="emotionSearchDaysXq" class="chart-select cninfo-select" aria-label="搜索区间">
+                      <option value="0">不限</option>
+                      <option value="3">近 3 天</option>
+                      <option value="7" selected>近 7 天</option>
+                      <option value="30">近 30 天</option>
+                      <option value="90">近 90 天</option>
+                    </select>
+                  </label>
+                  <label class="cninfo-field emotion-xq-only">
+                    <span>页数</span>
+                    <select id="emotionSearchPagesXq" class="chart-select cninfo-select" aria-label="搜索翻页数">
+                      <option value="1">1 页</option>
+                      <option value="3" selected>3 页</option>
+                      <option value="5">5 页</option>
+                      <option value="10">10 页</option>
+                    </select>
+                  </label>
+                  <button id="emotionSearchQueryBtn" class="btn" type="submit">搜索</button>
+                </div>
+              </form>
+              <p id="emotionSearchHint" class="muted news-scroll-hint cninfo-hint"></p>
+              <div id="emotionSearchBody" class="company-news-body cninfo-body" tabindex="0">
+                <div id="emotionSearchList" class="news-list">
+                  <p class="muted">输入关键词搜索</p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+        <aside id="emotionDetail" class="emotion-detail hidden" aria-label="帖子详情" aria-hidden="true">
+          <header class="emotion-detail-head">
+            <h3 id="emotionDetailTitle">帖子详情</h3>
+            <div class="emotion-detail-actions">
+              <a id="emotionDetailLink" class="btn ghost" href="#" target="_blank" rel="noopener noreferrer" hidden>原文</a>
+              <button id="emotionDetailClose" class="btn ghost" type="button">关闭</button>
+            </div>
+          </header>
+          <p id="emotionDetailMeta" class="muted emotion-detail-meta"></p>
+          <div id="emotionDetailContent" class="emotion-detail-content">
+            <p class="muted">选择帖子查看正文</p>
+          </div>
+          <section id="emotionDetailReplies" class="emotion-detail-replies" hidden>
+            <h4 id="emotionDetailRepliesTitle">评论</h4>
+            <div id="emotionDetailRepliesList" class="news-list"></div>
+          </section>
+        </aside>
       </div>
     </div>
 
@@ -482,6 +736,6 @@
   </div>
 
   <script src="/js/shared/nav.js?v=orbit-shell-20260902"></script>
-  <script src="/js/company.js?v=company-news-fold-20260902"></script>
+  <script src="/js/company.js?v=company-news-eastmoney-head-20260903"></script>
 </body>
 </html>
