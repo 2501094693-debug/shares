@@ -5,6 +5,7 @@
 - ``company``：单只股票的盘口、K 线、资讯
 - ``market``：申万行业涨跌、资金流向、行业轮动
 - ``list``：龙虎榜每日上榜与个股历史
+- ``fund``：场内 ETF / LOF 分类与检索
 """
 
 from __future__ import annotations
@@ -26,8 +27,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from company.api import router as company_router
+from fund.api import router as fund_router
 from industry.api import router as industry_router
 from industry.service import service as industry_service
+from fund.service import service as fund_service
 from list.api import router as list_router
 from market.api import router as market_router
 
@@ -86,6 +89,12 @@ async def lifespan(_app: FastAPI):
     except Exception as exc:  # noqa: BLE001
         print(f"公司索引启动失败: {exc}")
 
+    try:
+        fund_service.start_build_index(force=False)
+        print("已启动场内基金索引同步")
+    except Exception as exc:  # noqa: BLE001
+        print(f"场内基金索引启动失败: {exc}")
+
     yield
 
 
@@ -107,6 +116,7 @@ app.include_router(industry_router)
 app.include_router(company_router)
 app.include_router(market_router)
 app.include_router(list_router)
+app.include_router(fund_router)
 
 
 @app.get("/api/health")
@@ -169,6 +179,24 @@ def list_page():
 def js_list():
     return FileResponse(
         FRONTEND / "list" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/fund")
+@app.get("/fund.html")
+def fund_page():
+    return FileResponse(
+        FRONTEND / "fund" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/fund.js")
+def js_fund():
+    return FileResponse(
+        FRONTEND / "fund" / "app.js",
         media_type="application/javascript",
         headers={"Cache-Control": "no-store, max-age=0"},
     )

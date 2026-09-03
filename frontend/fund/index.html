@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="app-shell-root">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ORBIT · 场内基金</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css?v=fund-page-20260903" />
+</head>
+<body class="app-shell company-page-root market-page-root fund-page-root" data-nav="fund">
+  <nav class="app-rail" aria-label="主导航">
+    <a class="app-rail-brand" href="/" title="ORBIT 申万终端">
+      <span class="app-rail-mark">OR</span>
+      <span class="app-rail-word">ORBIT</span>
+    </a>
+    <div class="app-rail-links">
+      <a class="app-rail-link" href="/" data-nav="industry" title="行业树 · 地图与分类">
+        <span class="app-rail-ico" aria-hidden="true">◈</span>
+        <span>行业树</span>
+      </a>
+      <a class="app-rail-link" href="/market" data-nav="market" title="行业行情 · 涨跌与资金">
+        <span class="app-rail-ico" aria-hidden="true">▣</span>
+        <span>行情</span>
+      </a>
+      <a class="app-rail-link" href="/fund" data-nav="fund" title="场内基金 · ETF / LOF">
+        <span class="app-rail-ico" aria-hidden="true">◎</span>
+        <span>基金</span>
+      </a>
+      <a class="app-rail-link" href="/steep" data-nav="steep" title="涨跌停 · 多日名单">
+        <span class="app-rail-ico" aria-hidden="true">↕</span>
+        <span>涨跌停</span>
+      </a>
+      <a class="app-rail-link" href="/list" data-nav="list" title="龙虎榜 · 席位明细">
+        <span class="app-rail-ico" aria-hidden="true">≡</span>
+        <span>龙虎榜</span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="app-stage">
+    <div class="app company-page market-page fund-page">
+      <header class="topbar company-topbar">
+        <div class="brand">
+          <div>
+            <h1>场内基金</h1>
+            <p class="company-page-sub">ETF / LOF 分类浏览 · 东财板块行情</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button id="rebuildBtn" class="btn ghost" type="button" title="后台重建全市场索引">重建索引</button>
+          <button id="refreshBtn" class="btn ghost" type="button">刷新</button>
+        </div>
+      </header>
+
+      <div class="market-toolbar fund-toolbar">
+        <div class="fund-search-row">
+          <label class="search-box fund-search-box">
+            <span class="sr-only">基金名称</span>
+            <input id="nameInput" type="search" placeholder="搜索基金名称…" autocomplete="off" />
+          </label>
+          <label class="search-box fund-search-box">
+            <span class="sr-only">基金代码</span>
+            <input id="codeInput" type="search" placeholder="搜索代码…" autocomplete="off" />
+          </label>
+          <div id="marketSeg" class="market-seg" role="group" aria-label="市场">
+            <button type="button" data-market="" class="is-active">全部</button>
+            <button type="button" data-market="SH">沪市</button>
+            <button type="button" data-market="SZ">深市</button>
+          </div>
+        </div>
+        <div class="market-toolbar-tail">
+          <div id="summaryBar" class="market-summary"></div>
+          <span id="liveDot" class="market-live" data-state="idle">IDLE</span>
+          <span id="indexMeta" class="muted market-meta"></span>
+        </div>
+      </div>
+
+      <div id="errorBox" class="error hidden"></div>
+      <div id="loading" class="loading hidden">正在加载…</div>
+
+      <div class="fund-layout">
+        <aside class="fund-tree-pane">
+          <header class="fund-pane-head">
+            <h2>分类</h2>
+            <span id="treeMeta" class="muted">加载中…</span>
+          </header>
+          <div id="tree" class="tree fund-tree" role="tree"></div>
+        </aside>
+
+        <section class="fund-list-pane">
+          <header class="fund-pane-head">
+            <div class="fund-list-title">
+              <h2 id="listTitle">基金列表</h2>
+              <p id="listMeta" class="muted">选择左侧分类，或在顶部搜索</p>
+            </div>
+            <div class="fund-list-tools">
+              <label class="search-box fund-filter-box">
+                <span class="sr-only">本地筛选</span>
+                <input id="filterInput" type="search" placeholder="筛选当前列表…" autocomplete="off" />
+              </label>
+              <div id="sortSeg" class="market-seg" role="group" aria-label="排序">
+                <button type="button" data-sort="change_pct" class="is-active">涨跌</button>
+                <button type="button" data-sort="amount">成交额</button>
+                <button type="button" data-sort="premium">折价率</button>
+                <button type="button" data-sort="main_net">主力</button>
+              </div>
+            </div>
+          </header>
+          <div class="fund-list-scroll">
+            <table class="market-table fund-table">
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th class="num">最新</th>
+                  <th class="num">涨跌</th>
+                  <th class="num">成交额</th>
+                  <th class="num">折价率</th>
+                  <th class="num">主力</th>
+                  <th class="num">换手</th>
+                </tr>
+              </thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+          <div class="pager fund-pager">
+            <label class="page-size">
+              每页
+              <select id="pageSize">
+                <option value="30">30</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+            <div class="pager-nav">
+              <button id="prevPage" class="btn ghost" type="button">上一页</button>
+              <span id="pageInfo" class="muted"></span>
+              <button id="nextPage" class="btn ghost" type="button">下一页</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/shared/nav.js?v=fund-page-20260903"></script>
+  <script src="/js/fund.js?v=fund-page-20260903"></script>
+</body>
+</html>

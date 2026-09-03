@@ -80,6 +80,8 @@ body.app-shell {
 
 body.app-shell.market-page-root,
 body.app-shell.lhb-page-root,
+body.app-shell.steep-page-root,
+body.app-shell.fund-page-root,
 html.map-app-root body.app-shell.map-app {
   height: 100dvh;
   overflow: hidden;
@@ -569,6 +571,8 @@ body.app-shell .market-page .brand h1 {
 
   body.app-shell.market-page-root,
   body.app-shell.lhb-page-root,
+  body.app-shell.steep-page-root,
+  body.app-shell.fund-page-root,
   html.map-app-root body.app-shell.map-app {
     height: 100dvh;
   }
@@ -5007,20 +5011,52 @@ body.market-page-root {
 }
 
 /* —— 涨跌停日历 —— */
+body.app-shell.steep-page-root .app-stage {
+  display: flex;
+  flex-direction: column;
+}
+
+body.app-shell.steep-page-root .steep-page.market-page {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.steep-page .topbar,
+.steep-page .market-toolbar,
+.steep-page > .error,
+.steep-page > .loading {
+  margin-inline: 12px;
+}
+
+.steep-page .topbar {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.steep-page .market-toolbar {
+  margin-bottom: 6px;
+}
+
 .steep-matrix {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
+  width: 100%;
 }
 
 .steep-matrix-row {
   display: flex;
   min-height: 0;
   flex: 1 1 0;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
   background: var(--bg-panel);
   overflow: hidden;
 }
@@ -5103,35 +5139,50 @@ body.market-page-root {
   display: flex;
   align-items: stretch;
   gap: 8px;
-  padding: 8px;
+  padding: 6px 0;
   box-sizing: border-box;
-  width: max-content;
+  width: 100%;
+  min-width: 100%;
   height: 100%;
   max-height: 100%;
 }
 
+.steep-matrix-row.is-open .steep-matrix-track {
+  width: max-content;
+  min-width: 100%;
+}
+
 .steep-day {
-  width: 84px;
+  flex: 1 1 84px;
+  min-width: 84px;
+  width: auto;
   height: 100%;
   max-height: 100%;
-  flex: none;
   display: flex;
   flex-direction: row;
   min-height: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: rgba(7, 11, 18, 0.55);
-  transition: width 0.18s ease;
+  transition: flex-basis 0.18s ease, width 0.18s ease;
+}
+
+.steep-matrix-row.is-open .steep-day {
+  flex: 0 0 84px;
+  width: 84px;
 }
 
 .steep-day.is-open {
+  flex: 0 0 860px;
   width: 860px;
+  min-width: 860px;
 }
 
 .steep-day-head {
   appearance: none;
-  flex: none;
-  width: 84px;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 84px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -5146,6 +5197,8 @@ body.market-page-root {
 }
 
 .steep-day.is-open .steep-day-head {
+  flex: 0 0 84px;
+  width: 84px;
   border-right: 1px solid var(--line);
 }
 
@@ -5254,7 +5307,9 @@ body.market-page-root {
   }
 
   .steep-day.is-open {
+    flex-basis: 720px;
     width: 720px;
+    min-width: 720px;
   }
 }
 
@@ -5520,6 +5575,149 @@ body.market-page-root {
   .lhb-date-text,
   .lhb-stock-box input,
   .lhb-filter-box input {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+/* —— 场内基金 —— */
+body.fund-page-root {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body.app-shell.fund-page-root .app-stage {
+  min-height: 0;
+}
+
+.fund-page .fund-toolbar {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.fund-search-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.fund-search-box input,
+.fund-filter-box input {
+  min-width: 140px;
+}
+
+.fund-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.fund-tree-pane,
+.fund-list-pane {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.fund-pane-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.fund-pane-head h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.fund-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 6px 12px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.fund-tree::-webkit-scrollbar {
+  display: none;
+}
+
+.fund-list-title {
+  min-width: 0;
+}
+
+.fund-list-title p {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+}
+
+.fund-list-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fund-list-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.fund-list-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.fund-table .fund-name-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.fund-table .fund-name-link:hover .fund-name {
+  color: var(--accent);
+}
+
+.fund-table .fund-name {
+  display: block;
+  font-weight: 500;
+}
+
+.fund-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 900px) {
+  .fund-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(180px, 34vh) minmax(0, 1fr);
+  }
+
+  .fund-search-box input,
+  .fund-filter-box input {
     min-width: 0;
     width: 100%;
   }

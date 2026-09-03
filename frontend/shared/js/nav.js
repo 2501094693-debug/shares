@@ -5,7 +5,9 @@
       ? "industry"
       : path.startsWith("/market")
         ? "market"
-        : path.startsWith("/steep")
+        : path.startsWith("/fund")
+          ? "fund"
+          : path.startsWith("/steep")
           ? "steep"
           : path.startsWith("/list")
             ? "list"
