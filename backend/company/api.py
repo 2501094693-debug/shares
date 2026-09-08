@@ -42,6 +42,7 @@ from company.news.official.exchange.sse import MAX_PAGES as EXCHANGE_MAX_PAGES
 from company.news.profile import query_company_profile
 from company.news.query import query_cninfo, query_exchange, query_platform, query_press
 from company.news.taxonomy.constants import ALL_SECTIONS, DEFAULT_SECTIONS
+from company.fund_holders import fetch_fund_holders
 from company.profile import get_stock_profile
 from core.api import err, ok
 
@@ -388,6 +389,29 @@ def stocks_profile_messages(
             days=days,
             sections=sections,
             max_pages=max_pages,
+        )
+        return ok(data)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/stocks/fund-holders")
+def stocks_fund_holders(
+    code: str = Query("", description="股票代码，如 600519"),
+    date: str = Query("", description="报告期 YYYY-MM-DD；留空取最新"),
+    refresh: str = Query("0"),
+):
+    """持有该股票的基金列表及持仓比例（东财基金持股明细）。"""
+    code = code.strip()
+    if not code:
+        return err("缺少参数 code", 400)
+    try:
+        data = fetch_fund_holders(
+            code,
+            report_date=date.strip() or None,
+            force=refresh == "1",
         )
         return ok(data)
     except ValueError as exc:

@@ -2,15 +2,15 @@
   const state = {
     tree: [],
     categories: [],
-    selectedCode: "",
+    selectedCode: "gp",
     selectedName: "",
     items: [],
     searchMode: false,
-    market: "",
-    sort: "change_pct",
+    sort: "day_pct",
     filter: "",
     page: 1,
     pageSize: 50,
+    total: 0,
     fetching: false,
     indexStatus: null,
     holdingsCode: "",
@@ -65,23 +65,6 @@
     return Number.isFinite(n) ? n : null;
   }
 
-  function parseYi(value) {
-    if (value == null || value === "") return null;
-    const text = String(value).trim();
-    const sign = text.startsWith("-") ? -1 : 1;
-    const abs = text.replace(/^-/, "");
-    if (abs.endsWith("亿")) {
-      const n = parseFloat(abs);
-      return Number.isFinite(n) ? sign * n * 1e8 : null;
-    }
-    if (abs.endsWith("万")) {
-      const n = parseFloat(abs);
-      return Number.isFinite(n) ? sign * n * 1e4 : null;
-    }
-    const n = parseFloat(abs);
-    return Number.isFinite(n) ? sign * n : null;
-  }
-
   function tone(value) {
     const n = parsePct(value);
     if (n == null || n === 0) return "flat";
@@ -89,17 +72,7 @@
   }
 
   function sortValue(row, field) {
-    if (field === "change_pct" || field === "premium" || field === "turnover") {
-      return parsePct(row[field]);
-    }
-    if (field === "amount" || field === "main_net") {
-      return parseYi(row[field]);
-    }
-    if (field === "price") {
-      const n = parseFloat(row.price);
-      return Number.isFinite(n) ? n : null;
-    }
-    return null;
+    return parsePct(row[field]);
   }
 
   function categoryLabel(code) {
@@ -107,19 +80,8 @@
     return hit?.name || code || "";
   }
 
-  function companyHref(row) {
-    const qs = new URLSearchParams({
-      code: row.code || "",
-      name: row.name || "",
-    });
-    return `/company.html?${qs}`;
-  }
-
   function stockHref(row) {
-    const qs = new URLSearchParams({
-      code: row.code || "",
-      name: row.name || "",
-    });
+    const qs = new URLSearchParams({ code: row.code || "", name: row.name || "" });
     return `/company.html?${qs}`;
   }
 
@@ -154,20 +116,16 @@
   function renderHoldings(data) {
     const holdings = data?.holdings || [];
     const industries = data?.industries || [];
-    const title = data?.name || data?.code || "持仓详情";
+    $("holdingsTitle").textContent = data?.name || data?.code || "持仓详情";
     const metaParts = [data?.code || ""];
-    if (data?.market) metaParts.push(data.market);
     if (data?.report_date) metaParts.push(`报告期 ${data.report_date}`);
-    $("holdingsTitle").textContent = title;
     $("holdingsMeta").textContent = metaParts.filter(Boolean).join(" · ");
 
     const holdingsBody = $("holdingsBody");
-    if (!holdings.length) {
-      holdingsBody.innerHTML = `<tr class="is-empty"><td colspan="4">暂无重仓股数据</td></tr>`;
-    } else {
-      holdingsBody.innerHTML = holdings
-        .map(
-          (row) => `
+    holdingsBody.innerHTML = holdings.length
+      ? holdings
+          .map(
+            (row) => `
           <tr>
             <td>
               <a class="stock-link" href="${esc(stockHref(row))}">
@@ -179,26 +137,24 @@
             <td>${esc(row.industry || "—")}</td>
             <td class="num">${esc(row.change_type ? `${row.change_type} ${row.change_weight || ""}`.trim() : "—")}</td>
           </tr>`
-        )
-        .join("");
-    }
+          )
+          .join("")
+      : `<tr class="is-empty"><td colspan="4">暂无重仓股数据</td></tr>`;
 
     const industryBody = $("industryBody");
-    if (!industries.length) {
-      industryBody.innerHTML = `<tr class="is-empty"><td colspan="4">暂无行业分布数据</td></tr>`;
-    } else {
-      industryBody.innerHTML = industries
-        .map(
-          (row) => `
+    industryBody.innerHTML = industries.length
+      ? industries
+          .map(
+            (row) => `
           <tr>
             <td>${esc(row.name || row.code || "—")}</td>
             <td class="num">${esc(row.weight || "—")}</td>
             <td class="num">${esc(row.peer_avg || "—")}</td>
             <td class="num" data-tone="${tone(row.peer_diff)}">${esc(row.peer_diff || "—")}</td>
           </tr>`
-        )
-        .join("");
-    }
+          )
+          .join("")
+      : `<tr class="is-empty"><td colspan="4">暂无行业分布数据</td></tr>`;
   }
 
   async function openHoldings(row) {
@@ -212,10 +168,10 @@
 
     setHoldingsLoading(true);
     $("holdingsTitle").textContent = row.name || row.code;
-    $("holdingsMeta").textContent = `${row.code}${row.market ? ` · ${row.market}` : ""}`;
+    $("holdingsMeta").textContent = row.code;
     try {
       const json = await api(`/api/funds/${encodeURIComponent(row.code)}/holdings`);
-      renderHoldings({ ...json.data, name: json.data?.name || row.name, market: row.market });
+      renderHoldings({ ...json.data, name: json.data?.name || row.name });
       setHoldingsError("");
     } catch (err) {
       setHoldingsError(err.message || String(err));
@@ -224,21 +180,14 @@
     }
   }
 
-  function countCategories(tree) {
-    let n = 0;
-    for (const group of tree) {
-      n += (group.children || []).length;
-    }
-    return n;
-  }
-
   function renderTree() {
     const root = $("tree");
     root.innerHTML = "";
     for (const group of state.tree) {
       root.appendChild(buildGroupNode(group));
     }
-    $("treeMeta").textContent = `${state.tree.length} 大类 · ${countCategories(state.tree)} 分类`;
+    const childCount = state.tree[0]?.children?.length || 0;
+    $("treeMeta").textContent = `${childCount} 个分类`;
   }
 
   function buildGroupNode(group) {
@@ -248,19 +197,14 @@
     const row = document.createElement("button");
     row.type = "button";
     row.className = "tree-row level-1";
-    row.dataset.code = group.code;
-
     const chevron = document.createElement("span");
     chevron.className = "chevron open";
     chevron.textContent = "▸";
-
     const label = document.createElement("span");
     label.textContent = group.name;
-
     const count = document.createElement("span");
     count.className = "count";
     count.textContent = group.count ?? "";
-
     row.append(chevron, label, count);
     wrap.appendChild(row);
 
@@ -275,14 +219,12 @@
       const open = childBox.classList.toggle("open");
       chevron.classList.toggle("open", open);
     });
-
     return wrap;
   }
 
   function buildCategoryNode(node) {
     const wrap = document.createElement("div");
     wrap.className = "tree-item";
-
     const row = document.createElement("button");
     row.type = "button";
     row.className = "tree-row level-2";
@@ -290,25 +232,17 @@
     if (state.selectedCode === node.code && !state.searchMode) {
       row.classList.add("active");
     }
-
     const chevron = document.createElement("span");
     chevron.className = "chevron";
     chevron.textContent = "·";
-
     const label = document.createElement("span");
     label.textContent = node.name;
-
     const count = document.createElement("span");
     count.className = "count";
     count.textContent = node.count ?? "";
-
     row.append(chevron, label, count);
     wrap.appendChild(row);
-
-    row.addEventListener("click", () => {
-      selectCategory(node.code, node.name, row);
-    });
-
+    row.addEventListener("click", () => selectCategory(node.code, node.name, row));
     return wrap;
   }
 
@@ -318,24 +252,6 @@
     });
   }
 
-  function renderSummary() {
-    const items = visibleItems(false);
-    let up = 0;
-    let down = 0;
-    for (const row of items) {
-      const n = parsePct(row.change_pct);
-      if (n == null || n === 0) continue;
-      if (n > 0) up += 1;
-      else down += 1;
-    }
-    const flat = items.length - up - down;
-    $("summaryBar").innerHTML = `
-      <span>共 <strong>${items.length}</strong> 只</span>
-      <span class="is-up">涨 ${up}</span>
-      <span class="is-down">跌 ${down}</span>
-      <span>平 ${flat}</span>`;
-  }
-
   function renderIndexMeta() {
     const status = state.indexStatus;
     if (!status) {
@@ -343,14 +259,12 @@
       return;
     }
     const parts = [`索引 ${status.count || 0}`];
-    if (status.complete) parts.push("已完整");
-    else if (status.building) parts.push("构建中");
     if (status.updated_at) parts.push(status.updated_at);
     $("indexMeta").textContent = parts.join(" · ");
   }
 
   function haystack(row) {
-    return [row.code, row.name, row.market, categoryLabel(row.category_code)]
+    return [row.code, row.name, row.type_name, categoryLabel(row.category_code)]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
@@ -371,64 +285,57 @@
       return vb - va;
     });
 
-    if (!paginate) return rows;
+    if (!paginate || state.searchMode) return rows;
 
-    const totalPages = Math.max(1, Math.ceil(rows.length / state.pageSize));
+    const totalPages = Math.max(1, Math.ceil(state.total / state.pageSize));
     if (state.page > totalPages) state.page = totalPages;
-    const start = (state.page - 1) * state.pageSize;
-    return rows.slice(start, start + state.pageSize);
+    return rows;
   }
 
   function renderList() {
-    const allRows = (() => {
-      const q = state.filter.trim().toLowerCase();
-      let rows = state.items.slice();
-      if (q) rows = rows.filter((row) => haystack(row).includes(q));
-      return rows;
-    })();
-    const total = allRows.length;
+    const rows = visibleItems(!state.searchMode);
+    const total = state.searchMode ? rows.length : state.total;
     const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
-    const rows = visibleItems(true);
 
     if (state.searchMode) {
       $("listTitle").textContent = "搜索结果";
       $("listMeta").textContent = `全市场检索 · ${total} 条`;
     } else if (state.selectedCode) {
       $("listTitle").textContent = state.selectedName || categoryLabel(state.selectedCode);
-      $("listMeta").textContent = `${categoryLabel(state.selectedCode)} · ${total} 只`;
+      $("listMeta").textContent = `${categoryLabel(state.selectedCode)} · 共 ${total} 只`;
     } else {
       $("listTitle").textContent = "基金列表";
       $("listMeta").textContent = "选择左侧分类，或在顶部搜索";
     }
 
     const body = $("tableBody");
-    if (!rows.length) {
-      body.innerHTML = `<tr class="is-empty"><td colspan="7">${
+    const displayRows = state.searchMode
+      ? rows.slice((state.page - 1) * state.pageSize, state.page * state.pageSize)
+      : rows;
+
+    if (!displayRows.length) {
+      body.innerHTML = `<tr class="is-empty"><td colspan="6">${
         state.items.length ? "没有匹配的基金" : "暂无数据，请选择分类或搜索"
       }</td></tr>`;
       $("pageInfo").textContent = total ? `0 / ${total}` : "";
       $("prevPage").disabled = true;
       $("nextPage").disabled = true;
-      renderSummary();
       return;
     }
 
-    body.innerHTML = rows
+    body.innerHTML = displayRows
       .map(
         (row) => `
         <tr class="is-row fund-row" data-code="${esc(row.code)}">
           <td>
-            <a class="fund-name-link" href="${esc(companyHref(row))}">
-              <span class="fund-name">${esc(row.name || row.code)}</span>
-            </a>
-            <span class="market-stock-code">${esc(row.code)}${row.market ? ` · ${esc(row.market)}` : ""}</span>
+            <span class="fund-name">${esc(row.name || row.code)}</span>
+            <span class="market-stock-code">${esc(row.code)}</span>
           </td>
-          <td class="num">${esc(row.price || "—")}</td>
-          <td class="num" data-tone="${tone(row.change_pct)}">${esc(row.change_pct || "—")}</td>
-          <td class="num">${esc(row.amount || "—")}</td>
-          <td class="num" data-tone="${tone(row.premium)}">${esc(row.premium || "—")}</td>
-          <td class="num" data-tone="${tone(row.main_net)}">${esc(row.main_net || "—")}</td>
-          <td class="num">${esc(row.turnover || "—")}</td>
+          <td class="num">${esc(row.unit_nav || "—")}</td>
+          <td class="num" data-tone="${tone(row.day_pct)}">${esc(row.day_pct || "—")}</td>
+          <td class="num" data-tone="${tone(row.month_pct)}">${esc(row.month_pct || "—")}</td>
+          <td class="num" data-tone="${tone(row.year_pct)}">${esc(row.year_pct || "—")}</td>
+          <td>${esc(row.type_name || categoryLabel(row.category_code) || "—")}</td>
         </tr>`
       )
       .join("");
@@ -436,24 +343,17 @@
     $("pageInfo").textContent = `第 ${state.page}/${totalPages} 页 · ${total} 只`;
     $("prevPage").disabled = state.page <= 1;
     $("nextPage").disabled = state.page >= totalPages;
-    renderSummary();
   }
 
-  async function loadTree(force = false) {
-    const json = await api(`/api/funds/tree${force ? "?refresh=1" : ""}`);
+  async function loadTree() {
+    const json = await api("/api/otc-funds/tree");
     state.tree = json.data || [];
     state.categories = json.categories || [];
-    renderTree();
-  }
-
-  async function loadIndexStatus() {
-    try {
-      const json = await api("/api/funds/index/status");
-      state.indexStatus = json.data || null;
+    if (json.index) {
+      state.indexStatus = json.index;
       renderIndexMeta();
-    } catch {
-      /* ignore */
     }
+    renderTree();
   }
 
   async function selectCategory(code, name, rowEl) {
@@ -466,16 +366,27 @@
     $("filterInput").value = "";
     $("nameInput").value = "";
     $("codeInput").value = "";
-
     clearTreeActive();
     rowEl?.classList.add("active");
+    await loadCategoryPage(false);
+  }
 
+  async function loadCategoryPage(force = false) {
+    if (!state.selectedCode || state.searchMode) return;
     setLoading(true);
     setLive("busy");
     try {
-      const json = await api(`/api/funds/${encodeURIComponent(code)}/list`);
+      const params = new URLSearchParams({
+        page: String(state.page),
+        page_size: String(state.pageSize),
+      });
+      if (force) params.set("refresh", "1");
+      const json = await api(
+        `/api/otc-funds/category/${encodeURIComponent(state.selectedCode)}/list?${params}`
+      );
       const payload = json.data || {};
       state.items = payload.items || [];
+      state.total = Number(payload.total || state.items.length);
       if (json.index) {
         state.indexStatus = json.index;
         renderIndexMeta();
@@ -511,14 +422,20 @@
     const params = new URLSearchParams();
     if (name) params.set("name", name);
     if (code) params.set("code", code);
-    if (state.market) params.set("market", state.market);
     params.set("limit", "500");
 
     setLoading(true);
     setLive("busy");
     try {
-      const json = await api(`/api/funds/search?${params}`);
-      state.items = json.data || [];
+      const json = await api(`/api/otc-funds/search?${params}`);
+      state.items = (json.data || []).map((row) => ({
+        ...row,
+        unit_nav: row.unit_nav || "",
+        day_pct: row.day_pct || "",
+        month_pct: row.month_pct || "",
+        year_pct: row.year_pct || "",
+      }));
+      state.total = state.items.length;
       if (json.index) {
         state.indexStatus = json.index;
         renderIndexMeta();
@@ -534,48 +451,10 @@
     }
   }
 
-  async function refreshCurrent(force = false) {
-    if (state.searchMode) {
-      await runSearch();
-      return;
-    }
-    if (!state.selectedCode) {
-      await loadTree(force);
-      await loadIndexStatus();
-      return;
-    }
-    const row = $("tree")?.querySelector(`.tree-row[data-code="${state.selectedCode}"]`);
-    if (force) {
-      setLoading(true);
-      setLive("busy");
-      try {
-        const json = await api(
-          `/api/funds/${encodeURIComponent(state.selectedCode)}/list?refresh=1`
-        );
-        const payload = json.data || {};
-        state.items = payload.items || [];
-        if (json.index) {
-          state.indexStatus = json.index;
-          renderIndexMeta();
-        }
-        renderList();
-        setLive("live");
-        showError("");
-      } catch (err) {
-        showError(err.message || String(err));
-        setLive("idle");
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
-    await selectCategory(state.selectedCode, state.selectedName, row);
-  }
-
   async function rebuildIndex() {
     setLive("busy");
     try {
-      const json = await api("/api/funds/index/rebuild?force=1", { method: "POST" });
+      const json = await api("/api/otc-funds/index/rebuild", { method: "POST" });
       state.indexStatus = json.data || state.indexStatus;
       renderIndexMeta();
       showError("");
@@ -587,7 +466,10 @@
   }
 
   function bindEvents() {
-    $("refreshBtn").addEventListener("click", () => refreshCurrent(true));
+    $("refreshBtn").addEventListener("click", () => {
+      if (state.searchMode) runSearch();
+      else loadCategoryPage(true);
+    });
     $("rebuildBtn").addEventListener("click", rebuildIndex);
 
     let searchTimer = null;
@@ -600,19 +482,9 @@
 
     $("filterInput").addEventListener("input", () => {
       state.filter = $("filterInput").value;
-      state.page = 1;
-      renderList();
-    });
-
-    $("marketSeg").addEventListener("click", (event) => {
-      const btn = event.target.closest("button[data-market]");
-      if (!btn) return;
-      state.market = btn.dataset.market || "";
-      $("marketSeg").querySelectorAll("button").forEach((el) => {
-        el.classList.toggle("is-active", el === btn);
-      });
-      if ($("nameInput").value.trim() || $("codeInput").value.trim()) {
-        runSearch();
+      if (state.searchMode) {
+        state.page = 1;
+        renderList();
       }
     });
 
@@ -623,29 +495,31 @@
       $("sortSeg").querySelectorAll("button").forEach((el) => {
         el.classList.toggle("is-active", el === btn);
       });
-      state.page = 1;
       renderList();
     });
 
     $("pageSize").addEventListener("change", () => {
       state.pageSize = Number($("pageSize").value) || 50;
       state.page = 1;
-      renderList();
+      if (state.searchMode) renderList();
+      else loadCategoryPage(false);
     });
     $("prevPage").addEventListener("click", () => {
       if (state.page > 1) {
         state.page -= 1;
-        renderList();
+        if (state.searchMode) renderList();
+        else loadCategoryPage(false);
       }
     });
     $("nextPage").addEventListener("click", () => {
       state.page += 1;
-      renderList();
+      if (state.searchMode) renderList();
+      else loadCategoryPage(false);
     });
 
     $("tableBody").addEventListener("click", (event) => {
       const row = event.target.closest("tr.fund-row");
-      if (!row || event.target.closest("a")) return;
+      if (!row) return;
       const code = row.dataset.code;
       const hit = state.items.find((item) => item.code === code);
       if (hit) openHoldings(hit);
@@ -659,10 +533,8 @@
     setLoading(true);
     setLive("busy");
     try {
-      await loadTree(false);
-      await loadIndexStatus();
-      const firstGroup = state.tree[0];
-      const firstCat = firstGroup?.children?.[0];
+      await loadTree();
+      const firstCat = state.tree[0]?.children?.[0];
       if (firstCat) {
         const row = $("tree")?.querySelector(`.tree-row[data-code="${firstCat.code}"]`);
         await selectCategory(firstCat.code, firstCat.name, row);

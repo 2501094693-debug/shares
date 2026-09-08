@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.paths import ensure_cache_dirs
+from fund import holdings as holdings_fetcher
 from fund.store import FundStore
 from fund import taxonomy
 
@@ -60,6 +61,15 @@ class FundService:
 
     def flat_categories(self) -> list[dict[str, Any]]:
         return taxonomy.flat_categories()
+
+    def get_holdings(self, code: str, *, force_refresh: bool = False) -> dict[str, Any]:
+        meta = self.get_by_code(code)
+        payload = holdings_fetcher.fetch_holdings(code, force_refresh=force_refresh)
+        if meta:
+            payload["name"] = meta.get("name") or payload.get("name") or ""
+            payload["market"] = meta.get("market") or ""
+            payload["category_code"] = meta.get("category_code") or ""
+        return payload
 
 
 service = FundService()

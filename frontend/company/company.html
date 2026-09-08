@@ -26,7 +26,11 @@
       </a>
       <a class="app-rail-link" href="/fund" data-nav="fund" title="场内基金 · ETF / LOF">
         <span class="app-rail-ico" aria-hidden="true">◎</span>
-        <span>基金</span>
+        <span>场内</span>
+      </a>
+      <a class="app-rail-link" href="/otc-fund" data-nav="otc-fund" title="场外基金 · 开放式">
+        <span class="app-rail-ico" aria-hidden="true">◍</span>
+        <span>场外</span>
       </a>
       <a class="app-rail-link" href="/steep" data-nav="steep" title="涨跌停 · 多日名单">
         <span class="app-rail-ico" aria-hidden="true">↕</span>
@@ -45,13 +49,14 @@
       <div class="brand">
         <div>
           <h1 id="pageTitle">公司详情</h1>
-          <p id="pageSub" class="company-page-sub">行情 · 资讯 · 情绪</p>
+          <p id="pageSub" class="company-page-sub">行情 · 资讯 · 情绪 · 基金持股</p>
         </div>
       </div>
       <div class="top-actions">
         <a id="backLink" class="btn ghost" href="/">返回行业树</a>
         <button id="refreshNewsBtn" class="btn ghost" type="button" hidden>刷新资讯</button>
         <button id="refreshEmotionBtn" class="btn ghost" type="button" hidden>刷新情绪</button>
+        <button id="refreshFundHoldersBtn" class="btn ghost" type="button" hidden>刷新基金持股</button>
       </div>
     </header>
 
@@ -59,6 +64,7 @@
       <button type="button" class="company-main-tab is-active" data-panel="quotes" role="tab" aria-selected="true">行情</button>
       <button type="button" class="company-main-tab" data-panel="news" role="tab" aria-selected="false">资讯</button>
       <button type="button" class="company-main-tab" data-panel="emotion" role="tab" aria-selected="false">情绪</button>
+      <button type="button" class="company-main-tab" data-panel="fund-holders" role="tab" aria-selected="false">基金持股</button>
     </nav>
 
     <div class="company-panels">
@@ -732,6 +738,41 @@
             <div id="emotionDetailRepliesList" class="news-list"></div>
           </section>
         </aside>
+      </div>
+
+      <div id="panel-fund-holders" class="company-panel" data-panel="fund-holders" role="tabpanel" hidden>
+        <section class="company-section fund-holders-hub" aria-label="基金持股">
+          <header class="section-head fund-holders-head">
+            <div>
+              <h3 id="fundHoldersTitle">基金持股</h3>
+              <p id="fundHoldersMeta" class="muted news-hub-meta"></p>
+            </div>
+            <label class="cninfo-field fund-holders-date-field">
+              <span>报告期</span>
+              <select id="fundHoldersDate" class="chart-select cninfo-select" aria-label="报告期">
+                <option value="">最新</option>
+              </select>
+            </label>
+          </header>
+          <p id="fundHoldersHint" class="muted news-scroll-hint cninfo-hint"></p>
+          <div id="fundHoldersBody" class="fund-holders-body" tabindex="0">
+            <table class="market-table fund-holders-table">
+              <thead>
+                <tr>
+                  <th scope="col">#</th>
+                  <th scope="col">基金代码</th>
+                  <th scope="col">基金名称</th>
+                  <th scope="col" class="num">占净值比</th>
+                  <th scope="col" class="num">占流通股</th>
+                  <th scope="col" class="num">持股市值</th>
+                </tr>
+              </thead>
+              <tbody id="fundHoldersBodyRows">
+                <tr class="is-empty"><td colspan="6">切换到本页后加载</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
     </div>
 

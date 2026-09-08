@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ORBIT · 场内基金</title>
+  <title>ORBIT · 场外基金</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=fund-page-20260908b" />
+  <link rel="stylesheet" href="/css/style.css?v=otc-fund-page-20260908b" />
 </head>
-<body class="app-shell company-page-root market-page-root fund-page-root" data-nav="fund">
+<body class="app-shell company-page-root market-page-root fund-page-root otc-fund-page-root" data-nav="otc-fund">
   <nav class="app-rail" aria-label="主导航">
     <a class="app-rail-brand" href="/" title="ORBIT 申万终端">
       <span class="app-rail-mark">OR</span>
@@ -44,16 +44,16 @@
   </nav>
 
   <div class="app-stage">
-    <div class="app company-page market-page fund-page">
+    <div class="app company-page market-page fund-page otc-fund-page">
       <header class="topbar company-topbar">
         <div class="brand">
           <div>
-            <h1>场内基金</h1>
-            <p class="company-page-sub">ETF / LOF 分类浏览 · 东财板块行情</p>
+            <h1>场外基金</h1>
+            <p class="company-page-sub">开放式基金 · 净值排行与检索 · 东财</p>
           </div>
         </div>
         <div class="top-actions">
-          <button id="rebuildBtn" class="btn ghost" type="button" title="后台重建全市场索引">重建索引</button>
+          <button id="rebuildBtn" class="btn ghost" type="button" title="重建全市场代码索引">重建索引</button>
           <button id="refreshBtn" class="btn ghost" type="button">刷新</button>
         </div>
       </header>
@@ -68,11 +68,6 @@
             <span class="sr-only">基金代码</span>
             <input id="codeInput" type="search" placeholder="搜索代码…" autocomplete="off" />
           </label>
-          <div id="marketSeg" class="market-seg" role="group" aria-label="市场">
-            <button type="button" data-market="" class="is-active">全部</button>
-            <button type="button" data-market="SH">沪市</button>
-            <button type="button" data-market="SZ">深市</button>
-          </div>
         </div>
         <div class="market-toolbar-tail">
           <div id="summaryBar" class="market-summary"></div>
@@ -105,24 +100,22 @@
                 <input id="filterInput" type="search" placeholder="筛选当前列表…" autocomplete="off" />
               </label>
               <div id="sortSeg" class="market-seg" role="group" aria-label="排序">
-                <button type="button" data-sort="change_pct" class="is-active">涨跌</button>
-                <button type="button" data-sort="amount">成交额</button>
-                <button type="button" data-sort="premium">折价率</button>
-                <button type="button" data-sort="main_net">主力</button>
+                <button type="button" data-sort="day_pct" class="is-active">日涨跌</button>
+                <button type="button" data-sort="month_pct">近1月</button>
+                <button type="button" data-sort="year_pct">近1年</button>
               </div>
             </div>
           </header>
           <div class="fund-list-scroll">
-            <table class="market-table fund-table">
+            <table class="market-table fund-table otc-fund-table">
               <thead>
                 <tr>
                   <th>名称</th>
-                  <th class="num">最新</th>
-                  <th class="num">涨跌</th>
-                  <th class="num">成交额</th>
-                  <th class="num">折价率</th>
-                  <th class="num">主力</th>
-                  <th class="num">换手</th>
+                  <th class="num">净值</th>
+                  <th class="num">日涨跌</th>
+                  <th class="num">近1月</th>
+                  <th class="num">近1年</th>
+                  <th>类型</th>
                 </tr>
               </thead>
               <tbody id="tableBody"></tbody>
@@ -190,7 +183,7 @@
     </div>
   </div>
 
-  <script src="/js/shared/nav.js?v=fund-page-20260908"></script>
-  <script src="/js/fund.js?v=fund-page-20260908"></script>
+  <script src="/js/shared/nav.js?v=otc-fund-page-20260908"></script>
+  <script src="/js/otc-fund.js?v=otc-fund-page-20260908"></script>
 </body>
 </html>

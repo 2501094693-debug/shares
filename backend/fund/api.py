@@ -78,6 +78,18 @@ def funds_category_list(code: str, refresh: str = Query("0")):
         return err(str(exc), 500)
 
 
+@router.get("/api/funds/{code}/holdings")
+def fund_holdings(code: str, refresh: str = Query("0")):
+    """基金重仓股 + 证监会行业配置（东财 F10）。"""
+    try:
+        data = service.get_holdings(code, force_refresh=refresh == "1")
+        return ok(data)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
 @router.get("/api/funds/{code}")
 def fund_detail(code: str):
     """按代码查单只场内基金（需先构建索引）。"""

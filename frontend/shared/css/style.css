@@ -82,6 +82,7 @@ body.app-shell.market-page-root,
 body.app-shell.lhb-page-root,
 body.app-shell.steep-page-root,
 body.app-shell.fund-page-root,
+body.app-shell.otc-fund-page-root,
 html.map-app-root body.app-shell.map-app {
   height: 100dvh;
   overflow: hidden;
@@ -573,6 +574,7 @@ body.app-shell .market-page .brand h1 {
   body.app-shell.lhb-page-root,
   body.app-shell.steep-page-root,
   body.app-shell.fund-page-root,
+  body.app-shell.otc-fund-page-root,
   html.map-app-root body.app-shell.map-app {
     height: 100dvh;
   }
@@ -1589,7 +1591,7 @@ thead th {
 
 .company-main-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 16px;
   padding: 6px;
@@ -1609,8 +1611,10 @@ thead th {
   font-size: 0.92rem;
   font-weight: 600;
   letter-spacing: 0.08em;
-  padding: 12px 16px;
+  padding: 12px 10px;
   cursor: pointer;
+  white-space: nowrap;
+  min-width: 0;
   transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -2834,13 +2838,13 @@ button.chart-legend-item.is-active {
 
 @media (max-width: 960px) {
   .company-main-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .company-main-tab {
-    padding: 10px 8px;
-    font-size: 0.82rem;
-    letter-spacing: 0.04em;
+    padding: 10px 6px;
+    font-size: 0.78rem;
+    letter-spacing: 0.02em;
   }
 
   html.company-charts-on .quotes-layout,
@@ -5580,14 +5584,60 @@ body.app-shell.steep-page-root .steep-page.market-page {
   }
 }
 
-/* —— 场内基金 —— */
-body.fund-page-root {
+/* —— 场内 / 场外基金 —— */
+body.fund-page-root,
+body.otc-fund-page-root {
   height: 100dvh;
   overflow: hidden;
 }
 
-body.app-shell.fund-page-root .app-stage {
+body.app-shell.fund-page-root .app-stage,
+body.app-shell.otc-fund-page-root .app-stage {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
+}
+
+body.app-shell.fund-page-root .fund-page.market-page,
+body.app-shell.otc-fund-page-root .otc-fund-page.market-page {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+.fund-page .topbar,
+.fund-page .fund-toolbar,
+.fund-page > .error,
+.fund-page > .loading,
+.otc-fund-page .topbar,
+.otc-fund-page .fund-toolbar,
+.otc-fund-page > .error,
+.otc-fund-page > .loading {
+  margin-inline: 12px;
+}
+
+.fund-page .topbar,
+.otc-fund-page .topbar {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.fund-page .fund-toolbar,
+.otc-fund-page .fund-toolbar {
+  margin-bottom: 6px;
+}
+
+.fund-page .fund-layout,
+.otc-fund-page .fund-layout {
+  flex: 1;
+  min-height: 0;
+  margin-inline: 12px;
+  margin-bottom: 12px;
 }
 
 .fund-page .fund-toolbar {
@@ -5708,6 +5758,110 @@ body.app-shell.fund-page-root .app-stage {
   gap: 10px;
   padding: 8px 12px;
   border-top: 1px solid var(--line);
+}
+
+.fund-layout.has-holdings {
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(300px, 360px);
+}
+
+.fund-holdings-pane {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.fund-holdings-pane.hidden {
+  display: none;
+}
+
+.fund-holdings-head {
+  align-items: flex-start;
+}
+
+.fund-holdings-title {
+  min-width: 0;
+}
+
+.fund-holdings-title p {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+}
+
+.fund-holdings-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 10px 12px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.fund-holdings-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.fund-holdings-section {
+  margin-top: 12px;
+}
+
+.fund-holdings-section h3 {
+  margin: 0 0 8px;
+  font-family: var(--display);
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.fund-holdings-table .stock-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.fund-holdings-table .stock-link:hover {
+  color: var(--accent);
+}
+
+.fund-holders-hub .fund-holders-head {
+  align-items: flex-end;
+}
+
+.fund-holders-date-field {
+  flex: 0 0 auto;
+  min-width: 148px;
+}
+
+.fund-holders-body {
+  max-height: min(72vh, 760px);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.fund-holders-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.fund-holders-table th:first-child,
+.fund-holders-table td:first-child {
+  width: 3rem;
+  color: var(--muted);
+}
+
+.fund-holders-table td:nth-child(2) {
+  width: 6.5rem;
+  font-family: var(--mono);
+}
+
+.fund-table tr.fund-row.is-active {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 @media (max-width: 900px) {

@@ -11,6 +11,9 @@ CONS_CACHE_DIR = CACHE_DIR / "cons"
 NEWS_CACHE_DIR = CACHE_DIR / "news"
 LIST_CACHE_DIR = CACHE_DIR / "list"
 FUND_LIST_CACHE_DIR = CACHE_DIR / "fund"
+FUND_HOLDINGS_CACHE_DIR = CACHE_DIR / "fund" / "holdings"
+OTC_FUND_CACHE_DIR = CACHE_DIR / "otc_fund"
+OTC_FUND_INDEX_CACHE = CACHE_DIR / "otc_fund_index.json"
 
 TREE_CACHE = CACHE_DIR / "industry_tree.json"
 STOCK_INDEX_CACHE = CACHE_DIR / "stocks_index.json"
@@ -22,6 +25,12 @@ FUND_INDEX_CACHE = CACHE_DIR / "fund_index.json"
 CONS_TTL = 6 * 60 * 60
 # 场内基金分类列表缓存有效期（秒）
 FUND_LIST_TTL = 6 * 60 * 60
+# 基金持仓 / 行业配置缓存有效期（秒）
+FUND_HOLDINGS_TTL = 24 * 60 * 60
+# 场外基金代码索引缓存有效期（秒）
+OTC_FUND_INDEX_TTL = 24 * 60 * 60
+# 场外基金分类排行缓存有效期（秒）
+OTC_FUND_RANK_TTL = 60 * 60
 # 注册地缓存有效期（秒）
 GEO_TTL = 30 * 24 * 60 * 60
 
@@ -32,6 +41,13 @@ def ensure_cache_dirs() -> None:
     NEWS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     LIST_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     FUND_LIST_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    FUND_HOLDINGS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    OTC_FUND_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def otc_fund_rank_cache_path(category_code: str, page: int, page_size: int) -> Path:
+    safe = category_code.strip().replace("/", "_")
+    return OTC_FUND_CACHE_DIR / f"rank_{safe}_{page}_{page_size}.json"
 
 
 def fund_list_cache_path(category_code: str) -> Path:

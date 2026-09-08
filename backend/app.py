@@ -6,6 +6,7 @@
 - ``market``：申万行业涨跌、资金流向、行业轮动
 - ``list``：龙虎榜每日上榜与个股历史
 - ``fund``：场内 ETF / LOF 分类与检索
+- ``otc_fund``：场外开放式基金检索与净值排行
 """
 
 from __future__ import annotations
@@ -33,6 +34,8 @@ from industry.service import service as industry_service
 from fund.service import service as fund_service
 from list.api import router as list_router
 from market.api import router as market_router
+from otc_fund.api import router as otc_fund_router
+from otc_fund.service import service as otc_fund_service
 
 ROOT = _BACKEND_DIR.parent
 FRONTEND = ROOT / "frontend"
@@ -95,6 +98,19 @@ async def lifespan(_app: FastAPI):
     except Exception as exc:  # noqa: BLE001
         print(f"场内基金索引启动失败: {exc}")
 
+    try:
+        import threading
+
+        threading.Thread(
+            target=otc_fund_service.warmup_index,
+            kwargs={"force": False},
+            daemon=True,
+            name="otc-fund-index-warmup",
+        ).start()
+        print("已启动场外基金索引同步")
+    except Exception as exc:  # noqa: BLE001
+        print(f"场外基金索引启动失败: {exc}")
+
     yield
 
 
@@ -117,6 +133,7 @@ app.include_router(company_router)
 app.include_router(market_router)
 app.include_router(list_router)
 app.include_router(fund_router)
+app.include_router(otc_fund_router)
 
 
 @app.get("/api/health")
@@ -197,6 +214,24 @@ def fund_page():
 def js_fund():
     return FileResponse(
         FRONTEND / "fund" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/otc-fund")
+@app.get("/otc-fund.html")
+def otc_fund_page():
+    return FileResponse(
+        FRONTEND / "otc-fund" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/otc-fund.js")
+def js_otc_fund():
+    return FileResponse(
+        FRONTEND / "otc-fund" / "app.js",
         media_type="application/javascript",
         headers={"Cache-Control": "no-store, max-age=0"},
     )

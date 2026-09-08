@@ -7,6 +7,8 @@
         ? "market"
         : path.startsWith("/fund")
           ? "fund"
+          : path.startsWith("/otc-fund")
+            ? "otc-fund"
           : path.startsWith("/steep")
           ? "steep"
           : path.startsWith("/list")

@@ -344,10 +344,27 @@ const els = {
   emotionDetailRepliesList: document.getElementById("emotionDetailRepliesList"),
   emotionSourceBar: document.getElementById("emotionSourceBar"),
   panelEmotion: document.getElementById("panel-emotion"),
+  refreshFundHoldersBtn: document.getElementById("refreshFundHoldersBtn"),
+  fundHoldersTitle: document.getElementById("fundHoldersTitle"),
+  fundHoldersMeta: document.getElementById("fundHoldersMeta"),
+  fundHoldersHint: document.getElementById("fundHoldersHint"),
+  fundHoldersDate: document.getElementById("fundHoldersDate"),
+  fundHoldersBody: document.getElementById("fundHoldersBody"),
+  fundHoldersBodyRows: document.getElementById("fundHoldersBodyRows"),
+  panelFundHolders: document.getElementById("panel-fund-holders"),
   errorBox: document.getElementById("errorBox"),
 };
 
 let activeMainPanel = "quotes";
+let fundHoldersBootstrapped = false;
+const fundHoldersState = {
+  loading: false,
+  items: [],
+  count: 0,
+  reportDate: "",
+  updatedAt: "",
+  error: "",
+};
 let cninfoTab = "fulltext";
 let exchangeTab = "bulletin";
 let pressOutlet = "cs";
@@ -517,6 +534,7 @@ function normalizeMainPanel(panelId) {
   if (panelId === "quotes" || panelId === "charts" || panelId === "overview") return "quotes";
   if (panelId === "news") return "news";
   if (panelId === "emotion" || panelId === "ths-emotion" || panelId === "ths" || panelId === "circle" || panelId === "xueqiu" || panelId === "xq") return "emotion";
+  if (panelId === "fund-holders" || panelId === "funds" || panelId === "fund") return "fund-holders";
   return "";
 }
 
@@ -1926,6 +1944,126 @@ async function loadAllEmotion({ refresh = false } = {}) {
     await Promise.all([loadEmotionScores(), loadEmotionRank(), loadEmotionPosts()]);
   }
   if (els.refreshEmotionBtn) els.refreshEmotionBtn.disabled = false;
+}
+
+const FUND_HOLDERS_REPORT_DATES = [
+  "2025-06-30",
+  "2025-03-31",
+  "2024-12-31",
+  "2024-09-30",
+  "2024-06-30",
+  "2024-03-31",
+  "2023-12-31",
+  "2023-09-30",
+];
+
+function syncFundHoldersDateOptions() {
+  if (!els.fundHoldersDate) return;
+  const current = els.fundHoldersDate.value || "";
+  const dates = [...FUND_HOLDERS_REPORT_DATES];
+  const loaded = fundHoldersState.reportDate;
+  if (loaded && !dates.includes(loaded)) {
+    dates.unshift(loaded);
+  }
+  const options = ['<option value="">最新</option>'];
+  for (const date of dates) {
+    options.push(
+      `<option value="${escapeHtml(date)}"${current === date ? " selected" : ""}>${escapeHtml(date)}</option>`
+    );
+  }
+  els.fundHoldersDate.innerHTML = options.join("");
+}
+
+function paintFundHolders() {
+  const st = fundHoldersState;
+  if (els.fundHoldersMeta) {
+    const bits = [];
+    if (st.reportDate) bits.push(`报告期 ${st.reportDate}`);
+    if (st.count) bits.push(`${st.count} 只基金`);
+    if (st.updatedAt) bits.push(`更新 ${st.updatedAt}`);
+    els.fundHoldersMeta.textContent = st.loading
+      ? "正在加载基金持股…"
+      : bits.join(" · ");
+  }
+  if (els.fundHoldersHint) {
+    els.fundHoldersHint.textContent = st.loading
+      ? "正在从东财拉取基金持股明细…"
+      : st.error
+        ? st.error
+        : "按占净值比例降序；数据来自基金季报披露。";
+  }
+  if (!els.fundHoldersBodyRows) return;
+  if (st.loading) {
+    els.fundHoldersBodyRows.innerHTML = `<tr class="is-empty"><td colspan="6">正在加载…</td></tr>`;
+    return;
+  }
+  if (st.error) {
+    els.fundHoldersBodyRows.innerHTML = `<tr class="is-empty"><td colspan="6">${escapeHtml(st.error)}</td></tr>`;
+    return;
+  }
+  if (!st.items.length) {
+    els.fundHoldersBodyRows.innerHTML = `<tr class="is-empty"><td colspan="6">暂无基金持股数据</td></tr>`;
+    return;
+  }
+  els.fundHoldersBodyRows.innerHTML = st.items
+    .map((item, idx) => {
+      const fundCode = escapeHtml(item.code || "");
+      const fundName = escapeHtml(item.name || "-");
+      const weight = escapeHtml(displayValue(item.weight));
+      const freeRatio = escapeHtml(displayValue(item.free_float_ratio));
+      const marketValue = escapeHtml(displayValue(item.market_value));
+      return `<tr class="is-row">
+        <td>${idx + 1}</td>
+        <td class="mono">${fundCode}</td>
+        <td>${fundName}</td>
+        <td class="num">${weight}</td>
+        <td class="num">${freeRatio}</td>
+        <td class="num">${marketValue}</td>
+      </tr>`;
+    })
+    .join("");
+}
+
+async function loadFundHolders({ refresh = false } = {}) {
+  if (!code || fundHoldersState.loading) return;
+  fundHoldersState.loading = true;
+  fundHoldersState.error = "";
+  paintFundHolders();
+  if (els.refreshFundHoldersBtn) els.refreshFundHoldersBtn.disabled = true;
+  if (els.fundHoldersDate) els.fundHoldersDate.disabled = true;
+  try {
+    const qs = new URLSearchParams({ code });
+    const reportDate = (els.fundHoldersDate?.value || "").trim();
+    if (reportDate) qs.set("date", reportDate);
+    if (refresh) qs.set("refresh", "1");
+    const json = await api(`/api/stocks/fund-holders?${qs.toString()}`);
+    const data = json.data || {};
+    fundHoldersState.items = Array.isArray(data.items) ? data.items : [];
+    fundHoldersState.count = Number(data.count) || fundHoldersState.items.length;
+    fundHoldersState.reportDate = data.report_date || reportDate || "";
+    fundHoldersState.updatedAt = data.updated_at || new Date().toLocaleString("zh-CN", { hour12: false });
+    syncFundHoldersDateOptions();
+    if (els.fundHoldersBody) els.fundHoldersBody.scrollTop = 0;
+  } catch (err) {
+    fundHoldersState.items = [];
+    fundHoldersState.count = 0;
+    fundHoldersState.error = err.message || String(err);
+  } finally {
+    fundHoldersState.loading = false;
+    if (els.refreshFundHoldersBtn) els.refreshFundHoldersBtn.disabled = false;
+    if (els.fundHoldersDate) els.fundHoldersDate.disabled = false;
+    paintFundHolders();
+  }
+}
+
+function setupFundHoldersBox() {
+  syncFundHoldersDateOptions();
+  if (els.fundHoldersDate && els.fundHoldersDate.dataset.bound !== "1") {
+    els.fundHoldersDate.dataset.bound = "1";
+    els.fundHoldersDate.addEventListener("change", () => {
+      loadFundHolders({ refresh: false });
+    });
+  }
 }
 
 function paintEmotionDetail() {
@@ -4431,6 +4569,9 @@ function switchMainPanel(panelId) {
   if (els.refreshEmotionBtn) {
     els.refreshEmotionBtn.hidden = next !== "emotion";
   }
+  if (els.refreshFundHoldersBtn) {
+    els.refreshFundHoldersBtn.hidden = next !== "fund-holders";
+  }
 
   if (isQuotesPanel(next)) {
     refreshChartsLayout();
@@ -4447,6 +4588,11 @@ function switchMainPanel(panelId) {
       loadAllEmotion({ refresh: false });
     } else {
       syncEmotionSourceUi();
+    }
+  } else if (next === "fund-holders") {
+    if (!fundHoldersBootstrapped) {
+      fundHoldersBootstrapped = true;
+      loadFundHolders({ refresh: false });
     }
   }
 }
@@ -4466,6 +4612,9 @@ function setupMainTabs() {
   }
   if (els.refreshEmotionBtn) {
     els.refreshEmotionBtn.hidden = activeMainPanel !== "emotion";
+  }
+  if (els.refreshFundHoldersBtn) {
+    els.refreshFundHoldersBtn.hidden = activeMainPanel !== "fund-holders";
   }
 }
 
@@ -7336,6 +7485,11 @@ if (els.refreshEmotionBtn) {
     loadAllEmotion({ refresh: true })
   );
 }
+if (els.refreshFundHoldersBtn) {
+  els.refreshFundHoldersBtn.addEventListener("click", () =>
+    loadFundHolders({ refresh: true })
+  );
+}
 function setupChartsViewport() {
   const relayout = () => {
     fitChartsToViewport();
@@ -7361,6 +7515,7 @@ setupPressBox();
 setupPlatformBoxes();
 setupCninfoBox();
 setupEmotionBox();
+setupFundHoldersBox();
 setupNewsFolding();
 setupMainTabs();
 setupChartsViewport();
