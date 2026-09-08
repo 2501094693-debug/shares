@@ -16,6 +16,9 @@ class BusinessExplainerState(TypedDict):
     stock_market: str
 
     data_context: str
+    web_context: str
+    web_engines: list[str]
+    web_search_used: bool
     sources_used: list[str]
     data_available: bool
 

@@ -1,4 +1,4 @@
-"""线程内进度上报：供业务简述 LangGraph 节点与 data_fetcher 写入当前任务状态。"""
+"""线程内进度上报：供业务简述 / 财报解读 LangGraph 节点与 data_fetcher 写入当前任务状态。"""
 
 from __future__ import annotations
 
@@ -12,8 +12,13 @@ _job: dict[str, Any] | None = None
 AGENT_LABELS: dict[str, str] = {
     "be_init": "解析公司",
     "be_fetch": "采集资料",
+    "be_search": "联网补充",
     "be_explain": "生成简述",
     "be_save": "保存报告",
+    "er_init": "解析公司",
+    "er_fetch": "采集财报",
+    "er_explain": "生成解读",
+    "er_save": "保存报告",
 }
 
 PHASE_LABELS: dict[str, str] = {
@@ -21,7 +26,11 @@ PHASE_LABELS: dict[str, str] = {
     "resolve": "解析标的",
     "fetch_data": "采集数据",
     "fetch_section": "采集数据",
+    "fetch_pdf": "抽取公告 PDF",
     "fetch_data_done": "数据采集完成",
+    "web_search": "联网补充",
+    "web_search_done": "联网补充完成",
+    "web_search_skip": "跳过联网",
     "llm": "LLM 生成",
     "llm_done": "生成完成",
     "save_file": "写入文件",
@@ -29,7 +38,8 @@ PHASE_LABELS: dict[str, str] = {
     "failed": "失败",
 }
 
-ALL_AGENTS = ["be_init", "be_fetch", "be_explain", "be_save"]
+ALL_AGENTS = ["be_init", "be_fetch", "be_search", "be_explain", "be_save"]
+EARNINGS_AGENTS = ["er_init", "er_fetch", "er_explain", "er_save"]
 
 
 def normalize_node(node: str) -> str:
@@ -52,7 +62,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
-def init_agents_state() -> dict[str, dict[str, str]]:
+def init_agents_state(keys: list[str] | None = None) -> dict[str, dict[str, str]]:
     return {
         key: {
             "status": "pending",
@@ -60,12 +70,16 @@ def init_agents_state() -> dict[str, dict[str, str]]:
             "message": "等待中",
             "updated_at": "",
         }
-        for key in ALL_AGENTS
+        for key in (keys or ALL_AGENTS)
     }
 
 
 def init_business_explainer_agents() -> dict[str, dict[str, str]]:
-    return init_agents_state()
+    return init_agents_state(ALL_AGENTS)
+
+
+def init_earnings_reviewer_agents() -> dict[str, dict[str, str]]:
+    return init_agents_state(EARNINGS_AGENTS)
 
 
 def report(

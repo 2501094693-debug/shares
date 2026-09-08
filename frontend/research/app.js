@@ -10,6 +10,18 @@
     { id: "audit", name: "数据抽检", subtitle: "15% 抽样清单" },
   ];
 
+  const ROLE_TABS = [
+    { id: "final", label: "汇总建议", agentId: "team_lead" },
+    { id: "business-analyst", label: "商业模式", agentId: "business_analyst" },
+    { id: "financial-analyst", label: "财务估值", agentId: "financial_analyst" },
+    { id: "industry-researcher", label: "行业竞争", agentId: "industry_researcher" },
+    { id: "risk-assessor", label: "风险治理", agentId: "risk_assessor" },
+  ];
+
+  const AGENT_TO_TAB = Object.fromEntries(
+    ROLE_TABS.map((tab) => [tab.agentId, tab.id]),
+  );
+
   const STATUS_LABELS = {
     pending: "等待",
     running: "进行中",
@@ -18,6 +30,7 @@
   };
 
   const REPORT_NAME_RE = /投资研究报告/;
+  const JOB_STORE_KEY = "orbit.research.activeJob";
 
   const EMPTY_STATE_HTML = `
     <div class="ai-empty-state">
@@ -43,9 +56,42 @@
     suggestTimer: null,
     lastLogLen: 0,
     pollFailCount: 0,
+    activeTab: "final",
+    historyBundle: null,
+    lastRenderedKey: "",
   };
 
   const $ = (id) => document.getElementById(id);
+
+  function readJobHandle() {
+    try {
+      const raw = localStorage.getItem(JOB_STORE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveJobHandle(job, extras = {}) {
+    if (!job?.id) return;
+    const prev = readJobHandle() || {};
+    try {
+      localStorage.setItem(JOB_STORE_KEY, JSON.stringify({
+        id: job.id,
+        company: job.company || prev.company || "",
+        request: extras.request ?? prev.request ?? "",
+        savedAt: Date.now(),
+      }));
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }
+
+  function applyJobHandleToForm(handle, job) {
+    const company = job?.company || handle?.company || "";
+    if (company && $("companyInput")) $("companyInput").value = company;
+    if (handle?.request && $("requestInput")) $("requestInput").value = handle.request;
+  }
 
   function esc(value) {
     return String(value ?? "")
@@ -161,6 +207,122 @@
     return `${label} · ${job.company}${stock}${richness}`;
   }
 
+  function parseSavedReport(text) {
+    const source = String(text || "");
+    const marker = /<!-- ROLE:([a-z0-9-]+) -->/g;
+    const hits = [];
+    let match;
+    while ((match = marker.exec(source))) {
+      hits.push({ role: match[1], start: match.index, end: match.index + match[0].length });
+    }
+    if (!hits.length) {
+      return { final: source, roles: {} };
+    }
+    const roles = {};
+    for (let i = 0; i < hits.length; i += 1) {
+      const from = hits[i].end;
+      const to = i + 1 < hits.length ? hits[i + 1].start : source.length;
+      roles[hits[i].role] = source.slice(from, to).trim();
+    }
+    return { final: source.slice(0, hits[0].start).trim(), roles };
+  }
+
+  function liveRoleReports() {
+    const rows = state.job?.analyst_reports || state.job?.result?.analyst_reports || [];
+    const map = {};
+    rows.forEach((row) => {
+      if (row?.role) map[row.role] = row;
+    });
+    return map;
+  }
+
+  function roleHasContent(tabId) {
+    if (tabId === "final") {
+      return Boolean(
+        state.job?.result?.final_report
+        || state.historyBundle?.final,
+      );
+    }
+    const live = liveRoleReports()[tabId];
+    if (live?.content) return true;
+    return Boolean(state.historyBundle?.roles?.[tabId]);
+  }
+
+  function roleTabMeta(tabId) {
+    const live = liveRoleReports()[tabId];
+    if (live) {
+      const bits = [
+        live.framework,
+        live.score != null ? `${live.score}/5` : "",
+        live.confidence_note,
+      ].filter(Boolean);
+      return bits.join(" · ");
+    }
+    const tab = ROLE_TABS.find((item) => item.id === tabId);
+    return tab?.label || "";
+  }
+
+  function activeReportText() {
+    if (state.activeTab === "final") {
+      return state.job?.result?.final_report || state.historyBundle?.final || "";
+    }
+    const live = liveRoleReports()[state.activeTab];
+    if (live?.content) return live.content;
+    return state.historyBundle?.roles?.[state.activeTab] || "";
+  }
+
+  function setActiveTab(tabId, { render = true } = {}) {
+    const next = ROLE_TABS.some((tab) => tab.id === tabId) ? tabId : "final";
+    if (next !== state.activeTab) state.lastRenderedKey = "";
+    state.activeTab = next;
+    if (render) {
+      renderAnalystTabs();
+      renderActiveReport();
+      renderAgentBoard(state.job?.agents || {});
+    }
+  }
+
+  function renderAnalystTabs() {
+    const nav = $("analystTabs");
+    if (!nav) return;
+    const hasJob = Boolean(state.job);
+    const hasHistory = Boolean(state.historyBundle);
+    if (!hasJob && !hasHistory) {
+      nav.classList.add("hidden");
+      nav.innerHTML = "";
+      return;
+    }
+    nav.classList.remove("hidden");
+    nav.innerHTML = ROLE_TABS.map((tab) => {
+      const ready = roleHasContent(tab.id);
+      const active = tab.id === state.activeTab;
+      const running = tab.agentId && state.job?.agents?.[tab.agentId]?.status === "running";
+      const label = running && !ready ? `${tab.label} · 撰写中` : tab.label;
+      return `<button type="button" class="btn ghost${active ? " is-active" : ""}" role="tab" aria-selected="${active ? "true" : "false"}" data-tab="${esc(tab.id)}" ${ready || running ? "" : "disabled"}>${esc(label)}</button>`;
+    }).join("");
+  }
+
+  function renderActiveReport() {
+    const view = $("reportView");
+    if (!view) return;
+    const text = activeReportText();
+    const tab = ROLE_TABS.find((item) => item.id === state.activeTab);
+    const key = `${state.activeTab}:${text.length}:${text.slice(0, 80)}`;
+    if (key === state.lastRenderedKey) return;
+    state.lastRenderedKey = key;
+    if (text) {
+      view.innerHTML = renderMarkdown(text);
+      return;
+    }
+    if (tab?.agentId && state.job?.agents?.[tab.agentId]?.status === "running") {
+      view.innerHTML = `<div class="ai-empty-state"><h3>${esc(tab.label)}</h3><p>该角色正在撰写报告，完成后可在此查看全文。</p></div>`;
+      return;
+    }
+    if (state.job || state.historyBundle) {
+      view.innerHTML = `<div class="ai-empty-state"><h3>${esc(tab?.label || "报告")}</h3><p>暂无该角色的完整正文。可先查看汇总建议；新任务完成后会保留分角色全文。</p></div>`;
+    }
+  }
+
   function updatePipelineProgress(agents) {
     const el = $("pipelineProgress");
     if (!el) return;
@@ -177,8 +339,16 @@
       const phase = info.phase_label
         ? `<span class="ai-pipeline-phase">${esc(info.phase_label)}</span>`
         : "";
+      const tabId = AGENT_TO_TAB[def.id];
+      const clickable = Boolean(tabId && roleHasContent(tabId));
+      const selected = tabId && tabId === state.activeTab;
+      const cls = [
+        "ai-pipeline-step",
+        clickable ? "is-clickable" : "",
+        selected ? "is-selected" : "",
+      ].filter(Boolean).join(" ");
       return `
-        <article class="ai-pipeline-step" data-status="${esc(status)}" data-agent="${esc(def.id)}">
+        <article class="${cls}" data-status="${esc(status)}" data-agent="${esc(def.id)}">
           <span class="ai-pipeline-dot" aria-hidden="true"></span>
           <div class="ai-pipeline-body">
             <div class="ai-pipeline-row">
@@ -265,25 +435,33 @@
   }
 
   function showEmptyState() {
+    state.historyBundle = null;
+    state.activeTab = "final";
+    state.lastRenderedKey = "";
+    renderAnalystTabs();
     $("reportView").innerHTML = EMPTY_STATE_HTML;
   }
 
   function renderResult(result) {
-    if (!result) return;
-    state.activeReportFile = "";
-    $("reportTitle").textContent = `${result.stock_name || ""} 投资研究报告`.trim();
+    if (!result && !state.job?.analyst_reports?.length && !state.historyBundle) return;
+    $("reportTitle").textContent = `${result?.stock_name || state.job?.stock?.name || state.job?.company || ""} 投资研究报告`.trim();
     const metaParts = [
-      result.stock_code ? `代码 ${result.stock_code}` : "",
-      result.info_richness ? `信息丰富度 ${result.info_richness}` : "",
-      result.report_path ? "已保存" : "",
+      result?.stock_code ? `代码 ${result.stock_code}` : "",
+      result?.info_richness ? `信息丰富度 ${result.info_richness}` : "",
+      result?.report_path ? "已保存" : "",
+      roleTabMeta(state.activeTab),
     ].filter(Boolean);
     $("reportMeta").textContent = metaParts.join(" · ");
-    $("reportView").innerHTML = renderMarkdown(result.final_report || "");
+    renderAnalystTabs();
+    renderActiveReport();
     highlightActiveReport();
   }
 
   function renderJob(job) {
     state.job = job;
+    if (job?.status === "running") {
+      state.historyBundle = null;
+    }
     $("jobMeta").textContent = formatJobMeta(job);
 
     const mode = !job || job.status === "running"
@@ -294,6 +472,7 @@
     renderAgentBoard(job?.agents || {});
     renderCurrentAction(job?.current, job);
     renderActivityLog(job?.activity_log || []);
+    renderAnalystTabs();
 
     const running = job?.status === "running";
     setRunningStatus(running);
@@ -303,15 +482,26 @@
       showError(job.error || "投研失败");
       setRunningStatus(false);
       $("reportMeta").textContent = "投研失败";
+      renderActiveReport();
     } else if (job?.status === "completed") {
       showError("");
       setRunningStatus(false);
       const content = job.result?.final_report;
       if (job.result?.ready && !content) {
         $("reportMeta").textContent = "报告已生成，正在加载全文…";
+        renderAnalystTabs();
+        if (state.activeTab === "final") {
+          $("reportView").innerHTML = "<div class='ai-empty-state'><h3>汇总建议</h3><p>正在加载全文…</p></div>";
+          state.lastRenderedKey = "";
+        } else {
+          renderActiveReport();
+        }
         return;
       }
       renderResult(job.result);
+    } else if (running) {
+      $("reportTitle").textContent = `${job.company || ""} · 投研中`.trim();
+      renderActiveReport();
     }
   }
 
@@ -342,10 +532,15 @@
         try {
           const { data } = await api(`/api/ai/research/reports/${encodeURIComponent(btn.dataset.file)}`);
           state.activeReportFile = btn.dataset.file;
+          state.job = null;
+          state.historyBundle = parseSavedReport(data.content || "");
+          if (!roleHasContent(state.activeTab)) state.activeTab = "final";
           setBoardMode("result");
           $("reportTitle").textContent = data.filename.replace(/\.md$/i, "");
           $("reportMeta").textContent = "历史报告";
-          $("reportView").innerHTML = renderMarkdown(data.content || "");
+          $("jobMeta").textContent = "";
+          renderAnalystTabs();
+          renderActiveReport();
           highlightActiveReport();
           showError("");
         } catch (err) {
@@ -364,6 +559,7 @@
         { timeoutMs: 30000 },
       );
       state.pollFailCount = 0;
+      saveJobHandle(data);
       renderJob(data);
       if (data.status === "completed") {
         const full = await api(
@@ -415,6 +611,8 @@
     setLive("busy");
     setBoardMode("running");
     state.activeReportFile = "";
+    state.activeTab = "final";
+    state.historyBundle = null;
     try {
       const qs = new URLSearchParams({ company });
       if (request) qs.set("request", request);
@@ -423,6 +621,7 @@
         timeoutMs: 30000,
       });
       state.jobId = data.id;
+      saveJobHandle(data, { request });
       renderJob(data);
       $("reportTitle").textContent = `${company} · 投研中`;
       highlightActiveReport();
@@ -453,7 +652,7 @@
       $("suggestBox").classList.remove("hidden");
       $("suggestBox").querySelectorAll(".ai-suggest-item").forEach((btn) => {
         btn.addEventListener("click", () => {
-          $("companyInput").value = btn.dataset.name || btn.dataset.code;
+          $("companyInput").value = [btn.dataset.name, btn.dataset.code].filter(Boolean).join(" ");
           $("suggestBox").classList.add("hidden");
         });
       });
@@ -466,6 +665,18 @@
     $("startBtn").addEventListener("click", startResearch);
     $("stopPollBtn").addEventListener("click", stopPoll);
     $("refreshReportsBtn").addEventListener("click", () => loadReports().catch((e) => showError(e.message)));
+    $("analystTabs")?.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-tab]");
+      if (!btn || btn.disabled) return;
+      setActiveTab(btn.dataset.tab);
+    });
+    $("agentBoard")?.addEventListener("click", (e) => {
+      const step = e.target.closest("[data-agent]");
+      if (!step) return;
+      const tabId = AGENT_TO_TAB[step.dataset.agent];
+      if (!tabId || !roleHasContent(tabId)) return;
+      setActiveTab(tabId);
+    });
     $("companyInput").addEventListener("input", (e) => {
       clearTimeout(state.suggestTimer);
       state.suggestTimer = setTimeout(() => suggestCompanies(e.target.value.trim()), 250);
@@ -480,6 +691,62 @@
     });
   }
 
+  async function fetchJob(jobId, full) {
+    const { data } = await api(
+      `/api/ai/research/${jobId}?full=${full ? "1" : "0"}`,
+      { timeoutMs: full ? 300000 : 30000 },
+    );
+    return data;
+  }
+
+  async function findResumableJob() {
+    const handle = readJobHandle();
+    if (handle?.id) {
+      try {
+        const job = await fetchJob(handle.id, false);
+        return { job, handle };
+      } catch {
+        /* 服务重启或任务已过期，继续找仍在跑的任务 */
+      }
+    }
+    try {
+      const { data } = await api("/api/ai/research/jobs", { timeoutMs: 15000 });
+      const jobs = Array.isArray(data) ? data : [];
+      const running = jobs.find((item) => item.status === "running");
+      const latest = running || jobs[0] || null;
+      if (!latest?.id) return null;
+      const job = latest.status === "running"
+        ? await fetchJob(latest.id, false)
+        : await fetchJob(latest.id, true);
+      return { job, handle: handle || { id: latest.id, company: latest.company, request: "" } };
+    } catch {
+      return null;
+    }
+  }
+
+  async function resumeActiveJob() {
+    const found = await findResumableJob();
+    if (!found?.job) return false;
+    const { job, handle } = found;
+    state.jobId = job.id;
+    saveJobHandle(job, { request: handle?.request || "" });
+    applyJobHandleToForm(handle, job);
+    renderJob(job);
+    if (job.status === "running") {
+      $("reportTitle").textContent = `${job.company || ""} · 投研中`.trim();
+      startPoll();
+      return true;
+    }
+    if (job.status === "completed") {
+      if (!job.result?.final_report) {
+        const full = await fetchJob(job.id, true);
+        renderJob(full);
+      }
+      return true;
+    }
+    return true;
+  }
+
   async function init() {
     bindEvents();
     setBoardMode("idle");
@@ -490,6 +757,11 @@
       await loadReports();
     } catch (err) {
       showError(err.message);
+    }
+    try {
+      await resumeActiveJob();
+    } catch (err) {
+      showError(err.message || "恢复投研任务失败");
     }
   }
 

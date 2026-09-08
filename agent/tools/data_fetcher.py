@@ -6,7 +6,7 @@ import logging
 import sys
 from typing import Any
 
-from config import BACKEND_ROOT, DATA_LOOKBACK_DAYS
+from agent.config import BACKEND_ROOT, DATA_LOOKBACK_DAYS
 
 logger = logging.getLogger(__name__)
 
@@ -45,14 +45,29 @@ def _import_backend():
 
 def resolve_company(company: str) -> dict[str, str]:
     api = _import_backend()
-    resolved = api["resolve_keywords"](company)
-    code = resolved.get("code") or api["normalize_code"](company) or company
-    name = resolved.get("name") or ""
+    raw = (company or "").strip()
+    resolved = api["resolve_keywords"](raw)
+    code = api["normalize_code"](resolved.get("code") or "") or api["normalize_code"](raw)
+    name = (resolved.get("name") or "").strip() or raw
+    if len(code) != 6:
+        try:
+            from industry.service import service as industry
+
+            industry.stocks.ensure_populated()
+            rows = industry.search_stocks(name=raw, limit=8) or []
+            exact = [row for row in rows if (row.get("name") or "").strip() == raw]
+            hit = (exact or rows)[0] if rows else {}
+            code = api["normalize_code"](str(hit.get("code") or ""))
+            name = str(hit.get("name") or name).strip() or name
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("行业索引解析失败 %s: %s", raw, exc)
+    if len(code) != 6:
+        raise ValueError(f"无法解析「{raw}」的股票代码，请输入 6 位代码")
     market = api["detect_market"](code) if code else "unknown"
     return {
         "code": code,
-        "name": name or company,
-        "keyword": resolved.get("keyword") or name or company,
+        "name": name or raw,
+        "keyword": resolved.get("keyword") or name or raw,
         "market": market,
     }
 
@@ -219,7 +234,7 @@ def _fetch_announcements(code: str, name: str, days: int) -> str:
 
 def _run_financial_rigor_checks(stock: dict[str, str]) -> str:
     """从画像数据尝试运行 financial_rigor 验算。"""
-    from tools.berkshire_tools import run_financial_rigor
+    from agent.tools.berkshire_tools import run_financial_rigor
 
     api = _import_backend()
     profile = _safe_call("画像验算", api["get_stock_profile"], stock["code"], name=stock["name"])
@@ -255,8 +270,8 @@ def fetch_role_data(
     enable_web_search: bool = True,
 ) -> dict[str, Any]:
     """按分析师角色采集结构化数据，可选联网补充。"""
-    from tools.progress import report
-    from tools.web_search import is_web_search_available, search_for_role
+    from agent.tools.progress import report
+    from agent.tools.web_search import is_web_search_available, search_for_role
 
     resolved = stock or resolve_company(company)
     code = resolved["code"]
@@ -313,6 +328,13 @@ def fetch_role_data(
             sections["联网搜索"] = web_text
             web_search_used = True
             sources.append("联网搜索(" + "+".join(web_engines) + ")")
+        else:
+            report(
+                node,
+                "联网搜索未返回有效结果，请检查网络或配置 TAVILY_API_KEY",
+                phase="fetch_section",
+                level="warn",
+            )
 
     window_note = (
         f"> **范围**：{name}（{code}）· 近 {days} 天 · "

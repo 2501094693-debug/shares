@@ -113,7 +113,7 @@ def se_date(
 
 def resolve_org(code_or_name: str) -> dict[str, str] | None:
     """认出公司：orgId / 简称。静态表与规则推断优先，topSearch 兜底。B 股自动转到 A 股代码。"""
-    from company.news.official.cninfo.request import infer_org_from_code, load_org_map, search_orgs
+    from company.news.official.cninfo.request import infer_org_from_code, load_org_map, lookup_org_by_name, search_orgs
 
     raw = safe_str(code_or_name)
     if not raw:
@@ -131,6 +131,9 @@ def resolve_org(code_or_name: str) -> dict[str, str] | None:
         picked = infer_org_from_code(code)
         if picked is None:
             picked = load_org_map().get(code)
+
+    if picked is None and not code:
+        picked = lookup_org_by_name(raw)
 
     if picked is None:
         keyword = code or raw

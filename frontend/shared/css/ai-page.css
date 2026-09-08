@@ -397,6 +397,36 @@ body.app-shell.ai-page-root .ai-page {
   white-space: nowrap;
 }
 
+.ai-brief-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+a.ai-brief-mode {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.74rem;
+  padding: 3px 10px;
+  border: 1px solid rgba(70, 210, 190, 0.22);
+  border-radius: 999px;
+  color: var(--muted, #8aa8a3);
+  text-decoration: none;
+  background: transparent;
+}
+
+a.ai-brief-mode:hover {
+  color: var(--accent, #46d2be);
+  border-color: var(--line-strong, rgba(70, 210, 190, 0.4));
+}
+
+a.ai-brief-mode.is-active {
+  color: var(--accent, #46d2be);
+  background: var(--accent-soft, rgba(70, 210, 190, 0.12));
+  border-color: var(--line-strong, rgba(70, 210, 190, 0.4));
+}
+
 .ai-analyst-tabs {
   flex: none;
   display: flex;
@@ -405,9 +435,39 @@ body.app-shell.ai-page-root .ai-page {
   padding: 8px 12px 0;
 }
 
+.ai-analyst-tabs.hidden {
+  display: none;
+}
+
 .ai-analyst-tabs .btn {
   font-size: 0.72rem;
   padding: 4px 10px;
+}
+
+.ai-analyst-tabs .btn.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--line-strong);
+}
+
+.ai-analyst-tabs .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ai-pipeline-step.is-clickable {
+  cursor: pointer;
+  border-radius: 4px;
+  margin-inline: -6px;
+  padding-inline: 6px;
+}
+
+.ai-pipeline-step.is-clickable:hover {
+  background: rgba(42, 212, 184, 0.06);
+}
+
+.ai-pipeline-step.is-selected {
+  background: var(--accent-soft);
 }
 
 .ai-report-body {

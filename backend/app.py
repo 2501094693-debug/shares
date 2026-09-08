@@ -276,6 +276,15 @@ def ai_page():
     )
 
 
+@app.get("/earnings")
+@app.get("/earnings.html")
+def earnings_page():
+    return FileResponse(
+        FRONTEND / "earnings" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
 @app.get("/research")
 @app.get("/research.html")
 def research_page():
@@ -289,6 +298,15 @@ def research_page():
 def js_ai():
     return FileResponse(
         FRONTEND / "ai" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/earnings.js")
+def js_earnings():
+    return FileResponse(
+        FRONTEND / "earnings" / "app.js",
         media_type="application/javascript",
         headers={"Cache-Control": "no-store, max-age=0"},
     )

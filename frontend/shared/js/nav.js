@@ -15,9 +15,11 @@
                 ? "list"
                 : path.startsWith("/ai")
                   ? "ai"
-                  : path.startsWith("/research")
-                    ? "research"
-                    : "";
+                  : path.startsWith("/earnings")
+                    ? "earnings"
+                    : path.startsWith("/research")
+                      ? "research"
+                      : "";
   document.querySelectorAll(".app-rail-link").forEach((link) => {
     const active = !!key && link.dataset.nav === key;
     link.classList.toggle("is-active", active);

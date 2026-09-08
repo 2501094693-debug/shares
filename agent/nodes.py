@@ -7,7 +7,7 @@ from datetime import date
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from agents.prompts import (
+from agent.agents.prompts import (
     ROLE_META,
     TASK_SUBJECTS,
     TEAM_LEAD_SYSTEM,
@@ -15,12 +15,12 @@ from agents.prompts import (
     build_analyst_user_prompt,
     build_team_lead_user_prompt,
 )
-from config import REPORTS_DIR
-from state import AnalystReport, InvestmentTeamState
-from tools.data_fetcher import fetch_role_data, resolve_company
-from tools.progress import report as emit_progress
-from tools.web_search import is_web_search_available
-from utils.llm import get_llm
+from agent.config import REPORTS_DIR
+from agent.state import AnalystReport, InvestmentTeamState
+from agent.tools.data_fetcher import fetch_role_data, resolve_company
+from agent.tools.progress import report as emit_progress
+from agent.tools.web_search import web_search_status
+from agent.utils.llm import get_llm
 
 
 def _extract_score(content: str) -> float | None:
@@ -53,13 +53,13 @@ def init_research(state: InvestmentTeamState) -> dict:
         status="running",
     )
 
-    web_ok = is_web_search_available()
+    web_ok, web_reason = web_search_status()
     if web_ok:
-        emit_progress("init", "联网搜索可用", phase="assess", status="running")
+        emit_progress("init", f"联网搜索可用（{web_reason}）", phase="assess", status="running")
     else:
         emit_progress(
             "init",
-            "⚠️ 联网搜索不可用，分析将主要依赖结构化数据",
+            f"⚠️ 联网搜索不可用：{web_reason}",
             phase="assess",
             status="running",
             level="warn",
@@ -244,6 +244,33 @@ def synthesize_report(state: InvestmentTeamState) -> dict:
     return {"final_report": final_report}
 
 
+def _format_role_appendix(reports: list[AnalystReport]) -> str:
+    order = (
+        "business-analyst",
+        "financial-analyst",
+        "industry-researcher",
+        "risk-assessor",
+    )
+    by_role = {str(r.get("role") or ""): r for r in reports if r.get("role")}
+    blocks = ["---", "", "# 附录：分角色完整报告", ""]
+    seen: set[str] = set()
+    for role in (*order, *by_role):
+        if role in seen or role not in by_role:
+            continue
+        seen.add(role)
+        report = by_role[role]
+        score = report.get("score")
+        score_note = f"评分 {score}/5" if score is not None else "未评分"
+        conf = report.get("confidence_note") or ""
+        blocks.append(f"<!-- ROLE:{role} -->")
+        blocks.append(f"## {report.get('role_cn', role)}（{report.get('framework', '')}）")
+        blocks.append(f"> {score_note}" + (f" · {conf}" if conf else ""))
+        blocks.append("")
+        blocks.append((report.get("content") or "（无正文）").rstrip())
+        blocks.append("")
+    return "\n".join(blocks).rstrip() + "\n"
+
+
 def save_report(state: InvestmentTeamState) -> dict:
     company = state["company"]
     cutoff = state.get("data_cutoff_date", date.today().isoformat()).replace("-", "")
@@ -251,15 +278,20 @@ def save_report(state: InvestmentTeamState) -> dict:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     path = REPORTS_DIR / f"{safe_name}投资研究报告_{cutoff}.md"
 
+    body = (state.get("final_report") or "").rstrip()
+    reports = state.get("analyst_reports") or []
+    if reports:
+        body = f"{body}\n\n{_format_role_appendix(reports)}" if body else _format_role_appendix(reports)
+
     emit_progress("save", "正在写入报告文件…", phase="save_file", status="running")
-    path.write_text(state.get("final_report", ""), encoding="utf-8")
+    path.write_text(body, encoding="utf-8")
     emit_progress("save", f"已保存至 {path.name}", phase="done", status="done")
 
     return {"report_path": str(path)}
 
 
 def run_audit_extract(state: InvestmentTeamState) -> dict:
-    from tools.berkshire_tools import extract_audit_items
+    from agent.tools.berkshire_tools import extract_audit_items
 
     report_path = state.get("report_path", "")
     if not report_path:
