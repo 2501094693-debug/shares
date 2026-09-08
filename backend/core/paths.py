@@ -17,6 +17,7 @@ OTC_FUND_INDEX_CACHE = CACHE_DIR / "otc_fund_index.json"
 
 TREE_CACHE = CACHE_DIR / "industry_tree.json"
 STOCK_INDEX_CACHE = CACHE_DIR / "stocks_index.json"
+CNINFO_ORG_MAP_CACHE = CACHE_DIR / "cninfo_org_map.json"
 STOCK_GEO_CACHE = CACHE_DIR / "stock_geo.json"
 FUND_TREE_CACHE = CACHE_DIR / "fund_tree.json"
 FUND_INDEX_CACHE = CACHE_DIR / "fund_index.json"

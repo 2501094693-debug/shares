@@ -2,20 +2,24 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from pathlib import Path
 from typing import Any, Iterable
 
-from core.codes import safe_str
+from core.codes import detect_market, normalize_code, safe_str
 from core.http import browser_post, get_bytes, get_json
+from core.paths import CNINFO_ORG_MAP_CACHE, ensure_cache_dirs
 from company.news.official.cninfo.constants import (
     FORM_HEADERS,
     HEADERS,
     PAGE_SIZE,
     QUERY_URL,
     REQUEST_PAUSE_SEC,
+    SEARCH_TIMEOUT_SEC,
     SEARCH_URL,
+    STOCK_LIST_TIMEOUT_SEC,
     STOCK_LIST_URLS,
 )
 from company.news.official.cninfo.params import list_form
@@ -32,7 +36,7 @@ def _post_json(
     params: dict[str, Any] | None = None,
     data: dict[str, Any] | None = None,
     headers: dict[str, str] | None = None,
-    timeout: int = 30,
+    timeout: int = SEARCH_TIMEOUT_SEC,
 ) -> Any:
     resp = browser_post(
         url,
@@ -45,39 +49,115 @@ def _post_json(
     return resp.json()
 
 
+def infer_org_from_code(code: str) -> dict[str, str] | None:
+    """按代码号段推断 orgId，避免 topSearch 超时阻塞。
+
+    已验证规则：
+    - 沪市 60/90：gssh0{6位代码}，如 600990 → gssh0600990
+    - 深市 00 开头：gssz{7位补零}，如 000001 → gssz0000001
+    """
+    stock = normalize_code(code)
+    if not stock or len(stock) != 6:
+        return None
+    market = detect_market(stock)
+    org_id = ""
+    if market == "sse" and stock.startswith(("60", "90")):
+        org_id = f"gssh0{stock}"
+    elif market == "szse" and stock.startswith("00"):
+        org_id = f"gssz{stock.zfill(7)}"
+    if not org_id:
+        return None
+    return {
+        "code": stock,
+        "org_id": org_id,
+        "name": "",
+        "category": "",
+    }
+
+
+def _load_org_map_disk() -> dict[str, dict[str, str]]:
+    path = CNINFO_ORG_MAP_CACHE
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.info("读取巨潮 org 缓存失败: %s", exc)
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    for key, row in payload.items():
+        if not isinstance(row, dict):
+            continue
+        code = normalize_code(safe_str(row.get("code")) or safe_str(key))
+        org_id = safe_str(row.get("org_id"))
+        if code and org_id:
+            out[code] = {
+                "code": code,
+                "org_id": org_id,
+                "name": safe_str(row.get("name")),
+                "category": safe_str(row.get("category")),
+                "pinyin": safe_str(row.get("pinyin")),
+            }
+    return out
+
+
+def _save_org_map_disk(mapping: dict[str, dict[str, str]]) -> None:
+    if not mapping:
+        return
+    try:
+        ensure_cache_dirs()
+        CNINFO_ORG_MAP_CACHE.write_text(
+            json.dumps(mapping, ensure_ascii=False, indent=0),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        logger.info("写入巨潮 org 缓存失败: %s", exc)
+
+
 def search_orgs(keyword: str, *, max_num: int = 10) -> list[dict[str, str]]:
-    """topSearch 联想：代码或简称。"""
+    """topSearch 联想：代码或简称。超时快速失败，不阻塞主流程。"""
     text = safe_str(keyword)
     if not text:
         return []
-    try:
-        rows = _post_json(
-            SEARCH_URL,
-            params={"keyWord": text, "maxNum": max(1, min(int(max_num), 50))},
-            headers=HEADERS,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("topSearch 失败 keyword=%s: %s", text, exc)
-        return []
-    return parse_orgs(rows)
+    last_exc: Exception | None = None
+    for attempt in range(2):
+        try:
+            rows = _post_json(
+                SEARCH_URL,
+                params={"keyWord": text, "maxNum": max(1, min(int(max_num), 50))},
+                headers=HEADERS,
+                timeout=SEARCH_TIMEOUT_SEC,
+            )
+            return parse_orgs(rows)
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt == 0:
+                time.sleep(0.5)
+    logger.warning("topSearch 失败 keyword=%s: %s", text, last_exc)
+    return []
 
 
 def load_org_map(*, force: bool = False) -> dict[str, dict[str, str]]:
-    """加载巨潮静态股票表（代码 → orgId）。失败的 URL 会跳过。"""
+    """加载巨潮静态股票表（代码 → orgId）。先读本地缓存，再拉官网 JSON。"""
     global _STOCK_MAP
     if _STOCK_MAP is not None and not force:
         return _STOCK_MAP
 
-    mapping: dict[str, dict[str, str]] = {}
+    mapping = _load_org_map_disk()
     for url in STOCK_LIST_URLS:
         try:
-            payload = get_json(url, timeout=30)
+            payload = get_json(url, timeout=STOCK_LIST_TIMEOUT_SEC, retries=0)
         except Exception as exc:  # noqa: BLE001
             logger.info("股票表不可用 %s: %s", url, exc)
             continue
         rows = payload.get("stockList") if isinstance(payload, dict) else payload
         mapping.update(parse_org_map(rows))
+
     _STOCK_MAP = mapping
+    if mapping:
+        _save_org_map_disk(mapping)
     return mapping
 
 

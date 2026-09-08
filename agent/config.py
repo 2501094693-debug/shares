@@ -1,0 +1,43 @@
+"""投研团队 LangGraph 配置。"""
+
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+_ROOT_ENV = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(_ROOT_ENV, override=True)
+load_dotenv(override=True)
+
+PROJECT_ROOT = Path(__file__).parent
+REPORTS_DIR = PROJECT_ROOT / "reports"
+
+BACKEND_ROOT = Path(
+    os.getenv(
+        "BACKEND_ROOT",
+        str(Path(__file__).resolve().parents[1] / "backend"),
+    )
+)
+
+AI_BERKSHIRE_ROOT = Path(
+    os.getenv(
+        "AI_BERKSHIRE_ROOT",
+        r"c:\Users\Administrator\PycharmProjects\ai-berkshire",
+    )
+)
+
+FINANCIAL_RIGOR_SCRIPT = AI_BERKSHIRE_ROOT / "tools" / "financial_rigor.py"
+REPORT_AUDIT_SCRIPT = AI_BERKSHIRE_ROOT / "tools" / "report_audit.py"
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o")
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.3"))
+LLM_REQUEST_TIMEOUT = int(os.getenv("LLM_REQUEST_TIMEOUT", "600"))
+LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "2"))
+
+DATA_LOOKBACK_DAYS = int(os.getenv("DATA_LOOKBACK_DAYS", "365"))
+
+ENABLE_WEB_SEARCH = os.getenv("ENABLE_WEB_SEARCH", "true").lower() in {"1", "true", "yes", "on"}
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+WEB_SEARCH_MAX_RESULTS = int(os.getenv("WEB_SEARCH_MAX_RESULTS", "8"))

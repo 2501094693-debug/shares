@@ -27,6 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from ai.api import router as ai_router
 from company.api import router as company_router
 from funds.fund.api import router as fund_router
 from industry.api import router as industry_router
@@ -134,6 +135,7 @@ app.include_router(market_router)
 app.include_router(list_router)
 app.include_router(fund_router)
 app.include_router(otc_fund_router)
+app.include_router(ai_router)
 
 
 @app.get("/api/health")
@@ -260,6 +262,42 @@ def js_app():
 def js_company():
     return FileResponse(
         FRONTEND / "company" / "company.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/ai")
+@app.get("/ai.html")
+def ai_page():
+    return FileResponse(
+        FRONTEND / "ai" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/research")
+@app.get("/research.html")
+def research_page():
+    return FileResponse(
+        FRONTEND / "research" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/ai.js")
+def js_ai():
+    return FileResponse(
+        FRONTEND / "ai" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/research.js")
+def js_research():
+    return FileResponse(
+        FRONTEND / "research" / "app.js",
         media_type="application/javascript",
         headers={"Cache-Control": "no-store, max-age=0"},
     )

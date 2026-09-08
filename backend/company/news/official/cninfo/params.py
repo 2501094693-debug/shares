@@ -112,8 +112,8 @@ def se_date(
 
 
 def resolve_org(code_or_name: str) -> dict[str, str] | None:
-    """认出公司：orgId / 简称。优先联想，静态表兜底。B 股自动转到 A 股代码。"""
-    from company.news.official.cninfo.request import load_org_map, search_orgs
+    """认出公司：orgId / 简称。静态表与规则推断优先，topSearch 兜底。B 股自动转到 A 股代码。"""
+    from company.news.official.cninfo.request import infer_org_from_code, load_org_map, search_orgs
 
     raw = safe_str(code_or_name)
     if not raw:
@@ -125,20 +125,28 @@ def resolve_org(code_or_name: str) -> dict[str, str] | None:
     if cached:
         return dict(cached)
 
-    keyword = code or raw
-    rows = search_orgs(keyword, max_num=10)
-
     picked: dict[str, str] | None = None
+
     if code:
-        for row in rows:
-            if normalize_code(row.get("code", "")) == code:
-                picked = row
-                break
-    if picked is None and rows:
-        picked = rows[0]
+        picked = infer_org_from_code(code)
+        if picked is None:
+            picked = load_org_map().get(code)
+
+    if picked is None:
+        keyword = code or raw
+        rows = search_orgs(keyword, max_num=10)
+        if code:
+            for row in rows:
+                if normalize_code(row.get("code", "")) == code:
+                    picked = row
+                    break
+        if picked is None and rows:
+            picked = rows[0]
 
     if picked is None and code:
-        picked = load_org_map().get(code)
+        picked = load_org_map(force=True).get(code)
+        if picked is None:
+            picked = infer_org_from_code(code)
 
     if not picked or not picked.get("org_id"):
         return None
@@ -151,7 +159,11 @@ def resolve_org(code_or_name: str) -> dict[str, str] | None:
                 picked = row
                 break
         else:
-            picked = {**picked, "code": query_code, "input_code": code or raw}
+            inferred = infer_org_from_code(query_code)
+            if inferred:
+                picked = {**inferred, **picked, "code": query_code}
+            else:
+                picked = {**picked, "code": query_code, "input_code": code or raw}
     elif query_code:
         picked = {**picked, "code": query_code}
 

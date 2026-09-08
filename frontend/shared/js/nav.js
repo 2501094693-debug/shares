@@ -9,11 +9,15 @@
           ? "fund"
           : path.startsWith("/otc-fund")
             ? "otc-fund"
-          : path.startsWith("/steep")
-          ? "steep"
-          : path.startsWith("/list")
-            ? "list"
-            : "";
+            : path.startsWith("/steep")
+              ? "steep"
+              : path.startsWith("/list")
+                ? "list"
+                : path.startsWith("/ai")
+                  ? "ai"
+                  : path.startsWith("/research")
+                    ? "research"
+                    : "";
   document.querySelectorAll(".app-rail-link").forEach((link) => {
     const active = !!key && link.dataset.nav === key;
     link.classList.toggle("is-active", active);

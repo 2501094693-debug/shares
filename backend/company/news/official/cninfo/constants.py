@@ -11,10 +11,16 @@ PAGE_SIZE = 30
 REQUEST_PAUSE_SEC = 0.25
 MAX_PAGES = 50
 
-# 静态股票表（含 orgId）。sse_stock.json 当前 404，深市这份可用作缓存。
+# 静态股票表（含 orgId）。网络不稳时靠本地缓存 + orgId 规则推断兜底。
 STOCK_LIST_URLS = (
+    "https://www.cninfo.com.cn/new/data/bj_stock.json",
     "https://www.cninfo.com.cn/new/data/szse_stock.json",
+    "https://www.cninfo.com.cn/new/data/sse_stock.json",
 )
+
+# topSearch 超时（秒）；巨潮联想偶发很慢，失败时走静态表 / 规则推断
+SEARCH_TIMEOUT_SEC = 10
+STOCK_LIST_TIMEOUT_SEC = 20
 
 SEARCH_PAGE = "https://www.cninfo.com.cn/new/commonUrl?url=disclosure/list/search"
 HEADERS = {

@@ -83,6 +83,7 @@ body.app-shell.lhb-page-root,
 body.app-shell.steep-page-root,
 body.app-shell.fund-page-root,
 body.app-shell.otc-fund-page-root,
+body.app-shell.ai-page-root,
 html.map-app-root body.app-shell.map-app {
   height: 100dvh;
   overflow: hidden;
@@ -5876,3 +5877,5 @@ body.app-shell.otc-fund-page-root .otc-fund-page.market-page {
     width: 100%;
   }
 }
+
+/* 业务简述样式见 ai-page.css */
