@@ -15,7 +15,7 @@ from core.paths import (
     ensure_cache_dirs,
     otc_fund_rank_cache_path,
 )
-from otc_fund import fetcher, taxonomy
+from funds.otc_fund import fetcher, taxonomy
 
 
 class OtcFundStore:

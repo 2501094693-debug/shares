@@ -5,8 +5,8 @@
 - ``company``：单只股票的盘口、K 线、资讯
 - ``market``：申万行业涨跌、资金流向、行业轮动
 - ``list``：龙虎榜每日上榜与个股历史
-- ``fund``：场内 ETF / LOF 分类与检索
-- ``otc_fund``：场外开放式基金检索与净值排行
+- ``funds.fund``：场内 ETF / LOF 分类与检索
+- ``funds.otc_fund``：场外开放式基金检索与净值排行
 """
 
 from __future__ import annotations
@@ -28,14 +28,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from company.api import router as company_router
-from fund.api import router as fund_router
+from funds.fund.api import router as fund_router
 from industry.api import router as industry_router
 from industry.service import service as industry_service
-from fund.service import service as fund_service
+from funds.fund.service import service as fund_service
 from list.api import router as list_router
 from market.api import router as market_router
-from otc_fund.api import router as otc_fund_router
-from otc_fund.service import service as otc_fund_service
+from funds.otc_fund.api import router as otc_fund_router
+from funds.otc_fund.service import service as otc_fund_service
 
 ROOT = _BACKEND_DIR.parent
 FRONTEND = ROOT / "frontend"

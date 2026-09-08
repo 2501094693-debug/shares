@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from core.paths import ensure_cache_dirs
-from otc_fund import fetcher, taxonomy
-from otc_fund.store import OtcFundStore
+from funds.otc_fund import fetcher, taxonomy
+from funds.otc_fund.store import OtcFundStore
 
 
 class OtcFundService:

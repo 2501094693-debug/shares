@@ -15,7 +15,7 @@ from core.paths import (
     ensure_cache_dirs,
     fund_list_cache_path,
 )
-from fund import fetcher, taxonomy
+from funds.fund import fetcher, taxonomy
 
 
 class FundStore:
