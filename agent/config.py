@@ -5,7 +5,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-_ROOT_ENV = Path(__file__).resolve().parents[1] / ".env"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_ROOT_ENV = _REPO_ROOT / ".env"
 load_dotenv(_ROOT_ENV, override=True)
 load_dotenv(override=True)
 
@@ -15,9 +16,10 @@ REPORTS_DIR = PROJECT_ROOT / "reports"
 BACKEND_ROOT = Path(
     os.getenv(
         "BACKEND_ROOT",
-        str(Path(__file__).resolve().parents[1] / "backend"),
+        str(_REPO_ROOT / "backend"),
     )
 )
+
 
 def _resolve_llm_model() -> str:
     """LLM_MODEL 优先，其次 OPENAI_MODEL；DeepSeek 接口不接受 gpt-* 名称。"""

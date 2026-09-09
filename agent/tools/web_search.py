@@ -12,7 +12,7 @@ from typing import Any, Callable
 import requests
 from lxml import html
 
-from config import ENABLE_WEB_SEARCH, TAVILY_API_KEY, WEB_SEARCH_MAX_RESULTS
+from agent.config import ENABLE_WEB_SEARCH, TAVILY_API_KEY, WEB_SEARCH_MAX_RESULTS
 
 logger = logging.getLogger(__name__)
 

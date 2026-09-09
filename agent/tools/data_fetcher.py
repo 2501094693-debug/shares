@@ -10,7 +10,7 @@ import logging
 import sys
 from typing import Any
 
-from config import BACKEND_ROOT, DATA_LOOKBACK_DAYS
+from agent.config import BACKEND_ROOT, DATA_LOOKBACK_DAYS
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +210,7 @@ def _merge_notice_items(*packs: dict[str, Any] | None) -> list[dict[str, Any]]:
     for pack in packs:
         if pack and isinstance(pack, dict):
             items.extend(pack.get("items") or [])
-    from tools.notice_pdf import prefer_cninfo_items
+    from agent.tools.notice_pdf import prefer_cninfo_items
 
     unique = prefer_cninfo_items(items)
     unique.sort(
@@ -377,7 +377,7 @@ def fetch_business_explainer_data(
     progress_node: str = "be_fetch",
 ) -> dict[str, Any]:
     """采集指定公司近一年业务简述资料。"""
-    from tools.progress import report
+    from agent.tools.progress import report
 
     resolved = stock or resolve_company(company)
     code = resolved["code"]
@@ -403,7 +403,7 @@ def fetch_business_explainer_data(
     if notice_items:
         sections["经营相关公告"] = notices_text
 
-    from tools.notice_pdf import ingest_notice_pdfs, pick_latest_full_report, pick_notice_pdfs
+    from agent.tools.notice_pdf import ingest_notice_pdfs, pick_latest_full_report, pick_notice_pdfs
 
     pdf_targets: list[dict[str, Any]] = []
     for items in periodic_by_kind.values():
@@ -464,8 +464,8 @@ def fetch_web_supplement(
     progress_node: str = "be_search",
 ) -> dict[str, Any]:
     """联网搜索补充：最新财报、行业报告、护城河与客户价值公开信息。"""
-    from tools.progress import report
-    from tools.web_search import search_for_business, web_search_status
+    from agent.tools.progress import report
+    from agent.tools.web_search import search_for_business, web_search_status
 
     resolved = stock or resolve_company(company)
     code = resolved["code"]
@@ -531,7 +531,7 @@ def _fetch_profile_pack(code: str, name: str) -> tuple[dict[str, Any], dict[str,
     """公司画像：盘口估值 + 申万行业。"""
     try:
         from company.profile import get_stock_profile
-        from tools.financials import format_profile_table
+        from agent.tools.financials import format_profile_table
     except Exception as exc:  # noqa: BLE001
         logger.warning("画像导入失败: %s", exc)
         return {}, {}, f"（未能导入公司画像：{exc}）"
@@ -552,12 +552,12 @@ def fetch_earnings_reviewer_data(
     progress_node: str = "er_fetch",
 ) -> dict[str, Any]:
     """采集指定公司近一年财报解读资料：报表原始科目 + 估值 + 定期报告公告。"""
-    from tools.financials import (
+    from agent.tools.financials import (
         build_valuation_helpers,
         fetch_financial_pack,
         fetch_valuation_pack,
     )
-    from tools.progress import report
+    from agent.tools.progress import report
 
     resolved = stock or resolve_company(company)
     code = resolved["code"]
@@ -658,7 +658,7 @@ def _collect_competition_notices(
 def _fetch_peer_competition_table(code: str, name: str) -> str:
     """申万三级行业成分股与同业估值对照。"""
     try:
-        from tools.financials import _peer_table
+        from agent.tools.financials import _peer_table
     except Exception as exc:  # noqa: BLE001
         logger.warning("同业对照导入失败: %s", exc)
         return f"（未能导入同业对照：{exc}）"
@@ -672,7 +672,7 @@ def fetch_industry_competition_data(
     progress_node: str = "ic_fetch",
 ) -> dict[str, Any]:
     """采集指定公司行业竞争分析资料：官方披露 + 同业对照。"""
-    from tools.progress import report
+    from agent.tools.progress import report
 
     resolved = stock or resolve_company(company)
     code = resolved["code"]
@@ -715,7 +715,7 @@ def fetch_industry_competition_data(
     if notice_items:
         sections["行业竞争相关公告"] = notices_text
 
-    from tools.notice_pdf import ingest_notice_pdfs, pick_latest_full_report, pick_notice_pdfs
+    from agent.tools.notice_pdf import ingest_notice_pdfs, pick_latest_full_report, pick_notice_pdfs
 
     pdf_targets: list[dict[str, Any]] = []
     for items in periodic_by_kind.values():
@@ -780,8 +780,8 @@ def fetch_web_competition_supplement(
     progress_node: str = "ic_search",
 ) -> dict[str, Any]:
     """联网搜索补充：最新行业规模、竞争格局、产业链与政策动态。"""
-    from tools.progress import report
-    from tools.web_search import search_for_competition, web_search_status
+    from agent.tools.progress import report
+    from agent.tools.web_search import search_for_competition, web_search_status
 
     resolved = stock or resolve_company(company)
     code = resolved["code"]
@@ -928,7 +928,7 @@ def fetch_risk_reviewer_data(
     progress_node: str = "rr_fetch",
 ) -> dict[str, Any]:
     """采集指定公司投资风险与管理层质量评估资料。"""
-    from tools.progress import report
+    from agent.tools.progress import report
 
     resolved = stock or resolve_company(company)
     code = resolved["code"]
@@ -965,7 +965,7 @@ def fetch_risk_reviewer_data(
     if notice_items:
         sections["风险与治理相关公告"] = notices_text
 
-    from tools.notice_pdf import ingest_risk_notice_pdfs, pick_latest_full_report, pick_notice_pdfs
+    from agent.tools.notice_pdf import ingest_risk_notice_pdfs, pick_latest_full_report, pick_notice_pdfs
 
     pdf_targets: list[dict[str, Any]] = []
     for items in periodic_by_kind.values():
@@ -1030,8 +1030,8 @@ def fetch_web_risk_supplement(
     progress_node: str = "rr_search",
 ) -> dict[str, Any]:
     """联网搜索补充：最新监管动态、管理层言论、行业政策。"""
-    from tools.progress import report
-    from tools.web_search import search_for_risk, web_search_status
+    from agent.tools.progress import report
+    from agent.tools.web_search import search_for_risk, web_search_status
 
     resolved = stock or resolve_company(company)
     code = resolved["code"]

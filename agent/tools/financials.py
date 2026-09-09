@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import Any
 
-from config import BACKEND_ROOT
+from agent.config import BACKEND_ROOT
 
 logger = logging.getLogger(__name__)
 

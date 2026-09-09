@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from risk_reviewer.nodes import (
+from agent.risk_reviewer.nodes import (
     fetch_data,
     generate_report,
     init_company,
     save_report,
     search_web_supplement,
 )
-from risk_reviewer.state import RiskReviewerState
+from agent.risk_reviewer.state import RiskReviewerState
 
 
 def build_graph() -> StateGraph:

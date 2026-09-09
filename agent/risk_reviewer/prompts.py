@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from config import DATA_LOOKBACK_DAYS
+from agent.config import DATA_LOOKBACK_DAYS
 
 RISK_REVIEWER_SYSTEM = f"""你是一位专注 A 股上市公司的投资风险与治理质量分析师。
 

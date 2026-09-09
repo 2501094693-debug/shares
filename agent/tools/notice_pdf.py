@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
-from config import BACKEND_ROOT, PROJECT_ROOT
+from agent.config import BACKEND_ROOT, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 

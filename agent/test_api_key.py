@@ -1,3 +1,14 @@
+import sys
+from pathlib import Path
+
+import sys
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+
 #!/usr/bin/env python3
 """快速测试 OPENAI_API_KEY 是否可用。"""
 
@@ -43,7 +54,7 @@ def main() -> int:
 
     sys.path.insert(0, str(Path(__file__).parent))
     from langchain_core.messages import HumanMessage
-    from utils.llm import get_llm
+    from agent.utils.llm import get_llm
 
     try:
         llm = get_llm()

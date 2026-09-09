@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from earnings_reviewer.nodes import fetch_data, generate_review, init_company, save_review
-from earnings_reviewer.state import EarningsReviewerState
+from agent.earnings_reviewer.nodes import fetch_data, generate_review, init_company, save_review
+from agent.earnings_reviewer.state import EarningsReviewerState
 
 
 def build_graph() -> StateGraph:

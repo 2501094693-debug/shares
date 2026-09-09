@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from business_explainer.nodes import (
+from agent.business_explainer.nodes import (
     fetch_data,
     generate_explanation,
     init_company,
     save_explanation,
     search_web_supplement,
 )
-from business_explainer.state import BusinessExplainerState
+from agent.business_explainer.state import BusinessExplainerState
 
 
 def build_graph() -> StateGraph:

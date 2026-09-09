@@ -7,16 +7,16 @@ from datetime import date
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from config import REPORTS_DIR
-from risk_reviewer.prompts import RISK_REVIEWER_SYSTEM, build_risk_reviewer_user_prompt
-from risk_reviewer.state import RiskReviewerState
-from tools.data_fetcher import (
+from agent.config import REPORTS_DIR
+from agent.risk_reviewer.prompts import RISK_REVIEWER_SYSTEM, build_risk_reviewer_user_prompt
+from agent.risk_reviewer.state import RiskReviewerState
+from agent.tools.data_fetcher import (
     fetch_risk_reviewer_data,
     fetch_web_risk_supplement,
     resolve_company,
 )
-from tools.progress import report as emit_progress
-from utils.llm import get_llm
+from agent.tools.progress import report as emit_progress
+from agent.utils.llm import get_llm
 
 
 def init_company(state: RiskReviewerState) -> dict:

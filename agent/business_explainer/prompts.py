@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from config import DATA_LOOKBACK_DAYS
+from agent.config import DATA_LOOKBACK_DAYS
 
 EXPLAINER_SYSTEM = f"""你是一位擅长把复杂生意讲清楚的业务分析师，最后必须以段永平的口吻评估这是不是一门「好生意」。
 

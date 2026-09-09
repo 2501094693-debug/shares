@@ -4,28 +4,28 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
-from ai.competition_service import (
+from agent.competition_service import (
     get_competition_job,
     list_competition_jobs,
     list_competition_reports,
     read_competition_report,
     start_competition_analysis,
 )
-from ai.risk_service import (
+from agent.risk_service import (
     get_risk_job,
     list_risk_jobs,
     list_risk_reports,
     read_risk_report,
     start_risk_review,
 )
-from ai.earnings_service import (
+from agent.earnings_service import (
     get_earnings_job,
     list_earnings_jobs,
     list_earnings_reports,
     read_earnings_report,
     start_earnings_review,
 )
-from ai.service import get_brief_job, list_brief_jobs, list_reports, read_report, start_business_brief
+from agent.service import get_brief_job, list_brief_jobs, list_reports, read_report, start_business_brief
 from core.api import err, ok
 
 router = APIRouter()

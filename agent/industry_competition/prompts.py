@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from config import DATA_LOOKBACK_DAYS
+from agent.config import DATA_LOOKBACK_DAYS
 
 COMPETITION_SYSTEM = f"""你是一位专注 A 股上市公司的行业与竞争格局分析师。
 

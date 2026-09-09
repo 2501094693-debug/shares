@@ -16,10 +16,13 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-# 保证从仓库根目录启动 / PyCharm 调试时也能解析 industry / company
+# 保证从仓库根目录启动 / PyCharm 调试时也能解析 industry / company / agent
 _BACKEND_DIR = Path(__file__).resolve().parent
+_ROOT_DIR = _BACKEND_DIR.parent
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
+if str(_ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(_ROOT_DIR))
 
 import uvicorn
 from fastapi import FastAPI
@@ -27,7 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from ai.api import router as ai_router
+from agent.api import router as ai_router
 from company.api import router as company_router
 from funds.fund.api import router as fund_router
 from industry.api import router as industry_router

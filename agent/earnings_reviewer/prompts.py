@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from config import DATA_LOOKBACK_DAYS
+from agent.config import DATA_LOOKBACK_DAYS
 
 REVIEWER_SYSTEM = f"""你是一位「财报精读」分析师，最后必须以沃伦·巴菲特的投资视角给出评估。
 

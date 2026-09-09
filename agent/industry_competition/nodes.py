@@ -7,16 +7,16 @@ from datetime import date
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from config import REPORTS_DIR
-from industry_competition.prompts import COMPETITION_SYSTEM, build_competition_user_prompt
-from industry_competition.state import IndustryCompetitionState
-from tools.data_fetcher import (
+from agent.config import REPORTS_DIR
+from agent.industry_competition.prompts import COMPETITION_SYSTEM, build_competition_user_prompt
+from agent.industry_competition.state import IndustryCompetitionState
+from agent.tools.data_fetcher import (
     fetch_industry_competition_data,
     fetch_web_competition_supplement,
     resolve_company,
 )
-from tools.progress import report as emit_progress
-from utils.llm import get_llm
+from agent.tools.progress import report as emit_progress
+from agent.utils.llm import get_llm
 
 
 def init_company(state: IndustryCompetitionState) -> dict:

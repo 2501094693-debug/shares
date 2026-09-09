@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from industry_competition.nodes import (
+from agent.industry_competition.nodes import (
     fetch_data,
     generate_analysis,
     init_company,
     save_report,
     search_web_supplement,
 )
-from industry_competition.state import IndustryCompetitionState
+from agent.industry_competition.state import IndustryCompetitionState
 
 
 def build_graph() -> StateGraph:

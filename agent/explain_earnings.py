@@ -8,12 +8,22 @@
 
 from __future__ import annotations
 
-import argparse
 import sys
+from pathlib import Path
 
-from config import OPENAI_API_KEY, REPORTS_DIR
-from earnings_reviewer.graph import compile_app
-from tools.data_fetcher import resolve_company
+import sys
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+
+import argparse
+
+from agent.config import OPENAI_API_KEY, REPORTS_DIR
+from agent.earnings_reviewer.graph import compile_app
+from agent.tools.data_fetcher import resolve_company
 
 
 def main() -> int:

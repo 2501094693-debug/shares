@@ -1,9 +1,8 @@
-"""投资风险与管理层质量评估任务编排：后台运行 LangGraph，跟踪进度。"""
+"""近一年财报解读任务编排：后台运行 LangGraph，跟踪进度。"""
 
 from __future__ import annotations
 
 import logging
-import sys
 import threading
 import traceback
 import uuid
@@ -13,15 +12,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_ROOT = Path(__file__).resolve().parents[2]
-_AGENT_DIR = _ROOT / "agent"
-_REPORTS_DIR = _AGENT_DIR / "reports"
-_RISK_REPORT_RE = ("风险与管理层评估",)
-
-if str(_AGENT_DIR) not in sys.path:
-    sys.path.insert(0, str(_AGENT_DIR))
-if str(_ROOT / "backend") not in sys.path:
-    sys.path.insert(0, str(_ROOT / "backend"))
+_AI_DIR = Path(__file__).resolve().parent
+_REPORTS_DIR = _AI_DIR / "reports"
+_EARNINGS_REPORT_RE = ("财报解读", "财报简述")
 
 _jobs: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
@@ -42,13 +35,13 @@ def _ensure_ai_deps() -> None:
         ) from None
 
 
-def _run_risk_job(job_id: str, company: str) -> None:
+def _run_earnings_job(job_id: str, company: str) -> None:
     job = _jobs[job_id]
     try:
         _ensure_ai_deps()
-        from risk_reviewer.graph import compile_app
-        from tools.data_fetcher import resolve_company
-        from tools.progress import bind, unbind
+        from agent.earnings_reviewer.graph import compile_app
+        from agent.tools.data_fetcher import resolve_company
+        from agent.tools.progress import bind, unbind
 
         bind(job, _lock)
 
@@ -77,7 +70,6 @@ def _run_risk_job(job_id: str, company: str) -> None:
             "explanation": report,
             "stock_code": result.get("stock_code") or stock["code"],
             "stock_name": result.get("stock_name") or stock["name"],
-            "industry_name": result.get("industry_name", ""),
             "sources_used": result.get("sources_used", []),
         }
         job["current"] = {
@@ -85,32 +77,32 @@ def _run_risk_job(job_id: str, company: str) -> None:
             "label": "全部完成",
             "phase": "done",
             "phase_label": "已完成",
-            "message": "风险与管理层评估已完成",
+            "message": "财报简述已完成",
             "at": _now_iso(),
         }
         job["updated_at"] = _now_iso()
     except Exception as exc:
-        logger.exception("风险与管理层评估任务 %s 失败: %s", job_id, exc)
+        logger.exception("财报解读任务 %s 失败: %s", job_id, exc)
         job["status"] = "failed"
         job["error"] = str(exc)
         job["traceback"] = traceback.format_exc()
         job["updated_at"] = _now_iso()
         try:
-            from tools.progress import report as emit_progress
+            from agent.tools.progress import report as emit_progress
 
-            emit_progress("rr_analyze", f"任务失败：{exc}", phase="failed", status="failed", level="error")
+            emit_progress("er_explain", f"任务失败：{exc}", phase="failed", status="failed", level="error")
         except Exception:
             pass
     finally:
         try:
-            from tools.progress import unbind
+            from agent.tools.progress import unbind
 
             unbind()
         except Exception:
             pass
 
 
-def start_risk_review(company: str) -> dict[str, Any]:
+def start_earnings_review(company: str) -> dict[str, Any]:
     company = (company or "").strip()
     if not company:
         raise ValueError("缺少公司名称或代码")
@@ -118,20 +110,20 @@ def start_risk_review(company: str) -> dict[str, Any]:
     import os
 
     if not os.getenv("OPENAI_API_KEY"):
-        raise ValueError("未配置 OPENAI_API_KEY，无法启动风险与管理层评估")
+        raise ValueError("未配置 OPENAI_API_KEY，无法启动财报简述")
 
     _ensure_ai_deps()
 
-    from tools.progress import init_risk_reviewer_agents
+    from agent.tools.progress import init_earnings_reviewer_agents
 
     job_id = uuid.uuid4().hex[:12]
     job = {
         "id": job_id,
         "company": company,
-        "type": "risk_review",
+        "type": "earnings_review",
         "status": "running",
         "progress": [],
-        "agents": init_risk_reviewer_agents(),
+        "agents": init_earnings_reviewer_agents(),
         "activity_log": [],
         "current": None,
         "result": None,
@@ -144,16 +136,16 @@ def start_risk_review(company: str) -> dict[str, Any]:
         _jobs[job_id] = job
 
     thread = threading.Thread(
-        target=_run_risk_job,
+        target=_run_earnings_job,
         args=(job_id, company),
         daemon=True,
-        name=f"ai-risk-{job_id}",
+        name=f"ai-earnings-{job_id}",
     )
     thread.start()
-    return public_risk_job(job)
+    return public_earnings_job(job)
 
 
-def list_risk_jobs(*, limit: int = 20) -> list[dict[str, Any]]:
+def list_earnings_jobs(*, limit: int = 20) -> list[dict[str, Any]]:
     with _lock:
         jobs = list(_jobs.values())
     running = [job for job in jobs if job.get("status") == "running"]
@@ -161,21 +153,21 @@ def list_risk_jobs(*, limit: int = 20) -> list[dict[str, Any]]:
     running.sort(key=lambda job: job.get("updated_at") or "", reverse=True)
     others.sort(key=lambda job: job.get("updated_at") or "", reverse=True)
     return [
-        public_risk_job(job, include_full_result=False)
+        public_earnings_job(job, include_full_result=False)
         for job in (running + others)[: max(1, limit)]
     ]
 
 
-def get_risk_job(job_id: str, *, include_full_result: bool = True) -> dict[str, Any] | None:
+def get_earnings_job(job_id: str, *, include_full_result: bool = True) -> dict[str, Any] | None:
     with _lock:
         job = _jobs.get(job_id)
         if not job:
             return None
         snapshot = job
-    return public_risk_job(snapshot, include_full_result=include_full_result)
+    return public_earnings_job(snapshot, include_full_result=include_full_result)
 
 
-def public_risk_job(job: dict[str, Any], *, include_full_result: bool = True) -> dict[str, Any]:
+def public_earnings_job(job: dict[str, Any], *, include_full_result: bool = True) -> dict[str, Any]:
     activity_log = job.get("activity_log") or []
     if len(activity_log) > 120:
         activity_log = activity_log[-120:]
@@ -183,7 +175,7 @@ def public_risk_job(job: dict[str, Any], *, include_full_result: bool = True) ->
     out = {
         "id": job["id"],
         "company": job["company"],
-        "type": "risk_review",
+        "type": "earnings_review",
         "status": job["status"],
         "agents": job.get("agents", {}),
         "activity_log": activity_log,
@@ -203,7 +195,6 @@ def public_risk_job(job: dict[str, Any], *, include_full_result: bool = True) ->
                 "filename": filename,
                 "stock_code": result.get("stock_code", ""),
                 "stock_name": result.get("stock_name", ""),
-                "industry_name": result.get("industry_name", ""),
                 "ready": True,
             }
     if job["status"] == "failed":
@@ -211,12 +202,12 @@ def public_risk_job(job: dict[str, Any], *, include_full_result: bool = True) ->
     return out
 
 
-def list_risk_reports() -> list[dict[str, Any]]:
+def list_earnings_reports() -> list[dict[str, Any]]:
     if not _REPORTS_DIR.exists():
         return []
     rows = []
     for path in sorted(_REPORTS_DIR.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
-        if not any(tag in path.name for tag in _RISK_REPORT_RE):
+        if not any(tag in path.name for tag in _EARNINGS_REPORT_RE):
             continue
         stat = path.stat()
         rows.append(
@@ -230,7 +221,7 @@ def list_risk_reports() -> list[dict[str, Any]]:
     return rows
 
 
-def read_risk_report(filename: str) -> str:
+def read_earnings_report(filename: str) -> str:
     safe = Path(filename).name
     path = _REPORTS_DIR / safe
     if not path.exists():
