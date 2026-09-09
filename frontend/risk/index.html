@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ORBIT · 投研团队</title>
+  <title>ORBIT · 风险与管理层评估</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css?v=orbit-shell-20260902" />
-  <link rel="stylesheet" href="/css/ai-page.css?v=ai-page-20260908i" />
+  <link rel="stylesheet" href="/css/ai-page.css?v=ai-page-20260909" />
 </head>
-<body class="app-shell ai-page-root" data-nav="research">
+<body class="app-shell ai-page-root" data-nav="risk">
   <nav class="app-rail" aria-label="主导航">
     <a class="app-rail-brand" href="/" title="ORBIT 申万终端">
       <span class="app-rail-mark">OR</span>
@@ -41,7 +41,7 @@
         <span class="app-rail-ico" aria-hidden="true">≡</span>
         <span>龙虎榜</span>
       </a>
-      <a class="app-rail-link" href="/ai" data-nav="ai" title="业务简述">
+      <a class="app-rail-link" href="/ai" data-nav="ai" title="业务简述 · 商业模式 · 段永平视角">
         <span class="app-rail-ico" aria-hidden="true">◉</span>
         <span>简述</span>
       </a>
@@ -49,9 +49,13 @@
         <span class="app-rail-ico" aria-hidden="true">▤</span>
         <span>财报</span>
       </a>
-      <a class="app-rail-link is-active" href="/research" data-nav="research" title="投研团队 · 四角色并行分析">
-        <span class="app-rail-ico" aria-hidden="true">◇</span>
-        <span>投研</span>
+      <a class="app-rail-link" href="/competition" data-nav="competition" title="行业竞争 · 格局与竞争态势">
+        <span class="app-rail-ico" aria-hidden="true">⬡</span>
+        <span>竞争</span>
+      </a>
+      <a class="app-rail-link" href="/risk" data-nav="risk" title="风险评估 · 管理层质量与投资风险">
+        <span class="app-rail-ico" aria-hidden="true">△</span>
+        <span>风险</span>
       </a>
     </div>
   </nav>
@@ -62,8 +66,14 @@
         <div class="ai-topbar-grid">
           <div class="brand">
             <div>
-              <h1>投研团队</h1>
-              <p class="company-page-sub">四角色并行 · 段永平 / 巴菲特 / 芒格 / 李录 · team-lead 汇总投资建议</p>
+              <h1>风险与管理层评估</h1>
+              <p class="company-page-sub">主线：交易所 / 巨潮 / 七网 / 公告 PDF · 联网补充监管动态与管理层言论</p>
+              <nav class="ai-brief-modes" aria-label="分析类型">
+                <a class="ai-brief-mode" href="/ai">业务简述</a>
+                <a class="ai-brief-mode" href="/earnings">财报简述</a>
+                <a class="ai-brief-mode" href="/competition">行业竞争</a>
+                <a class="ai-brief-mode is-active" href="/risk">风险评估</a>
+              </nav>
             </div>
           </div>
           <div class="top-actions">
@@ -79,14 +89,10 @@
               </label>
               <div id="suggestBox" class="ai-suggest-dropdown hidden" role="listbox"></div>
             </div>
-            <label class="search-box ai-search-box ai-request-box">
-              <span class="sr-only">研究要求</span>
-              <input id="requestInput" type="text" placeholder="可选：额外研究要求" autocomplete="off" />
-            </label>
           </div>
           <div class="ai-command-tail">
             <span id="jobMeta" class="ai-job-meta muted"></span>
-            <button id="startBtn" class="btn primary" type="button">启动投研</button>
+            <button id="startBtn" class="btn primary" type="button">生成评估</button>
             <button id="stopPollBtn" class="btn ghost hidden" type="button">停止轮询</button>
           </div>
         </div>
@@ -105,39 +111,38 @@
           </div>
         </aside>
 
-        <main class="ai-pane ai-pane-report" aria-label="投资研究报告">
+        <main class="ai-pane ai-pane-report" aria-label="风险与管理层评估">
           <header class="ai-pane-head ai-report-head">
             <div class="ai-report-title-block">
-              <h2 id="reportTitle">投资研究报告</h2>
-              <p id="reportMeta" class="muted">选择历史报告或启动新的投研任务</p>
+              <h2 id="reportTitle">风险与管理层评估</h2>
+              <p id="reportMeta" class="muted">选择历史报告或生成新的</p>
             </div>
             <div class="ai-report-tools">
               <span id="reportStatus" class="ai-status-chip hidden" aria-live="polite"></span>
             </div>
           </header>
-          <nav id="analystTabs" class="ai-analyst-tabs hidden" role="tablist" aria-label="报告角色"></nav>
 
           <div class="ai-pane-scroll ai-report-scroll">
             <article id="reportView" class="ai-report-body">
               <div class="ai-empty-state">
-                <div class="ai-empty-icon" aria-hidden="true">◇</div>
-                <h3>四角色并行投研</h3>
-                <p>输入一家公司，投研团队将并行完成商业模式、财务估值、行业竞争、风险治理四维分析，并由 team-lead 输出最终投资建议。</p>
+                <div class="ai-empty-icon" aria-hidden="true">△</div>
+                <h3>先看风险，再看人</h3>
+                <p>输入一家公司，智能体以交易所、巨潮、七网披露为主线，结合联网搜索的最新监管动态与管理层言论，评估投资风险与管理层质量。</p>
                 <ul class="ai-empty-tips">
-                  <li>商业模式 & 护城河（段永平）</li>
-                  <li>财务报表 & 估值（巴菲特）</li>
-                  <li>行业格局 & 竞争（芒格）</li>
-                  <li>风险 & 管理层（李录）</li>
+                  <li>管理层：能力圈、诚信度、战略眼光、资本配置</li>
+                  <li>监管、竞争、业务、宏观各维度风险分级</li>
+                  <li>治理结构：股权、关联交易、股东回报</li>
+                  <li>长期确定性：10 年展望与商业模式颠覆风险</li>
                 </ul>
               </div>
             </article>
           </div>
         </main>
 
-        <aside class="ai-pane ai-pane-monitor" id="progressPanel" aria-label="投研进度">
+        <aside class="ai-pane ai-pane-monitor" id="progressPanel" aria-label="生成进度">
           <header class="ai-pane-head">
-            <h2>投研流水线</h2>
-            <span id="pipelineProgress" class="ai-pane-hint">0 / 8</span>
+            <h2>生成流水线</h2>
+            <span id="pipelineProgress" class="ai-pane-hint">0 / 5</span>
           </header>
           <div id="currentAction" class="ai-run-banner hidden" aria-live="polite">
             <span class="ai-run-banner-label">进行中</span>
@@ -158,7 +163,7 @@
     </div>
   </div>
 
-  <script src="/js/shared/nav.js?v=research-page-20260908"></script>
-  <script src="/js/research.js?v=research-20260908d"></script>
+  <script src="/js/shared/nav.js?v=ai-page-20260909"></script>
+  <script src="/js/risk.js?v=ai-risk-20260909"></script>
 </body>
 </html>

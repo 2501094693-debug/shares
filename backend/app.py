@@ -24,7 +24,7 @@ if str(_BACKEND_DIR) not in sys.path:
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from ai.api import router as ai_router
@@ -279,25 +279,22 @@ def ai_page():
 @app.get("/earnings")
 @app.get("/earnings.html")
 def earnings_page():
-    return FileResponse(
-        FRONTEND / "earnings" / "index.html",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
-
-
-@app.get("/research")
-@app.get("/research.html")
-def research_page():
-    return FileResponse(
-        FRONTEND / "research" / "index.html",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
+    return RedirectResponse(url="/ai?mode=earnings", status_code=302)
 
 
 @app.get("/js/ai.js")
 def js_ai():
     return FileResponse(
         FRONTEND / "ai" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/ai/modes.js")
+def js_ai_modes():
+    return FileResponse(
+        FRONTEND / "ai" / "modes.js",
         media_type="application/javascript",
         headers={"Cache-Control": "no-store, max-age=0"},
     )
@@ -312,10 +309,31 @@ def js_earnings():
     )
 
 
-@app.get("/js/research.js")
-def js_research():
+@app.get("/competition")
+@app.get("/competition.html")
+def competition_page():
+    return RedirectResponse(url="/ai?mode=competition", status_code=302)
+
+
+@app.get("/js/competition.js")
+def js_competition():
     return FileResponse(
-        FRONTEND / "research" / "app.js",
+        FRONTEND / "competition" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/risk")
+@app.get("/risk.html")
+def risk_page():
+    return RedirectResponse(url="/ai?mode=risk", status_code=302)
+
+
+@app.get("/js/risk.js")
+def js_risk():
+    return FileResponse(
+        FRONTEND / "risk" / "app.js",
         media_type="application/javascript",
         headers={"Cache-Control": "no-store, max-age=0"},
     )

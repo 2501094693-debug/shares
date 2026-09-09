@@ -1,4 +1,8 @@
-"""联网搜索：Tavily（优先）→ DuckDuckGo → 必应国内版。"""
+"""联网搜索补充：Tavily（优先）→ 必应国内版 → DuckDuckGo。
+
+官方披露（交易所 / 巨潮 / 七网）仍是业务简述主线；本模块只补充最新财报解读、
+行业报告等公开网页，不得覆盖主线事实。
+"""
 
 from __future__ import annotations
 
@@ -8,7 +12,7 @@ from typing import Any, Callable
 import requests
 from lxml import html
 
-from agent.config import ENABLE_WEB_SEARCH, TAVILY_API_KEY, WEB_SEARCH_MAX_RESULTS
+from config import ENABLE_WEB_SEARCH, TAVILY_API_KEY, WEB_SEARCH_MAX_RESULTS
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +24,30 @@ _BING_HEADERS = {
     ),
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
 }
+
+BUSINESS_SEARCH_QUERIES: tuple[str, ...] = (
+    "最新年报 半年报 季报 商业模式 主营业务 收入结构",
+    "行业报告 市场份额 竞争格局",
+    "护城河 竞争优势 飞轮 平台效应",
+    "客户价值 业务矩阵 协同 产品",
+)
+
+COMPETITION_SEARCH_QUERIES: tuple[str, ...] = (
+    "行业市场规模 增速 渗透率 2024 2025",
+    "竞争格局 市场份额 主要竞争对手",
+    "行业报告 产业链 上下游 价值分配",
+    "技术变革 政策影响 新进入者 国产替代",
+    "细分赛道 竞争策略 龙头 挑战者",
+)
+
+RISK_SEARCH_QUERIES: tuple[str, ...] = (
+    "监管处罚 问询函 关注函 立案 最新",
+    "CEO 董事长 总经理 管理层 访谈 言论 战略",
+    "关联交易 股权质押 减持 回购 分红",
+    "行业监管政策 反垄断 环保 数据安全 最新",
+    "诉讼 仲裁 担保 违规 整改",
+    "新业务 亏损 扩张 风险 不确定性",
+)
 
 
 def is_web_search_available() -> bool:
@@ -155,39 +183,23 @@ def search_company_info(
     return search_web(query, max_results=max_results)
 
 
-SEARCH_QUERIES: dict[str, list[str]] = {
-    "business-analyst": [
-        "年报 半年报 商业模式 主营业务 收入结构",
-        "护城河 竞争优势 最新新闻",
-    ],
-    "financial-analyst": [
-        "年报 财务 营收 净利润 ROE 现金流",
-        "估值 PE PB 盈利预测",
-    ],
-    "industry-researcher": [
-        "行业格局 市场份额 竞争对手",
-        "产业政策 行业趋势",
-    ],
-    "risk-assessor": [
-        "监管 问询函 处罚 诉讼",
-        "管理层 股东减持 治理 关联交易",
-    ],
-}
-
-
-def search_for_role(
-    role: str,
+def search_for_business(
     company: str,
     *,
     stock_code: str = "",
     max_results_per_query: int | None = None,
+    progress_cb: Callable[[str], None] | None = None,
 ) -> tuple[str, list[str]]:
-    queries = SEARCH_QUERIES.get(role, ["最新资讯 财报"])
+    """业务简述专用检索：商业模式、行业报告、护城河、客户价值。"""
     engines: list[str] = []
     blocks: list[str] = []
-    per_query = max_results_per_query or max(4, WEB_SEARCH_MAX_RESULTS // max(len(queries), 1))
+    per_query = max_results_per_query or max(
+        4, WEB_SEARCH_MAX_RESULTS // max(len(BUSINESS_SEARCH_QUERIES), 1)
+    )
 
-    for q in queries:
+    for q in BUSINESS_SEARCH_QUERIES:
+        if progress_cb:
+            progress_cb(q)
         text, engine = search_company_info(
             company,
             q,
@@ -196,6 +208,78 @@ def search_for_role(
         )
         if text and not text.startswith("（"):
             blocks.append(f"### 检索：{q}\n{text}")
+            if engine and engine not in engines:
+                engines.append(engine)
+
+    if not blocks:
+        return "", engines
+    return "\n\n".join(blocks), engines
+
+
+def search_for_competition(
+    company: str,
+    *,
+    industry_name: str = "",
+    stock_code: str = "",
+    max_results_per_query: int | None = None,
+    progress_cb: Callable[[str], None] | None = None,
+) -> tuple[str, list[str]]:
+    """行业竞争分析专用检索：市场规模、竞争格局、产业链、行业趋势。"""
+    engines: list[str] = []
+    blocks: list[str] = []
+    per_query = max_results_per_query or max(
+        4, WEB_SEARCH_MAX_RESULTS // max(len(COMPETITION_SEARCH_QUERIES), 1)
+    )
+
+    industry_part = f"{industry_name} " if industry_name else ""
+    for q in COMPETITION_SEARCH_QUERIES:
+        if progress_cb:
+            progress_cb(q)
+        query_suffix = f"{industry_part}{q}".strip()
+        text, engine = search_company_info(
+            company,
+            query_suffix,
+            stock_code=stock_code,
+            max_results=per_query,
+        )
+        if text and not text.startswith("（"):
+            blocks.append(f"### 检索：{query_suffix}\n{text}")
+            if engine and engine not in engines:
+                engines.append(engine)
+
+    if not blocks:
+        return "", engines
+    return "\n\n".join(blocks), engines
+
+
+def search_for_risk(
+    company: str,
+    *,
+    industry_name: str = "",
+    stock_code: str = "",
+    max_results_per_query: int | None = None,
+    progress_cb: Callable[[str], None] | None = None,
+) -> tuple[str, list[str]]:
+    """投资风险与管理层质量评估专用检索：监管动态、管理层言论、治理风险。"""
+    engines: list[str] = []
+    blocks: list[str] = []
+    per_query = max_results_per_query or max(
+        4, WEB_SEARCH_MAX_RESULTS // max(len(RISK_SEARCH_QUERIES), 1)
+    )
+
+    industry_part = f"{industry_name} " if industry_name else ""
+    for q in RISK_SEARCH_QUERIES:
+        if progress_cb:
+            progress_cb(q)
+        query_suffix = f"{industry_part}{q}".strip()
+        text, engine = search_company_info(
+            company,
+            query_suffix,
+            stock_code=stock_code,
+            max_results=per_query,
+        )
+        if text and not text.startswith("（"):
+            blocks.append(f"### 检索：{query_suffix}\n{text}")
             if engine and engine not in engines:
                 engines.append(engine)
 

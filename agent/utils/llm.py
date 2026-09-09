@@ -1,8 +1,8 @@
-"""LLM 初始化。"""
+"""LLM 与工具初始化。"""
 
 from langchain_openai import ChatOpenAI
 
-from agent.config import (
+from config import (
     LLM_MAX_RETRIES,
     LLM_MODEL,
     LLM_REQUEST_TIMEOUT,

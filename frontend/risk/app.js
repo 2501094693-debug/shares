@@ -1,7 +1,11 @@
 (() => {
-  const MODES = window.AI_MODES || {};
-  const MODE_ORDER = window.AI_MODE_ORDER || Object.keys(MODES);
-  const MODE_ALIASES = window.AI_MODE_ALIASES || {};
+  const AGENT_DEFS = [
+    { id: "rr_init", name: "解析公司", subtitle: "识别代码、名称与行业" },
+    { id: "rr_fetch", name: "采集资料", subtitle: "交易所 / 巨潮 / 七网 / 公告 PDF" },
+    { id: "rr_search", name: "联网补充", subtitle: "监管动态与管理层言论" },
+    { id: "rr_analyze", name: "生成评估", subtitle: "风险矩阵 · 管理层质量" },
+    { id: "rr_save", name: "保存报告", subtitle: "写入 Markdown" },
+  ];
 
   const STATUS_LABELS = {
     pending: "等待",
@@ -10,64 +14,42 @@
     failed: "失败",
   };
 
-  function emptyModeState() {
-    return {
-      jobId: "",
-      polling: false,
-      pollTimer: null,
-      activeReportFile: "",
-      job: null,
-      reports: [],
-      lastLogLen: 0,
-      pollFailCount: 0,
-      pollInFlight: false,
-    };
-  }
+  const REPORT_NAME_RE = /风险与管理层评估/;
+  const JOB_STORE_KEY = "orbit.risk.activeJob";
+  const API_ROOT = "/api/ai/risk-review";
+
+  const EMPTY_STATE_HTML = `
+    <div class="ai-empty-state">
+      <div class="ai-empty-icon" aria-hidden="true">△</div>
+      <h3>先看风险，再看人</h3>
+      <p>输入一家公司，智能体以交易所、巨潮、七网披露为主线，结合联网搜索的最新监管动态与管理层言论，评估投资风险与管理层质量。</p>
+      <ul class="ai-empty-tips">
+        <li>管理层：能力圈、诚信度、战略眼光、资本配置</li>
+        <li>监管、竞争、业务、宏观各维度风险分级</li>
+        <li>治理结构：股权、关联交易、股东回报</li>
+        <li>长期确定性：10 年展望与商业模式颠覆风险</li>
+      </ul>
+    </div>
+  `;
 
   const state = {
-    mode: "business",
+    jobId: "",
+    polling: false,
+    pollTimer: null,
+    activeReportFile: "",
+    job: null,
+    reports: [],
     suggestTimer: null,
-    modes: Object.fromEntries(MODE_ORDER.map((id) => [id, emptyModeState()])),
+    lastLogLen: 0,
+    pollFailCount: 0,
+    pollInFlight: false,
   };
 
   const $ = (id) => document.getElementById(id);
 
-  function getConfig() {
-    return MODES[state.mode] || MODES.business;
-  }
-
-  function getModeState() {
-    return state.modes[state.mode];
-  }
-
-  function reportsListUrl() {
-    const cfg = getConfig();
-    return cfg.reportsApi || `${cfg.apiRoot}/reports`;
-  }
-
-  function reportReadUrl(filename) {
-    const base = reportsListUrl();
-    return `${base}/${encodeURIComponent(filename)}`;
-  }
-
-  function parseModeFromUrl() {
-    const params = new URLSearchParams(location.search);
-    const raw = (params.get("mode") || "business").toLowerCase();
-    const mapped = MODE_ALIASES[raw];
-    return mapped && MODES[mapped] ? mapped : "business";
-  }
-
-  function syncModeUrl(mode) {
-    const url = new URL(location.href);
-    if (mode === "business") url.searchParams.delete("mode");
-    else url.searchParams.set("mode", mode);
-    history.replaceState({ mode }, "", url);
-  }
-
   function readJobHandle() {
-    const cfg = getConfig();
     try {
-      const raw = localStorage.getItem(cfg.jobStoreKey);
+      const raw = localStorage.getItem(JOB_STORE_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch {
       return null;
@@ -75,17 +57,15 @@
   }
 
   function saveJobHandle(job) {
-    const cfg = getConfig();
     if (!job?.id) return;
     try {
-      localStorage.setItem(cfg.jobStoreKey, JSON.stringify({
+      localStorage.setItem(JOB_STORE_KEY, JSON.stringify({
         id: job.id,
         company: job.company || "",
-        mode: state.mode,
         savedAt: Date.now(),
       }));
     } catch {
-      /* ignore */
+      /* ignore quota / private mode */
     }
   }
 
@@ -134,7 +114,9 @@
   async function api(path, options = {}) {
     const { timeoutMs = 0, ...fetchOptions } = options;
     const controller = timeoutMs > 0 ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    const timer = controller
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : null;
     try {
       const res = await fetch(path, {
         ...fetchOptions,
@@ -203,18 +185,16 @@
   }
 
   function updatePipelineProgress(agents) {
-    const cfg = getConfig();
     const el = $("pipelineProgress");
     if (!el) return;
-    const done = cfg.agentDefs.filter((d) => agents?.[d.id]?.status === "done").length;
-    el.textContent = `${done} / ${cfg.agentDefs.length}`;
+    const done = AGENT_DEFS.filter((d) => agents?.[d.id]?.status === "done").length;
+    el.textContent = `${done} / ${AGENT_DEFS.length}`;
   }
 
   function renderAgentBoard(agents) {
-    const cfg = getConfig();
     const board = $("agentBoard");
     if (!board) return;
-    board.innerHTML = cfg.agentDefs.map((def) => {
+    board.innerHTML = AGENT_DEFS.map((def) => {
       const info = agents?.[def.id] || { status: "pending", message: "等待中", phase_label: "" };
       const status = info.status || "pending";
       const phase = info.phase_label
@@ -239,10 +219,9 @@
   }
 
   function renderCurrentAction(current, job) {
-    const cfg = getConfig();
     const box = $("currentAction");
     if (!box) return;
-    const runningAgents = cfg.agentDefs
+    const runningAgents = AGENT_DEFS
       .map((d) => ({ ...d, ...(job?.agents?.[d.id] || {}) }))
       .filter((a) => a.status === "running");
 
@@ -262,7 +241,6 @@
   }
 
   function renderActivityLog(log) {
-    const ms = getModeState();
     const list = $("activityLog");
     const panel = $("progressPanel");
     if (!list) return;
@@ -290,9 +268,9 @@
       `;
     }).join("");
 
-    if (log.length > ms.lastLogLen) {
+    if (log.length > state.lastLogLen) {
       list.scrollTop = 0;
-      ms.lastLogLen = log.length;
+      state.lastLogLen = log.length;
     }
   }
 
@@ -316,38 +294,11 @@
     return parts.pop() || "";
   }
 
-  function resultText(result) {
-    return result?.brief || result?.report || result?.explanation || "";
-  }
-
   function focusReportPane() {
     const pane = document.querySelector(".ai-pane-report");
     const scroller = document.querySelector(".ai-report-scroll");
     pane?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     if (scroller) scroller.scrollTop = 0;
-  }
-
-  function showEmptyState() {
-    const cfg = getConfig();
-    $("reportView").innerHTML = cfg.emptyStateHtml;
-  }
-
-  function applyModeChrome() {
-    const cfg = getConfig();
-    document.title = cfg.pageTitle;
-    $("pageHeading").textContent = cfg.heading;
-    $("pageSubtitle").textContent = cfg.subtitle;
-    $("startBtn").textContent = cfg.startBtn;
-    $("historyHead").textContent = cfg.historyHead;
-    $("reportTitle").textContent = cfg.reportTitle;
-    $("reportMeta").textContent = cfg.reportMetaDefault;
-    $("pipelineProgress").textContent = `0 / ${cfg.agentDefs.length}`;
-
-    document.querySelectorAll(".ai-brief-mode").forEach((btn) => {
-      const active = btn.dataset.mode === state.mode;
-      btn.classList.toggle("is-active", active);
-      btn.setAttribute("aria-selected", active ? "true" : "false");
-    });
   }
 
   function showReportLoading(message) {
@@ -362,12 +313,11 @@
   }
 
   async function loadReportContent(job) {
-    const cfg = getConfig();
     const result = job?.result || {};
     let content = resultText(result);
     const filename = reportFilename(result);
     if (!content && filename) {
-      const { data } = await api(reportReadUrl(filename));
+      const { data } = await api(`${API_ROOT}/reports/${encodeURIComponent(filename)}`);
       content = data.content || "";
     }
     if (!content && job?.id) {
@@ -387,10 +337,9 @@
     try {
       const result = await loadReportContent(job);
       renderResult(result);
-      const ms = getModeState();
       const filename = reportFilename(result);
       if (filename) {
-        ms.activeReportFile = filename;
+        state.activeReportFile = filename;
         highlightActiveReport();
       }
       focusReportPane();
@@ -400,27 +349,36 @@
     }
   }
 
+  function showEmptyState() {
+    $("reportView").innerHTML = EMPTY_STATE_HTML;
+  }
+
+  function resultText(result) {
+    return result?.brief || result?.report || result?.explanation || "";
+  }
+
   function renderResult(result) {
-    const cfg = getConfig();
-    const ms = getModeState();
     if (!result) return;
-    ms.activeReportFile = ms.activeReportFile || "";
-    $("reportTitle").textContent = cfg.resultTitle(result);
-    $("reportMeta").textContent = cfg.resultMeta(result);
+    state.activeReportFile = "";
+    const industry = result.industry_name ? ` · ${result.industry_name}` : "";
+    $("reportTitle").textContent = `${result.stock_name || ""} 风险与管理层评估${industry}`.trim();
+    $("reportMeta").textContent = [
+      result.stock_code ? `代码 ${result.stock_code}` : "",
+      result.industry_name ? `行业 ${result.industry_name}` : "",
+      result.report_path ? "已保存" : "",
+    ].filter(Boolean).join(" · ");
     $("reportView").innerHTML = renderMarkdown(resultText(result));
     highlightActiveReport();
   }
 
   function renderJob(job) {
-    const cfg = getConfig();
-    const ms = getModeState();
-    ms.job = job;
+    state.job = job;
     $("jobMeta").textContent = formatJobMeta(job);
 
-    const boardMode = !job || job.status === "running"
+    const mode = !job || job.status === "running"
       ? "running"
       : job.status === "completed" ? "result" : job.status === "failed" ? "result" : "idle";
-    setBoardMode(boardMode);
+    setBoardMode(mode);
 
     renderAgentBoard(job?.agents || {});
     renderCurrentAction(job?.current, job);
@@ -445,7 +403,7 @@
       renderResult(job.result);
       const filename = reportFilename(job.result);
       if (filename) {
-        ms.activeReportFile = filename;
+        state.activeReportFile = filename;
         highlightActiveReport();
       }
       focusReportPane();
@@ -453,23 +411,20 @@
   }
 
   function highlightActiveReport() {
-    const ms = getModeState();
     document.querySelectorAll(".ai-history-item").forEach((btn) => {
-      btn.classList.toggle("is-active", btn.dataset.file === ms.activeReportFile);
+      btn.classList.toggle("is-active", btn.dataset.file === state.activeReportFile);
     });
   }
 
   async function loadReports() {
-    const cfg = getConfig();
-    const ms = getModeState();
-    const { data } = await api(reportsListUrl());
-    ms.reports = (data || []).filter((r) => cfg.reportNameRe.test(r.filename));
+    const { data } = await api(`${API_ROOT}/reports`);
+    state.reports = (data || []).filter((r) => REPORT_NAME_RE.test(r.filename));
     const list = $("reportList");
-    if (!ms.reports.length) {
-      list.innerHTML = `<li class='muted' style='padding:10px'>${esc(cfg.emptyReports)}</li>`;
+    if (!state.reports.length) {
+      list.innerHTML = "<li class='muted' style='padding:10px'>暂无历史报告</li>";
       return;
     }
-    list.innerHTML = ms.reports.map((row) => (
+    list.innerHTML = state.reports.map((row) => (
       `<li>
         <button type="button" class="ai-history-item" data-file="${esc(row.filename)}">
           <span class="ai-history-name">${esc(row.filename)}</span>
@@ -480,11 +435,11 @@
     list.querySelectorAll(".ai-history-item").forEach((btn) => {
       btn.addEventListener("click", async () => {
         try {
-          const { data } = await api(reportReadUrl(btn.dataset.file));
-          ms.activeReportFile = btn.dataset.file;
+          const { data } = await api(`${API_ROOT}/reports/${encodeURIComponent(btn.dataset.file)}`);
+          state.activeReportFile = btn.dataset.file;
           setBoardMode("result");
           $("reportTitle").textContent = data.filename.replace(/\.md$/i, "");
-          $("reportMeta").textContent = cfg.historyMeta;
+          $("reportMeta").textContent = "历史报告";
           $("reportView").innerHTML = renderMarkdown(data.content || "");
           highlightActiveReport();
           showError("");
@@ -496,30 +451,15 @@
     highlightActiveReport();
   }
 
-  function stopPollForMode(modeId) {
-    const ms = state.modes[modeId];
-    if (!ms) return;
-    ms.polling = false;
-    if (ms.pollTimer) clearInterval(ms.pollTimer);
-    ms.pollTimer = null;
-  }
-
-  function stopPoll() {
-    stopPollForMode(state.mode);
-    $("stopPollBtn").classList.add("hidden");
-  }
-
   async function pollJob() {
-    const cfg = getConfig();
-    const ms = getModeState();
-    if (!ms.jobId || !ms.polling || ms.pollInFlight) return;
-    ms.pollInFlight = true;
+    if (!state.jobId || !state.polling || state.pollInFlight) return;
+    state.pollInFlight = true;
     try {
       const { data } = await api(
-        `${cfg.apiRoot}/${ms.jobId}?full=0`,
+        `${API_ROOT}/${state.jobId}?full=0`,
         { timeoutMs: 30000 },
       );
-      ms.pollFailCount = 0;
+      state.pollFailCount = 0;
       saveJobHandle(data);
       if (data.status === "completed") {
         stopPoll();
@@ -533,31 +473,35 @@
         renderJob(data);
       }
     } catch (err) {
-      ms.pollFailCount += 1;
-      if (ms.pollFailCount <= 8) {
-        $("jobMeta").textContent = `轮询暂时失败 (${ms.pollFailCount}/8) · 后台可能仍在运行`;
+      state.pollFailCount += 1;
+      if (state.pollFailCount <= 8) {
+        $("jobMeta").textContent = `轮询暂时失败 (${state.pollFailCount}/8) · 后台可能仍在运行`;
         return;
       }
       showError(err.message);
       stopPoll();
     } finally {
-      ms.pollInFlight = false;
+      state.pollInFlight = false;
     }
   }
 
   function startPoll() {
-    const ms = getModeState();
     stopPoll();
-    ms.polling = true;
-    ms.lastLogLen = 0;
+    state.polling = true;
+    state.lastLogLen = 0;
     $("stopPollBtn").classList.remove("hidden");
-    ms.pollTimer = setInterval(pollJob, 1000);
+    state.pollTimer = setInterval(pollJob, 1000);
     pollJob();
   }
 
-  async function startTask() {
-    const cfg = getConfig();
-    const ms = getModeState();
+  function stopPoll() {
+    state.polling = false;
+    if (state.pollTimer) clearInterval(state.pollTimer);
+    state.pollTimer = null;
+    $("stopPollBtn").classList.add("hidden");
+  }
+
+  async function startReview() {
     const company = $("companyInput").value.trim();
     if (!company) {
       showError("请输入公司名称或代码");
@@ -567,17 +511,17 @@
     $("startBtn").disabled = true;
     setLive("busy");
     setBoardMode("running");
-    ms.activeReportFile = "";
+    state.activeReportFile = "";
     try {
       const qs = new URLSearchParams({ company });
-      const { data } = await api(`${cfg.apiRoot}?${qs}`, {
+      const { data } = await api(`${API_ROOT}?${qs}`, {
         method: "POST",
         timeoutMs: 30000,
       });
-      ms.jobId = data.id;
+      state.jobId = data.id;
       saveJobHandle(data);
       renderJob(data);
-      $("reportTitle").textContent = cfg.runningTitle(company);
+      $("reportTitle").textContent = `${company} · 风险与管理层评估`;
       highlightActiveReport();
       startPoll();
     } catch (err) {
@@ -615,18 +559,33 @@
     }
   }
 
+  function bindEvents() {
+    $("startBtn").addEventListener("click", startReview);
+    $("stopPollBtn").addEventListener("click", stopPoll);
+    $("refreshReportsBtn").addEventListener("click", () => loadReports().catch((e) => showError(e.message)));
+    $("companyInput").addEventListener("input", (e) => {
+      clearTimeout(state.suggestTimer);
+      state.suggestTimer = setTimeout(() => suggestCompanies(e.target.value.trim()), 250);
+    });
+    $("companyInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") startReview();
+    });
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".ai-search-wrap")) {
+        $("suggestBox").classList.add("hidden");
+      }
+    });
+  }
+
   async function fetchJob(jobId, full) {
-    const cfg = getConfig();
     const { data } = await api(
-      `${cfg.apiRoot}/${jobId}?full=${full ? "1" : "0"}`,
+      `${API_ROOT}/${jobId}?full=${full ? "1" : "0"}`,
       { timeoutMs: full ? 180000 : 30000 },
     );
     return data;
   }
 
   async function resumeActiveJob() {
-    const cfg = getConfig();
-    const ms = getModeState();
     const handle = readJobHandle();
     let job = null;
     if (handle?.id) {
@@ -638,7 +597,7 @@
     }
     if (!job) {
       try {
-        const { data } = await api(`${cfg.apiRoot}/jobs`, { timeoutMs: 15000 });
+        const { data } = await api(`${API_ROOT}/jobs`, { timeoutMs: 15000 });
         const jobs = Array.isArray(data) ? data : [];
         const running = jobs.find((item) => item.status === "running");
         const latest = running || jobs[0] || null;
@@ -648,12 +607,12 @@
       }
     }
     if (!job) return false;
-    ms.jobId = job.id;
+    state.jobId = job.id;
     saveJobHandle(job);
     if (job.company && $("companyInput")) $("companyInput").value = job.company;
     renderJob(job);
     if (job.status === "running") {
-      $("reportTitle").textContent = cfg.runningTitle(job.company || "");
+      $("reportTitle").textContent = `${job.company || ""} · 风险与管理层评估`.trim();
       startPoll();
       return true;
     }
@@ -663,80 +622,8 @@
     return true;
   }
 
-  async function switchMode(nextMode) {
-    if (!MODES[nextMode] || nextMode === state.mode) return;
-
-    stopPollForMode(state.mode);
-    state.mode = nextMode;
-    syncModeUrl(nextMode);
-    applyModeChrome();
-
-    const ms = getModeState();
-    showError("");
-    setLive("idle");
-    setRunningStatus(false);
-    $("stopPollBtn").classList.add("hidden");
-
-    if (ms.job?.status === "running") {
-      renderJob(ms.job);
-      startPoll();
-    } else if (ms.job?.status === "completed" && resultText(ms.job.result)) {
-      renderJob(ms.job);
-    } else {
-      setBoardMode("idle");
-      renderAgentBoard({});
-      renderActivityLog([]);
-      $("jobMeta").textContent = "";
-      showEmptyState();
-    }
-
-    try {
-      await loadReports();
-    } catch (err) {
-      showError(err.message);
-    }
-
-    if (!ms.job) {
-      try {
-        await resumeActiveJob();
-      } catch (err) {
-        showError(err.message || getConfig().resumeFail);
-      }
-    }
-  }
-
-  function bindEvents() {
-    $("startBtn").addEventListener("click", startTask);
-    $("stopPollBtn").addEventListener("click", stopPoll);
-    $("refreshReportsBtn").addEventListener("click", () => loadReports().catch((e) => showError(e.message)));
-    $("companyInput").addEventListener("input", (e) => {
-      clearTimeout(state.suggestTimer);
-      state.suggestTimer = setTimeout(() => suggestCompanies(e.target.value.trim()), 250);
-    });
-    $("companyInput").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") startTask();
-    });
-    document.addEventListener("click", (e) => {
-      if (!e.target.closest(".ai-search-wrap")) {
-        $("suggestBox").classList.add("hidden");
-      }
-    });
-    document.querySelectorAll(".ai-brief-mode").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const mode = btn.dataset.mode;
-        if (mode) switchMode(mode);
-      });
-    });
-    window.addEventListener("popstate", () => {
-      const urlMode = parseModeFromUrl();
-      if (urlMode !== state.mode) switchMode(urlMode);
-    });
-  }
-
   async function init() {
-    state.mode = parseModeFromUrl();
     bindEvents();
-    applyModeChrome();
     setBoardMode("idle");
     renderAgentBoard({});
     renderActivityLog([]);
@@ -749,7 +636,7 @@
     try {
       await resumeActiveJob();
     } catch (err) {
-      showError(err.message || getConfig().resumeFail);
+      showError(err.message || "恢复风险评估任务失败");
     }
   }
 

@@ -14,12 +14,12 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _ROOT = Path(__file__).resolve().parents[2]
-_AI_DIR = _ROOT / "ai"
-_REPORTS_DIR = _AI_DIR / "reports"
+_AGENT_DIR = _ROOT / "agent"
+_REPORTS_DIR = _AGENT_DIR / "reports"
 _EARNINGS_REPORT_RE = ("财报解读", "财报简述")
 
-if str(_AI_DIR) not in sys.path:
-    sys.path.insert(0, str(_AI_DIR))
+if str(_AGENT_DIR) not in sys.path:
+    sys.path.insert(0, str(_AGENT_DIR))
 if str(_ROOT / "backend") not in sys.path:
     sys.path.insert(0, str(_ROOT / "backend"))
 

@@ -1,4 +1,4 @@
-"""投研团队 LangGraph 配置。"""
+"""AI LangGraph 配置（业务简述 / 财报解读 / 行业竞争分析 / 风险与管理层评估）。"""
 
 import os
 from pathlib import Path
@@ -18,16 +18,6 @@ BACKEND_ROOT = Path(
         str(Path(__file__).resolve().parents[1] / "backend"),
     )
 )
-
-AI_BERKSHIRE_ROOT = Path(
-    os.getenv(
-        "AI_BERKSHIRE_ROOT",
-        r"c:\Users\Administrator\PycharmProjects\ai-berkshire",
-    )
-)
-
-FINANCIAL_RIGOR_SCRIPT = AI_BERKSHIRE_ROOT / "tools" / "financial_rigor.py"
-REPORT_AUDIT_SCRIPT = AI_BERKSHIRE_ROOT / "tools" / "report_audit.py"
 
 def _resolve_llm_model() -> str:
     """LLM_MODEL 优先，其次 OPENAI_MODEL；DeepSeek 接口不接受 gpt-* 名称。"""

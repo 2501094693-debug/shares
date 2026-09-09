@@ -64,6 +64,22 @@ _PRIMARY_MARKERS = {
     "主营业务分析",
 }
 
+_RISK_KEEP_MARKERS: tuple[tuple[str, int], ...] = (
+    ("公司治理", 8000),
+    ("风险因素", 10000),
+    ("可能面对的风险", 10000),
+    ("重要事项", 8000),
+    ("股份变动及股东情况", 6000),
+    ("股东和实际控制人情况", 6000),
+    ("董事、监事、高级管理人员情况", 8000),
+    ("董事、监事和高级管理人员情况", 8000),
+    ("关联交易", 6000),
+    ("内部控制", 5000),
+    ("会计师事务所", 3000),
+    ("管理层讨论与分析", 8000),
+    ("经营情况讨论与分析", 6000),
+)
+
 ProgressCb = Callable[[str], None]
 
 
@@ -251,6 +267,52 @@ def _find_marker(text: str, marker: str) -> int:
         return idx
 
 
+def slice_risk_text(text: str, *, budget: int) -> str:
+    """截取公司治理、风险因素、关联交易等章节。"""
+    if not text:
+        return ""
+    hits: list[tuple[int, int, str, int]] = []
+    for marker, width in _RISK_KEEP_MARKERS:
+        idx = _find_marker(text, marker)
+        if idx < 0:
+            continue
+        start = max(0, idx - 20)
+        end = min(len(text), idx + width)
+        hits.append((0, start, end, marker))
+    if not hits:
+        return text[:budget]
+
+    hits.sort(key=lambda row: row[1])
+    merged: list[tuple[int, int, list[str]]] = []
+    for _pri, start, end, marker in hits:
+        if merged and start <= merged[-1][1] + 80:
+            prev_start, prev_end, names = merged[-1]
+            if marker not in names:
+                names.append(marker)
+            merged[-1] = (prev_start, max(prev_end, end), names)
+        else:
+            merged.append((start, end, [marker]))
+
+    chunks: list[str] = []
+    used = 0
+    for start, end, names in merged:
+        piece = text[start:end].strip()
+        if len(piece) < 40:
+            continue
+        label = "、".join(names[:3])
+        block = f"【{label}】\n{piece}"
+        remain = budget - used
+        if remain <= 200:
+            break
+        if len(block) > remain:
+            block = block[:remain] + "\n…（已截断）"
+        chunks.append(block)
+        used += len(block)
+        if used >= budget:
+            break
+    return "\n\n".join(chunks)[:budget] if chunks else text[:budget]
+
+
 def slice_business_text(text: str, *, budget: int) -> str:
     """截取经营讨论、主营业务、收入结构等章节。"""
     if not text:
@@ -307,6 +369,59 @@ def _char_budget(title: str) -> int:
     if "季度" in title or "季报" in title:
         return PDF_PERIODIC_CHARS
     return PDF_NOTICE_CHARS
+
+
+def ingest_risk_notice_pdfs(
+    items: list[dict[str, Any]],
+    *,
+    code: str,
+    progress: ProgressCb | None = None,
+) -> str:
+    """下载并抽取一批公告 PDF，保留治理/风险相关章节。"""
+    if not items:
+        return ""
+
+    blocks: list[str] = []
+    used = 0
+    ok = 0
+    for item in items:
+        if used >= PDF_TOTAL_CHARS:
+            break
+        title = (item.get("title") or "无标题").strip()
+        url = item.get("url") or ""
+        pub = str(item.get("published_at") or item.get("date") or "")[:10]
+        source = item.get("source") or item.get("channel") or ""
+        if progress:
+            progress(f"下载 PDF：{title}")
+        if not url:
+            blocks.append(f"#### {title}\n（无 PDF 链接）")
+            continue
+        try:
+            path = ensure_pdf(url, code)
+            raw = extract_pdf_text(path)
+            budget = min(_char_budget(title), PDF_TOTAL_CHARS - used)
+            body = slice_risk_text(raw, budget=budget)
+            ok += 1
+            used += len(body)
+            blocks.append(
+                f"#### {title}（{pub}）\n"
+                f"来源: {source} | 链接: {url}\n\n"
+                f"{body}"
+            )
+        except Exception as exc:
+            logger.warning("公告 PDF 失败 %s: %s", title, exc)
+            blocks.append(
+                f"#### {title}（{pub}）\n"
+                f"来源: {source} | 链接: {url}\n"
+                f"（未能抽取正文：{exc}）"
+            )
+        time.sleep(DOWNLOAD_PAUSE_SEC)
+
+    header = (
+        f"### 公告 PDF 正文（已尝试 {len(items)} 份，成功抽出 {ok} 份；"
+        "仅保留公司治理 / 风险因素 / 关联交易等章节）\n"
+    )
+    return header + "\n\n".join(blocks)
 
 
 def ingest_notice_pdfs(

@@ -404,7 +404,8 @@ body.app-shell.ai-page-root .ai-page {
   margin-top: 8px;
 }
 
-a.ai-brief-mode {
+a.ai-brief-mode,
+button.ai-brief-mode {
   display: inline-flex;
   align-items: center;
   font-size: 0.74rem;
@@ -414,14 +415,19 @@ a.ai-brief-mode {
   color: var(--muted, #8aa8a3);
   text-decoration: none;
   background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.4;
 }
 
-a.ai-brief-mode:hover {
+a.ai-brief-mode:hover,
+button.ai-brief-mode:hover {
   color: var(--accent, #46d2be);
   border-color: var(--line-strong, rgba(70, 210, 190, 0.4));
 }
 
-a.ai-brief-mode.is-active {
+a.ai-brief-mode.is-active,
+button.ai-brief-mode.is-active {
   color: var(--accent, #46d2be);
   background: var(--accent-soft, rgba(70, 210, 190, 0.12));
   border-color: var(--line-strong, rgba(70, 210, 190, 0.4));
