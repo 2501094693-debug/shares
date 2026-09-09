@@ -11,7 +11,9 @@
             ? "otc-fund"
             : path.startsWith("/steep")
               ? "steep"
-              : path.startsWith("/list")
+              : path.startsWith("/screen")
+                ? "screen"
+                : path.startsWith("/list")
                 ? "list"
                 : path.startsWith("/ai")
                   || path.startsWith("/earnings")

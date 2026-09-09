@@ -38,6 +38,7 @@ from industry.service import service as industry_service
 from funds.fund.service import service as fund_service
 from list.api import router as list_router
 from market.api import router as market_router
+from screen.api import router as screen_router
 from funds.otc_fund.api import router as otc_fund_router
 from funds.otc_fund.service import service as otc_fund_service
 
@@ -139,6 +140,7 @@ app.include_router(list_router)
 app.include_router(fund_router)
 app.include_router(otc_fund_router)
 app.include_router(ai_router)
+app.include_router(screen_router)
 
 
 @app.get("/api/health")
@@ -186,6 +188,23 @@ def js_steep():
         headers={"Cache-Control": "no-store, max-age=0"},
     )
 
+
+@app.get("/screen")
+@app.get("/screen.html")
+def screen_page():
+    return FileResponse(
+        FRONTEND / "screen" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/screen.js")
+def js_screen():
+    return FileResponse(
+        FRONTEND / "screen" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 @app.get("/list")

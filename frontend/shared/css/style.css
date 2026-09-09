@@ -5879,3 +5879,62 @@ body.app-shell.otc-fund-page-root .otc-fund-page.market-page {
 }
 
 /* 业务简述样式见 ai-page.css */
+
+/* —— 形态筛选 —— */
+body.app-shell.screen-page-root .app-stage {
+  display: flex;
+  flex-direction: column;
+}
+
+body.app-shell.screen-page-root .screen-page.market-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.screen-page-root .screen-pane {
+  margin: 0 12px 12px;
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.screen-table .screen-total b {
+  font-family: var(--mono);
+  font-size: 1.05em;
+}
+
+.screen-score-cell {
+  position: relative;
+  min-width: 3.6rem;
+  padding-inline: 0.35rem !important;
+}
+
+.screen-score-bar {
+  position: absolute;
+  inset: 0.45rem 0.2rem;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  pointer-events: none;
+}
+
+.screen-score-cell[data-tone="up"] .screen-score-bar {
+  background: color-mix(in srgb, var(--up) 22%, transparent);
+}
+
+.screen-score-cell[data-tone="down"] .screen-score-bar {
+  background: color-mix(in srgb, var(--down) 18%, transparent);
+}
+
+.screen-score-text {
+  position: relative;
+  z-index: 1;
+  font-family: var(--mono);
+  font-size: 0.82em;
+}
+
+.screen-table th.screen-score-col {
+  font-size: 0.78em;
+  white-space: nowrap;
+}
