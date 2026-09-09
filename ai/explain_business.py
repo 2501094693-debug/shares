@@ -47,7 +47,8 @@ def main() -> int:
                 result.update(update)
                 labels = {
                     "init": "解析公司",
-                    "fetch": "采集资料",
+                    "fetch": "采集官方披露",
+                    "search": "联网补充",
                     "explain": "生成简述",
                     "save": "保存报告",
                 }

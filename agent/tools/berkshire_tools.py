@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from config import FINANCIAL_RIGOR_SCRIPT, REPORT_AUDIT_SCRIPT
+from agent.config import FINANCIAL_RIGOR_SCRIPT, REPORT_AUDIT_SCRIPT
 
 
 def _run_script(script: Path, args: list[str]) -> str:

@@ -19,10 +19,15 @@ _AGENT_DIR = _ROOT / "agent"
 _REPORTS_DIR = _AGENT_DIR / "reports"
 _RESEARCH_REPORT_RE = ("投资研究报告",)
 
-if str(_AGENT_DIR) not in sys.path:
-    sys.path.insert(0, str(_AGENT_DIR))
+# 不要把 agent/ 插到 sys.path：它与 ai/ 都有 tools/config/utils，会抢到错误模块。
+# 仓库根目录用于 `import agent`；backend 必须更靠前，以免挡住 backend.ai。
+_agent_dir = str(_AGENT_DIR)
+if _agent_dir in sys.path:
+    sys.path.remove(_agent_dir)
 if str(_ROOT / "backend") not in sys.path:
     sys.path.insert(0, str(_ROOT / "backend"))
+if str(_ROOT) not in sys.path:
+    sys.path.append(str(_ROOT))
 
 _jobs: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
@@ -46,9 +51,9 @@ def _run_research_job(job_id: str, company: str, user_request: str) -> None:
     job = _jobs[job_id]
     try:
         _ensure_agent_deps()
-        from graph import compile_app
-        from tools.data_fetcher import resolve_company
-        from tools.progress import bind, unbind
+        from agent.graph import compile_app
+        from agent.tools.data_fetcher import resolve_company
+        from agent.tools.progress import bind, unbind
 
         bind(job, _lock)
 
@@ -67,11 +72,28 @@ def _run_research_job(job_id: str, company: str, user_request: str) -> None:
         }
 
         result: dict[str, Any] = {}
+        analyst_reports: list[dict[str, Any]] = []
+        completed_roles: list[str] = []
         for event in app.stream(initial_state, stream_mode="updates"):
             for _node, update in event.items():
-                result.update(update)
+                reports = update.get("analyst_reports") or []
+                roles = update.get("completed_roles") or []
+                if reports or roles:
+                    analyst_reports.extend(reports)
+                    completed_roles.extend(roles)
+                    with _lock:
+                        job["analyst_reports"] = list(analyst_reports)
+                        job["completed_roles"] = list(completed_roles)
+                merged = {
+                    key: value
+                    for key, value in update.items()
+                    if key not in {"analyst_reports", "completed_roles"}
+                }
+                result.update(merged)
 
+        packed_reports = [_pack_analyst_report(r) for r in analyst_reports]
         job["status"] = "completed"
+        job["analyst_reports"] = packed_reports
         job["result"] = {
             "report_path": result.get("report_path", ""),
             "final_report": result.get("final_report", ""),
@@ -80,16 +102,7 @@ def _run_research_job(job_id: str, company: str, user_request: str) -> None:
             "stock_code": result.get("stock_code") or stock["code"],
             "stock_name": result.get("stock_name") or stock["name"],
             "audit_extracted": result.get("audit_extracted", ""),
-            "analyst_reports": [
-                {
-                    "role": r.get("role"),
-                    "role_cn": r.get("role_cn"),
-                    "framework": r.get("framework"),
-                    "score": r.get("score"),
-                    "confidence_note": r.get("confidence_note"),
-                }
-                for r in (result.get("analyst_reports") or [])
-            ],
+            "analyst_reports": packed_reports,
         }
         job["current"] = {
             "node": "",
@@ -107,14 +120,14 @@ def _run_research_job(job_id: str, company: str, user_request: str) -> None:
         job["traceback"] = traceback.format_exc()
         job["updated_at"] = _now_iso()
         try:
-            from tools.progress import report as emit_progress
+            from agent.tools.progress import report as emit_progress
 
             emit_progress("team_lead", f"任务失败：{exc}", phase="failed", status="failed", level="error")
         except Exception:
             pass
     finally:
         try:
-            from tools.progress import unbind
+            from agent.tools.progress import unbind
 
             unbind()
         except Exception:
@@ -131,7 +144,7 @@ def start_investment_research(company: str, user_request: str = "") -> dict[str,
 
     _ensure_agent_deps()
 
-    from tools.progress import init_agents_state
+    from agent.tools.progress import init_agents_state
 
     job_id = uuid.uuid4().hex[:12]
     job = {
@@ -146,6 +159,8 @@ def start_investment_research(company: str, user_request: str = "") -> dict[str,
         "result": None,
         "error": None,
         "stock": None,
+        "analyst_reports": [],
+        "completed_roles": [],
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
     }
@@ -171,10 +186,29 @@ def get_research_job(job_id: str, *, include_full_result: bool = True) -> dict[s
     return public_research_job(snapshot, include_full_result=include_full_result)
 
 
+def _pack_analyst_report(report: dict[str, Any], *, include_content: bool = True) -> dict[str, Any]:
+    packed = {
+        "role": report.get("role"),
+        "role_cn": report.get("role_cn"),
+        "framework": report.get("framework"),
+        "subject": report.get("subject"),
+        "score": report.get("score"),
+        "confidence_note": report.get("confidence_note"),
+        "web_search_used": report.get("web_search_used"),
+    }
+    if include_content:
+        packed["content"] = report.get("content") or ""
+    return packed
+
+
 def public_research_job(job: dict[str, Any], *, include_full_result: bool = True) -> dict[str, Any]:
     activity_log = job.get("activity_log") or []
     if len(activity_log) > 120:
         activity_log = activity_log[-120:]
+
+    reports = job.get("analyst_reports") or []
+    if not reports and job.get("result"):
+        reports = job["result"].get("analyst_reports") or []
 
     out = {
         "id": job["id"],
@@ -185,6 +219,9 @@ def public_research_job(job: dict[str, Any], *, include_full_result: bool = True
         "activity_log": activity_log,
         "current": job.get("current"),
         "stock": job.get("stock"),
+        "analyst_reports": [
+            _pack_analyst_report(r, include_content=True) for r in reports
+        ],
         "created_at": job.get("created_at"),
         "updated_at": job.get("updated_at"),
     }
@@ -203,6 +240,19 @@ def public_research_job(job: dict[str, Any], *, include_full_result: bool = True
     if job["status"] == "failed":
         out["error"] = job.get("error", "未知错误")
     return out
+
+
+def list_research_jobs(*, limit: int = 20) -> list[dict[str, Any]]:
+    with _lock:
+        jobs = list(_jobs.values())
+    running = [job for job in jobs if job.get("status") == "running"]
+    others = [job for job in jobs if job.get("status") != "running"]
+    running.sort(key=lambda job: job.get("updated_at") or "", reverse=True)
+    others.sort(key=lambda job: job.get("updated_at") or "", reverse=True)
+    return [
+        public_research_job(job, include_full_result=False)
+        for job in (running + others)[: max(1, limit)]
+    ]
 
 
 def list_research_reports() -> list[dict[str, Any]]:

@@ -1,8 +1,9 @@
 (() => {
   const AGENT_DEFS = [
     { id: "be_init", name: "解析公司", subtitle: "识别代码与名称" },
-    { id: "be_fetch", name: "采集资料", subtitle: "交易所/巨潮/七网" },
-    { id: "be_explain", name: "生成简述", subtitle: "近一年业务 · 标注来源" },
+    { id: "be_fetch", name: "采集资料", subtitle: "交易所 / 巨潮 / 七网 / PDF正文" },
+    { id: "be_search", name: "联网补充", subtitle: "最新财报 / 行业公开信息" },
+    { id: "be_explain", name: "生成简述", subtitle: "商业模式 · 护城河 · 段永平视角" },
     { id: "be_save", name: "保存报告", subtitle: "写入 Markdown" },
   ];
 
@@ -14,17 +15,18 @@
   };
 
   const REPORT_NAME_RE = /业务简述|近一年业务|业务解读/;
+  const JOB_STORE_KEY = "orbit.brief.activeJob";
 
   const EMPTY_STATE_HTML = `
     <div class="ai-empty-state">
       <div class="ai-empty-icon" aria-hidden="true">◉</div>
-      <h3>近一年，只看业务</h3>
-      <p>输入一家公司，智能体仅从交易所、巨潮资讯、七家指定披露媒体官网采集近一年消息，通俗梳理业务经营情况，并标注来源。</p>
+      <h3>先看生意，再听段永平</h3>
+      <p>输入一家公司，智能体以交易所、巨潮、七网披露为主线，下载年报等公告 PDF 抽取经营正文，联网补充最新公开信息，逐段标注来源，最后用段永平的标准评价这是不是一门好生意。</p>
       <ul class="ai-empty-tips">
-        <li>主营业务怎么赚钱</li>
-        <li>近一年收入与利润</li>
-        <li>经营变化与动态</li>
-        <li>每条结论标注来源</li>
+        <li>商业模式、收入结构、飞轮</li>
+        <li>护城河五项逐一验证</li>
+        <li>用户价值与业务协同</li>
+        <li>每一段注明来源 · 段永平收尾</li>
       </ul>
     </div>
   `;
@@ -39,9 +41,32 @@
     suggestTimer: null,
     lastLogLen: 0,
     pollFailCount: 0,
+    pollInFlight: false,
   };
 
   const $ = (id) => document.getElementById(id);
+
+  function readJobHandle() {
+    try {
+      const raw = localStorage.getItem(JOB_STORE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveJobHandle(job) {
+    if (!job?.id) return;
+    try {
+      localStorage.setItem(JOB_STORE_KEY, JSON.stringify({
+        id: job.id,
+        company: job.company || "",
+        savedAt: Date.now(),
+      }));
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }
 
   function esc(value) {
     return String(value ?? "")
@@ -260,6 +285,68 @@
     }
   }
 
+  function reportFilename(result) {
+    if (result?.filename) return result.filename;
+    const path = result?.report_path || "";
+    const parts = String(path).split(/[/\\]/);
+    return parts.pop() || "";
+  }
+
+  function focusReportPane() {
+    const pane = document.querySelector(".ai-pane-report");
+    const scroller = document.querySelector(".ai-report-scroll");
+    pane?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (scroller) scroller.scrollTop = 0;
+  }
+
+  function showReportLoading(message) {
+    setBoardMode("result");
+    $("reportMeta").textContent = message;
+    $("reportView").innerHTML = `
+      <div class="ai-empty-state">
+        <h3>简述已生成</h3>
+        <p>${esc(message)}</p>
+      </div>
+    `;
+  }
+
+  async function loadReportContent(job) {
+    const result = job?.result || {};
+    let content = result.brief || result.explanation || "";
+    const filename = reportFilename(result);
+    if (!content && filename) {
+      const { data } = await api(`/api/ai/reports/${encodeURIComponent(filename)}`);
+      content = data.content || "";
+    }
+    if (!content && job?.id) {
+      const full = await fetchJob(job.id, true);
+      content = full.result?.brief || full.result?.explanation || "";
+      return {
+        ...(full.result || result),
+        brief: content,
+        filename: filename || reportFilename(full.result),
+      };
+    }
+    return { ...result, brief: content, filename };
+  }
+
+  async function revealCompleted(job) {
+    showReportLoading("正在打开报告…");
+    try {
+      const result = await loadReportContent(job);
+      renderResult(result);
+      const filename = reportFilename(result);
+      if (filename) {
+        state.activeReportFile = filename;
+        highlightActiveReport();
+      }
+      focusReportPane();
+    } catch (err) {
+      showError(err.message);
+      $("reportMeta").textContent = "报告已生成，请点左侧历史简述打开";
+    }
+  }
+
   function showEmptyState() {
     $("reportView").innerHTML = EMPTY_STATE_HTML;
   }
@@ -301,11 +388,17 @@
       showError("");
       setRunningStatus(false);
       const content = job.result?.brief || job.result?.explanation;
-      if (job.result?.ready && !content) {
-        $("reportMeta").textContent = "简述已生成，正在加载全文…";
+      if (!content) {
+        showReportLoading("简述已生成，正在打开报告…");
         return;
       }
       renderResult(job.result);
+      const filename = reportFilename(job.result);
+      if (filename) {
+        state.activeReportFile = filename;
+        highlightActiveReport();
+      }
+      focusReportPane();
     }
   }
 
@@ -351,24 +444,25 @@
   }
 
   async function pollJob() {
-    if (!state.jobId || !state.polling) return;
+    if (!state.jobId || !state.polling || state.pollInFlight) return;
+    state.pollInFlight = true;
     try {
       const { data } = await api(
         `/api/ai/business-brief/${state.jobId}?full=0`,
         { timeoutMs: 30000 },
       );
       state.pollFailCount = 0;
-      renderJob(data);
+      saveJobHandle(data);
       if (data.status === "completed") {
-        const full = await api(
-          `/api/ai/business-brief/${state.jobId}?full=1`,
-          { timeoutMs: 180000 },
-        );
-        renderJob(full.data);
         stopPoll();
-        loadReports();
+        renderJob(data);
+        await revealCompleted(data);
+        await loadReports().catch(() => {});
       } else if (data.status === "failed") {
         stopPoll();
+        renderJob(data);
+      } else {
+        renderJob(data);
       }
     } catch (err) {
       state.pollFailCount += 1;
@@ -378,6 +472,8 @@
       }
       showError(err.message);
       stopPoll();
+    } finally {
+      state.pollInFlight = false;
     }
   }
 
@@ -415,6 +511,7 @@
         timeoutMs: 30000,
       });
       state.jobId = data.id;
+      saveJobHandle(data);
       renderJob(data);
       $("reportTitle").textContent = `${company} · 业务简述`;
       highlightActiveReport();
@@ -445,7 +542,7 @@
       $("suggestBox").classList.remove("hidden");
       $("suggestBox").querySelectorAll(".ai-suggest-item").forEach((btn) => {
         btn.addEventListener("click", () => {
-          $("companyInput").value = btn.dataset.name || btn.dataset.code;
+          $("companyInput").value = [btn.dataset.name, btn.dataset.code].filter(Boolean).join(" ");
           $("suggestBox").classList.add("hidden");
         });
       });
@@ -472,6 +569,51 @@
     });
   }
 
+  async function fetchJob(jobId, full) {
+    const { data } = await api(
+      `/api/ai/business-brief/${jobId}?full=${full ? "1" : "0"}`,
+      { timeoutMs: full ? 180000 : 30000 },
+    );
+    return data;
+  }
+
+  async function resumeActiveJob() {
+    const handle = readJobHandle();
+    let job = null;
+    if (handle?.id) {
+      try {
+        job = await fetchJob(handle.id, false);
+      } catch {
+        job = null;
+      }
+    }
+    if (!job) {
+      try {
+        const { data } = await api("/api/ai/business-brief/jobs", { timeoutMs: 15000 });
+        const jobs = Array.isArray(data) ? data : [];
+        const running = jobs.find((item) => item.status === "running");
+        const latest = running || jobs[0] || null;
+        if (latest?.id) job = await fetchJob(latest.id, latest.status === "completed");
+      } catch {
+        return false;
+      }
+    }
+    if (!job) return false;
+    state.jobId = job.id;
+    saveJobHandle(job);
+    if (job.company && $("companyInput")) $("companyInput").value = job.company;
+    renderJob(job);
+    if (job.status === "running") {
+      $("reportTitle").textContent = `${job.company || ""} · 业务简述`.trim();
+      startPoll();
+      return true;
+    }
+    if (job.status === "completed") {
+      await revealCompleted(job);
+    }
+    return true;
+  }
+
   async function init() {
     bindEvents();
     setBoardMode("idle");
@@ -482,6 +624,11 @@
       await loadReports();
     } catch (err) {
       showError(err.message);
+    }
+    try {
+      await resumeActiveJob();
+    } catch (err) {
+      showError(err.message || "恢复简述任务失败");
     }
   }
 

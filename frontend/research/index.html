@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css?v=orbit-shell-20260902" />
-  <link rel="stylesheet" href="/css/ai-page.css?v=ai-page-20260908h" />
+  <link rel="stylesheet" href="/css/ai-page.css?v=ai-page-20260908i" />
 </head>
 <body class="app-shell ai-page-root" data-nav="research">
   <nav class="app-rail" aria-label="主导航">
@@ -44,6 +44,10 @@
       <a class="app-rail-link" href="/ai" data-nav="ai" title="业务简述">
         <span class="app-rail-ico" aria-hidden="true">◉</span>
         <span>简述</span>
+      </a>
+      <a class="app-rail-link" href="/earnings" data-nav="earnings" title="财报简述 · 近一年财报与巴菲特视角">
+        <span class="app-rail-ico" aria-hidden="true">▤</span>
+        <span>财报</span>
       </a>
       <a class="app-rail-link is-active" href="/research" data-nav="research" title="投研团队 · 四角色并行分析">
         <span class="app-rail-ico" aria-hidden="true">◇</span>
@@ -111,6 +115,7 @@
               <span id="reportStatus" class="ai-status-chip hidden" aria-live="polite"></span>
             </div>
           </header>
+          <nav id="analystTabs" class="ai-analyst-tabs hidden" role="tablist" aria-label="报告角色"></nav>
 
           <div class="ai-pane-scroll ai-report-scroll">
             <article id="reportView" class="ai-report-body">
@@ -154,6 +159,6 @@
   </div>
 
   <script src="/js/shared/nav.js?v=research-page-20260908"></script>
-  <script src="/js/research.js?v=research-20260908"></script>
+  <script src="/js/research.js?v=research-20260908d"></script>
 </body>
 </html>

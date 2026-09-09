@@ -34,7 +34,7 @@ def main() -> int:
     key = os.getenv("OPENAI_API_KEY", "")
     print(f"OPENAI_API_KEY: {mask(key)}")
     print(f"OPENAI_BASE_URL: {os.getenv('OPENAI_BASE_URL') or '(默认)'}")
-    print(f"LLM_MODEL: {os.getenv('LLM_MODEL', 'gpt-4o')}")
+    print(f"LLM_MODEL: {os.getenv('LLM_MODEL') or os.getenv('OPENAI_MODEL') or '(未配置)'}")
     print(f"LLM_REQUEST_TIMEOUT: {os.getenv('LLM_REQUEST_TIMEOUT', '600')}")
 
     if not key or key == "sk-your-key-here":

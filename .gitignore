@@ -15,6 +15,7 @@ venv/
 
 # App caches
 backend/cache/
+ai/cache/
 
 # Logs / diagnostics
 *.log

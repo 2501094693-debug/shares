@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css?v=orbit-shell-20260902" />
-  <link rel="stylesheet" href="/css/ai-page.css?v=ai-page-20260908h" />
+  <link rel="stylesheet" href="/css/ai-page.css?v=ai-page-20260908j" />
 </head>
 <body class="app-shell ai-page-root" data-nav="ai">
   <nav class="app-rail" aria-label="主导航">
@@ -41,9 +41,13 @@
         <span class="app-rail-ico" aria-hidden="true">≡</span>
         <span>龙虎榜</span>
       </a>
-      <a class="app-rail-link" href="/ai" data-nav="ai" title="业务简述 · 近一年公司经营">
+      <a class="app-rail-link" href="/ai" data-nav="ai" title="业务简述 · 商业模式 · 段永平视角">
         <span class="app-rail-ico" aria-hidden="true">◉</span>
         <span>简述</span>
+      </a>
+      <a class="app-rail-link" href="/earnings" data-nav="earnings" title="财报简述 · 近一年财报与巴菲特视角">
+        <span class="app-rail-ico" aria-hidden="true">▤</span>
+        <span>财报</span>
       </a>
       <a class="app-rail-link" href="/research" data-nav="research" title="投研团队 · 四角色并行分析">
         <span class="app-rail-ico" aria-hidden="true">◇</span>
@@ -59,7 +63,11 @@
           <div class="brand">
             <div>
               <h1>业务简述</h1>
-              <p class="company-page-sub">专注指定公司 · 近一年 · 业务经营（年报/半年报/季报/公告/新闻）</p>
+              <p class="company-page-sub">主线：交易所 / 巨潮 / 七网 / 公告 PDF 正文 · 联网补充 · 段永平视角</p>
+              <nav class="ai-brief-modes" aria-label="简述类型">
+                <a class="ai-brief-mode is-active" href="/ai">业务简述</a>
+                <a class="ai-brief-mode" href="/earnings">财报简述</a>
+              </nav>
             </div>
           </div>
           <div class="top-actions">
@@ -112,13 +120,13 @@
             <article id="reportView" class="ai-report-body">
               <div class="ai-empty-state">
                 <div class="ai-empty-icon" aria-hidden="true">◉</div>
-                <h3>近一年，只看业务</h3>
-                <p>输入一家公司，智能体仅基于其近一年的年报、半年报、季报、公告和新闻，通俗简述业务经营情况，并标注来源。</p>
+                <h3>先看生意，再听段永平</h3>
+                <p>输入一家公司，智能体以交易所、巨潮、七网披露为主线，下载年报等公告 PDF 抽取经营正文，联网补充最新公开信息，逐段标注来源，最后用段永平的标准评价这是不是一门好生意。</p>
                 <ul class="ai-empty-tips">
-                  <li>主营业务怎么赚钱</li>
-                  <li>近一年收入与利润</li>
-                  <li>经营变化与动态</li>
-                  <li>每条结论标注来源</li>
+                  <li>商业模式、收入结构、飞轮</li>
+                  <li>护城河五项逐一验证</li>
+                  <li>用户价值与业务协同</li>
+                  <li>每一段注明来源 · 段永平收尾</li>
                 </ul>
               </div>
             </article>
@@ -128,7 +136,7 @@
         <aside class="ai-pane ai-pane-monitor" id="progressPanel" aria-label="生成进度">
           <header class="ai-pane-head">
             <h2>生成流水线</h2>
-            <span id="pipelineProgress" class="ai-pane-hint">0 / 4</span>
+            <span id="pipelineProgress" class="ai-pane-hint">0 / 5</span>
           </header>
           <div id="currentAction" class="ai-run-banner hidden" aria-live="polite">
             <span class="ai-run-banner-label">进行中</span>
@@ -150,6 +158,6 @@
   </div>
 
   <script src="/js/shared/nav.js?v=ai-page-20260908"></script>
-  <script src="/js/ai.js?v=ai-brief-20260908"></script>
+  <script src="/js/ai.js?v=ai-brief-20260908g"></script>
 </body>
 </html>

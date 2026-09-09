@@ -151,6 +151,19 @@ def start_business_brief(company: str) -> dict[str, Any]:
     return public_brief_job(job)
 
 
+def list_brief_jobs(*, limit: int = 20) -> list[dict[str, Any]]:
+    with _lock:
+        jobs = list(_jobs.values())
+    running = [job for job in jobs if job.get("status") == "running"]
+    others = [job for job in jobs if job.get("status") != "running"]
+    running.sort(key=lambda job: job.get("updated_at") or "", reverse=True)
+    others.sort(key=lambda job: job.get("updated_at") or "", reverse=True)
+    return [
+        public_brief_job(job, include_full_result=False)
+        for job in (running + others)[: max(1, limit)]
+    ]
+
+
 def get_brief_job(job_id: str, *, include_full_result: bool = True) -> dict[str, Any] | None:
     with _lock:
         job = _jobs.get(job_id)
@@ -179,11 +192,13 @@ def public_brief_job(job: dict[str, Any], *, include_full_result: bool = True) -
     }
     if job["status"] == "completed" and job.get("result"):
         result = job["result"]
+        filename = Path(result.get("report_path") or "").name
         if include_full_result:
-            out["result"] = result
+            out["result"] = {**result, "filename": filename}
         else:
             out["result"] = {
                 "report_path": result.get("report_path", ""),
+                "filename": filename,
                 "stock_code": result.get("stock_code", ""),
                 "stock_name": result.get("stock_name", ""),
                 "ready": True,

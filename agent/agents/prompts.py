@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from config import DATA_LOOKBACK_DAYS
+from agent.config import DATA_LOOKBACK_DAYS
 
 ROLE_META = {
     "business-analyst": {

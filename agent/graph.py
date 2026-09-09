@@ -5,7 +5,7 @@ from __future__ import annotations
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
-from nodes import (
+from agent.nodes import (
     init_research,
     run_business_analyst,
     run_financial_analyst,
@@ -15,7 +15,7 @@ from nodes import (
     save_report,
     synthesize_report,
 )
-from state import InvestmentTeamState
+from agent.state import InvestmentTeamState
 
 
 def fan_out_analysts(state: InvestmentTeamState) -> list[Send]:

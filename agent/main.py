@@ -11,11 +11,17 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
-from config import OPENAI_API_KEY, REPORTS_DIR
-from graph import compile_app
-from tools.data_fetcher import resolve_company
-from tools.web_search import is_web_search_available
+# `python main.py` / `python agent/main.py` 都能解析 agent.* 包
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from agent.config import OPENAI_API_KEY, REPORTS_DIR
+from agent.graph import compile_app
+from agent.tools.data_fetcher import resolve_company
+from agent.tools.web_search import is_web_search_available
 
 
 def print_team_framework(company: str) -> None:

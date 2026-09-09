@@ -2,7 +2,7 @@
 
 from langchain_openai import ChatOpenAI
 
-from config import (
+from agent.config import (
     LLM_MAX_RETRIES,
     LLM_MODEL,
     LLM_REQUEST_TIMEOUT,

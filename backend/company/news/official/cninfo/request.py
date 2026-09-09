@@ -116,6 +116,32 @@ def _save_org_map_disk(mapping: dict[str, dict[str, str]]) -> None:
         logger.info("写入巨潮 org 缓存失败: %s", exc)
 
 
+def lookup_org_by_name(name: str) -> dict[str, str] | None:
+    """用本地巨潮股票表按简称解析，避免 topSearch 超时。"""
+    text = safe_str(name)
+    if not text:
+        return None
+    mapping = load_org_map()
+    if not mapping:
+        return None
+    exact: list[dict[str, str]] = []
+    partial: list[dict[str, str]] = []
+    for row in mapping.values():
+        title = safe_str(row.get("name"))
+        if not title:
+            continue
+        if title == text:
+            exact.append(row)
+        elif text in title:
+            partial.append(row)
+    hits = exact or (partial if len(partial) == 1 else [])
+    if not hits:
+        return None
+    a_share = [row for row in hits if "A" in safe_str(row.get("category"))]
+    picked = (a_share or hits)[0]
+    return dict(picked)
+
+
 def search_orgs(keyword: str, *, max_num: int = 10) -> list[dict[str, str]]:
     """topSearch 联想：代码或简称。超时快速失败，不阻塞主流程。"""
     text = safe_str(keyword)
