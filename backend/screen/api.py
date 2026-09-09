@@ -14,11 +14,11 @@ router = APIRouter()
 @router.get("/api/screen/yindie")
 def get_yindie_screen(
     days: int = Query(DEFAULT_LOOKBACK_DAYS, description="近期涨停窗口（交易日）"),
-    top: int = Query(30, description="返回前 N 名，0=全部"),
+    top: int = Query(30, description="每个交易日前 N 名，0=全部"),
     refresh: str = Query("0", description="1=强制重新分析"),
     workers: int = Query(8, ge=1, le=16, description="并发线程数"),
 ):
-    """阴跌→横盘→涨停形态筛选。首次或刷新会后台跑任务，前端轮询至完成。"""
+    """阴跌→横盘→涨停：按交易日涨停池分批排名。首次或刷新会后台跑任务。"""
     if days < 1 or days > 30:
         return err("days 须在 1–30 之间", 400)
     if top < 0 or top > 500:

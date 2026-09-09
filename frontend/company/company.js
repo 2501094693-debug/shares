@@ -6344,7 +6344,7 @@ async function pollProfileLive() {
   }
   livePollState.profileFetching = true;
   try {
-    await loadProfile({ silent: true, refresh: true, liveOnly: true });
+    await loadProfile({ silent: true, liveOnly: true });
   } catch {
     /* ignore */
   } finally {

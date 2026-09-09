@@ -1,18 +1,27 @@
-"""最近几个交易日的涨停 / 跌停，按天分开。"""
+"""最近几个交易日的涨停 / 跌停，按天分开。
+
+交易时段只重拉当日池，其余交易日走磁盘缓存；非交易时段全部走缓存。
+缓存未命中时仍会拉一次并落盘。
+"""
 
 from __future__ import annotations
 
+import json
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from company.line.session import cn_now, is_cn_market_live
 from core.cache import TtlCache
+from core.paths import STEEP_CACHE_DIR, ensure_cache_dirs
 from industry.service import service as industry_service
 
 from .calendar import recent_trade_dates
 from .em_pool import fetch_day_pools
 
-_TTL = 90
+_LIVE_TTL = 20
+_CACHE_VERSION = 1
 _MIN_DAYS = 1
 _MAX_DAYS = 30
 DEFAULT_DAYS = 15
@@ -29,37 +38,117 @@ def _clamp_days(days: int) -> int:
     return value
 
 
+def _today() -> str:
+    return cn_now().strftime("%Y%m%d")
+
+
+def _is_live_date(date_raw: str) -> bool:
+    return date_raw == _today() and is_cn_market_live()
+
+
+def _empty_day(date: str) -> dict[str, Any]:
+    return {
+        "date": f"{date[:4]}-{date[4:6]}-{date[6:8]}",
+        "date_raw": date,
+        "limit_up_count": 0,
+        "limit_down_count": 0,
+        "limit_up": [],
+        "limit_down": [],
+    }
+
+
+def _disk_path(date_raw: str):
+    ensure_cache_dirs()
+    return STEEP_CACHE_DIR / f"{date_raw}.json"
+
+
+def _load_disk(date_raw: str) -> dict[str, Any] | None:
+    path = _disk_path(date_raw)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if int(payload.get("version") or 0) != _CACHE_VERSION:
+        return None
+    data = payload.get("data")
+    return data if isinstance(data, dict) else None
+
+
+def _save_disk(date_raw: str, data: dict[str, Any]) -> None:
+    path = _disk_path(date_raw)
+    path.write_text(
+        json.dumps(
+            {"version": _CACHE_VERSION, "cached_at": time.time(), "data": data},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
 class SteepService:
     def __init__(self) -> None:
-        self._cache = TtlCache(_TTL)
+        self._live = TtlCache(_LIVE_TTL)
+        self._lock = threading.Lock()
+        self._sealed: dict[str, dict[str, Any]] = {}
+
+    def _sealed_get(self, date_raw: str) -> dict[str, Any] | None:
+        with self._lock:
+            hit = self._sealed.get(date_raw)
+        return hit
+
+    def _sealed_put(self, date_raw: str, row: dict[str, Any]) -> None:
+        with self._lock:
+            self._sealed[date_raw] = row
+
+    def _cached_day(self, date_raw: str) -> dict[str, Any] | None:
+        hit = self._sealed_get(date_raw)
+        if hit is not None:
+            return hit
+        disk = _load_disk(date_raw)
+        if disk is not None:
+            self._sealed_put(date_raw, disk)
+            return disk
+        return None
+
+    def _fetch_day(self, date_raw: str) -> tuple[dict[str, Any], str | None]:
+        try:
+            row = fetch_day_pools(date_raw)
+        except Exception as exc:  # noqa: BLE001
+            cached = self._cached_day(date_raw)
+            if cached is not None:
+                return cached, None
+            return _empty_day(date_raw), f"{date_raw}: {exc}"
+        _save_disk(date_raw, row)
+        self._sealed_put(date_raw, row)
+        return row, None
+
+    def _one(self, date_raw: str, force: bool) -> tuple[str, dict[str, Any], str | None]:
+        live = _is_live_date(date_raw)
+        if not force:
+            if live:
+                hit = self._live.get(date_raw)
+                if hit is not None:
+                    return date_raw, hit, None
+            else:
+                cached = self._cached_day(date_raw)
+                if cached is not None:
+                    return date_raw, cached, None
+
+        row, error = self._fetch_day(date_raw)
+        if live and error is None:
+            self._live.put(date_raw, row)
+        return date_raw, row, error
 
     def recent(self, days: int = DEFAULT_DAYS, force: bool = False) -> dict[str, Any]:
         days = _clamp_days(days)
-        cache_key = f"d:{days}"
-        if not force:
-            hit = self._cache.get(cache_key)
-            if hit is not None:
-                return hit
-
         dates = recent_trade_dates(days)
         errors: list[str] = []
 
-        def _one(date: str) -> tuple[str, dict[str, Any], str | None]:
-            try:
-                return date, fetch_day_pools(date), None
-            except Exception as exc:  # noqa: BLE001
-                empty = {
-                    "date": f"{date[:4]}-{date[4:6]}-{date[6:8]}",
-                    "date_raw": date,
-                    "limit_up_count": 0,
-                    "limit_down_count": 0,
-                    "limit_up": [],
-                    "limit_down": [],
-                }
-                return date, empty, f"{date}: {exc}"
-
-        with ThreadPoolExecutor(max_workers=min(8, max(1, len(dates)))) as pool:
-            futs = [pool.submit(_one, date) for date in dates]
+        workers = min(8, max(1, len(dates)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futs = [pool.submit(self._one, date, force) for date in dates]
             fetched = [fut.result() for fut in futs]
 
         by_date = {date: row for date, row, _ in fetched}
@@ -69,7 +158,7 @@ class SteepService:
 
         items = [by_date[date] for date in dates if date in by_date]
         _attach_sw(items)
-        payload = {
+        return {
             "days": days,
             "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "count": len(items),
@@ -79,8 +168,6 @@ class SteepService:
             "errors": errors,
             "note": "东财涨停池 / 跌停池，行业=申万一/二/三级",
         }
-        self._cache.put(cache_key, payload)
-        return payload
 
 
 def _sw_map() -> dict[str, dict[str, str]]:

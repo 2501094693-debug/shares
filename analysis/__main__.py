@@ -22,11 +22,11 @@ from analysis.screen import screen_yindie
 
 def _print_table(items: list[dict]) -> None:
     if not items:
-        print("无结果")
+        print("  无结果")
         return
 
     print(
-        f"{'代码':<8} {'名称':<10} {'涨停日':<12} {'总分':>6} "
+        f"  {'#':>3} {'代码':<8} {'名称':<10} {'总分':>6} "
         f"{'阴跌天':>6} {'横盘天':>6} {'阴跌%':>8} {'横盘幅%':>8} {'板':>3}"
     )
     for row in items:
@@ -39,8 +39,9 @@ def _print_table(items: list[dict]) -> None:
         dec_text = f"{dec_pct:.1f}" if isinstance(dec_pct, (int, float)) else ""
         cons_text = f"{cons_rng:.1f}" if isinstance(cons_rng, (int, float)) else ""
         name = str(row.get("name") or "")[:10]
+        rank = row.get("rank") or ""
         print(
-            f"{row.get('code', ''):<8} {name:<10} {row.get('limit_up_date', ''):<12} "
+            f"  {rank:>3} {row.get('code', ''):<8} {name:<10} "
             f"{scores.get('total', 0):>6.1f} "
             f"{dec.get('days', 0):>6} {cons.get('days', 0):>6} "
             f"{dec_text:>8} {cons_text:>8} {row.get('board_count') or 0:>3}"
@@ -48,9 +49,9 @@ def _print_table(items: list[dict]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="阴跌→横盘→涨停形态筛选（软评分）")
+    parser = argparse.ArgumentParser(description="阴跌→横盘→涨停形态筛选（按日分批软评分）")
     parser.add_argument("--days", type=int, default=DEFAULT_LOOKBACK_DAYS, help="近期涨停窗口（交易日）")
-    parser.add_argument("--top", type=int, default=30, help="输出前 N 名，0=全部")
+    parser.add_argument("--top", type=int, default=30, help="每个交易日前 N 名，0=全部")
     parser.add_argument("--workers", type=int, default=8, help="并发分析线程数")
     parser.add_argument("--refresh", action="store_true", help="强制刷新涨跌停池缓存")
     parser.add_argument("--json", action="store_true", help="JSON 输出")
@@ -74,10 +75,15 @@ def main() -> None:
     )
     print(data.get("note") or "")
     print()
-    _print_table(list(data.get("items") or []))
+    for day in data.get("days") or []:
+        print(
+            f"{day.get('date') or '—'}  涨停 {day.get('candidate_count') or 0}  "
+            f"展示 {day.get('result_count') or 0}"
+        )
+        _print_table(list(day.get("items") or []))
+        print()
     errors = data.get("errors") or []
     if errors:
-        print()
         print("errors:", "; ".join(errors))
 
 

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=screen-20260909" />
+  <link rel="stylesheet" href="/css/style.css?v=screen-20260909-headlink" />
 </head>
 <body class="app-shell company-page-root market-page-root screen-page-root" data-nav="screen">
   <nav class="app-rail" aria-label="主导航">
@@ -57,7 +57,7 @@
         <div class="brand">
           <div>
             <h1>形态筛选</h1>
-            <p class="company-page-sub">阴跌 → 横盘 → 涨停：近期涨停为硬条件，其余维度软评分排序</p>
+            <p class="company-page-sub">按每日涨停池分批排名：阴跌 → 横盘 → 涨停，软评分排序并附日 K</p>
           </div>
         </div>
         <div class="top-actions">
@@ -72,10 +72,10 @@
             <button type="button" data-days="15">15日</button>
             <button type="button" data-days="30">30日</button>
           </div>
-          <div id="topSeg" class="market-seg screen-range" role="group" aria-label="显示数量">
-            <button type="button" data-top="30">Top30</button>
-            <button type="button" data-top="50">Top50</button>
-            <button type="button" data-top="100">Top100</button>
+          <div id="topSeg" class="market-seg screen-range" role="group" aria-label="每日显示数量">
+            <button type="button" data-top="30">每日Top30</button>
+            <button type="button" data-top="50">每日Top50</button>
+            <button type="button" data-top="0">全部</button>
           </div>
           <span id="liveDot" class="market-live" data-state="idle">IDLE</span>
           <span id="marketMeta" class="muted market-meta"></span>
@@ -83,37 +83,21 @@
       </div>
 
       <div id="errorBox" class="error hidden"></div>
-      <div id="loading" class="loading hidden">正在分析…</div>
+      <div id="loading" class="loading screen-progress hidden">正在分析…</div>
 
-      <div class="screen-pane market-pane" data-level="1">
-        <table class="market-table screen-table" id="resultTable">
-          <thead>
-            <tr>
-              <th class="num">#</th>
-              <th>名称</th>
-              <th class="num">总分</th>
-              <th class="num">阴跌天</th>
-              <th class="num">横盘天</th>
-              <th class="num">阴跌%</th>
-              <th class="num">横盘幅%</th>
-              <th class="num">涨停日</th>
-              <th class="num">板</th>
-              <th class="num screen-score-col">阴跌时长</th>
-              <th class="num screen-score-col">阴跌质量</th>
-              <th class="num screen-score-col">横盘时长</th>
-              <th class="num screen-score-col">横盘质量</th>
-              <th class="num screen-score-col">突破</th>
-              <th class="num screen-score-col">结构</th>
-            </tr>
-          </thead>
-          <tbody id="resultBody">
-            <tr class="is-empty"><td colspan="16">加载中…</td></tr>
-          </tbody>
-        </table>
+      <div class="screen-layout">
+        <nav id="dayRail" class="screen-day-rail" aria-label="交易日"></nav>
+        <div class="screen-day-main">
+          <div id="dayHead" class="screen-day-head"></div>
+          <div id="resultList" class="screen-result-list">
+            <p class="screen-empty muted">加载中…</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
   <script src="/js/shared/nav.js?v=orbit-shell-20260909"></script>
-  <script src="/js/screen.js?v=screen-20260909"></script>
+  <script src="/js/shared/kline-draw.js?v=screen-20260909-kpan"></script>
+  <script src="/js/screen.js?v=screen-20260909-headlink"></script>
 </body>
 </html>

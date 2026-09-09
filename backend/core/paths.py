@@ -14,6 +14,9 @@ FUND_LIST_CACHE_DIR = CACHE_DIR / "fund"
 FUND_HOLDINGS_CACHE_DIR = CACHE_DIR / "fund" / "holdings"
 OTC_FUND_CACHE_DIR = CACHE_DIR / "otc_fund"
 OTC_FUND_INDEX_CACHE = CACHE_DIR / "otc_fund_index.json"
+KLINE_CACHE_DIR = CACHE_DIR / "kline"
+QUOTE_CACHE_DIR = CACHE_DIR / "quote"
+STEEP_CACHE_DIR = CACHE_DIR / "steep"
 
 TREE_CACHE = CACHE_DIR / "industry_tree.json"
 STOCK_INDEX_CACHE = CACHE_DIR / "stocks_index.json"
@@ -44,6 +47,9 @@ def ensure_cache_dirs() -> None:
     FUND_LIST_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     FUND_HOLDINGS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     OTC_FUND_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    KLINE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    QUOTE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    STEEP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def otc_fund_rank_cache_path(category_code: str, page: int, page_size: int) -> Path:

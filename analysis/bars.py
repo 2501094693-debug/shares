@@ -142,3 +142,93 @@ def mean_volume(segment: list[dict[str, Any]]) -> float | None:
     if not vols:
         return None
     return sum(vols) / len(vols)
+
+
+def _round_price(value: Any, digits: int = 3) -> float | None:
+    if value is None:
+        return None
+    try:
+        return round(float(value), digits)
+    except (TypeError, ValueError):
+        return None
+
+
+def build_sparkline(
+    bars: list[dict[str, Any]],
+    limit_up_idx: int,
+    phases: dict[str, Any],
+    *,
+    pad_before: int,
+    pad_after: int,
+    max_bars: int,
+    ma_warmup: int = 0,
+) -> dict[str, Any]:
+    """截一段日 K 给前端画走势；下标相对切片。ma_warmup 供均线预热，不计入 max_bars。"""
+    empty = {
+        "bars": [],
+        "warmup": 0,
+        "decline": [None, None],
+        "consolidation": [None, None],
+        "limit_up": None,
+    }
+    if not bars or limit_up_idx < 0 or limit_up_idx >= len(bars):
+        return empty
+
+    cons = phases.get("consolidation") or {}
+    dec = phases.get("decline") or {}
+    dec_start = int(dec.get("start", -1))
+    cons_start = int(cons.get("start", -1))
+
+    start = dec_start if dec_start >= 0 else cons_start
+    if start < 0:
+        start = max(0, limit_up_idx - max(20, max_bars // 2))
+    else:
+        start = max(0, start - max(0, pad_before))
+    end = min(len(bars) - 1, limit_up_idx + max(0, pad_after))
+    min_lookback = min(max_bars - (end - limit_up_idx), max_bars)
+    start = min(start, max(0, limit_up_idx - max(0, min_lookback - 1)))
+    if end - start + 1 > max_bars:
+        start = max(0, end - max_bars + 1)
+
+    warmup = max(0, int(ma_warmup or 0))
+    warm_start = max(0, start - warmup)
+    warmup = start - warm_start
+
+    slice_bars = bars[warm_start : end + 1]
+    compact: list[list[Any]] = []
+    for bar in slice_bars:
+        vol = bar.get("volume")
+        try:
+            vol_i = int(vol) if vol else 0
+        except (TypeError, ValueError):
+            vol_i = 0
+        compact.append(
+            [
+                bar.get("date") or "",
+                _round_price(bar.get("open")),
+                _round_price(bar.get("high")),
+                _round_price(bar.get("low")),
+                _round_price(bar.get("close")),
+                vol_i,
+            ]
+        )
+
+    def rel(idx: Any) -> int | None:
+        try:
+            raw = int(idx)
+        except (TypeError, ValueError):
+            return None
+        if raw < 0:
+            return None
+        pos = raw - warm_start
+        if 0 <= pos < len(compact):
+            return pos
+        return None
+
+    return {
+        "bars": compact,
+        "warmup": warmup,
+        "decline": [rel(dec.get("start", -1)), rel(dec.get("end", -1))],
+        "consolidation": [rel(cons.get("start", -1)), rel(cons.get("end", -1))],
+        "limit_up": rel(limit_up_idx),
+    }
