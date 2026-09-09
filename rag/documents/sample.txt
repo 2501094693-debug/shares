@@ -1,0 +1,29 @@
+LangChain RAG 示例文档
+
+本模块演示基于 LangChain 的检索增强生成（RAG）流程：
+
+1. 文档加载：支持 PDF、TXT、Markdown
+2. 文本切分：RecursiveCharacterTextSplitter
+3. 向量化：OpenAI 兼容 Embedding API
+4. 存储：Chroma 本地向量库（rag/data/chroma）
+5. 问答：检索相关片段后由 LLM 生成回答
+
+使用步骤：
+
+    pip install -r rag/requirements.txt
+    python -m rag.main ingest rag/documents
+    python -m rag.main query "RAG 的流程是什么？"
+    python -m rag.main chat
+
+环境变量（项目根目录 .env）：
+
+    OPENAI_API_KEY=your-key
+    OPENAI_BASE_URL=https://api.openai.com/v1
+    LLM_MODEL=gpt-4o-mini
+    EMBEDDING_MODEL=text-embedding-3-small
+
+可选配置：
+
+    RAG_CHUNK_SIZE=800
+    RAG_CHUNK_OVERLAP=120
+    RAG_RETRIEVAL_K=4

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from agent.config import DATA_LOOKBACK_DAYS
 
+
 ROLE_META = {
     "business-analyst": {
         "role_cn": "商业模式分析师",
