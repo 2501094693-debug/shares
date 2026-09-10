@@ -13,14 +13,7 @@
               ? "steep"
               : path.startsWith("/screen")
                 ? "screen"
-                : path.startsWith("/list")
-                ? "list"
-                : path.startsWith("/ai")
-                  || path.startsWith("/earnings")
-                  || path.startsWith("/competition")
-                  || path.startsWith("/risk")
-                  ? "ai"
-                  : "";
+                : "";
   document.querySelectorAll(".app-rail-link").forEach((link) => {
     const active = !!key && link.dataset.nav === key;
     link.classList.toggle("is-active", active);

@@ -344,7 +344,8 @@ export function createMapViews({
         stock,
         g2,
         [lng, lat],
-        code === getHighlightCode()
+        code === getHighlightCode(),
+        hit.poi
       );
       addOverlay(marker);
       if (code) {

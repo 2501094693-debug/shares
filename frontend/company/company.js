@@ -254,6 +254,8 @@ const els = {
   newsSourceBar: document.getElementById("newsSourceBar"),
   refreshEmotionBtn: document.getElementById("refreshEmotionBtn"),
   companyMainTabs: document.getElementById("companyMainTabs"),
+  companyTabStack: document.getElementById("companyTabStack"),
+  companyAnalysisTabs: document.getElementById("companyAnalysisTabs"),
   exchangeForm: document.getElementById("exchangeForm"),
   exchangeTabs: document.getElementById("exchangeTabs"),
   exchangeTitle: document.getElementById("exchangeTitle"),
@@ -344,6 +346,14 @@ const els = {
   emotionDetailRepliesList: document.getElementById("emotionDetailRepliesList"),
   emotionSourceBar: document.getElementById("emotionSourceBar"),
   panelEmotion: document.getElementById("panel-emotion"),
+  refreshListBtn: document.getElementById("refreshListBtn"),
+  companyListTitle: document.getElementById("companyListTitle"),
+  companyListMeta: document.getElementById("companyListMeta"),
+  companyListSortSeg: document.getElementById("companyListSortSeg"),
+  companyListBody: document.getElementById("companyListBody"),
+  companyListDetailHead: document.getElementById("companyListDetailHead"),
+  companyListDetailBody: document.getElementById("companyListDetailBody"),
+  panelList: document.getElementById("panel-list"),
   refreshFundHoldersBtn: document.getElementById("refreshFundHoldersBtn"),
   fundHoldersTitle: document.getElementById("fundHoldersTitle"),
   fundHoldersMeta: document.getElementById("fundHoldersMeta"),
@@ -356,6 +366,17 @@ const els = {
 };
 
 let activeMainPanel = "quotes";
+let companyListBootstrapped = false;
+const companyListState = {
+  loading: false,
+  items: [],
+  count: 0,
+  name: "",
+  selected: "",
+  sort: "date",
+  updatedAt: "",
+  error: "",
+};
 let fundHoldersBootstrapped = false;
 const fundHoldersState = {
   loading: false,
@@ -530,11 +551,27 @@ function activeEmotionState(source = emotionSource) {
   return emotionState;
 }
 
+const ANALYSIS_PANELS = new Set(["business", "earnings", "competition", "risk"]);
+
+function isAnalysisPanel(panelId = "") {
+  return ANALYSIS_PANELS.has(panelId);
+}
+
+function notifyAnalysisIdentity(stock = {}, { ready = false } = {}) {
+  window.CompanyAnalysis?.syncIdentity?.({
+    code: stock.code || code,
+    name: stock.name || nameHint || "",
+    ready,
+  });
+}
+
 function normalizeMainPanel(panelId) {
   if (panelId === "quotes" || panelId === "charts" || panelId === "overview") return "quotes";
   if (panelId === "news") return "news";
   if (panelId === "emotion" || panelId === "ths-emotion" || panelId === "ths" || panelId === "circle" || panelId === "xueqiu" || panelId === "xq") return "emotion";
+  if (panelId === "list" || panelId === "lhb" || panelId === "longhu") return "list";
   if (panelId === "fund-holders" || panelId === "funds" || panelId === "fund") return "fund-holders";
+  if (isAnalysisPanel(panelId) || panelId === "analysis") return isAnalysisPanel(panelId) ? panelId : "business";
   return "";
 }
 
@@ -1162,6 +1199,7 @@ function applyStock(stock, industryMeta = {}) {
     : "公司详情";
 
   renderMetrics(stock);
+  notifyAnalysisIdentity(stock, { ready: true });
 }
 
 function cninfoWhy(item) {
@@ -1293,6 +1331,7 @@ function applyHeaderOnly(stock = {}, industryMeta = {}) {
   els.companyBreadcrumb.textContent = breadcrumbParts.length
     ? breadcrumbParts.join(" / ")
     : "公司详情";
+  notifyAnalysisIdentity(stock, { ready: false });
 }
 
 function isQuoteReady(stock) {
@@ -2062,6 +2101,252 @@ function setupFundHoldersBox() {
     els.fundHoldersDate.dataset.bound = "1";
     els.fundHoldersDate.addEventListener("change", () => {
       loadFundHolders({ refresh: false });
+    });
+  }
+}
+
+function lhbTone(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n === 0) return "flat";
+  return n > 0 ? "up" : "down";
+}
+
+function lhbFmtPct(value) {
+  if (value == null || value === "") return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
+}
+
+function lhbFmtYi(value) {
+  if (value == null || value === "") return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1e8) return `${sign}${(abs / 1e8).toFixed(2)}亿`;
+  if (abs >= 1e4) return `${sign}${(abs / 1e4).toFixed(1)}万`;
+  return `${sign}${abs.toFixed(0)}`;
+}
+
+function lhbRowKey(row) {
+  return `${row.code || code}:${row.date || ""}`;
+}
+
+function companyListSortedItems() {
+  const rows = companyListState.items.slice();
+  const sort = companyListState.sort;
+  if (sort === "date") {
+    rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+    return rows;
+  }
+  const field = sort === "change" ? "change_pct" : sort === "turnover" ? "turnover" : "net_amt";
+  rows.sort((a, b) => {
+    const va = Number(a[field]);
+    const vb = Number(b[field]);
+    const aOk = Number.isFinite(va);
+    const bOk = Number.isFinite(vb);
+    if (!aOk && !bOk) return 0;
+    if (!aOk) return 1;
+    if (!bOk) return -1;
+    return vb - va;
+  });
+  return rows;
+}
+
+function companyListSelectedRow(rows = companyListSortedItems()) {
+  return rows.find((row) => lhbRowKey(row) === companyListState.selected) || null;
+}
+
+function paintCompanyListSeats(title, seats) {
+  const rows = Array.isArray(seats) ? seats : [];
+  if (!rows.length) {
+    return `<div class="lhb-seats"><h4>${escapeHtml(title)}</h4><p class="muted">无席位数据</p></div>`;
+  }
+  const body = rows
+    .map((seat) => {
+      return `<tr>
+        <td class="num">${seat.rank ?? ""}</td>
+        <td><span class="lhb-dept-type" data-type="${escapeHtml(seat.dept_type)}">${escapeHtml(seat.dept_type)}</span>${escapeHtml(seat.dept)}</td>
+        <td class="num" data-tone="${lhbTone(seat.buy)}">${lhbFmtYi(seat.buy)}</td>
+        <td class="num" data-tone="${lhbTone(seat.sell)}">${lhbFmtYi(seat.sell)}</td>
+        <td class="num" data-tone="${lhbTone(seat.net)}">${lhbFmtYi(seat.net)}</td>
+        <td class="num">${seat.buy_ratio == null ? "—" : `${Number(seat.buy_ratio).toFixed(2)}%`}</td>
+      </tr>`;
+    })
+    .join("");
+  return `
+    <div class="lhb-seats">
+      <h4>${escapeHtml(title)}</h4>
+      <table class="market-table lhb-seat-table">
+        <thead>
+          <tr>
+            <th class="num">#</th>
+            <th>席位</th>
+            <th class="num">买入</th>
+            <th class="num">卖出</th>
+            <th class="num">净额</th>
+            <th class="num">买入占比</th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>`;
+}
+
+function paintCompanyListDetail(row) {
+  const head = els.companyListDetailHead;
+  const body = els.companyListDetailBody;
+  if (!head || !body) return;
+  if (!row) {
+    head.innerHTML = `<h2>买卖席位</h2><p class="muted">点左侧一行查看买入 / 卖出营业部</p>`;
+    body.innerHTML = `<div class="lhb-detail-empty muted">${
+      companyListState.loading
+        ? "正在加载…"
+        : companyListState.error
+          ? escapeHtml(companyListState.error)
+          : "暂无选中记录"
+    }</div>`;
+    return;
+  }
+  const sw = [row.l1_name, row.l2_name, row.l3_name].filter(Boolean).join(" / ");
+  head.innerHTML = `
+    <div class="lhb-detail-identity">
+      <h2>${escapeHtml(row.date || "买卖席位")}</h2>
+      <p class="muted">${escapeHtml(row.name || companyListState.name || code)}${
+        sw ? ` · ${escapeHtml(sw)}` : ""
+      }</p>
+    </div>`;
+  const metrics = `
+    <div class="lhb-metrics">
+      <span>收盘 <b>${row.close == null ? "—" : Number(row.close).toFixed(2)}</b></span>
+      <span data-tone="${lhbTone(row.change_pct)}">涨跌 <b>${lhbFmtPct(row.change_pct)}</b></span>
+      <span>换手 <b>${row.turnover == null ? "—" : `${Number(row.turnover).toFixed(2)}%`}</b></span>
+      <span data-tone="${lhbTone(row.net_amt)}">净买 <b>${lhbFmtYi(row.net_amt)}</b></span>
+      <span>买入 <b>${lhbFmtYi(row.buy_amt)}</b></span>
+      <span>卖出 <b>${lhbFmtYi(row.sell_amt)}</b></span>
+    </div>`;
+  const listings = (row.listings || [])
+    .map((listing) => {
+      return `
+        <article class="lhb-listing">
+          <div class="lhb-reason-head">
+            <strong>${escapeHtml(listing.reason || "上榜")}</strong>
+            <span class="muted">${escapeHtml(listing.explain || "")}</span>
+            <span class="muted">成交占比 ${
+              listing.deal_ratio == null ? "—" : `${Number(listing.deal_ratio).toFixed(2)}%`
+            }</span>
+          </div>
+          <div class="lhb-seat-grid">
+            ${paintCompanyListSeats("买入前五", listing.buyers || [])}
+            ${paintCompanyListSeats("卖出前五", listing.sellers || [])}
+          </div>
+        </article>`;
+    })
+    .join("");
+  body.innerHTML = `${metrics}${listings || '<p class="muted">暂无席位</p>'}`;
+}
+
+function paintCompanyList() {
+  const st = companyListState;
+  const rows = companyListSortedItems();
+  if (els.companyListTitle) {
+    els.companyListTitle.textContent = "历史上榜";
+  }
+  if (els.companyListMeta) {
+    els.companyListMeta.textContent = st.loading
+      ? "正在加载历史上榜…"
+      : st.error
+        ? st.error
+        : st.count
+          ? `${st.name || code} · ${st.count} 次`
+          : "暂无上榜记录";
+  }
+  if (els.companyListSortSeg) {
+    els.companyListSortSeg.querySelectorAll("button[data-sort]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.sort === st.sort);
+    });
+  }
+  if (!els.companyListBody) return;
+  if (st.loading) {
+    els.companyListBody.innerHTML = `<tr class="is-empty"><td colspan="3">正在加载…</td></tr>`;
+    paintCompanyListDetail(null);
+    return;
+  }
+  if (st.error) {
+    els.companyListBody.innerHTML = `<tr class="is-empty"><td colspan="3">${escapeHtml(st.error)}</td></tr>`;
+    paintCompanyListDetail(null);
+    return;
+  }
+  if (!rows.length) {
+    els.companyListBody.innerHTML = `<tr class="is-empty"><td colspan="3">该公司暂无龙虎榜记录</td></tr>`;
+    paintCompanyListDetail(null);
+    return;
+  }
+  if (!rows.some((row) => lhbRowKey(row) === st.selected)) {
+    st.selected = lhbRowKey(rows[0]);
+  }
+  els.companyListBody.innerHTML = rows
+    .map((row) => {
+      const key = lhbRowKey(row);
+      const reasons = (row.reasons || []).filter(Boolean).join(" / ");
+      return `<tr class="is-row${st.selected === key ? " is-active" : ""}" data-key="${escapeHtml(key)}">
+        <td>
+          <span class="lhb-date">${escapeHtml(row.date || "")}</span>
+          ${reasons ? `<span class="lhb-reason-line" title="${escapeHtml(reasons)}">${escapeHtml(reasons)}</span>` : ""}
+        </td>
+        <td class="num" data-tone="${lhbTone(row.change_pct)}">${lhbFmtPct(row.change_pct)}</td>
+        <td class="num" data-tone="${lhbTone(row.net_amt)}">${lhbFmtYi(row.net_amt)}</td>
+      </tr>`;
+    })
+    .join("");
+  paintCompanyListDetail(companyListSelectedRow(rows));
+}
+
+async function loadCompanyList({ refresh = false } = {}) {
+  if (!code || companyListState.loading) return;
+  companyListState.loading = true;
+  companyListState.error = "";
+  paintCompanyList();
+  if (els.refreshListBtn) els.refreshListBtn.disabled = true;
+  try {
+    const qs = new URLSearchParams({ code });
+    if (refresh) qs.set("refresh", "1");
+    const json = await api(`/api/list/stock?${qs.toString()}`);
+    const data = json.data || {};
+    companyListState.items = Array.isArray(data.items) ? data.items : [];
+    companyListState.count = Number(data.count) || companyListState.items.length;
+    companyListState.name = data.name || nameHint || "";
+    companyListState.updatedAt = data.updated_at || "";
+    companyListState.selected = "";
+  } catch (err) {
+    companyListState.items = [];
+    companyListState.count = 0;
+    companyListState.error = err.message || String(err);
+  } finally {
+    companyListState.loading = false;
+    if (els.refreshListBtn) els.refreshListBtn.disabled = false;
+    paintCompanyList();
+  }
+}
+
+function setupCompanyListBox() {
+  if (els.companyListSortSeg && els.companyListSortSeg.dataset.bound !== "1") {
+    els.companyListSortSeg.dataset.bound = "1";
+    els.companyListSortSeg.addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-sort]");
+      if (!btn || !els.companyListSortSeg.contains(btn)) return;
+      companyListState.sort = btn.dataset.sort || "date";
+      paintCompanyList();
+    });
+  }
+  if (els.companyListBody && els.companyListBody.dataset.bound !== "1") {
+    els.companyListBody.dataset.bound = "1";
+    els.companyListBody.addEventListener("click", (event) => {
+      const tr = event.target.closest("tr.is-row");
+      if (!tr || !els.companyListBody.contains(tr)) return;
+      companyListState.selected = tr.dataset.key || "";
+      paintCompanyList();
     });
   }
 }
@@ -4496,7 +4781,7 @@ function syncChartsViewportClass() {
 
 function fitChartsToViewport() {
   const panels = document.querySelector(".company-panels");
-  const tabs = els.companyMainTabs;
+  const tabs = els.companyTabStack || els.companyMainTabs;
   const rail = document.querySelector(".app-rail");
   if (!panels || !tabs) return;
 
@@ -4548,17 +4833,17 @@ function switchMainPanel(panelId) {
   const next = normalizeMainPanel(panelId);
   if (!next || next === activeMainPanel) return;
   activeMainPanel = next;
+  const analysisOn = isAnalysisPanel(next);
 
-  if (els.companyMainTabs) {
-    els.companyMainTabs.querySelectorAll("[data-panel]").forEach((tab) => {
-      const active = tab.getAttribute("data-panel") === next;
-      tab.classList.toggle("is-active", active);
-      tab.setAttribute("aria-selected", active ? "true" : "false");
-    });
-  }
+  document.querySelectorAll(".company-main-tab[data-panel]").forEach((tab) => {
+    const active = tab.getAttribute("data-panel") === next;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
 
   document.querySelectorAll(".company-panel[data-panel]").forEach((panel) => {
-    const active = panel.getAttribute("data-panel") === next;
+    const pid = panel.getAttribute("data-panel");
+    const active = analysisOn ? pid === "analysis" : pid === next;
     panel.classList.toggle("is-active", active);
     panel.hidden = !active;
   });
@@ -4568,6 +4853,9 @@ function switchMainPanel(panelId) {
   }
   if (els.refreshEmotionBtn) {
     els.refreshEmotionBtn.hidden = next !== "emotion";
+  }
+  if (els.refreshListBtn) {
+    els.refreshListBtn.hidden = next !== "list";
   }
   if (els.refreshFundHoldersBtn) {
     els.refreshFundHoldersBtn.hidden = next !== "fund-holders";
@@ -4589,21 +4877,29 @@ function switchMainPanel(panelId) {
     } else {
       syncEmotionSourceUi();
     }
+  } else if (next === "list") {
+    if (!companyListBootstrapped) {
+      companyListBootstrapped = true;
+      loadCompanyList({ refresh: false });
+    }
   } else if (next === "fund-holders") {
     if (!fundHoldersBootstrapped) {
       fundHoldersBootstrapped = true;
       loadFundHolders({ refresh: false });
     }
+  } else if (analysisOn) {
+    window.CompanyAnalysis?.onPanel?.(next);
   }
 }
 
 function setupMainTabs() {
-  if (!els.companyMainTabs || els.companyMainTabs.dataset.bound === "1") return;
-  els.companyMainTabs.dataset.bound = "1";
+  const stack = els.companyTabStack || els.companyMainTabs;
+  if (!stack || stack.dataset.bound === "1") return;
+  stack.dataset.bound = "1";
 
-  els.companyMainTabs.addEventListener("click", (event) => {
+  stack.addEventListener("click", (event) => {
     const tab = event.target.closest("[data-panel]");
-    if (!tab || !els.companyMainTabs.contains(tab)) return;
+    if (!tab || !stack.contains(tab)) return;
     switchMainPanel(tab.getAttribute("data-panel") || "");
   });
 
@@ -4612,6 +4908,9 @@ function setupMainTabs() {
   }
   if (els.refreshEmotionBtn) {
     els.refreshEmotionBtn.hidden = activeMainPanel !== "emotion";
+  }
+  if (els.refreshListBtn) {
+    els.refreshListBtn.hidden = activeMainPanel !== "list";
   }
   if (els.refreshFundHoldersBtn) {
     els.refreshFundHoldersBtn.hidden = activeMainPanel !== "fund-holders";
@@ -7485,6 +7784,11 @@ if (els.refreshEmotionBtn) {
     loadAllEmotion({ refresh: true })
   );
 }
+if (els.refreshListBtn) {
+  els.refreshListBtn.addEventListener("click", () =>
+    loadCompanyList({ refresh: true })
+  );
+}
 if (els.refreshFundHoldersBtn) {
   els.refreshFundHoldersBtn.addEventListener("click", () =>
     loadFundHolders({ refresh: true })
@@ -7516,6 +7820,7 @@ setupPlatformBoxes();
 setupCninfoBox();
 setupEmotionBox();
 setupFundHoldersBox();
+setupCompanyListBox();
 setupNewsFolding();
 setupMainTabs();
 setupChartsViewport();

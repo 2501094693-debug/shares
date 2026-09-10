@@ -79,7 +79,6 @@ body.app-shell {
 }
 
 body.app-shell.market-page-root,
-body.app-shell.lhb-page-root,
 body.app-shell.steep-page-root,
 body.app-shell.fund-page-root,
 body.app-shell.otc-fund-page-root,
@@ -234,6 +233,14 @@ html.company-charts-on .company-page .topbar {
   border-left: 0;
   border-right: 0;
   border-top: 0;
+}
+
+html.company-charts-on .company-tab-stack {
+  flex: 0 0 auto;
+  margin-bottom: 0 !important;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
 }
 
 html.company-charts-on .company-main-tabs {
@@ -572,7 +579,6 @@ body.app-shell .market-page .brand h1 {
   }
 
   body.app-shell.market-page-root,
-  body.app-shell.lhb-page-root,
   body.app-shell.steep-page-root,
   body.app-shell.fund-page-root,
   body.app-shell.otc-fund-page-root,
@@ -1449,6 +1455,22 @@ tr.highlight {
   font-family: var(--font);
   line-height: 1.5;
   color: #f2f6fb !important;
+  white-space: normal;
+}
+
+.map-popup.has-addr {
+  min-width: 240px;
+  max-width: 420px;
+}
+
+.map-popup-addr {
+  margin-top: 2px;
+  color: #e4ebf5 !important;
+  font-size: 0.82rem !important;
+  line-height: 1.45;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .map-popup strong {
@@ -1475,6 +1497,184 @@ tr.highlight {
   background: #2ad4b8 !important;
   border-color: #2ad4b8 !important;
   font-weight: 600;
+}
+
+.map-popup.has-photos {
+  min-width: 320px;
+  max-width: 420px;
+}
+
+.map-popup-photos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.map-popup-photo-link {
+  display: block;
+  width: 100%;
+  height: 132px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(42, 212, 184, 0.4);
+  background: #071018;
+}
+
+.map-popup-photo-link.is-hero {
+  grid-column: 1 / -1;
+  height: 220px;
+}
+
+.map-popup-photos:not(:has(.map-popup-photo-link:nth-child(3))) .map-popup-photo-link {
+  grid-column: 1 / -1;
+  height: 200px;
+}
+
+.map-popup-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.map-popup-photo-cap {
+  margin-top: 2px;
+  font-size: 0.72rem !important;
+  letter-spacing: 0.04em;
+}
+
+.map-popup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.map-popup-actions .map-popup-btn {
+  margin-top: 0;
+}
+
+.map-photo-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: rgba(4, 8, 14, 0.86);
+}
+
+.map-photo-viewer[hidden] {
+  display: none !important;
+}
+
+.map-photo-viewer-frame {
+  margin: 0;
+  max-width: min(1100px, calc(100vw - 120px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-photo-viewer-stage {
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(1100px, calc(100vw - 120px));
+  height: calc(100vh - 140px);
+  border-radius: 8px;
+  background: #050b12;
+}
+
+.map-photo-viewer-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transform-origin: center center;
+  transition: transform 0.12s ease-out;
+  cursor: zoom-in;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.map-photo-viewer-img.is-zoomed {
+  cursor: grab;
+  transition: none;
+}
+
+.map-photo-viewer-img.is-zoomed:active {
+  cursor: grabbing;
+}
+
+.map-photo-viewer-cap {
+  color: #d5deea;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+}
+
+.map-photo-viewer-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-photo-viewer-zoom-val {
+  min-width: 3.2em;
+  text-align: center;
+  color: #d7fff6;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+}
+
+.map-photo-viewer-zoom-btn {
+  min-width: 32px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(42, 212, 184, 0.45);
+  background: rgba(8, 16, 24, 0.88);
+  color: #e8fff9;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.map-photo-viewer-close,
+.map-photo-viewer-nav {
+  border: 1px solid rgba(42, 212, 184, 0.45);
+  background: rgba(8, 16, 24, 0.88);
+  color: #e8fff9;
+  cursor: pointer;
+}
+
+.map-photo-viewer-close {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  width: 36px;
+  height: 36px;
+  border-radius: 18px;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.map-photo-viewer-nav {
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  font-size: 1.6rem;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.map-photo-viewer-nav[hidden] {
+  display: none !important;
 }
 
 .map-tip {
@@ -1506,6 +1706,15 @@ tr.highlight {
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55) !important;
   font-weight: 600 !important;
   padding: 10px 12px !important;
+  white-space: normal !important;
+}
+
+.amap-info-content:has(.map-popup.has-photos),
+.amap-info-content:has(.map-popup.has-addr),
+.map-stage .amap-info-content:has(.map-popup.has-photos),
+.map-stage .amap-info-content:has(.map-popup.has-addr) {
+  min-width: 340px !important;
+  max-width: 448px !important;
 }
 
 .amap-info-content *,
@@ -1590,6 +1799,32 @@ thead th {
   letter-spacing: 0.04em;
 }
 
+.company-tab-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 2px);
+  background: rgba(7, 11, 18, 0.88);
+  box-shadow: var(--shadow);
+}
+
+.company-tab-stack .company-main-tabs {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.company-analysis-tabs {
+  padding-top: 6px;
+  border-top: 1px solid rgba(70, 210, 190, 0.14);
+}
+
 .company-main-tabs {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1600,6 +1835,10 @@ thead th {
   border-radius: calc(var(--radius) + 2px);
   background: rgba(7, 11, 18, 0.88);
   box-shadow: var(--shadow);
+}
+
+#companyMainTabs {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .company-main-tab {
@@ -2840,6 +3079,10 @@ button.chart-legend-item.is-active {
 @media (max-width: 960px) {
   .company-main-tabs {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  #companyMainTabs {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .company-main-tab {
@@ -5319,64 +5562,7 @@ body.app-shell.steep-page-root .steep-page.market-page {
 }
 
 
-/* —— 龙虎榜 —— */
-.lhb-page-root {
-  height: 100dvh;
-  overflow: hidden;
-}
-
-.lhb-page .lhb-toolbar {
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.lhb-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.lhb-controls.hidden,
-.lhb-suggest.hidden {
-  display: none;
-}
-
-.lhb-date-box {
-  position: relative;
-  min-width: 168px;
-}
-
-.lhb-date-text {
-  display: block;
-  min-width: 168px;
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: rgba(4, 8, 14, 0.65);
-  color: var(--ink);
-  font-family: var(--mono);
-  font-size: 0.92rem;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
-.lhb-date-box input[type="date"] {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  min-width: 0;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.lhb-stock-box input,
-.lhb-filter-box input {
-  min-width: 180px;
-}
-
+/* —— 龙虎榜（公司详情） —— */
 .lhb-layout {
   flex: 1;
   min-height: 0;
@@ -5443,11 +5629,6 @@ body.app-shell.steep-page-root .steep-page.market-page {
   width: 100%;
 }
 
-.lhb-table .lhb-name {
-  display: block;
-  font-weight: 600;
-}
-
 .lhb-date {
   color: var(--muted);
   font-size: 0.78rem;
@@ -5460,11 +5641,6 @@ body.app-shell.steep-page-root .steep-page.market-page {
 
 .lhb-detail-identity p {
   margin: 4px 0 0;
-}
-
-.lhb-detail-actions {
-  display: flex;
-  gap: 8px;
 }
 
 .lhb-detail-empty {
@@ -5541,29 +5717,6 @@ body.app-shell.steep-page-root .steep-page.market-page {
   border-color: rgba(240, 180, 41, 0.4);
 }
 
-.lhb-suggest {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.lhb-suggest-item {
-  appearance: none;
-  border: 1px solid var(--line);
-  background: rgba(42, 212, 184, 0.06);
-  color: var(--ink);
-  border-radius: var(--radius);
-  padding: 6px 10px;
-  cursor: pointer;
-  font: inherit;
-}
-
-.lhb-suggest-item:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
 @media (max-width: 1100px) {
   .lhb-layout {
     grid-template-columns: 1fr;
@@ -5575,13 +5728,49 @@ body.app-shell.steep-page-root .steep-page.market-page {
   .lhb-seat-grid {
     grid-template-columns: 1fr;
   }
+}
 
-  .lhb-date-box,
-  .lhb-date-text,
-  .lhb-stock-box input,
-  .lhb-filter-box input {
-    min-width: 0;
-    width: 100%;
+html.company-charts-on .company-panel[data-panel="list"] .company-lhb-layout {
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+.company-lhb-identity {
+  min-width: 0;
+}
+
+.company-lhb-identity h2 {
+  margin: 0;
+}
+
+.company-lhb-identity p {
+  margin: 4px 0 0;
+}
+
+.company-lhb-layout .lhb-reason-line {
+  display: block;
+  max-width: 168px;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company-lhb-layout .lhb-list-tools {
+  justify-content: flex-end;
+}
+
+@media (max-width: 1100px) {
+  html.company-charts-on .company-panel[data-panel="list"] .company-lhb-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(200px, 36vh) minmax(0, 1fr);
   }
 }
 
@@ -5879,6 +6068,93 @@ body.app-shell.otc-fund-page-root .otc-fund-page.market-page {
 }
 
 /* 业务简述样式见 ai-page.css */
+
+.company-analysis-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 8px 12px 12px;
+  margin: 0;
+  gap: 10px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.company-analysis-page .hidden,
+.company-analysis-page .ai-run-banner.hidden,
+.company-analysis-page .ai-status-chip.hidden,
+.company-analysis-page .error.hidden,
+.company-analysis-page .market-live.hidden {
+  display: none !important;
+}
+
+.company-analysis-page .ai-command-row {
+  flex: 0 0 auto;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.company-analysis-page .ai-company-lock {
+  margin: 0;
+  font-size: 0.85rem;
+  padding: 8px 0;
+  color: var(--ink);
+}
+
+.company-analysis-page .error {
+  flex: none;
+  margin: 0;
+}
+
+.company-analysis-page .ai-board {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.company-analysis-page .ai-board.is-running {
+  grid-template-columns: minmax(188px, 220px) minmax(0, 1fr);
+}
+
+.company-analysis-page .ai-board.is-running .ai-pane-history {
+  display: flex;
+}
+
+.company-analysis-page .ai-board.is-running .ai-pane-report {
+  display: none;
+}
+
+@media (max-width: 1200px) {
+  .company-analysis-page .ai-board.is-running {
+    grid-template-columns: minmax(170px, 200px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .company-analysis-page .ai-board.is-running .ai-pane-history {
+    display: flex;
+  }
+
+  .company-analysis-page .ai-board.is-running .ai-pane-monitor {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 820px) {
+  .company-analysis-page .ai-board.is-running {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .company-analysis-page .ai-board.is-running .ai-pane-history {
+    display: flex;
+    max-height: 140px;
+  }
+}
+
+html.company-charts-on .company-panel[data-panel="analysis"] .company-analysis-page {
+  height: 100%;
+}
 
 /* —— 形态筛选 —— */
 body.app-shell.screen-page-root .app-stage {

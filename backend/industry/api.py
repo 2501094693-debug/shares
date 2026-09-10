@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, Query
 
 from core.api import err, ok
 from industry.address import enrich_codes
+from industry.address.amap_photos import fetch_place_photos
 from industry.service import service
 
 router = APIRouter()
@@ -113,5 +114,35 @@ def map_config():
             "securityJsCode": security,
             "configured": bool(key),
             "geocodeReady": bool(web_key),
+            "webServiceReady": bool(
+                (os.environ.get("AMAP_WEB_KEY") or "").strip()
+            ),
         }
     )
+
+
+@router.get("/api/map/place-photos")
+def map_place_photos(
+    poi_id: str = Query(""),
+    lng: str = Query(""),
+    lat: str = Query(""),
+    keyword: str = Query(""),
+    city: str = Query(""),
+):
+    """定位公司时拉取高德 POI / 周边实景图。失败时返回空列表，不阻断标注。"""
+    try:
+        lng_v = float(lng) if str(lng).strip() else None
+        lat_v = float(lat) if str(lat).strip() else None
+    except ValueError:
+        lng_v, lat_v = None, None
+    try:
+        photos = fetch_place_photos(
+            poi_id=str(poi_id or "").strip(),
+            lng=lng_v,
+            lat=lat_v,
+            keyword=str(keyword or "").strip(),
+            city=str(city or "").strip(),
+        )
+        return ok({"photos": photos, "count": len(photos)})
+    except Exception:  # noqa: BLE001
+        return ok({"photos": [], "count": 0})

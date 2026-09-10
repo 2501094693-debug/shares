@@ -60,7 +60,7 @@ export function createCompanyMap(ctx) {
     onProgress: setStatus,
   });
 
-  const places = createPlaceResolver({ amap, geoStore });
+  const places = createPlaceResolver({ amap, geoStore, api: ctx.api });
 
   const markers = createMarkerLayer({
     amap,
@@ -180,7 +180,7 @@ export function createCompanyMap(ctx) {
     const token = geoStore.bumpToken();
     view.mapStreetFocus = "";
     view.listMapKind = "search";
-    amap.rt.infoWindow?.close?.();
+    markers.closePopup();
     try {
       await amap.ensureReady();
       setStatus("正在补齐注册地…");
@@ -309,7 +309,7 @@ export function createCompanyMap(ctx) {
       }
       if (token !== geoStore.currentToken()) return;
 
-      const marker = markers.createCompanyMarker(stock, g2, pos, true);
+      const marker = markers.createCompanyMarker(stock, g2, pos, true, poi);
       amap.addOverlay(marker);
       amap.rt.markersByCode[code] = marker;
       markers.setMarkerHighlight(marker);
@@ -318,7 +318,7 @@ export function createCompanyMap(ctx) {
       requestAnimationFrame(() => {
         if (token !== geoStore.currentToken()) return;
         amap.focusTargets([marker], 16);
-        markers.showCompanyPopup(stock, g2, pos);
+        markers.openCompanyPopup(stock, g2, pos, poi);
       });
       setTimeout(() => {
         if (token !== geoStore.currentToken()) return;
@@ -344,7 +344,7 @@ export function createCompanyMap(ctx) {
     const stocks = ctx.getStocks();
     const token = geoStore.bumpToken();
     view.mapStreetFocus = "";
-    amap.rt.infoWindow?.close?.();
+    markers.closePopup();
     markers.setMarkerHighlight(null);
 
     if (!stocks.length) {
@@ -405,7 +405,7 @@ export function createCompanyMap(ctx) {
   async function exitStreetFocus(stock) {
     const code = String(stock?.code || view.mapStreetFocus || "").trim();
     view.mapStreetFocus = "";
-    amap.rt.infoWindow?.close?.();
+    markers.closePopup();
     markers.setMarkerHighlight(null);
     if (code) ctx.setHighlightCode(code);
     ctx.onListRender?.();

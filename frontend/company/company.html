@@ -7,7 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=orbit-news-eastmoney-head-20260903" />
+  <link rel="stylesheet" href="/css/style.css?v=company-lhb-no-list-page-20260911" />
+  <link rel="stylesheet" href="/css/ai-page.css?v=company-analysis-board-20260910" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
   <nav class="app-rail" aria-label="主导航">
@@ -22,7 +23,7 @@
       </a>
       <a class="app-rail-link" href="/market" data-nav="market" title="行业行情 · 涨跌与资金">
         <span class="app-rail-ico" aria-hidden="true">▣</span>
-        <span>行情</span>
+        <span>行业行情</span>
       </a>
       <a class="app-rail-link" href="/fund" data-nav="fund" title="场内基金 · ETF / LOF">
         <span class="app-rail-ico" aria-hidden="true">◎</span>
@@ -40,14 +41,6 @@
         <span class="app-rail-ico" aria-hidden="true">⬡</span>
         <span>形态</span>
       </a>
-      <a class="app-rail-link" href="/list" data-nav="list" title="龙虎榜 · 席位明细">
-        <span class="app-rail-ico" aria-hidden="true">≡</span>
-        <span>龙虎榜</span>
-      </a>
-      <a class="app-rail-link" href="/ai" data-nav="ai" title="智能分析 · 业务 / 财报 / 竞争 / 风险">
-        <span class="app-rail-ico" aria-hidden="true">◉</span>
-        <span>分析</span>
-      </a>
     </div>
   </nav>
 
@@ -57,23 +50,33 @@
       <div class="brand">
         <div>
           <h1 id="pageTitle">公司详情</h1>
-          <p id="pageSub" class="company-page-sub">行情 · 资讯 · 情绪 · 基金持股</p>
+          <p id="pageSub" class="company-page-sub">行情 · 资讯 · 情绪 · 龙虎榜 · 基金持股 · 分析</p>
         </div>
       </div>
       <div class="top-actions">
         <a id="backLink" class="btn ghost" href="/">返回行业树</a>
         <button id="refreshNewsBtn" class="btn ghost" type="button" hidden>刷新资讯</button>
         <button id="refreshEmotionBtn" class="btn ghost" type="button" hidden>刷新情绪</button>
+        <button id="refreshListBtn" class="btn ghost" type="button" hidden>刷新龙虎榜</button>
         <button id="refreshFundHoldersBtn" class="btn ghost" type="button" hidden>刷新基金持股</button>
       </div>
     </header>
 
-    <nav id="companyMainTabs" class="company-main-tabs" aria-label="主面板">
-      <button type="button" class="company-main-tab is-active" data-panel="quotes" role="tab" aria-selected="true">行情</button>
-      <button type="button" class="company-main-tab" data-panel="news" role="tab" aria-selected="false">资讯</button>
-      <button type="button" class="company-main-tab" data-panel="emotion" role="tab" aria-selected="false">情绪</button>
-      <button type="button" class="company-main-tab" data-panel="fund-holders" role="tab" aria-selected="false">基金持股</button>
-    </nav>
+    <div id="companyTabStack" class="company-tab-stack">
+      <nav id="companyMainTabs" class="company-main-tabs" aria-label="主面板">
+        <button type="button" class="company-main-tab is-active" data-panel="quotes" role="tab" aria-selected="true">行情</button>
+        <button type="button" class="company-main-tab" data-panel="news" role="tab" aria-selected="false">资讯</button>
+        <button type="button" class="company-main-tab" data-panel="emotion" role="tab" aria-selected="false">情绪</button>
+        <button type="button" class="company-main-tab" data-panel="list" role="tab" aria-selected="false">龙虎榜</button>
+        <button type="button" class="company-main-tab" data-panel="fund-holders" role="tab" aria-selected="false">基金持股</button>
+      </nav>
+      <nav id="companyAnalysisTabs" class="company-main-tabs company-analysis-tabs" aria-label="公司分析">
+        <button type="button" class="company-main-tab" data-panel="business" role="tab" aria-selected="false">业务简述</button>
+        <button type="button" class="company-main-tab" data-panel="earnings" role="tab" aria-selected="false">财报简述</button>
+        <button type="button" class="company-main-tab" data-panel="competition" role="tab" aria-selected="false">行业竞争</button>
+        <button type="button" class="company-main-tab" data-panel="risk" role="tab" aria-selected="false">风险评估</button>
+      </nav>
+    </div>
 
     <div class="company-panels">
       <div id="panel-quotes" class="company-panel is-active" data-panel="quotes" role="tabpanel">
@@ -748,6 +751,116 @@
         </aside>
       </div>
 
+      <div id="panel-analysis" class="company-panel" data-panel="analysis" role="tabpanel" hidden>
+        <div class="ai-page company-analysis-page">
+          <div class="ai-command-row">
+            <div class="ai-command-main">
+              <p id="analysisCompanyLabel" class="ai-company-lock">当前公司</p>
+            </div>
+            <div class="ai-command-tail">
+              <span id="liveDot" class="market-live hidden" data-state="idle"></span>
+              <span id="jobMeta" class="ai-job-meta muted"></span>
+              <button id="startBtn" class="btn primary" type="button">生成</button>
+              <button id="stopPollBtn" class="btn ghost hidden" type="button">停止轮询</button>
+            </div>
+          </div>
+
+          <div id="analysisErrorBox" class="error hidden"></div>
+
+          <div id="aiBoard" class="ai-board is-idle">
+            <aside class="ai-pane ai-pane-history" aria-label="历史报告">
+              <header class="ai-pane-head">
+                <h2 id="historyHead">历史报告</h2>
+                <button id="refreshReportsBtn" class="btn ghost sm" type="button">刷新</button>
+              </header>
+              <div class="ai-pane-scroll">
+                <ul id="reportList" class="ai-history-list"></ul>
+              </div>
+            </aside>
+
+            <main class="ai-pane ai-pane-report" aria-label="分析报告">
+              <header class="ai-pane-head ai-report-head">
+                <div class="ai-report-title-block">
+                  <h2 id="reportTitle">分析报告</h2>
+                  <p id="reportMeta" class="muted">当前公司</p>
+                </div>
+                <div class="ai-report-tools">
+                  <span id="reportStatus" class="ai-status-chip hidden" aria-live="polite"></span>
+                </div>
+              </header>
+              <div class="ai-pane-scroll ai-report-scroll">
+                <article id="reportView" class="ai-report-body"></article>
+              </div>
+            </main>
+
+            <aside class="ai-pane ai-pane-monitor" id="progressPanel" aria-label="生成进度">
+              <header class="ai-pane-head">
+                <h2>生成流水线</h2>
+                <span id="pipelineProgress" class="ai-pane-hint">0 / 5</span>
+              </header>
+              <div id="currentAction" class="ai-run-banner hidden" aria-live="polite">
+                <span class="ai-run-banner-label">进行中</span>
+                <strong id="currentAgent"></strong>
+                <span id="currentMessage" class="ai-run-banner-msg"></span>
+              </div>
+              <div class="ai-pane-scroll ai-pipeline-scroll">
+                <div id="agentBoard" class="ai-pipeline"></div>
+              </div>
+              <header class="ai-pane-subhead">
+                <h3>实时日志</h3>
+              </header>
+              <div class="ai-pane-scroll ai-log-scroll">
+                <ol id="activityLog" class="ai-activity-log"></ol>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+
+      <div id="panel-list" class="company-panel" data-panel="list" role="tabpanel" hidden>
+        <div class="lhb-layout company-lhb-layout">
+          <aside class="lhb-list-pane">
+            <header class="lhb-pane-head">
+              <div class="company-lhb-identity">
+                <h2 id="companyListTitle">历史上榜</h2>
+                <p id="companyListMeta" class="muted">切换到本页后加载</p>
+              </div>
+              <div class="lhb-list-tools">
+                <div id="companyListSortSeg" class="market-seg" role="group" aria-label="排序">
+                  <button type="button" data-sort="date" class="is-active">日期</button>
+                  <button type="button" data-sort="net">净买</button>
+                  <button type="button" data-sort="change">涨跌</button>
+                  <button type="button" data-sort="turnover">换手</button>
+                </div>
+              </div>
+            </header>
+            <div class="lhb-list-scroll">
+              <table class="market-table lhb-table">
+                <thead>
+                  <tr>
+                    <th>日期</th>
+                    <th class="num">涨跌</th>
+                    <th class="num">净买</th>
+                  </tr>
+                </thead>
+                <tbody id="companyListBody">
+                  <tr class="is-empty"><td colspan="3">切换到本页后加载</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </aside>
+          <section class="lhb-detail-pane">
+            <header class="lhb-pane-head" id="companyListDetailHead">
+              <h2>买卖席位</h2>
+              <p class="muted">点左侧一行查看买入 / 卖出营业部</p>
+            </header>
+            <div id="companyListDetailBody" class="lhb-detail-scroll">
+              <div class="lhb-detail-empty muted">切换到本页后加载历史上榜记录</div>
+            </div>
+          </section>
+        </div>
+      </div>
+
       <div id="panel-fund-holders" class="company-panel" data-panel="fund-holders" role="tabpanel" hidden>
         <section class="company-section fund-holders-hub" aria-label="基金持股">
           <header class="section-head fund-holders-head">
@@ -788,7 +901,9 @@
   </div>
   </div>
 
-  <script src="/js/shared/nav.js?v=orbit-shell-20260902"></script>
-  <script src="/js/company.js?v=company-news-eastmoney-head-20260903"></script>
+  <script src="/js/shared/nav.js?v=orbit-no-list-nav-20260911"></script>
+  <script src="/js/shared/ai-modes.js?v=company-analysis-no-ai-page-20260910"></script>
+  <script src="/js/shared/company-analysis.js?v=company-analysis-stop-only-20260910"></script>
+  <script src="/js/company.js?v=company-lhb-no-list-page-20260911"></script>
 </body>
 </html>

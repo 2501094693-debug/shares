@@ -16,9 +16,12 @@ export function createAmapRuntime({ container, api, getHudPadding }) {
     amapKey: "",
     ready: false,
     loadingSdk: null,
+    webServiceReady: false,
     districtCache: {},
     markersByCode: {},
     highlightMarker: null,
+    popupCode: "",
+    popupGen: 0,
     geocodeCache: {},
     geocodeInflight: {},
     _resizeBound: false,
@@ -124,6 +127,8 @@ export function createAmapRuntime({ container, api, getHudPadding }) {
     rt.overlays = [];
     rt.markersByCode = {};
     rt.highlightMarker = null;
+    rt.popupCode = "";
+    rt.popupGen = (rt.popupGen || 0) + 1;
     rt.infoWindow?.close?.();
   }
 
@@ -258,6 +263,7 @@ export function createAmapRuntime({ container, api, getHudPadding }) {
       );
     }
     rt.amapKey = key;
+    rt.webServiceReady = !!cfg.data?.webServiceReady;
     await loadAmapScript(key, securityJsCode);
 
     if (!rt.map) {

@@ -28,7 +28,7 @@ window.AI_MODES = {
       <div class="ai-empty-state">
         <div class="ai-empty-icon" aria-hidden="true">◉</div>
         <h3>先看生意，再听段永平</h3>
-        <p>输入一家公司，智能体以交易所、巨潮、七网披露为主线，下载年报等公告 PDF 抽取经营正文，联网补充最新公开信息，逐段标注来源，最后用段永平的标准评价这是不是一门好生意。</p>
+        <p>以交易所、巨潮、七网披露为主线，下载年报等公告 PDF 抽取经营正文，联网补充最新公开信息，逐段标注来源，最后用段永平的标准评价这是不是一门好生意。</p>
         <ul class="ai-empty-tips">
           <li>商业模式、收入结构、飞轮</li>
           <li>护城河五项逐一验证</li>
@@ -76,7 +76,7 @@ window.AI_MODES = {
       <div class="ai-empty-state">
         <div class="ai-empty-icon" aria-hidden="true">▤</div>
         <h3>先看数字，再谈判断</h3>
-        <p>输入一家公司，智能体拉取近一年年报/半年报/季报原始科目，每段解释都附带财报数据，最后从巴菲特视角评估安全边际。</p>
+        <p>拉取近一年年报/半年报/季报原始科目，每段解释都附带财报数据，最后从巴菲特视角评估安全边际。</p>
         <ul class="ai-empty-tips">
           <li>近3-5年营收、净利润、经营利润</li>
           <li>ROE / ROA / 毛利率 / 经营利润率</li>
@@ -125,7 +125,7 @@ window.AI_MODES = {
       <div class="ai-empty-state">
         <div class="ai-empty-icon" aria-hidden="true">⬡</div>
         <h3>先看格局，再判位置</h3>
-        <p>输入一家公司，智能体以交易所、巨潮、七网披露为主线，结合申万同业对照与联网搜索的最新行业数据，分析行业格局与该公司竞争态势。</p>
+        <p>以交易所、巨潮、七网披露为主线，结合申万同业对照与联网搜索的最新行业数据，分析行业格局与该公司竞争态势。</p>
         <ul class="ai-empty-tips">
           <li>行业规模、增速、渗透率</li>
           <li>竞争格局与主要对手威胁评估</li>
@@ -176,7 +176,7 @@ window.AI_MODES = {
       <div class="ai-empty-state">
         <div class="ai-empty-icon" aria-hidden="true">△</div>
         <h3>先看风险，再看人</h3>
-        <p>输入一家公司，智能体以交易所、巨潮、七网披露为主线，结合联网搜索的最新监管动态与管理层言论，评估投资风险与管理层质量。</p>
+        <p>以交易所、巨潮、七网披露为主线，结合联网搜索的最新监管动态与管理层言论，评估投资风险与管理层质量。</p>
         <ul class="ai-empty-tips">
           <li>管理层：能力圈、诚信度、战略眼光、资本配置</li>
           <li>监管、竞争、业务、宏观各维度风险分级</li>

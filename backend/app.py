@@ -4,7 +4,7 @@
 - ``industry``：申万分类、成分股检索、地图标注
 - ``company``：单只股票的盘口、K 线、资讯
 - ``market``：申万行业涨跌、资金流向、行业轮动
-- ``list``：龙虎榜每日上榜与个股历史
+- ``list``：龙虎榜个股历史上榜（公司详情页）
 - ``funds.fund``：场内 ETF / LOF 分类与检索
 - ``funds.otc_fund``：场外开放式基金检索与净值排行
 """
@@ -207,24 +207,6 @@ def js_screen():
     )
 
 
-@app.get("/list")
-@app.get("/list.html")
-def list_page():
-    return FileResponse(
-        FRONTEND / "list" / "index.html",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
-
-
-@app.get("/js/list.js")
-def js_list():
-    return FileResponse(
-        FRONTEND / "list" / "app.js",
-        media_type="application/javascript",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
-
-
 @app.get("/fund")
 @app.get("/fund.html")
 def fund_page():
@@ -291,74 +273,14 @@ def js_company():
 
 @app.get("/ai")
 @app.get("/ai.html")
-def ai_page():
-    return FileResponse(
-        FRONTEND / "ai" / "index.html",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
-
-
 @app.get("/earnings")
 @app.get("/earnings.html")
-def earnings_page():
-    return RedirectResponse(url="/ai?mode=earnings", status_code=302)
-
-
-@app.get("/js/ai.js")
-def js_ai():
-    return FileResponse(
-        FRONTEND / "ai" / "app.js",
-        media_type="application/javascript",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
-
-
-@app.get("/js/ai/modes.js")
-def js_ai_modes():
-    return FileResponse(
-        FRONTEND / "ai" / "modes.js",
-        media_type="application/javascript",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
-
-
-@app.get("/js/earnings.js")
-def js_earnings():
-    return FileResponse(
-        FRONTEND / "earnings" / "app.js",
-        media_type="application/javascript",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
-
-
 @app.get("/competition")
 @app.get("/competition.html")
-def competition_page():
-    return RedirectResponse(url="/ai?mode=competition", status_code=302)
-
-
-@app.get("/js/competition.js")
-def js_competition():
-    return FileResponse(
-        FRONTEND / "competition" / "app.js",
-        media_type="application/javascript",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
-
-
 @app.get("/risk")
 @app.get("/risk.html")
-def risk_page():
-    return RedirectResponse(url="/ai?mode=risk", status_code=302)
-
-
-@app.get("/js/risk.js")
-def js_risk():
-    return FileResponse(
-        FRONTEND / "risk" / "app.js",
-        media_type="application/javascript",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
+def ai_page_removed():
+    return RedirectResponse(url="/", status_code=302)
 
 
 # Static assets after API / page routes.
