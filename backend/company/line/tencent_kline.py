@@ -81,15 +81,13 @@ _ADJUST = {
 _ADJUST_LABEL = {0: "none", 1: "qfq", 2: "hfq"}
 _FQ_FLAG = {0: "", 1: "qfq", 2: "hfq"}
 
-# web.ifzq 的 fqkline 现返回 501 HTML；ifzq 主站与 proxy 仍可用。
+# web.ifzq 的 fqkline 现返回 501 HTML，且 Windows 上 DNS 11001 频发；只用 ifzq 主站与 proxy。
 _FQKLINE_URLS = (
     "https://ifzq.gtimg.cn/appstock/app/fqkline/get",
     "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get",
-    "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
 )
 _MKLINE_URLS = (
     "https://ifzq.gtimg.cn/appstock/app/kline/mkline",
-    "https://web.ifzq.gtimg.cn/appstock/app/kline/mkline",
 )
 _HEADERS = {"Referer": "https://gu.qq.com/"}
 _MAX_LMT = 10000
@@ -397,11 +395,7 @@ def fetch_line(
     不传 ``beg`` 时按最近 ``limit`` 根拉；传了 ``beg`` 则按日期区间（仅日/周/月）。
     """
     params = _params(code, period=period, adjust=adjust, limit=limit, beg=beg, end=end)
-    try:
-        payload = _request(params["urls"], params["param"])
-    except Exception:
-        logger.exception("tencent line failed %s %s", params["symbol"], params["period"])
-        raise
+    payload = _request(params["urls"], params["param"])
     return _parse(payload, params)
 
 

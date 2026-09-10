@@ -7,6 +7,7 @@ Windows 上东财 ``push2*`` 经常 11001（getaddrinfo failed），
 from __future__ import annotations
 
 import socket
+import threading
 import time
 
 import requests
@@ -14,8 +15,12 @@ import urllib3
 
 _CACHE: dict[str, tuple[float, list[str]]] = {}
 _TTL = 300.0
-_DOH_IP = "223.5.5.5"
-_DOH_HOST = "dns.alidns.com"
+# 阿里 + Cloudflare；Windows 11001 时并行 screening 常同时打 DoH，加锁避免惊群。
+_DOH_PROVIDERS: tuple[tuple[str, str], ...] = (
+    ("223.5.5.5", "dns.alidns.com"),
+    ("1.1.1.1", "cloudflare-dns.com"),
+)
+_doh_lock = threading.Lock()
 
 
 def _is_ipv4(text: str) -> bool:
@@ -71,17 +76,17 @@ def _system_dns(host: str) -> list[str]:
     return out
 
 
-def _doh(host: str) -> list[str]:
+def _doh_once(host: str, doh_ip: str, doh_host: str) -> list[str]:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     sess = requests.Session()
     sess.trust_env = False
     sess.verify = False
     try:
         resp = sess.get(
-            f"https://{_DOH_IP}/resolve",
+            f"https://{doh_ip}/resolve",
             params={"name": host, "type": "A"},
             headers={
-                "Host": _DOH_HOST,
+                "Host": doh_host,
                 "Accept": "application/dns-json",
                 "User-Agent": "Mozilla/5.0",
             },
@@ -103,3 +108,17 @@ def _doh(host: str) -> list[str]:
         if _is_ipv4(data) and data not in out:
             out.append(data)
     return out
+
+
+def _doh(host: str) -> list[str]:
+    with _doh_lock:
+        now = time.monotonic()
+        hit = _CACHE.get(host)
+        if hit and hit[0] > now and hit[1]:
+            return list(hit[1])
+        for doh_ip, doh_host in _DOH_PROVIDERS:
+            ips = _doh_once(host, doh_ip, doh_host)
+            if ips:
+                _CACHE[host] = (now + _TTL, ips)
+                return ips
+    return []
