@@ -83,6 +83,7 @@ body.app-shell.steep-page-root,
 body.app-shell.fund-page-root,
 body.app-shell.otc-fund-page-root,
 body.app-shell.ai-page-root,
+body.app-shell.world-page-root,
 html.map-app-root body.app-shell.map-app {
   height: 100dvh;
   overflow: hidden;
@@ -582,6 +583,7 @@ body.app-shell .market-page .brand h1 {
   body.app-shell.steep-page-root,
   body.app-shell.fund-page-root,
   body.app-shell.otc-fund-page-root,
+  body.app-shell.world-page-root,
   html.map-app-root body.app-shell.map-app {
     height: 100dvh;
   }
@@ -6796,5 +6798,366 @@ body.app-shell.screen-page-root .screen-page.market-page {
 
   .screen-day-head {
     flex-wrap: wrap;
+  }
+}
+
+/* —— 全球市场 · 三维地球 —— */
+body.app-shell.world-page-root .app-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.world-globe-stage,
+.world-map-stage {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 45%, rgba(42, 212, 184, 0.08), transparent 65%),
+    radial-gradient(circle at 50% 120%, rgba(10, 20, 40, 0.9), transparent 60%),
+    var(--bg);
+}
+
+.world-map-stage {
+  z-index: 1;
+}
+
+.world-map-stage.amap-container,
+.world-map-stage .amap-container,
+.world-map-stage .amap-layers {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  font-family: var(--font);
+}
+
+.world-map-stage .amap-logo,
+.world-map-stage .amap-copyright {
+  opacity: 0.55;
+  filter: grayscale(0.2);
+}
+
+.world-globe-stage canvas {
+  display: block;
+}
+
+.world-label-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.world-marker-label {
+  pointer-events: auto;
+  min-width: 120px;
+  max-width: 200px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: rgba(7, 11, 18, 0.88);
+  backdrop-filter: blur(8px);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.world-marker-label:hover,
+.world-marker-label.is-active {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 1px rgba(42, 212, 184, 0.2), var(--shadow);
+}
+
+.world-map-marker-label {
+  pointer-events: auto;
+}
+
+.world-marker-title {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+
+.world-marker-city {
+  font-size: 0.65rem;
+  margin-bottom: 4px;
+}
+
+.world-marker-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.world-marker-lines em {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+
+.world-marker-lines em[data-tone="up"] { color: var(--up); }
+.world-marker-lines em[data-tone="down"] { color: var(--down); }
+
+.world-tag {
+  display: inline-block;
+  width: 1.1em;
+  text-align: center;
+  margin-right: 3px;
+  border-radius: 2px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.world-tag[data-cat="indices"] { background: color-mix(in srgb, #2ad4b8 25%, transparent); color: #2ad4b8; }
+.world-tag[data-cat="rates"] { background: color-mix(in srgb, #f0b429 25%, transparent); color: #f0b429; }
+.world-tag[data-cat="bonds"] { background: color-mix(in srgb, #a78bfa 25%, transparent); color: #a78bfa; }
+.world-tag[data-cat="oil"] { background: color-mix(in srgb, #ff8c42 25%, transparent); color: #ff8c42; }
+
+.world-hud {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(360px, calc(100% - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.world-hud > * {
+  pointer-events: auto;
+}
+
+.world-hud-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+}
+
+.world-hud-head h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+}
+
+.world-hud-sub {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+}
+
+.world-hud-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.world-view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.world-view-btn {
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  border: none;
+  border-radius: 0;
+  min-width: 44px;
+}
+
+.world-view-btn + .world-view-btn {
+  border-left: 1px solid var(--line);
+}
+
+.world-view-btn.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+#worldStatus[data-state="live"] { color: var(--accent); }
+#worldStatus[data-state="busy"] { color: var(--accent-hot); }
+#worldStatus[data-state="error"] { color: var(--warn); }
+
+.world-layer-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+}
+
+.world-layer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.72rem;
+  cursor: pointer;
+  user-select: none;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.world-layer-chip:hover {
+  border-color: var(--line);
+}
+
+.world-layer-chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.world-layer-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.world-layer-dot[data-cat="indices"] { background: #2ad4b8; }
+.world-layer-dot[data-cat="rates"] { background: #f0b429; }
+.world-layer-dot[data-cat="bonds"] { background: #a78bfa; }
+.world-layer-dot[data-cat="oil"] { background: #ff8c42; }
+
+.world-detail-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+}
+
+.world-detail-empty {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.world-detail-head {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.world-detail-head h2 {
+  margin: 0 0 4px;
+  font-family: var(--display);
+  font-size: 1rem;
+}
+
+.world-detail-block {
+  margin-bottom: 14px;
+}
+
+.world-detail-block h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.world-detail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.world-detail-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.82rem;
+}
+
+.world-detail-list .num,
+.world-detail-hero strong {
+  font-family: var(--mono);
+}
+
+.world-detail-list em,
+.world-detail-hero em {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+.world-detail-list em[data-tone="up"],
+.world-detail-hero em[data-tone="up"] { color: var(--up); }
+
+.world-detail-list em[data-tone="down"],
+.world-detail-hero em[data-tone="down"] { color: var(--down); }
+
+.world-detail-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.world-detail-hero strong {
+  font-size: 1.1rem;
+  color: var(--accent);
+}
+
+.world-detail-meta {
+  margin: 6px 0 0;
+  font-size: 0.72rem;
+}
+
+@media (max-width: 900px) {
+  .world-hud {
+    top: auto;
+    right: 8px;
+    left: 8px;
+    bottom: 8px;
+    width: auto;
+    max-height: 42vh;
+  }
+
+  .world-hud-head {
+    flex-direction: column;
+  }
+
+  .world-hud-tools {
+    width: 100%;
+  }
+
+  .world-marker-label {
+    max-width: 150px;
+    font-size: 0.65rem;
   }
 }

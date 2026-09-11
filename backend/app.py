@@ -4,6 +4,7 @@
 - ``industry``：申万分类、成分股检索、地图标注
 - ``company``：单只股票的盘口、K 线、资讯
 - ``market``：申万行业涨跌、资金流向、行业轮动
+- ``world``：全球主要股指、央行利率、国债收益率、原油期货
 - ``list``：龙虎榜个股历史上榜（公司详情页）
 - ``funds.fund``：场内 ETF / LOF 分类与检索
 - ``funds.otc_fund``：场外开放式基金检索与净值排行
@@ -40,6 +41,7 @@ from industry.service import service as industry_service
 from funds.fund.service import service as fund_service
 from list.api import router as list_router
 from market.api import router as market_router
+from world.api import router as world_router
 from screen.api import router as screen_router
 from funds.otc_fund.api import router as otc_fund_router
 from funds.otc_fund.service import service as otc_fund_service
@@ -140,6 +142,7 @@ app.include_router(company_router)
 app.include_router(fundflow_router)
 app.include_router(financialreport_router)
 app.include_router(market_router)
+app.include_router(world_router)
 app.include_router(list_router)
 app.include_router(fund_router)
 app.include_router(otc_fund_router)
@@ -188,6 +191,24 @@ def steep_page():
 def js_steep():
     return FileResponse(
         FRONTEND / "steep" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/world")
+@app.get("/world.html")
+def world_page():
+    return FileResponse(
+        FRONTEND / "world" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/world.js")
+def js_world():
+    return FileResponse(
+        FRONTEND / "world" / "app.js",
         media_type="application/javascript",
         headers={"Cache-Control": "no-store, max-age=0"},
     )
