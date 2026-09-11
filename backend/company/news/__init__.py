@@ -11,6 +11,7 @@
   taxonomy   category / source_tier / subcategory
   _items     条目规范化
   cache      磁盘缓存
+  financialreport  东方财富 F10 财务报表
 """
 
 from company.news.feed import VALID_KINDS, collect_company_messages

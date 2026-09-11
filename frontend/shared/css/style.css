@@ -2717,6 +2717,51 @@ button.chart-legend-item.is-active {
   flex-direction: column;
 }
 
+.company-panel[data-panel="others"] .others-layout {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+
+.company-panel[data-panel="others"] .others-source-bar {
+  flex: 0 0 auto;
+}
+
+.company-panel[data-panel="others"] .others-view {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.company-panel[data-panel="others"][data-others-view="lhb"] .others-view[data-others-view="fund-holders"],
+.company-panel[data-panel="others"][data-others-view="fund-holders"] .others-view[data-others-view="lhb"] {
+  display: none !important;
+}
+
+.company-panel[data-panel="judgment"] .judgment-layout {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+
+.company-panel[data-panel="judgment"] .judgment-source-bar {
+  flex: 0 0 auto;
+}
+
+.company-panel[data-panel="judgment"] .judgment-view {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .company-panel[data-panel="emotion"] {
   position: relative;
 }
@@ -5775,7 +5820,16 @@ body.app-shell.steep-page-root .steep-page.market-page {
   }
 }
 
-html.company-charts-on .company-panel[data-panel="list"] .company-lhb-layout {
+html.company-charts-on .company-panel[data-panel="others"] .others-layout {
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+html.company-charts-on .company-panel[data-panel="others"] .others-view[data-others-view="lhb"] .company-lhb-layout {
   flex: 1 1 0%;
   min-width: 0;
   min-height: 0;
@@ -5813,7 +5867,7 @@ html.company-charts-on .company-panel[data-panel="list"] .company-lhb-layout {
 }
 
 @media (max-width: 1100px) {
-  html.company-charts-on .company-panel[data-panel="list"] .company-lhb-layout {
+  html.company-charts-on .company-panel[data-panel="others"] .others-view[data-others-view="lhb"] .company-lhb-layout {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(200px, 36vh) minmax(0, 1fr);
   }
@@ -6197,7 +6251,16 @@ body.app-shell.otc-fund-page-root .otc-fund-page.market-page {
   }
 }
 
-html.company-charts-on .company-panel[data-panel="analysis"] .company-analysis-page {
+html.company-charts-on .company-panel[data-panel="judgment"] .judgment-layout {
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+html.company-charts-on .company-panel[data-panel="judgment"] .company-analysis-page {
   height: 100%;
 }
 

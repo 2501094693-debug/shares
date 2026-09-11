@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import Any
 
@@ -18,19 +17,6 @@ def _median(vals: list[float]) -> float:
     n = len(xs)
     mid = n // 2
     return xs[mid] if n % 2 else (xs[mid - 1] + xs[mid]) / 2.0
-
-
-_EM_URLS = (
-    "https://datacenter.eastmoney.com/securities/api/data/v1/get",
-    "https://datacenter-web.eastmoney.com/api/data/v1/get",
-)
-_EM_HEADERS = {"Referer": "https://emweb.securities.eastmoney.com/"}
-
-_MAIN_REPORT = "RPT_F10_FINANCE_MAINFINADATA"
-_INCOME_REPORT = "RPT_DMSK_FN_INCOME"
-_BALANCE_REPORT = "RPT_DMSK_FN_BALANCE"
-_CASH_REPORT = "RPT_DMSK_FN_CASHFLOW"
-_LICO_REPORT = "RPT_LICO_FN_CPD"
 
 
 def _backend():
@@ -50,25 +36,42 @@ def _backend():
     }
 
 
+def _fr_backend():
+    import sys
+
+    if str(BACKEND_ROOT) not in sys.path:
+        sys.path.insert(0, str(BACKEND_ROOT))
+    from company.news.financialreport._common import (
+        date_str,
+        dedupe_periods,
+        index_by_date,
+        is_annual,
+        period_label,
+        pick,
+    )
+    from company.news.financialreport.fetcher import get_financial_report
+
+    return {
+        "date_str": date_str,
+        "dedupe_periods": dedupe_periods,
+        "index_by_date": index_by_date,
+        "is_annual": is_annual,
+        "period_label": period_label,
+        "pick": pick,
+        "get_financial_report": get_financial_report,
+    }
+
+
 def _date(value: Any) -> str:
-    text = str(value or "").strip()
-    return text[:10] if len(text) >= 10 else text
+    return _fr_backend()["date_str"](value)
 
 
 def _period_label(report_date: str, name: str = "") -> str:
-    if name:
-        return str(name).strip()
-    day = _date(report_date)
-    if len(day) < 7:
-        return day or "—"
-    year, month = day[:4], day[5:7]
-    mapping = {"03": "一季报", "06": "中报", "09": "三季报", "12": "年报"}
-    return f"{year}{mapping.get(month, day)}"
+    return _fr_backend()["period_label"](report_date, name)
 
 
 def _is_annual(report_date: str) -> bool:
-    day = _date(report_date)
-    return len(day) >= 7 and day[5:7] == "12"
+    return _fr_backend()["is_annual"](report_date)
 
 
 def _fmt_yi(value: Any) -> str:
@@ -111,112 +114,15 @@ def _fmt_x(value: Any) -> str:
 
 
 def _pick(row: dict[str, Any], *keys: str) -> Any:
-    for key in keys:
-        if key in row and row[key] not in (None, "", "-", "--"):
-            return row[key]
-    return None
-
-
-def _em_get(report_name: str, code: str, *, page_size: int = 20) -> list[dict[str, Any]]:
-    api = _backend()
-    stock = api["normalize_code"](code)
-    secu = api["ths_code"](code)
-    if not stock:
-        return []
-
-    filters = [f'(SECUCODE="{secu}")'] if secu else []
-    filters.append(f'(SECURITY_CODE="{stock}")')
-
-    last_exc: Exception | None = None
-    for url in _EM_URLS:
-        for flt in filters:
-            params = {
-                "reportName": report_name,
-                "columns": "ALL",
-                "filter": flt,
-                "pageNumber": "1",
-                "pageSize": str(page_size),
-                "sortTypes": "-1",
-                "sortColumns": "REPORT_DATE" if report_name != _LICO_REPORT else "REPORTDATE",
-                "source": "HSF10" if "securities" in url else "WEB",
-                "client": "PC" if "securities" in url else "WEB",
-            }
-            try:
-                payload = api["get_json"](url, params=params, headers=_EM_HEADERS, timeout=20) or {}
-            except Exception as exc:  # noqa: BLE001
-                last_exc = exc
-                continue
-            result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
-            data = result.get("data") or []
-            rows = [row for row in data if isinstance(row, dict)]
-            if rows:
-                return rows
-    if last_exc:
-        logger.warning("东财 %s 拉取失败 %s: %s", report_name, code, last_exc)
-    return []
+    return _fr_backend()["pick"](row, *keys)
 
 
 def _dedupe_periods(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """同一报告期只留一条：优先合并报表（REPORT_TYPE_CODE=001）。"""
-    ranked: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        day = _date(row.get("REPORT_DATE") or row.get("REPORTDATE"))
-        if not day:
-            continue
-        prev = ranked.get(day)
-        if prev is None:
-            ranked[day] = row
-            continue
-        prev_code = str(prev.get("REPORT_TYPE_CODE") or "")
-        new_code = str(row.get("REPORT_TYPE_CODE") or "")
-        if prev_code != "001" and new_code == "001":
-            ranked[day] = row
-    return [ranked[k] for k in sorted(ranked, reverse=True)]
+    return _fr_backend()["dedupe_periods"](rows)
 
 
 def _index_by_date(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    return {_date(r.get("REPORT_DATE") or r.get("REPORTDATE")): r for r in rows}
-
-
-def _merge_statements(
-    main_rows: list[dict[str, Any]],
-    income_rows: list[dict[str, Any]],
-    balance_rows: list[dict[str, Any]],
-    cash_rows: list[dict[str, Any]],
-    lico_rows: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    main_map = _index_by_date(_dedupe_periods(main_rows))
-    income_map = _index_by_date(_dedupe_periods(income_rows))
-    balance_map = _index_by_date(_dedupe_periods(balance_rows))
-    cash_map = _index_by_date(_dedupe_periods(cash_rows))
-    lico_map = _index_by_date(_dedupe_periods(lico_rows))
-    dates = sorted(
-        set(main_map) | set(income_map) | set(balance_map) | set(cash_map) | set(lico_map),
-        reverse=True,
-    )
-    merged: list[dict[str, Any]] = []
-    for day in dates:
-        row: dict[str, Any] = {"REPORT_DATE": day}
-        for pack in (
-            lico_map.get(day) or {},
-            cash_map.get(day) or {},
-            balance_map.get(day) or {},
-            income_map.get(day) or {},
-            main_map.get(day) or {},
-        ):
-            row.update(pack)
-        row["REPORT_DATE"] = day
-        row["PERIOD_LABEL"] = _period_label(day, str(row.get("REPORT_DATE_NAME") or ""))
-        merged.append(row)
-    return merged
-
-
-def _annual_rows(rows: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
-    return [r for r in rows if _is_annual(str(r.get("REPORT_DATE") or ""))][:limit]
-
-
-def _recent_rows(rows: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
-    return rows[:limit]
+    return _fr_backend()["index_by_date"](rows)
 
 
 def _md_table(headers: list[str], body_rows: list[list[str]]) -> str:
@@ -729,21 +635,14 @@ def _valuation_helpers(stock: dict[str, Any], annual: list[dict[str, Any]], pe_i
 
 def fetch_financial_pack(code: str, name: str) -> dict[str, Any]:
     """拉取并格式化财务/估值原始数据包。"""
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        fut_main = pool.submit(_em_get, _MAIN_REPORT, code, page_size=24)
-        fut_income = pool.submit(_em_get, _INCOME_REPORT, code, page_size=24)
-        fut_balance = pool.submit(_em_get, _BALANCE_REPORT, code, page_size=24)
-        fut_cash = pool.submit(_em_get, _CASH_REPORT, code, page_size=24)
-        fut_lico = pool.submit(_em_get, _LICO_REPORT, code, page_size=24)
-        main_rows = fut_main.result()
-        income_rows = fut_income.result()
-        balance_rows = fut_balance.result()
-        cash_rows = fut_cash.result()
-        lico_rows = fut_lico.result()
-
-    merged = _merge_statements(main_rows, income_rows, balance_rows, cash_rows, lico_rows)
-    annual = _annual_rows(merged, 5)
-    recent = _recent_rows(merged, 5)
+    pack = _fr_backend()["get_financial_report"](code, scope="all", limit=24)
+    statements = pack.get("statements") or {}
+    main_rows = statements.get("main") or []
+    income_rows = statements.get("income") or []
+    lico_rows = statements.get("lico") or []
+    merged = pack.get("merged") or []
+    annual = pack.get("annual") or []
+    recent = pack.get("recent") or []
     today = date.today().isoformat()
 
     sections: dict[str, str] = {}

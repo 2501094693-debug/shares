@@ -33,6 +33,7 @@ from fastapi.staticfiles import StaticFiles
 from agent.api import router as ai_router
 from company.api import router as company_router
 from company.fundflow.api import router as fundflow_router
+from company.news.financialreport.api import router as financialreport_router
 from funds.fund.api import router as fund_router
 from industry.api import router as industry_router
 from industry.service import service as industry_service
@@ -137,6 +138,7 @@ app.add_middleware(
 app.include_router(industry_router)
 app.include_router(company_router)
 app.include_router(fundflow_router)
+app.include_router(financialreport_router)
 app.include_router(market_router)
 app.include_router(list_router)
 app.include_router(fund_router)

@@ -50,7 +50,7 @@
       <div class="brand">
         <div>
           <h1 id="pageTitle">公司详情</h1>
-          <p id="pageSub" class="company-page-sub">行情 · 资讯 · 情绪 · 龙虎榜 · 基金持股 · 分析</p>
+          <p id="pageSub" class="company-page-sub">研判 · 行情 · 资讯 · 情绪 · 其他</p>
         </div>
       </div>
       <div class="top-actions">
@@ -64,21 +64,91 @@
 
     <div id="companyTabStack" class="company-tab-stack">
       <nav id="companyMainTabs" class="company-main-tabs" aria-label="主面板">
+        <button type="button" class="company-main-tab" data-panel="judgment" role="tab" aria-selected="false">研判</button>
         <button type="button" class="company-main-tab is-active" data-panel="quotes" role="tab" aria-selected="true">行情</button>
         <button type="button" class="company-main-tab" data-panel="news" role="tab" aria-selected="false">资讯</button>
         <button type="button" class="company-main-tab" data-panel="emotion" role="tab" aria-selected="false">情绪</button>
-        <button type="button" class="company-main-tab" data-panel="list" role="tab" aria-selected="false">龙虎榜</button>
-        <button type="button" class="company-main-tab" data-panel="fund-holders" role="tab" aria-selected="false">基金持股</button>
-      </nav>
-      <nav id="companyAnalysisTabs" class="company-main-tabs company-analysis-tabs" aria-label="公司分析">
-        <button type="button" class="company-main-tab" data-panel="business" role="tab" aria-selected="false">业务简述</button>
-        <button type="button" class="company-main-tab" data-panel="earnings" role="tab" aria-selected="false">财报简述</button>
-        <button type="button" class="company-main-tab" data-panel="competition" role="tab" aria-selected="false">行业竞争</button>
-        <button type="button" class="company-main-tab" data-panel="risk" role="tab" aria-selected="false">风险评估</button>
+        <button type="button" class="company-main-tab" data-panel="others" role="tab" aria-selected="false">其他</button>
       </nav>
     </div>
 
     <div class="company-panels">
+      <div id="panel-judgment" class="company-panel" data-panel="judgment" data-judgment-view="business" role="tabpanel" hidden>
+        <div class="judgment-layout">
+          <nav id="judgmentSourceBar" class="emotion-source-bar judgment-source-bar" aria-label="研判分类">
+            <button type="button" class="emotion-source-btn is-active" data-source="business" aria-selected="true">业务简述</button>
+            <button type="button" class="emotion-source-btn" data-source="earnings" aria-selected="false">财报简述</button>
+            <button type="button" class="emotion-source-btn" data-source="competition" aria-selected="false">行业竞争</button>
+            <button type="button" class="emotion-source-btn" data-source="risk" aria-selected="false">风险评估</button>
+          </nav>
+          <div class="judgment-view">
+        <div class="ai-page company-analysis-page">
+          <div class="ai-command-row">
+            <div class="ai-command-main">
+              <p id="analysisCompanyLabel" class="ai-company-lock">当前公司</p>
+            </div>
+            <div class="ai-command-tail">
+              <span id="liveDot" class="market-live hidden" data-state="idle"></span>
+              <span id="jobMeta" class="ai-job-meta muted"></span>
+              <button id="startBtn" class="btn primary" type="button">生成</button>
+              <button id="stopPollBtn" class="btn ghost hidden" type="button">停止轮询</button>
+            </div>
+          </div>
+
+          <div id="analysisErrorBox" class="error hidden"></div>
+
+          <div id="aiBoard" class="ai-board is-idle">
+            <aside class="ai-pane ai-pane-history" aria-label="历史报告">
+              <header class="ai-pane-head">
+                <h2 id="historyHead">历史报告</h2>
+                <button id="refreshReportsBtn" class="btn ghost sm" type="button">刷新</button>
+              </header>
+              <div class="ai-pane-scroll">
+                <ul id="reportList" class="ai-history-list"></ul>
+              </div>
+            </aside>
+
+            <main class="ai-pane ai-pane-report" aria-label="分析报告">
+              <header class="ai-pane-head ai-report-head">
+                <div class="ai-report-title-block">
+                  <h2 id="reportTitle">分析报告</h2>
+                  <p id="reportMeta" class="muted">当前公司</p>
+                </div>
+                <div class="ai-report-tools">
+                  <span id="reportStatus" class="ai-status-chip hidden" aria-live="polite"></span>
+                </div>
+              </header>
+              <div class="ai-pane-scroll ai-report-scroll">
+                <article id="reportView" class="ai-report-body"></article>
+              </div>
+            </main>
+
+            <aside class="ai-pane ai-pane-monitor" id="progressPanel" aria-label="生成进度">
+              <header class="ai-pane-head">
+                <h2>生成流水线</h2>
+                <span id="pipelineProgress" class="ai-pane-hint">0 / 5</span>
+              </header>
+              <div id="currentAction" class="ai-run-banner hidden" aria-live="polite">
+                <span class="ai-run-banner-label">进行中</span>
+                <strong id="currentAgent"></strong>
+                <span id="currentMessage" class="ai-run-banner-msg"></span>
+              </div>
+              <div class="ai-pane-scroll ai-pipeline-scroll">
+                <div id="agentBoard" class="ai-pipeline"></div>
+              </div>
+              <header class="ai-pane-subhead">
+                <h3>实时日志</h3>
+              </header>
+              <div class="ai-pane-scroll ai-log-scroll">
+                <ol id="activityLog" class="ai-activity-log"></ol>
+              </div>
+            </aside>
+          </div>
+        </div>
+          </div>
+        </div>
+      </div>
+
       <div id="panel-quotes" class="company-panel is-active" data-panel="quotes" role="tabpanel">
         <div class="quotes-layout">
           <section class="company-hero">
@@ -779,149 +849,90 @@
         </aside>
       </div>
 
-      <div id="panel-analysis" class="company-panel" data-panel="analysis" role="tabpanel" hidden>
-        <div class="ai-page company-analysis-page">
-          <div class="ai-command-row">
-            <div class="ai-command-main">
-              <p id="analysisCompanyLabel" class="ai-company-lock">当前公司</p>
-            </div>
-            <div class="ai-command-tail">
-              <span id="liveDot" class="market-live hidden" data-state="idle"></span>
-              <span id="jobMeta" class="ai-job-meta muted"></span>
-              <button id="startBtn" class="btn primary" type="button">生成</button>
-              <button id="stopPollBtn" class="btn ghost hidden" type="button">停止轮询</button>
+      <div id="panel-others" class="company-panel" data-panel="others" data-others-view="lhb" role="tabpanel" hidden>
+        <div class="others-layout">
+          <nav id="othersSourceBar" class="emotion-source-bar others-source-bar" aria-label="其他分类">
+            <button type="button" class="emotion-source-btn is-active" data-source="lhb" aria-selected="true">龙虎榜</button>
+            <button type="button" class="emotion-source-btn" data-source="fund-holders" aria-selected="false">基金持股</button>
+          </nav>
+          <div class="others-view" data-others-view="lhb">
+            <div class="lhb-layout company-lhb-layout">
+              <aside class="lhb-list-pane">
+                <header class="lhb-pane-head">
+                  <div class="company-lhb-identity">
+                    <h2 id="companyListTitle">历史上榜</h2>
+                    <p id="companyListMeta" class="muted">切换到本页后加载</p>
+                  </div>
+                  <div class="lhb-list-tools">
+                    <div id="companyListSortSeg" class="market-seg" role="group" aria-label="排序">
+                      <button type="button" data-sort="date" class="is-active">日期</button>
+                      <button type="button" data-sort="net">净买</button>
+                      <button type="button" data-sort="change">涨跌</button>
+                      <button type="button" data-sort="turnover">换手</button>
+                    </div>
+                  </div>
+                </header>
+                <div class="lhb-list-scroll">
+                  <table class="market-table lhb-table">
+                    <thead>
+                      <tr>
+                        <th>日期</th>
+                        <th class="num">涨跌</th>
+                        <th class="num">净买</th>
+                      </tr>
+                    </thead>
+                    <tbody id="companyListBody">
+                      <tr class="is-empty"><td colspan="3">切换到本页后加载</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </aside>
+              <section class="lhb-detail-pane">
+                <header class="lhb-pane-head" id="companyListDetailHead">
+                  <h2>买卖席位</h2>
+                  <p class="muted">点左侧一行查看买入 / 卖出营业部</p>
+                </header>
+                <div id="companyListDetailBody" class="lhb-detail-scroll">
+                  <div class="lhb-detail-empty muted">切换到本页后加载历史上榜记录</div>
+                </div>
+              </section>
             </div>
           </div>
-
-          <div id="analysisErrorBox" class="error hidden"></div>
-
-          <div id="aiBoard" class="ai-board is-idle">
-            <aside class="ai-pane ai-pane-history" aria-label="历史报告">
-              <header class="ai-pane-head">
-                <h2 id="historyHead">历史报告</h2>
-                <button id="refreshReportsBtn" class="btn ghost sm" type="button">刷新</button>
-              </header>
-              <div class="ai-pane-scroll">
-                <ul id="reportList" class="ai-history-list"></ul>
-              </div>
-            </aside>
-
-            <main class="ai-pane ai-pane-report" aria-label="分析报告">
-              <header class="ai-pane-head ai-report-head">
-                <div class="ai-report-title-block">
-                  <h2 id="reportTitle">分析报告</h2>
-                  <p id="reportMeta" class="muted">当前公司</p>
+          <div class="others-view" data-others-view="fund-holders">
+            <section class="company-section fund-holders-hub" aria-label="基金持股">
+              <header class="section-head fund-holders-head">
+                <div>
+                  <h3 id="fundHoldersTitle">基金持股</h3>
+                  <p id="fundHoldersMeta" class="muted news-hub-meta"></p>
                 </div>
-                <div class="ai-report-tools">
-                  <span id="reportStatus" class="ai-status-chip hidden" aria-live="polite"></span>
-                </div>
+                <label class="cninfo-field fund-holders-date-field">
+                  <span>报告期</span>
+                  <select id="fundHoldersDate" class="chart-select cninfo-select" aria-label="报告期">
+                    <option value="">最新</option>
+                  </select>
+                </label>
               </header>
-              <div class="ai-pane-scroll ai-report-scroll">
-                <article id="reportView" class="ai-report-body"></article>
+              <p id="fundHoldersHint" class="muted news-scroll-hint cninfo-hint"></p>
+              <div id="fundHoldersBody" class="fund-holders-body" tabindex="0">
+                <table class="market-table fund-holders-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">#</th>
+                      <th scope="col">基金代码</th>
+                      <th scope="col">基金名称</th>
+                      <th scope="col" class="num">占净值比</th>
+                      <th scope="col" class="num">占流通股</th>
+                      <th scope="col" class="num">持股市值</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fundHoldersBodyRows">
+                    <tr class="is-empty"><td colspan="6">切换到本页后加载</td></tr>
+                  </tbody>
+                </table>
               </div>
-            </main>
-
-            <aside class="ai-pane ai-pane-monitor" id="progressPanel" aria-label="生成进度">
-              <header class="ai-pane-head">
-                <h2>生成流水线</h2>
-                <span id="pipelineProgress" class="ai-pane-hint">0 / 5</span>
-              </header>
-              <div id="currentAction" class="ai-run-banner hidden" aria-live="polite">
-                <span class="ai-run-banner-label">进行中</span>
-                <strong id="currentAgent"></strong>
-                <span id="currentMessage" class="ai-run-banner-msg"></span>
-              </div>
-              <div class="ai-pane-scroll ai-pipeline-scroll">
-                <div id="agentBoard" class="ai-pipeline"></div>
-              </div>
-              <header class="ai-pane-subhead">
-                <h3>实时日志</h3>
-              </header>
-              <div class="ai-pane-scroll ai-log-scroll">
-                <ol id="activityLog" class="ai-activity-log"></ol>
-              </div>
-            </aside>
+            </section>
           </div>
         </div>
-      </div>
-
-      <div id="panel-list" class="company-panel" data-panel="list" role="tabpanel" hidden>
-        <div class="lhb-layout company-lhb-layout">
-          <aside class="lhb-list-pane">
-            <header class="lhb-pane-head">
-              <div class="company-lhb-identity">
-                <h2 id="companyListTitle">历史上榜</h2>
-                <p id="companyListMeta" class="muted">切换到本页后加载</p>
-              </div>
-              <div class="lhb-list-tools">
-                <div id="companyListSortSeg" class="market-seg" role="group" aria-label="排序">
-                  <button type="button" data-sort="date" class="is-active">日期</button>
-                  <button type="button" data-sort="net">净买</button>
-                  <button type="button" data-sort="change">涨跌</button>
-                  <button type="button" data-sort="turnover">换手</button>
-                </div>
-              </div>
-            </header>
-            <div class="lhb-list-scroll">
-              <table class="market-table lhb-table">
-                <thead>
-                  <tr>
-                    <th>日期</th>
-                    <th class="num">涨跌</th>
-                    <th class="num">净买</th>
-                  </tr>
-                </thead>
-                <tbody id="companyListBody">
-                  <tr class="is-empty"><td colspan="3">切换到本页后加载</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </aside>
-          <section class="lhb-detail-pane">
-            <header class="lhb-pane-head" id="companyListDetailHead">
-              <h2>买卖席位</h2>
-              <p class="muted">点左侧一行查看买入 / 卖出营业部</p>
-            </header>
-            <div id="companyListDetailBody" class="lhb-detail-scroll">
-              <div class="lhb-detail-empty muted">切换到本页后加载历史上榜记录</div>
-            </div>
-          </section>
-        </div>
-      </div>
-
-      <div id="panel-fund-holders" class="company-panel" data-panel="fund-holders" role="tabpanel" hidden>
-        <section class="company-section fund-holders-hub" aria-label="基金持股">
-          <header class="section-head fund-holders-head">
-            <div>
-              <h3 id="fundHoldersTitle">基金持股</h3>
-              <p id="fundHoldersMeta" class="muted news-hub-meta"></p>
-            </div>
-            <label class="cninfo-field fund-holders-date-field">
-              <span>报告期</span>
-              <select id="fundHoldersDate" class="chart-select cninfo-select" aria-label="报告期">
-                <option value="">最新</option>
-              </select>
-            </label>
-          </header>
-          <p id="fundHoldersHint" class="muted news-scroll-hint cninfo-hint"></p>
-          <div id="fundHoldersBody" class="fund-holders-body" tabindex="0">
-            <table class="market-table fund-holders-table">
-              <thead>
-                <tr>
-                  <th scope="col">#</th>
-                  <th scope="col">基金代码</th>
-                  <th scope="col">基金名称</th>
-                  <th scope="col" class="num">占净值比</th>
-                  <th scope="col" class="num">占流通股</th>
-                  <th scope="col" class="num">持股市值</th>
-                </tr>
-              </thead>
-              <tbody id="fundHoldersBodyRows">
-                <tr class="is-empty"><td colspan="6">切换到本页后加载</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
       </div>
     </div>
 

@@ -5,6 +5,7 @@
 - ``news``        采集源 + 详情页/画像集成（``cninfo`` · ``exchange`` · ``press`` · ``eastmoney`` · ``tonghuashun`` · ``xueqiu`` · ``feed`` · ``profile``）
 - ``emotion``     社区情绪（``eastmoney`` 股吧 / ``xueqiu`` 雪球 / ``tonghuashun`` 手机讨论）
 - ``fundflow``    东方财富个股资金流向
+- ``news.financialreport``  东方财富 F10 财务报表
 - ``profile``     详情页组装（行业归属来自 ``industry`` 索引）
 - ``api``         FastAPI 路由
 """

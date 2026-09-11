@@ -258,7 +258,8 @@ const els = {
   refreshEmotionBtn: document.getElementById("refreshEmotionBtn"),
   companyMainTabs: document.getElementById("companyMainTabs"),
   companyTabStack: document.getElementById("companyTabStack"),
-  companyAnalysisTabs: document.getElementById("companyAnalysisTabs"),
+  panelJudgment: document.getElementById("panel-judgment"),
+  judgmentSourceBar: document.getElementById("judgmentSourceBar"),
   exchangeForm: document.getElementById("exchangeForm"),
   exchangeTabs: document.getElementById("exchangeTabs"),
   exchangeTitle: document.getElementById("exchangeTitle"),
@@ -356,7 +357,8 @@ const els = {
   companyListBody: document.getElementById("companyListBody"),
   companyListDetailHead: document.getElementById("companyListDetailHead"),
   companyListDetailBody: document.getElementById("companyListDetailBody"),
-  panelList: document.getElementById("panel-list"),
+  panelOthers: document.getElementById("panel-others"),
+  othersSourceBar: document.getElementById("othersSourceBar"),
   refreshFundHoldersBtn: document.getElementById("refreshFundHoldersBtn"),
   fundHoldersTitle: document.getElementById("fundHoldersTitle"),
   fundHoldersMeta: document.getElementById("fundHoldersMeta"),
@@ -364,7 +366,6 @@ const els = {
   fundHoldersDate: document.getElementById("fundHoldersDate"),
   fundHoldersBody: document.getElementById("fundHoldersBody"),
   fundHoldersBodyRows: document.getElementById("fundHoldersBodyRows"),
-  panelFundHolders: document.getElementById("panel-fund-holders"),
   errorBox: document.getElementById("errorBox"),
 };
 
@@ -524,12 +525,23 @@ const xqEmotionState = {
 let newsGroup = normalizeNewsGroup(params.get("news") || "");
 let newsBootstrapped = { official: false, other: false };
 let emotionBootstrapped = { eastmoney: false, tonghuashun: false, xueqiu: false };
+const ANALYSIS_PANELS = new Set(["business", "earnings", "competition", "risk"]);
 const tabParamRaw = (params.get("tab") || "").trim().toLowerCase();
 let emotionSource = normalizeEmotionSource(params.get("emotion") || "");
 if (["ths-emotion", "ths", "circle"].includes(tabParamRaw)) {
   emotionSource = "tonghuashun";
 } else if (["xueqiu", "xq", "snowball"].includes(tabParamRaw)) {
   emotionSource = "xueqiu";
+}
+let othersSubTab = normalizeOthersSubTab(params.get("others") || "");
+if (["list", "lhb", "longhu"].includes(tabParamRaw)) {
+  othersSubTab = "lhb";
+} else if (["fund-holders", "funds", "fund"].includes(tabParamRaw)) {
+  othersSubTab = "fund-holders";
+}
+let judgmentSubTab = normalizeJudgmentSubTab(params.get("judgment") || "");
+if (isAnalysisPanel(tabParamRaw) || tabParamRaw === "analysis") {
+  judgmentSubTab = normalizeJudgmentSubTab(tabParamRaw === "analysis" ? "business" : tabParamRaw);
 }
 let stockDisplayName = nameHint || code;
 
@@ -554,8 +566,6 @@ function activeEmotionState(source = emotionSource) {
   return emotionState;
 }
 
-const ANALYSIS_PANELS = new Set(["business", "earnings", "competition", "risk"]);
-
 function isAnalysisPanel(panelId = "") {
   return ANALYSIS_PANELS.has(panelId);
 }
@@ -572,10 +582,31 @@ function normalizeMainPanel(panelId) {
   if (panelId === "quotes" || panelId === "charts" || panelId === "overview") return "quotes";
   if (panelId === "news") return "news";
   if (panelId === "emotion" || panelId === "ths-emotion" || panelId === "ths" || panelId === "circle" || panelId === "xueqiu" || panelId === "xq") return "emotion";
-  if (panelId === "list" || panelId === "lhb" || panelId === "longhu") return "list";
-  if (panelId === "fund-holders" || panelId === "funds" || panelId === "fund") return "fund-holders";
-  if (isAnalysisPanel(panelId) || panelId === "analysis") return isAnalysisPanel(panelId) ? panelId : "business";
+  if (
+    panelId === "others" ||
+    panelId === "list" ||
+    panelId === "lhb" ||
+    panelId === "longhu" ||
+    panelId === "fund-holders" ||
+    panelId === "funds" ||
+    panelId === "fund"
+  ) {
+    return "others";
+  }
+  if (panelId === "judgment" || panelId === "analysis" || isAnalysisPanel(panelId)) return "judgment";
   return "";
+}
+
+function normalizeJudgmentSubTab(view) {
+  const raw = String(view || "").trim().toLowerCase();
+  if (ANALYSIS_PANELS.has(raw)) return raw;
+  return "business";
+}
+
+function normalizeOthersSubTab(view) {
+  const raw = String(view || "").trim().toLowerCase();
+  if (raw === "fund-holders" || raw === "funds" || raw === "fund") return "fund-holders";
+  return "lhb";
 }
 
 function normalizeNewsGroup(group) {
@@ -1439,6 +1470,81 @@ function setNewsGroup(nextGroup, { reload = true } = {}) {
     newsBootstrapped[group] = true;
     loadNewsGroup(group, { refresh: false });
   }
+}
+
+function syncOthersRefreshButtons() {
+  const onOthers = activeMainPanel === "others";
+  if (els.refreshListBtn) {
+    els.refreshListBtn.hidden = !onOthers || othersSubTab !== "lhb";
+  }
+  if (els.refreshFundHoldersBtn) {
+    els.refreshFundHoldersBtn.hidden = !onOthers || othersSubTab !== "fund-holders";
+  }
+}
+
+function syncOthersSubTabUi() {
+  const view = othersSubTab;
+  if (els.panelOthers) {
+    els.panelOthers.dataset.othersView = view;
+  }
+  if (els.othersSourceBar) {
+    els.othersSourceBar.querySelectorAll("[data-source]").forEach((btn) => {
+      const active = btn.getAttribute("data-source") === view;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+  }
+  syncOthersRefreshButtons();
+}
+
+function bootstrapOthersSubTab(view = othersSubTab) {
+  if (view === "lhb") {
+    if (!companyListBootstrapped) {
+      companyListBootstrapped = true;
+      loadCompanyList({ refresh: false });
+    }
+  } else if (view === "fund-holders") {
+    if (!fundHoldersBootstrapped) {
+      fundHoldersBootstrapped = true;
+      loadFundHolders({ refresh: false });
+    }
+  }
+}
+
+function setOthersSubTab(nextView, { reload = true } = {}) {
+  const view = normalizeOthersSubTab(nextView);
+  if (view === othersSubTab) return;
+  othersSubTab = view;
+  syncOthersSubTabUi();
+  if (!reload || activeMainPanel !== "others") return;
+  bootstrapOthersSubTab(view);
+}
+
+function syncJudgmentSubTabUi() {
+  const view = judgmentSubTab;
+  if (els.panelJudgment) {
+    els.panelJudgment.dataset.judgmentView = view;
+  }
+  if (els.judgmentSourceBar) {
+    els.judgmentSourceBar.querySelectorAll("[data-source]").forEach((btn) => {
+      const active = btn.getAttribute("data-source") === view;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+  }
+}
+
+function bootstrapJudgmentSubTab(view = judgmentSubTab) {
+  window.CompanyAnalysis?.onPanel?.(view);
+}
+
+function setJudgmentSubTab(nextView, { reload = true } = {}) {
+  const view = normalizeJudgmentSubTab(nextView);
+  if (view === judgmentSubTab) return;
+  judgmentSubTab = view;
+  syncJudgmentSubTabUi();
+  if (!reload || activeMainPanel !== "judgment") return;
+  bootstrapJudgmentSubTab(view);
 }
 
 async function loadAllNews({ refresh = false, group = newsGroup } = {}) {
@@ -4783,6 +4889,28 @@ function setupNewsFolding() {
   syncNewsGroupUi();
 }
 
+function setupOthersSubTabs() {
+  if (!els.othersSourceBar || els.othersSourceBar.dataset.bound === "1") return;
+  els.othersSourceBar.dataset.bound = "1";
+  els.othersSourceBar.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-source]");
+    if (!btn || !els.othersSourceBar.contains(btn)) return;
+    setOthersSubTab(btn.getAttribute("data-source") || "lhb");
+  });
+  syncOthersSubTabUi();
+}
+
+function setupJudgmentSubTabs() {
+  if (!els.judgmentSourceBar || els.judgmentSourceBar.dataset.bound === "1") return;
+  els.judgmentSourceBar.dataset.bound = "1";
+  els.judgmentSourceBar.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-source]");
+    if (!btn || !els.judgmentSourceBar.contains(btn)) return;
+    setJudgmentSubTab(btn.getAttribute("data-source") || "business");
+  });
+  syncJudgmentSubTabUi();
+}
+
 function syncChartsViewportClass() {
   document.documentElement.classList.add("company-charts-on");
   document.body.classList.add("company-charts-on");
@@ -4839,10 +4967,16 @@ function refreshChartsLayout() {
 }
 
 function switchMainPanel(panelId) {
+  const rawPanel = String(panelId || "").trim().toLowerCase();
   const next = normalizeMainPanel(panelId);
-  if (!next || next === activeMainPanel) return;
+  if (!next) return;
+  if (next === activeMainPanel) {
+    if (next === "judgment" && isAnalysisPanel(rawPanel)) {
+      setJudgmentSubTab(rawPanel);
+    }
+    return;
+  }
   activeMainPanel = next;
-  const analysisOn = isAnalysisPanel(next);
 
   document.querySelectorAll(".company-main-tab[data-panel]").forEach((tab) => {
     const active = tab.getAttribute("data-panel") === next;
@@ -4851,8 +4985,7 @@ function switchMainPanel(panelId) {
   });
 
   document.querySelectorAll(".company-panel[data-panel]").forEach((panel) => {
-    const pid = panel.getAttribute("data-panel");
-    const active = analysisOn ? pid === "analysis" : pid === next;
+    const active = panel.getAttribute("data-panel") === next;
     panel.classList.toggle("is-active", active);
     panel.hidden = !active;
   });
@@ -4863,12 +4996,7 @@ function switchMainPanel(panelId) {
   if (els.refreshEmotionBtn) {
     els.refreshEmotionBtn.hidden = next !== "emotion";
   }
-  if (els.refreshListBtn) {
-    els.refreshListBtn.hidden = next !== "list";
-  }
-  if (els.refreshFundHoldersBtn) {
-    els.refreshFundHoldersBtn.hidden = next !== "fund-holders";
-  }
+  syncOthersRefreshButtons();
 
   if (isQuotesPanel(next)) {
     refreshChartsLayout();
@@ -4886,18 +5014,12 @@ function switchMainPanel(panelId) {
     } else {
       syncEmotionSourceUi();
     }
-  } else if (next === "list") {
-    if (!companyListBootstrapped) {
-      companyListBootstrapped = true;
-      loadCompanyList({ refresh: false });
-    }
-  } else if (next === "fund-holders") {
-    if (!fundHoldersBootstrapped) {
-      fundHoldersBootstrapped = true;
-      loadFundHolders({ refresh: false });
-    }
-  } else if (analysisOn) {
-    window.CompanyAnalysis?.onPanel?.(next);
+  } else if (next === "others") {
+    syncOthersSubTabUi();
+    bootstrapOthersSubTab();
+  } else if (next === "judgment") {
+    syncJudgmentSubTabUi();
+    bootstrapJudgmentSubTab();
   }
 }
 
@@ -4918,12 +5040,7 @@ function setupMainTabs() {
   if (els.refreshEmotionBtn) {
     els.refreshEmotionBtn.hidden = activeMainPanel !== "emotion";
   }
-  if (els.refreshListBtn) {
-    els.refreshListBtn.hidden = activeMainPanel !== "list";
-  }
-  if (els.refreshFundHoldersBtn) {
-    els.refreshFundHoldersBtn.hidden = activeMainPanel !== "fund-holders";
-  }
+  syncOthersRefreshButtons();
 }
 
 function setupBackLink() {
@@ -8283,6 +8400,8 @@ function setupChartsViewport() {
   syncChartsViewportClass();
   syncNewsGroupUi();
   syncEmotionSourceUi();
+  syncOthersSubTabUi();
+  syncJudgmentSubTabUi();
   const tab = normalizeMainPanel((params.get("tab") || "").trim());
   if (tab) switchMainPanel(tab);
   fitChartsToViewport();
@@ -8296,6 +8415,8 @@ setupCninfoBox();
 setupEmotionBox();
 setupFundHoldersBox();
 setupCompanyListBox();
+setupOthersSubTabs();
+setupJudgmentSubTabs();
 setupNewsFolding();
 setupMainTabs();
 setupChartsViewport();

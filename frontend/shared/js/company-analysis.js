@@ -100,7 +100,7 @@
   }
 
   function analysisVisible() {
-    const panel = $("panel-analysis");
+    const panel = $("panel-judgment");
     return Boolean(panel && !panel.hidden);
   }
 
@@ -353,7 +353,7 @@
   }
 
   function focusReportPane() {
-    const scroller = document.querySelector("#panel-analysis .ai-report-scroll");
+    const scroller = document.querySelector("#panel-judgment .ai-report-scroll");
     if (scroller) scroller.scrollTop = 0;
   }
 
@@ -370,8 +370,8 @@
     if ($("startBtn")) $("startBtn").textContent = cfg.startBtn;
     if ($("historyHead")) $("historyHead").textContent = cfg.historyHead;
     if ($("pipelineProgress")) $("pipelineProgress").textContent = `0 / ${cfg.agentDefs.length}`;
-    document.querySelectorAll("#companyAnalysisTabs [data-panel]").forEach((tab) => {
-      const active = tab.getAttribute("data-panel") === mode;
+    document.querySelectorAll("#judgmentSourceBar [data-source]").forEach((tab) => {
+      const active = tab.getAttribute("data-source") === mode;
       tab.classList.toggle("is-active", active && analysisVisible());
       tab.setAttribute("aria-selected", active && analysisVisible() ? "true" : "false");
     });
@@ -392,7 +392,7 @@
 
   function highlightActiveReport() {
     const ms = getModeState();
-    document.querySelectorAll("#panel-analysis .ai-history-item").forEach((btn) => {
+    document.querySelectorAll("#panel-judgment .ai-history-item").forEach((btn) => {
       btn.classList.toggle("is-active", btn.dataset.file === ms.activeReportFile);
     });
   }
@@ -456,11 +456,16 @@
     const ms = getModeState();
     const { data } = await api(reportsListUrl(cfg));
     ms.reports = (data || []).filter((r) => cfg.reportNameRe.test(r.filename) && reportMatches(r.filename));
+    paintReportList(cfg, ms);
+    return ms.reports;
+  }
+
+  function paintReportList(cfg = getConfig(), ms = getModeState()) {
     const list = $("reportList");
-    if (!list) return ms.reports;
+    if (!list) return;
     if (!ms.reports.length) {
       list.innerHTML = `<li class='muted' style='padding:10px'>${esc(cfg.emptyReports)}</li>`;
-      return ms.reports;
+      return;
     }
     list.innerHTML = ms.reports.map((row) => (
       `<li>
@@ -489,7 +494,46 @@
       });
     });
     highlightActiveReport();
-    return ms.reports;
+  }
+
+  async function paintModeCache(mode) {
+    const cfg = getConfig(mode);
+    const ms = getModeState(mode);
+    applyChrome(mode);
+    await loadReports().catch(() => {});
+    if (state.mode !== mode) return;
+
+    if (ms.job && (ms.job.status === "running" || ms.polling || ms.job.status === "failed")) {
+      renderJob(ms.job);
+      return;
+    }
+    if (ms.job?.status === "completed" && resultText(ms.job.result)) {
+      renderJob(ms.job);
+      return;
+    }
+    if (ms.activeReportFile) {
+      try {
+        const { data } = await api(reportReadUrl(cfg, ms.activeReportFile));
+        if (state.mode !== mode) return;
+        setBoardMode("result");
+        if ($("reportTitle")) $("reportTitle").textContent = data.filename.replace(/\.md$/i, "");
+        if ($("reportMeta")) $("reportMeta").textContent = cfg.historyMeta;
+        if ($("reportView")) {
+          $("reportView").innerHTML = renderMarkdown(data.content || "");
+          ms.renderedReportKey = `${ms.activeReportFile}|${(data.content || "").length}`;
+        }
+        highlightActiveReport();
+        showError("");
+        setLive("live");
+      } catch (err) {
+        if (state.mode === mode) {
+          showError(err.message);
+          paintIdle();
+        }
+      }
+      return;
+    }
+    paintIdle();
   }
 
   function stopPollForMode(modeId) {
@@ -681,17 +725,15 @@
 
     if (!force && ms.ready) {
       if (state.mode === mode) {
-        if (ms.job) renderJob(ms.job);
-        else if (ms.activeReportFile) {
-          setBoardMode("result");
-          highlightActiveReport();
-        }
+        await paintModeCache(mode);
       }
       return;
     }
 
     if (ms.job?.status === "running" && ms.polling && !force) {
-      if (state.mode === mode) renderJob(ms.job);
+      if (state.mode === mode) {
+        await paintModeCache(mode);
+      }
       ms.ready = true;
       return;
     }
