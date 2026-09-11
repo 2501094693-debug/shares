@@ -18,7 +18,10 @@
       pollFailCount: 0,
       pollInFlight: false,
       lastLogLen: 0,
+      lastLogSignature: "",
       activeReportFile: "",
+      renderedReportKey: "",
+      ready: false,
       job: null,
       reports: [],
     };
@@ -194,8 +197,10 @@
   function setBoardMode(mode) {
     const board = $("aiBoard");
     if (!board) return;
+    const next = `is-${mode}`;
+    if (board.classList.contains(next)) return;
     board.classList.remove("is-idle", "is-running", "is-result");
-    board.classList.add(`is-${mode}`);
+    board.classList.add(next);
   }
 
   function showError(message) {
@@ -290,6 +295,10 @@
     const list = $("activityLog");
     const panel = $("progressPanel");
     if (!list) return;
+
+    const signature = JSON.stringify(log || []);
+    if (signature === ms.lastLogSignature) return;
+    ms.lastLogSignature = signature;
 
     if (!log?.length) {
       list.innerHTML = "<li class='muted' style='padding:8px'>启动后，此处将显示每个步骤的详细日志</li>";
@@ -393,10 +402,16 @@
     const ms = getModeState();
     if (!result) return;
     const filename = reportFilename(result);
+    const text = resultText(result);
+    const reportKey = `${filename}|${text.length}`;
     if (filename) ms.activeReportFile = filename;
     if ($("reportTitle")) $("reportTitle").textContent = cfg.resultTitle?.(result) || String(filename).replace(/\.md$/i, "");
     if ($("reportMeta")) $("reportMeta").textContent = cfg.resultMeta?.(result) || "已保存";
-    if ($("reportView")) $("reportView").innerHTML = renderMarkdown(resultText(result));
+    if (ms.renderedReportKey !== reportKey && $("reportView")) {
+      $("reportView").innerHTML = renderMarkdown(text);
+      ms.renderedReportKey = reportKey;
+    }
+    ms.ready = true;
     highlightActiveReport();
   }
 
@@ -464,6 +479,8 @@
           if ($("reportTitle")) $("reportTitle").textContent = file.filename.replace(/\.md$/i, "");
           if ($("reportMeta")) $("reportMeta").textContent = cfg.historyMeta;
           if ($("reportView")) $("reportView").innerHTML = renderMarkdown(file.content || "");
+          ms.renderedReportKey = `${btn.dataset.file}|${(file.content || "").length}`;
+          ms.ready = true;
           highlightActiveReport();
           showError("");
         } catch (err) {
@@ -519,7 +536,6 @@
   }
 
   async function revealCompleted(job) {
-    showReportLoading("正在打开报告…");
     try {
       const result = await loadReportContent(job);
       renderResult(result);
@@ -544,8 +560,10 @@
         stopPollForMode(mode);
         if (state.mode === mode) {
           $("stopPollBtn")?.classList.add("hidden");
+          const hasInline = Boolean(resultText(job.result));
           renderJob(job);
-          await revealCompleted(job);
+          if (!hasInline) await revealCompleted(job);
+          getModeState(mode).ready = true;
           await loadReports().catch(() => {});
         }
       } else if (job.status === "failed") {
@@ -596,6 +614,9 @@
     setBoardMode("running");
     syncActionButtons(true);
     ms.activeReportFile = "";
+    ms.ready = false;
+    ms.renderedReportKey = "";
+    ms.lastLogSignature = "";
     try {
       const qs = new URLSearchParams({ company });
       const { data } = await api(`${cfg.apiRoot}?${qs}`, {
@@ -658,8 +679,20 @@
 
     applyChrome(mode);
 
+    if (!force && ms.ready) {
+      if (state.mode === mode) {
+        if (ms.job) renderJob(ms.job);
+        else if (ms.activeReportFile) {
+          setBoardMode("result");
+          highlightActiveReport();
+        }
+      }
+      return;
+    }
+
     if (ms.job?.status === "running" && ms.polling && !force) {
       if (state.mode === mode) renderJob(ms.job);
+      ms.ready = true;
       return;
     }
 
@@ -668,11 +701,14 @@
         renderJob(ms.job);
         await loadReports().catch(() => {});
       }
+      ms.ready = true;
       return;
     }
 
     if (state.mode === mode && !force) {
-      paintIdle();
+      const view = $("reportView");
+      const empty = !view?.textContent?.trim() || view.querySelector(".ai-empty-state");
+      if (empty) showReportLoading("正在加载…");
     }
 
     if (!force) await waitForIdentity();
@@ -711,9 +747,11 @@
         if ($("reportTitle")) $("reportTitle").textContent = data.filename.replace(/\.md$/i, "");
         if ($("reportMeta")) $("reportMeta").textContent = latest.modified_at ? `已保存 · ${latest.modified_at}` : cfg.historyMeta;
         if ($("reportView")) $("reportView").innerHTML = renderMarkdown(data.content || "");
+        ms.renderedReportKey = `${latest.filename}|${(data.content || "").length}`;
         highlightActiveReport();
         showError("");
         setLive("live");
+        ms.ready = true;
         return;
       } catch (err) {
         if (state.mode === mode) showError(err.message);
@@ -724,6 +762,7 @@
       paintIdle();
       if ($("reportMeta")) $("reportMeta").textContent = "暂无该公司报告，点击生成确认";
     }
+    ms.ready = true;
   }
 
   async function onPanel(mode) {
@@ -742,7 +781,9 @@
     state.identity = { code, name, ready: ready || Boolean(meaningfulName(name, code)) };
     applyChrome(state.mode);
     if (!analysisVisible()) return;
-    if (!changed && getModeState().job) return;
+    if (!changed) return;
+    const ms = getModeState();
+    if (ms.ready) return;
     ensureForMode(state.mode);
   }
 

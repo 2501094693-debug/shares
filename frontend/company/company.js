@@ -233,8 +233,11 @@ const els = {
   ticksChartEmpty: document.getElementById("ticksChartEmpty"),
   ticksChartAxisScroll: document.getElementById("ticksChartAxisScroll"),
   ticksChartScrollBar: document.getElementById("ticksChartScrollBar"),
+  comboMetricSelect: document.getElementById("comboMetricSelect"),
+  comboMetricWrap: document.getElementById("comboMetricWrap"),
   peSeriesSelect: document.getElementById("peSeriesSelect"),
   peSeriesWrap: document.getElementById("peSeriesWrap"),
+  fundflowLegendWrap: document.getElementById("fundflowLegendWrap"),
   peChartMeta: document.getElementById("peChartMeta"),
   peChartHoverCard: document.getElementById("peChartHoverCard"),
   peChartWrap: document.getElementById("peChartWrap"),
@@ -613,6 +616,9 @@ const chartState = {
   hoverAbsIndex: null,
 };
 
+/** 走势 combo 底部指标：pe 估值 | fundflow 资金流 */
+let comboMetricState = "fundflow";
+
 /** @type {{ loading: boolean, liveFetching: boolean, liveFetchPending: boolean, liveFetchGen: number, items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, live: boolean, phase: string, tradeDate: string, hoverTime: string|null }} */
 const ticksState = {
   loading: false,
@@ -689,8 +695,11 @@ function comboPanesEnabled(mode = chartState.mode) {
 function syncComboLegend(mode = chartState.mode) {
   const card = document.querySelector(".chart-card--kline");
   const combo = comboPanesEnabled(mode);
+  const metric = comboMetricState;
   if (card) card.classList.toggle("is-combo", combo);
-  if (els.peSeriesWrap) els.peSeriesWrap.classList.toggle("hidden", !combo);
+  if (els.comboMetricWrap) els.comboMetricWrap.classList.toggle("hidden", !combo);
+  if (els.peSeriesWrap) els.peSeriesWrap.classList.toggle("hidden", !combo || metric !== "pe");
+  if (els.fundflowLegendWrap) els.fundflowLegendWrap.classList.toggle("hidden", !combo || metric !== "fundflow");
 }
 
 function syncChartModeSelect(mode = chartState.mode) {
@@ -5192,24 +5201,39 @@ function applyLinkedRangeToTurnover(range) {
   renderTurnoverChart();
 }
 
+function applyLinkedRangeToFundflow(range) {
+  const vp = viewportFromAxisRange(fundflowState.allItems, range);
+  if (!vp) return;
+  fundflowState.viewStart = vp.viewStart;
+  fundflowState.viewSize = vp.viewSize;
+  fundflowState.items = fundflowViewWindow().items;
+}
+
 function propagateLinkedAxis(source) {
   if (linkedAxisLock) return;
   if (source === "kline" && !klineJoinsLinkedAxis()) return;
   const items =
-    source === "kline" ? chartState.items : source === "pe" ? peState.items : turnoverState.items;
+    source === "kline"
+      ? chartState.items
+      : source === "pe"
+        ? peState.items
+        : source === "fundflow"
+          ? fundflowState.items
+          : turnoverState.items;
   const range = visibleAxisRange(items);
   if (!range) return;
   linkedAxisLock = true;
   try {
     if (source !== "kline" && klineJoinsLinkedAxis()) applyLinkedRangeToKline(range);
     if (source !== "pe") applyLinkedRangeToPe(range);
+    if (source !== "fundflow") applyLinkedRangeToFundflow(range);
     if (source !== "turnover") applyLinkedRangeToTurnover(range);
   } finally {
     linkedAxisLock = false;
   }
 }
 
-function chartLayout(w, h, { pctAxis = false, compact = false, combo = false } = {}) {
+function chartLayout(w, h, { pctAxis = false, compact = false, combo = false, fundflow = false } = {}) {
   const pad = {
     top: 8,
     right: pctAxis ? 52 : 8,
@@ -5235,7 +5259,9 @@ function chartLayout(w, h, { pctAxis = false, compact = false, combo = false } =
   }
   const gap = 8;
   const volH = Math.max(32, Math.floor(innerH * 0.12));
-  const peH = Math.max(72, Math.floor(innerH * 0.24));
+  const peH = fundflow
+    ? Math.max(80, Math.floor(innerH * 0.3))
+    : Math.max(72, Math.floor(innerH * 0.24));
   const priceH = Math.max(110, innerH - volH - peH - gap * 2);
   let y = pad.top;
   const price = { x: pad.left, y, w: innerW, h: priceH };
@@ -5256,6 +5282,83 @@ function alignMetricsToKline(klineItems, metricItems) {
     const hit = map.get(itemAxisDate(d));
     return hit ? { ...hit, time: d.time } : { time: d.time };
   });
+}
+
+const FUND_FLOW_AGG_FIELDS = ["main_net", "small_net", "mid_net", "big_net", "super_net"];
+
+function parseAxisDate(str) {
+  const key = itemAxisDate({ time: str });
+  if (!key || key.length < 10) return null;
+  const [y, m, d] = key.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
+function formatAxisDate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function weekStartFromEnd(endStr) {
+  const end = parseAxisDate(endStr);
+  if (!end) return endStr;
+  const day = end.getDay();
+  const monday = new Date(end);
+  monday.setDate(end.getDate() - (day === 0 ? 6 : day - 1));
+  return formatAxisDate(monday);
+}
+
+function sumFundflowRows(rows) {
+  const out = {};
+  for (const field of FUND_FLOW_AGG_FIELDS) {
+    let sum = 0;
+    let has = false;
+    for (const row of rows) {
+      const v = Number(row?.[field]);
+      if (Number.isFinite(v)) {
+        sum += v;
+        has = true;
+      }
+    }
+    out[field] = has ? sum : null;
+  }
+  return out;
+}
+
+function alignFundflowToKline(klineItems, flowItems, mode = chartState.mode) {
+  const flows = Array.isArray(flowItems) ? flowItems : [];
+  const items = Array.isArray(klineItems) ? klineItems : [];
+  if (!items.length) return [];
+  if (!flows.length) return items.map((d) => ({ time: d.time }));
+  if (mode === "day") return alignMetricsToKline(items, flows);
+
+  if (mode === "week") {
+    return items.map((k) => {
+      const end = itemAxisDate(k);
+      if (!end) return { time: k.time };
+      const start = weekStartFromEnd(end);
+      const bucket = flows.filter((f) => {
+        const fd = itemAxisDate(f);
+        return fd && fd >= start && fd <= end;
+      });
+      if (!bucket.length) return { time: k.time };
+      return { time: k.time, ...sumFundflowRows(bucket) };
+    });
+  }
+
+  if (mode === "month") {
+    return items.map((k) => {
+      const ym = itemAxisDate(k)?.slice(0, 7);
+      if (!ym) return { time: k.time };
+      const bucket = flows.filter((f) => itemAxisDate(f)?.slice(0, 7) === ym);
+      if (!bucket.length) return { time: k.time };
+      return { time: k.time, ...sumFundflowRows(bucket) };
+    });
+  }
+
+  return alignMetricsToKline(items, flows);
 }
 
 function metricValueAtTime(allItems, getValue, time) {
@@ -5957,6 +6060,186 @@ function chartColors() {
   };
 }
 
+const FUND_FLOW_TIERS = [
+  { key: "super", field: "super_net", pctField: "super_net_pct", label: "超大单", color: "#e63946" },
+  { key: "big", field: "big_net", pctField: "big_net_pct", label: "大单", color: "#f4a261" },
+  { key: "mid", field: "mid_net", pctField: "mid_net_pct", label: "中单", color: "#457b9d" },
+  { key: "small", field: "small_net", pctField: "small_net_pct", label: "小单", color: "#2a9d8f" },
+];
+
+const FUND_FLOW_MAIN = { field: "main_net", pctField: "main_net_pct", label: "主力", color: "#c77dff" };
+
+const fundflowState = {
+  loading: false,
+  items: [],
+  allItems: [],
+  viewStart: 0,
+  viewSize: 90,
+  source: "",
+  visibleTiers: new Set(["super", "big", "mid", "small"]),
+};
+
+function fundflowTierValue(d, tier) {
+  const n = Number(d?.[tier.field]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function fundflowPctValue(d, tier) {
+  const n = Number(d?.[tier.pctField]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function visibleFundflowTiers() {
+  return FUND_FLOW_TIERS.filter((t) => fundflowState.visibleTiers.has(t.key));
+}
+
+function hasFundflowData(items) {
+  const tiers = visibleFundflowTiers();
+  if (!tiers.length) return false;
+  return (items || []).some((d) => tiers.some((t) => fundflowTierValue(d, t) != null));
+}
+
+function fundflowAtTime(time) {
+  const hit = alignFundflowToKline([{ time }], fundflowState.allItems, chartState.mode)[0];
+  if (!hit) return null;
+  const tiers = visibleFundflowTiers();
+  if (!tiers.length) return null;
+  return tiers.some((tier) => fundflowTierValue(hit, tier) != null) ? hit : null;
+}
+
+function fundflowFlowHtml(amount, pct, color) {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return "-";
+  const sign = n > 0 ? "+" : "";
+  let text = `${sign}${fmtVol(n)}`;
+  const p = Number(pct);
+  if (Number.isFinite(p)) text += ` (${p > 0 ? "+" : ""}${fmtPct(p)})`;
+  const cls = n > 0 ? "change-up" : n < 0 ? "change-down" : "";
+  const style = color ? ` style="color:${color}"` : "";
+  return `<span class="${cls}"${style}>${escapeHtml(text)}</span>`;
+}
+
+function fundflowHoverRows(ff, row) {
+  const rows = [];
+  const showPct = chartState.mode === "day";
+  const mainAmt = Number(ff[FUND_FLOW_MAIN.field]);
+  if (Number.isFinite(mainAmt)) {
+    rows.push(
+      row(
+        FUND_FLOW_MAIN.label,
+        fundflowFlowHtml(mainAmt, showPct ? ff[FUND_FLOW_MAIN.pctField] : null, FUND_FLOW_MAIN.color)
+      )
+    );
+  }
+  for (const tier of FUND_FLOW_TIERS) {
+    const amt = fundflowTierValue(ff, tier);
+    if (amt == null) continue;
+    rows.push(
+      row(tier.label, fundflowFlowHtml(amt, showPct ? fundflowPctValue(ff, tier) : null, tier.color))
+    );
+  }
+  return rows;
+}
+
+function drawGroupedSignedBars(ctx, layout, items, tiers, colors, hoverIndex, { mode = "day" } = {}) {
+  const n = items.length;
+  if (!n || !tiers.length) return;
+
+  const { price } = layout;
+  const values = [];
+  for (const d of items) {
+    for (const tier of tiers) {
+      const v = fundflowTierValue(d, tier);
+      if (v != null) values.push(v);
+    }
+  }
+  if (!values.length) return;
+
+  const absVals = values.map((v) => Math.abs(v)).sort((a, b) => a - b);
+  const p95 = quantile(absVals, 0.95);
+  const peak = absVals.length ? absVals[absVals.length - 1] : 0;
+  const maxAbs = Math.max(p95 ?? peak, 1);
+  const priceScale = buildPriceScale(-maxAbs, maxAbs, {
+    tickCount: priceScaleTickCount(price.h),
+    padRatio: 0.06,
+    center: 0,
+  });
+  const yAt = (p) =>
+    price.y + ((priceScale.max - p) / (priceScale.max - priceScale.min || 1)) * price.h;
+  const yZero = yAt(0);
+  const groupW = price.w / n;
+  const tierCount = tiers.length;
+  const innerGap = 1;
+  const barW = Math.min(6, Math.max(2, (groupW - innerGap * (tierCount - 1)) / tierCount));
+  const span = tierCount * barW + innerGap * (tierCount - 1);
+
+  const yTicks = (priceScale.ticks || []).map(yAt);
+  const xTicks = [0, 0.5, 1].map((t) => price.x + price.w * t);
+  drawGrid(ctx, price, yTicks, xTicks, colors);
+
+  ctx.save();
+  ctx.strokeStyle = colors.muted || "#8494a8";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(price.x, yZero);
+  ctx.lineTo(price.x + price.w, yZero);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(price.x, price.y, price.w, price.h);
+  ctx.clip();
+
+  for (let i = 0; i < n; i += 1) {
+    const centerX = price.x + (i + 0.5) * groupW;
+    const dimmed = hoverIndex != null && hoverIndex !== i;
+    let barX = centerX - span / 2;
+    for (const tier of tiers) {
+      const v = fundflowTierValue(items[i], tier);
+      if (v == null) {
+        barX += barW + innerGap;
+        continue;
+      }
+      const yVal = yAt(Math.max(-maxAbs, Math.min(maxAbs, v)));
+      const barH = Math.max(1, Math.abs(yVal - yZero));
+      const barY = v >= 0 ? yVal : yZero;
+      ctx.globalAlpha = dimmed ? 0.35 : 1;
+      ctx.fillStyle = tier.color;
+      ctx.fillRect(barX, barY, barW, barH);
+      if (barW >= 2) {
+        ctx.strokeStyle = "rgba(0, 0, 0, 0.22)";
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(barX, barY, barW, barH);
+      }
+      barX += barW + innerGap;
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
+    const x = price.x + (hoverIndex + 0.5) * groupW;
+    ctx.save();
+    ctx.strokeStyle = colors.cross;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, price.y);
+    ctx.lineTo(x, price.y + price.h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  drawPaneLabel(ctx, price, mode === "day" ? "净流入" : "净流入(汇总)", colors);
+  drawAxesLabels(ctx, layout, priceScale, items, mode, colors, {
+    yFormat: fmtVol,
+    skipTimeLabels: false,
+  });
+}
+
 function renderChart(hoverIndex = null) {
   const canvas = els.priceChart;
   const wrap = els.chartWrap;
@@ -5976,11 +6259,12 @@ function renderChart(hoverIndex = null) {
   if (!items.length) return;
 
   const combo = comboPanesEnabled();
-  const layout = chartLayout(cssW, cssH, { combo });
+  const fundflow = combo && comboMetricState === "fundflow";
+  const layout = chartLayout(cssW, cssH, { combo, fundflow });
   drawKlineChart(ctx, layout, items, chartState.mode, colors, hoverIndex);
   if (!combo || !layout.pe) return;
 
-  const peColors = {
+  const metricColors = {
     accent: cssVar("--accent", "#2ad4b8"),
     muted: colors.muted,
     up: colors.up,
@@ -5988,20 +6272,36 @@ function renderChart(hoverIndex = null) {
     grid: colors.grid,
     cross: colors.cross,
   };
-  const peItems = alignMetricsToKline(items, peState.allItems);
-  const pePane = {
+  const metricPane = {
     price: layout.pe,
     volume: { x: layout.pe.x, y: layout.pe.y + layout.pe.h, w: layout.pe.w, h: 0 },
   };
+  if (fundflow) {
+    const ffItems = alignFundflowToKline(items, fundflowState.allItems, chartState.mode);
+    if (hasFundflowData(ffItems)) {
+      drawGroupedSignedBars(ctx, metricPane, ffItems, visibleFundflowTiers(), metricColors, hoverIndex, {
+        mode: chartState.mode,
+      });
+    } else {
+      drawPaneCenterLabel(
+        ctx,
+        layout.pe,
+        fundflowState.loading ? "资金流加载中…" : "暂无资金流数据",
+        metricColors
+      );
+    }
+    return;
+  }
+  const peItems = alignMetricsToKline(items, peState.allItems);
   if (peItems.some((d) => peValue(d) != null)) {
-    drawMetricChart(ctx, pePane, peItems, peValue, peColors, hoverIndex, {
+    drawMetricChart(ctx, metricPane, peItems, peValue, metricColors, hoverIndex, {
       formatLabel: fmtNum,
       mode: chartState.mode,
       skipHoverHair: true,
       compactRefs: true,
     });
   } else {
-    drawPaneLabel(ctx, layout.pe, peState.loading ? "估值加载中…" : "暂无估值", peColors);
+    drawPaneCenterLabel(ctx, layout.pe, peState.loading ? "估值加载中…" : "暂无估值", metricColors);
   }
 }
 
@@ -6013,6 +6313,17 @@ function drawPaneLabel(ctx, rect, text, colors) {
   ctx.textAlign = "right";
   ctx.textBaseline = "top";
   ctx.fillText(text, rect.x - 6, rect.y + 4);
+  ctx.restore();
+}
+
+function drawPaneCenterLabel(ctx, rect, text, colors) {
+  if (!rect || !text) return;
+  ctx.save();
+  ctx.fillStyle = colors.muted || "#8494a8";
+  ctx.font = '11px "JetBrains Mono", Consolas, monospace';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2);
   ctx.restore();
 }
 
@@ -6084,14 +6395,19 @@ function fillKlineQuoteCard(absIndex) {
     row("成交量", escapeHtml(fmtVol(d.volume))),
   ].filter(Boolean);
   if (comboPanesEnabled()) {
-    const pe = metricValueAtTime(peState.allItems, peValue, d.time);
-    if (pe != null) {
-      rows.push(
-        row(
-          peSeriesConf().label,
-          `<span style="color:var(--accent)">${escapeHtml(fmtNum(pe))}</span>`
-        )
-      );
+    if (comboMetricState === "fundflow") {
+      const ff = fundflowAtTime(d.time);
+      if (ff) rows.push(...fundflowHoverRows(ff, row));
+    } else {
+      const pe = metricValueAtTime(peState.allItems, peValue, d.time);
+      if (pe != null) {
+        rows.push(
+          row(
+            peSeriesConf().label,
+            `<span style="color:var(--accent)">${escapeHtml(fmtNum(pe))}</span>`
+          )
+        );
+      }
     }
   }
 
@@ -6215,25 +6531,62 @@ function downsampleTicksByTime(items, maxN = TICKS_DRAW_MAX) {
   return out;
 }
 
-function tickRowKey(d) {
-  return `${d.time}|${d.price}|${d.volume}|${d.count ?? ""}|${d.seq ?? ""}`;
+function tickRowKey(d, { relaxed = false } = {}) {
+  const time = String(d?.time ?? "");
+  const price = Number(d?.price);
+  const volume = Number(d?.volume) || 0;
+  const base = `${time}|${price}|${volume}`;
+  if (relaxed) return base;
+  return `${base}|${d?.count ?? ""}|${d?.seq ?? ""}`;
+}
+
+function findTickOverlapIndex(current, incoming, { relaxed = false } = {}) {
+  const lastKey = tickRowKey(current[current.length - 1], { relaxed });
+  for (let i = incoming.length - 1; i >= 0; i -= 1) {
+    if (tickRowKey(incoming[i], { relaxed }) === lastKey) return i;
+  }
+  const keyToIndex = new Map();
+  incoming.forEach((row, i) => {
+    keyToIndex.set(tickRowKey(row, { relaxed }), i);
+  });
+  for (let i = current.length - 1; i >= 0; i -= 1) {
+    const hit = keyToIndex.get(tickRowKey(current[i], { relaxed }));
+    if (hit != null) return hit;
+  }
+  return -1;
 }
 
 function mergeTickItems(current, incoming) {
   if (!incoming.length) return current;
   if (!current.length) return incoming;
-  const lastKey = tickRowKey(current[current.length - 1]);
-  let idx = -1;
-  for (let i = incoming.length - 1; i >= 0; i -= 1) {
-    if (tickRowKey(incoming[i]) === lastKey) {
-      idx = i;
-      break;
+
+  let idx = findTickOverlapIndex(current, incoming);
+  if (idx < 0) idx = findTickOverlapIndex(current, incoming, { relaxed: true });
+  if (idx >= 0) return current.concat(incoming.slice(idx + 1));
+
+  const lastCurT = parseClockMinutes(current[current.length - 1].time);
+  const lastIncT = parseClockMinutes(incoming[incoming.length - 1].time);
+  if (lastCurT != null && lastIncT != null) {
+    if (lastIncT > lastCurT) {
+      const newer = incoming.filter((row) => {
+        const t = parseClockMinutes(row.time);
+        return t != null && t > lastCurT;
+      });
+      if (newer.length) return current.concat(newer);
+    } else if (lastIncT === lastCurT) {
+      let cut = current.length;
+      while (cut > 0) {
+        const t = parseClockMinutes(current[cut - 1].time);
+        if (t == null || t < lastCurT) break;
+        cut -= 1;
+      }
+      const tail = incoming.filter((row) => parseClockMinutes(row.time) === lastCurT);
+      if (tail.length) return current.slice(0, cut).concat(tail);
     }
   }
-  if (idx >= 0) return current.concat(incoming.slice(idx + 1));
-  const lastT = parseClockMinutes(current[current.length - 1].time);
-  const firstT = parseClockMinutes(incoming[0].time);
-  if (lastT != null && firstT != null && firstT >= lastT) return current.concat(incoming);
+
+  // 增量切片对不上时保留已有全天走势，避免只剩最近几十笔
+  if (current.length >= incoming.length) return current;
   return incoming;
 }
 
@@ -6871,7 +7224,9 @@ async function loadChart(mode = chartState.mode) {
     }
     refreshChartWindowStatus();
     hideHoverCard();
+    syncComboLegend(mode);
     renderChart();
+    refreshKlineQuoteCard();
     propagateLinkedAxis("kline");
   } catch (err) {
     resetChartViewport([], conf);
@@ -7420,6 +7775,126 @@ async function loadPeChart() {
   }
 }
 
+function fundflowViewWindow() {
+  const all = fundflowState.allItems || [];
+  const total = all.length;
+  let size = Number(fundflowState.viewSize) || 0;
+  if (size <= 0 || size >= total) size = total;
+  const maxStart = Math.max(0, total - size);
+  const start = Math.min(Math.max(0, Number(fundflowState.viewStart) || 0), maxStart);
+  return { total, size, start, maxStart, items: total ? all.slice(start, start + size) : [] };
+}
+
+function resetFundflowViewport(allItems, { preferLinked = true } = {}) {
+  fundflowState.allItems = Array.isArray(allItems) ? allItems : [];
+  const total = fundflowState.allItems.length;
+  const linked = preferLinked && klineJoinsLinkedAxis() ? visibleAxisRange(chartState.items) : null;
+  const vp = linked ? viewportFromAxisRange(fundflowState.allItems, linked) : null;
+  if (vp) {
+    fundflowState.viewStart = vp.viewStart;
+    fundflowState.viewSize = vp.viewSize;
+  } else {
+    let viewSize = METRIC_FALLBACK_VIEW_SIZE;
+    if (viewSize <= 0 || viewSize >= total) viewSize = total;
+    fundflowState.viewSize = viewSize;
+    fundflowState.viewStart = Math.max(0, total - viewSize);
+  }
+  fundflowState.items = fundflowViewWindow().items;
+}
+
+function syncComboMetricSelect(metric = comboMetricState) {
+  if (!els.comboMetricSelect) return;
+  if (els.comboMetricSelect.value !== metric) els.comboMetricSelect.value = metric;
+}
+
+function applyComboMetric(metric) {
+  if (!["pe", "fundflow"].includes(metric) || metric === comboMetricState) return;
+  comboMetricState = metric;
+  syncComboMetricSelect(metric);
+  syncComboLegend();
+  if (metric === "fundflow" && !fundflowState.loading && !(fundflowState.allItems || []).length) {
+    void loadFundflowChart();
+    return;
+  }
+  renderChart();
+  refreshKlineQuoteCard();
+}
+
+function syncFundflowLegendUi() {
+  if (!els.fundflowLegendWrap) return;
+  els.fundflowLegendWrap.querySelectorAll(".fundflow-legend-item").forEach((label) => {
+    const tier = label.getAttribute("data-tier");
+    const input = label.querySelector("input[type=checkbox]");
+    if (!tier || !input) return;
+    input.checked = fundflowState.visibleTiers.has(tier);
+  });
+}
+
+function setupComboMetric() {
+  if (els.comboMetricSelect) {
+    els.comboMetricSelect.addEventListener("change", () => {
+      applyComboMetric(els.comboMetricSelect.value);
+    });
+    syncComboMetricSelect();
+  }
+  if (els.fundflowLegendWrap) {
+    els.fundflowLegendWrap.querySelectorAll(".fundflow-legend-item input[type=checkbox]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const label = input.closest(".fundflow-legend-item");
+        const tier = label?.getAttribute("data-tier");
+        if (!tier) return;
+        if (input.checked) {
+          fundflowState.visibleTiers.add(tier);
+        } else if (fundflowState.visibleTiers.size <= 1) {
+          input.checked = true;
+          return;
+        } else {
+          fundflowState.visibleTiers.delete(tier);
+        }
+        syncFundflowLegendUi();
+        renderChart();
+        refreshKlineQuoteCard();
+      });
+    });
+    syncFundflowLegendUi();
+  }
+  syncComboLegend();
+}
+
+async function fetchFundflowPayload({ refresh = false } = {}) {
+  const qs = new URLSearchParams({ code, scope: "daily", limit: "120" });
+  if (refresh) qs.set("refresh", "1");
+  const json = await api(`/api/stocks/fund-flow?${qs.toString()}`);
+  return json.data || {};
+}
+
+async function loadFundflowChart() {
+  if (!code) return;
+  fundflowState.loading = true;
+  renderChart();
+  try {
+    let data = { items: [] };
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      data = await fetchFundflowPayload({ refresh: attempt > 0 });
+      if (Array.isArray(data.items) && data.items.length) break;
+      if (attempt < 2) {
+        await new Promise((resolve) => {
+          window.setTimeout(resolve, 450 * (attempt + 1));
+        });
+      }
+    }
+    fundflowState.source = data.source || "";
+    resetFundflowViewport(data.items || []);
+  } catch {
+    resetFundflowViewport([]);
+    fundflowState.source = "";
+  } finally {
+    fundflowState.loading = false;
+    renderChart();
+    refreshKlineQuoteCard();
+  }
+}
+
 const turnoverState = {
   loading: false,
   items: [],
@@ -7828,13 +8303,15 @@ setupMetricTips();
 setupChart();
 setupTicksChart();
 setupPeChart();
+setupComboMetric();
 setupTurnoverChart();
 (async () => {
   await loadProfile();
+  await loadChart("day");
   await Promise.all([
-    loadChart("day"),
     loadTicksChart(),
     loadPeChart(),
+    loadFundflowChart(),
     loadNewsGroup(newsGroup, { refresh: false }),
   ]);
   propagateLinkedAxis("kline");

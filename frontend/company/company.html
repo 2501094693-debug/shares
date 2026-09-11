@@ -159,13 +159,41 @@
                       <option value="hfq">后复权</option>
                     </select>
                   </label>
-                  <label id="peSeriesWrap" class="chart-select-wrap" aria-label="估值口径">
+                  <label id="comboMetricWrap" class="chart-select-wrap" aria-label="底部指标">
+                    <select id="comboMetricSelect" class="chart-select">
+                      <option value="pe">估值</option>
+                      <option value="fundflow" selected>资金流</option>
+                    </select>
+                  </label>
+                  <label id="peSeriesWrap" class="chart-select-wrap hidden" aria-label="估值口径">
                     <select id="peSeriesSelect" class="chart-select">
                       <option value="dyn">市盈率动</option>
                       <option value="ttm" selected>市盈率TTM</option>
                       <option value="static">市盈率静</option>
                       <option value="pb">市净率</option>
                     </select>
+                  </label>
+                </div>
+                <div id="fundflowLegendWrap" class="fundflow-legend hidden" aria-label="资金流分档">
+                  <label class="fundflow-legend-item" data-tier="super">
+                    <input type="checkbox" checked />
+                    <span class="fundflow-legend-swatch" style="--tier-color: #e63946"></span>
+                    超大单
+                  </label>
+                  <label class="fundflow-legend-item" data-tier="big">
+                    <input type="checkbox" checked />
+                    <span class="fundflow-legend-swatch" style="--tier-color: #f4a261"></span>
+                    大单
+                  </label>
+                  <label class="fundflow-legend-item" data-tier="mid">
+                    <input type="checkbox" checked />
+                    <span class="fundflow-legend-swatch" style="--tier-color: #457b9d"></span>
+                    中单
+                  </label>
+                  <label class="fundflow-legend-item" data-tier="small">
+                    <input type="checkbox" checked />
+                    <span class="fundflow-legend-swatch" style="--tier-color: #2a9d8f"></span>
+                    小单
                   </label>
                 </div>
               </div>
@@ -903,7 +931,7 @@
 
   <script src="/js/shared/nav.js?v=orbit-no-list-nav-20260911"></script>
   <script src="/js/shared/ai-modes.js?v=company-analysis-no-ai-page-20260910"></script>
-  <script src="/js/shared/company-analysis.js?v=company-analysis-stop-only-20260910"></script>
+  <script src="/js/shared/company-analysis.js?v=company-analysis-no-flicker-20260911"></script>
   <script src="/js/company.js?v=company-lhb-no-list-page-20260911"></script>
 </body>
 </html>

@@ -2123,6 +2123,14 @@ html.company-charts-on .company-page.app {
   grid-area: controls;
   flex: 0 0 auto;
   justify-content: flex-start;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 4px;
+}
+
+.chart-card--kline .fundflow-legend {
+  flex: 1 1 100%;
+  margin-top: 0;
 }
 
 .chart-card__title {
@@ -2403,6 +2411,43 @@ button.chart-legend-item.is-active {
 
 .chart-select-wrap.hidden {
   display: none;
+}
+
+.fundflow-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fundflow-legend.hidden {
+  display: none;
+}
+
+.fundflow-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--display);
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  letter-spacing: 0.02em;
+}
+
+.fundflow-legend-item input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.fundflow-legend-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--tier-color, var(--accent));
+  flex-shrink: 0;
 }
 
 .chart-select {
