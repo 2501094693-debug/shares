@@ -14,6 +14,7 @@ from core.paths import ANALYSIS_CACHE_DIR, ensure_cache_dirs
 CACHE_VERSION = 1
 KIND_DECLINE = "decline"
 KIND_GRIND = "grind"
+KIND_ROTATION = "rotation"
 
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 

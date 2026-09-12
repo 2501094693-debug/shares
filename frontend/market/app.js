@@ -204,11 +204,13 @@
     document.querySelector(".market-page")?.classList.toggle("is-history", histOnly());
     const sub = $("marketSub");
     if (sub) {
-      sub.textContent = histOnly()
-        ? "申万历史日报：一级 / 二级指数涨跌，三级无官方点位"
-        : isHistory()
-          ? "本地收盘快照：一级 → 二级 → 三级 → 成分股"
-          : "一级 → 二级 → 三级 → 成分股，每张表按涨跌排序";
+      if (histOnly()) {
+        sub.textContent = "申万历史日报：一级 / 二级指数涨跌，三级无官方点位";
+      } else if (isHistory()) {
+        sub.textContent = "本地收盘快照：一级 → 二级 → 三级 → 成分股";
+      } else {
+        sub.textContent = "一级 → 二级 → 三级 → 成分股，每张表按涨跌排序";
+      }
     }
   }
 
@@ -216,6 +218,7 @@
     const url = new URL(window.location.href);
     if (isHistory()) url.searchParams.set("date", state.date);
     else url.searchParams.delete("date");
+    url.searchParams.delete("view");
     window.history.replaceState(null, "", url);
   }
 
@@ -335,11 +338,7 @@
   function applyPayload(data) {
     state.tree = data.tree || [];
     state.source = data.source || (data.history ? "sw_daily" : "");
-    if (state.l1 && !find(state.tree, state.l1)) {
-      state.l1 = "";
-      state.l2 = "";
-      state.l3 = "";
-    }
+    applyIndustryQuery(state.l1, state.l2, state.l3);
     syncDateControls();
     render();
     renderSummary(data);
@@ -350,6 +349,25 @@
     } else {
       $("errorBox").classList.add("hidden");
     }
+  }
+
+  function applyIndustryQuery(l1, l2, l3) {
+    const root = find(state.tree, l1);
+    if (!l1 || !root) {
+      state.l1 = "";
+      state.l2 = "";
+      state.l3 = "";
+      return;
+    }
+    state.l1 = l1;
+    const l2Node = find(root.children, l2);
+    if (!l2 || !l2Node) {
+      state.l2 = "";
+      state.l3 = "";
+      return;
+    }
+    state.l2 = l2;
+    state.l3 = l3 && find(l2Node.children, l3) ? l3 : "";
   }
 
   async function load({ silent = false, refresh = false, live = false } = {}) {
@@ -450,7 +468,9 @@
       if (row.dataset.industry) qs.set("industry", row.dataset.industry);
       window.location.href = `/company.html?${qs}`;
     });
-    $("refreshBtn").addEventListener("click", () => void load({ silent: true, refresh: true, live: false }));
+    $("refreshBtn").addEventListener("click", () => {
+      void load({ silent: true, refresh: true, live: false });
+    });
     $("dateInput").addEventListener("change", () => setDate($("dateInput").value));
     $("prevDateBtn").addEventListener("click", () => setDate(shiftDate(state.date || todayISO(), -1)));
     $("nextDateBtn").addEventListener("click", () => setDate(shiftDate(state.date || todayISO(), 1)));
@@ -462,8 +482,17 @@
     });
   }
 
-  const bootDate = parseDate(new URLSearchParams(window.location.search).get("date")) || todayISO();
+  const params = new URLSearchParams(window.location.search);
+  const viewRaw = String(params.get("view") || "").toLowerCase();
+  if (["rotation", "rot", "l3"].includes(viewRaw)) {
+    window.location.replace("/analysis?view=industry");
+    return;
+  }
+  const bootDate = parseDate(params.get("date")) || todayISO();
   state.date = bootDate > todayISO() ? todayISO() : bootDate;
+  state.l1 = String(params.get("l1") || "").trim();
+  state.l2 = String(params.get("l2") || "").trim();
+  state.l3 = String(params.get("l3") || "").trim();
   bind();
   syncDateControls();
   window.OrbitPrefetch?.boot("market");

@@ -5482,10 +5482,64 @@ body.market-page-root {
   color: var(--muted);
 }
 
+.market-page.is-rotation .market-board-tree,
+.market-page:not(.is-rotation) .market-board-rotation {
+  display: none;
+}
+
+.market-page.is-rotation .market-date-nav {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.market-board-rotation {
+  grid-template-columns: 1fr 1fr;
+}
+
+.market-rot-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.market-rot-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-rot-l2,
+.market-rot-reason {
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-rot-tag {
+  font-size: 0.75rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.market-rot-tag[data-tone="up"] {
+  color: var(--up);
+}
+
+.market-rot-tag[data-tone="down"] {
+  color: var(--down);
+}
+
 @media (max-width: 1100px) {
   .market-board {
     grid-template-columns: 1fr 1fr;
     grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+
+  .market-board-rotation {
+    grid-template-rows: none;
   }
 }
 
@@ -6762,8 +6816,307 @@ body.app-shell.screen-page-root .screen-page.market-page {
 .screen-page-root.analysis-page-root .screen-day-rail,
 .screen-page-root[data-screen-mode="stock"] .screen-day-rail,
 .screen-page-root[data-screen-mode="limit"] .judgment-stock,
-.screen-page-root[data-screen-mode="stock"] .judgment-limit {
+.screen-page-root[data-screen-mode="limit"] .judgment-industry,
+.screen-page-root[data-screen-mode="stock"] .judgment-limit,
+.screen-page-root[data-screen-mode="stock"] .judgment-industry,
+.screen-page-root[data-screen-mode="industry"] .judgment-limit,
+.screen-page-root[data-screen-mode="industry"] .judgment-stock,
+.screen-page-root[data-screen-mode="industry"] .screen-layout,
+.screen-page-root:not([data-screen-mode="industry"]) .rot-board {
   display: none;
+}
+
+.rot-board {
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  display: grid;
+  /* 交易日固定；上涨 6 列、待涨 9 列、领涨 3 列按字段数分宽 */
+  grid-template-columns: 120px minmax(0, 6fr) minmax(0, 9fr) minmax(0, 3fr);
+  gap: 10px;
+  overflow: hidden;
+}
+
+.rot-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--bg-panel);
+}
+
+.rot-pane[data-kind="again"] {
+  border-color: color-mix(in srgb, var(--up) 26%, var(--line));
+}
+
+.rot-pane[data-kind="wait"] {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
+}
+
+.rot-pane[data-kind="rank"] {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
+}
+
+.rot-pane-head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.rot-pane-head h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.rot-pane[data-kind="again"] .rot-pane-head h2 {
+  color: var(--up);
+}
+
+.rot-pane-hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rot-days,
+.rot-scroll {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.rot-days::-webkit-scrollbar,
+.rot-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.rot-days {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 0 8px;
+}
+
+.rot-day {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.rot-day:hover {
+  background: var(--accent-soft);
+}
+
+.rot-day.is-active {
+  border-left-color: var(--up);
+  background: color-mix(in srgb, var(--up) 10%, var(--bg-elevated));
+}
+
+.rot-day-when {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.rot-day b {
+  font-family: var(--display);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.rot-day em {
+  font-style: normal;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.rot-day .rot-day-n {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--up);
+}
+
+.rot-empty {
+  padding: 20px 10px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.rot-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.82rem;
+}
+
+.rot-pane[data-kind="again"] .rot-table,
+.rot-pane[data-kind="wait"] .rot-table {
+  font-size: 0.76rem;
+}
+
+.rot-pane[data-kind="wait"] .rot-table th,
+.rot-pane[data-kind="wait"] .rot-table td {
+  padding: 6px 4px;
+}
+
+.rot-table th,
+.rot-table td {
+  width: auto;
+  min-width: 0;
+  padding: 7px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rot-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-panel);
+  color: var(--muted);
+  font-family: var(--display);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.rot-table thead th:first-child,
+.rot-table td:first-child {
+  text-align: left;
+}
+
+.rot-pane[data-kind="again"] .rot-table th:first-child,
+.rot-pane[data-kind="again"] .rot-table td:first-child {
+  width: 28%;
+}
+
+.rot-pane[data-kind="wait"] .rot-table th:first-child,
+.rot-pane[data-kind="wait"] .rot-table td:first-child {
+  width: 20%;
+}
+
+.rot-pane[data-kind="rank"] .rot-table th:first-child,
+.rot-pane[data-kind="rank"] .rot-table td:first-child {
+  width: 50%;
+}
+
+.rot-table th.num,
+.rot-table td.num {
+  text-align: center;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rot-table td.num[data-tone="up"] {
+  color: var(--up);
+}
+
+.rot-table td.num[data-tone="down"] {
+  color: var(--down);
+}
+
+.rot-table th.rot-leader,
+.rot-table td.rot-leader {
+  width: 5.8rem;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rot-table td.rot-leader {
+  color: var(--muted);
+}
+
+.rot-table .is-row {
+  cursor: pointer;
+}
+
+.rot-table .is-row:hover td {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.rot-table .is-empty td {
+  padding: 28px 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.rot-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rot-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.rot-sub {
+  margin-top: 2px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rot-tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 0.64rem;
+  line-height: 1.55;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  white-space: nowrap;
+}
+
+.rot-tag[data-tone="up"] {
+  color: var(--up);
+  background: color-mix(in srgb, var(--up) 14%, transparent);
+}
+
+.rot-tag[data-tone="down"] {
+  color: var(--down);
+  background: color-mix(in srgb, var(--down) 14%, transparent);
 }
 
 .screen-page-root .market-toolbar,
@@ -6772,7 +7125,12 @@ body.app-shell.screen-page-root .screen-page.market-page {
 }
 
 .screen-page-root .judgment-view button {
-  min-width: 6.6em;
+  min-width: auto;
+  padding-inline: 12px;
+}
+
+#industryDaysSeg button {
+  padding-inline: 8px;
 }
 
 .analysis-page-root .analysis-code-box input,
@@ -7206,6 +7564,34 @@ body.app-shell.screen-page-root .screen-page.market-page {
     flex: 0 0 auto;
     width: auto;
     min-width: 108px;
+  }
+
+  .rot-board {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .rot-pane[data-kind="days"] {
+    min-height: auto;
+  }
+
+  .rot-days {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 8px 8px;
+  }
+
+  .rot-day {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 92px;
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+  }
+
+  .rot-day.is-active {
+    border-bottom-color: var(--up);
   }
 
   .screen-day-head {

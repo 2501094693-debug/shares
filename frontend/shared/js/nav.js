@@ -4,7 +4,7 @@
     { key: "shares", href: "/shares", title: "个股行情 · 涨幅排序", ico: "▤", label: "个股行情" },
     { key: "steep", href: "/steep", title: "涨跌停 · 多日名单", ico: "↕", label: "涨跌停" },
     { key: "fund", href: "/fund", title: "基金 · ETF / LOF / 开放式", ico: "◉", label: "基金" },
-    { key: "analysis", href: "/analysis", title: "研判 · 涨跌停分析 / 个股分析", ico: "▥", label: "研判" },
+    { key: "analysis", href: "/analysis", title: "研判 · 行业 / 个股行情 / 涨跌停", ico: "▥", label: "研判" },
     { key: "gmap", href: "/gmap", title: "谷歌地图 · 全球检索", ico: "⌖", label: "谷歌" },
     { key: "industry", href: "/industry", title: "行业树 · 地图与分类", ico: "◈", label: "行业树" },
   ];

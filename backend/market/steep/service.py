@@ -146,6 +146,20 @@ class SteepService:
             self._live.put(date_raw, row)
         return date_raw, row, error
 
+    def cached_pool(self, date: str) -> dict[str, Any] | None:
+        """只读本地涨跌停缓存，没有则 None，不联网。"""
+        raw = str(date or "").replace("-", "")[:8]
+        if len(raw) != 8 or not raw.isdigit():
+            return None
+        return self._cached_day(raw)
+
+    def day_pool(self, date: str, force: bool = False) -> dict[str, Any]:
+        raw = str(date or "").replace("-", "")[:8]
+        if len(raw) != 8 or not raw.isdigit():
+            return _empty_day(raw or "00000000")
+        _, row, _ = self._one(raw, force)
+        return row
+
     def recent(
         self, days: int = DEFAULT_DAYS, force: bool = False, lite: bool = False
     ) -> dict[str, Any]:

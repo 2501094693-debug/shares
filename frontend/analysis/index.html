@@ -7,9 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=judgment-20260912" />
+  <link rel="stylesheet" href="/css/style.css?v=rot-1m-20260913" />
 </head>
-<body class="app-shell company-page-root market-page-root screen-page-root" data-nav="analysis" data-screen-mode="limit">
+<body class="app-shell company-page-root market-page-root screen-page-root" data-nav="analysis" data-screen-mode="industry">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
 
   <div class="app-stage">
@@ -18,13 +18,14 @@
         <div class="brand">
           <div>
             <h1>研判</h1>
-            <p class="company-page-sub" id="pageSub">按每日涨停池分批排名：阴跌 → 横盘 → 涨停，软评分排序并附日 K</p>
+            <p class="company-page-sub" id="pageSub">按交易日复盘申万三级行业轮动：上涨为当天上榜（含首次），待涨为窗口内尚未轮到，不随交易日切换；领涨按上榜次数排序。点击行业进入行情树</p>
           </div>
         </div>
         <div class="top-actions">
           <div id="viewSeg" class="market-seg judgment-view" role="tablist" aria-label="研判类型">
-            <button type="button" data-view="limit" class="is-active" role="tab" aria-selected="true">涨跌停分析</button>
-            <button type="button" data-view="stock" role="tab" aria-selected="false">个股分析</button>
+            <button type="button" data-view="industry" class="is-active" role="tab" aria-selected="true">行业行情分析</button>
+            <button type="button" data-view="stock" role="tab" aria-selected="false">个股行情分析</button>
+            <button type="button" data-view="limit" role="tab" aria-selected="false">涨跌停分析</button>
           </div>
           <button id="refreshBtn" class="btn ghost" type="button">重新分析</button>
         </div>
@@ -33,6 +34,8 @@
       <div class="market-toolbar">
         <div id="summaryBar" class="market-summary"></div>
         <div class="market-toolbar-tail">
+          <span id="liveDot" class="market-live" data-state="idle">IDLE</span>
+          <span id="marketMeta" class="muted market-meta"></span>
           <label class="search-box analysis-code-box judgment-stock">
             <span class="sr-only">股票代码</span>
             <input id="codeInput" type="search" placeholder="代码，留空全市场" maxlength="8" autocomplete="off" />
@@ -61,8 +64,13 @@
             <button type="button" data-top="100">Top100</button>
             <button type="button" data-top="0">全部</button>
           </div>
-          <span id="liveDot" class="market-live" data-state="idle">IDLE</span>
-          <span id="marketMeta" class="muted market-meta"></span>
+          <div id="industryDaysSeg" class="market-seg screen-range judgment-industry" role="group" aria-label="回看窗口">
+            <button type="button" data-days="20">近一个月</button>
+            <button type="button" data-days="60">近三个月</button>
+            <button type="button" data-days="120">近半年</button>
+            <button type="button" data-days="245" class="is-active">一年</button>
+            <button type="button" data-days="490">两年</button>
+          </div>
         </div>
       </div>
 
@@ -70,7 +78,7 @@
       <div id="loading" class="loading screen-progress hidden">正在分析…</div>
 
       <div class="screen-layout">
-        <nav id="dayRail" class="screen-day-rail judgment-limit" aria-label="交易日"></nav>
+        <nav id="dayRail" class="screen-day-rail" aria-label="交易日"></nav>
         <div class="screen-day-main">
           <div id="dayHead" class="screen-day-head"></div>
           <div id="resultList" class="screen-result-list">
@@ -78,12 +86,85 @@
           </div>
         </div>
       </div>
+
+      <div class="rot-board judgment-industry-board">
+        <section class="rot-pane" data-kind="days">
+          <header class="rot-pane-head">
+            <h2>交易日</h2>
+            <span id="rotDaysHint" class="rot-pane-hint"></span>
+          </header>
+          <nav id="rotDayRail" class="rot-days" aria-label="交易日"></nav>
+        </section>
+        <section class="rot-pane" data-kind="again">
+          <header class="rot-pane-head">
+            <h2 id="rotAgainTitle">上涨</h2>
+            <span id="rotAgainHint" class="rot-pane-hint"></span>
+          </header>
+          <div class="rot-scroll">
+            <table class="rot-table">
+              <thead>
+                <tr>
+                  <th>三级行业</th>
+                  <th class="num">次数</th>
+                  <th class="num">得分</th>
+                  <th class="num">当日</th>
+                  <th class="num" title="上涨家数 / 样本">广度</th>
+                  <th class="num" title="按市值门槛统计的强势股：权重大票≥2%，题材仍接近涨停">强势</th>
+                </tr>
+              </thead>
+              <tbody id="indAgainBody"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="rot-pane" data-kind="wait">
+          <header class="rot-pane-head">
+            <h2 id="rotWaitTitle">待涨</h2>
+            <span id="rotWaitHint" class="rot-pane-hint"></span>
+          </header>
+          <div class="rot-scroll">
+            <table class="rot-table">
+              <thead>
+                <tr>
+                  <th>三级行业</th>
+                  <th class="num">次数</th>
+                  <th class="num">距上次</th>
+                  <th class="num">涨跌</th>
+                  <th class="num">涨(停)</th>
+                  <th class="num">跌(停)</th>
+                  <th class="num">今日</th>
+                  <th class="num">5日</th>
+                  <th class="num">10日</th>
+                </tr>
+              </thead>
+              <tbody id="indWaitBody"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="rot-pane" data-kind="rank">
+          <header class="rot-pane-head">
+            <h2>领涨</h2>
+            <span id="indRankHint" class="rot-pane-hint"></span>
+          </header>
+          <div class="rot-scroll">
+            <table class="rot-table">
+              <thead>
+                <tr>
+                  <th>三级行业</th>
+                  <th class="num">次数</th>
+                  <th class="num">上次</th>
+                </tr>
+              </thead>
+              <tbody id="indRankBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </div>
   </div>
   <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
-  <script src="/js/shared/orbit-prefetch.js?v=judgment-20260912"></script>
-  <script src="/js/shared/nav.js?v=judgment-after-fund-20260912"></script>
+  <script src="/js/shared/orbit-prefetch.js?v=rotation-calendar-20260913"></script>
+  <script src="/js/shared/nav.js?v=judgment-tab-order-20260913"></script>
   <script src="/js/shared/kline-draw.js?v=screen-20260909-kpan"></script>
-  <script src="/js/analysis.js?v=judgment-poll-20260912"></script>
+  <script src="/js/analysis.js?v=rot-1m-20260913"></script>
 </body>
 </html>

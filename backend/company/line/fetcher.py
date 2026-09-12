@@ -387,6 +387,21 @@ def _refresh_with_tail(
     return _public_kline(result)
 
 
+def load_kline_disk(
+    code: str,
+    *,
+    period: str = "day",
+    adjust: str | int = "qfq",
+) -> dict[str, Any] | None:
+    """只读磁盘日 K，不触发远程校验。历史回填用。"""
+    code = normalize_code(code)
+    if not code:
+        return None
+    period_key = (period or "day").strip().lower()
+    fqt = str(adjust if adjust is not None else "qfq").strip().lower()
+    return _load_kline_disk(code, period_key, fqt)
+
+
 def fetch_kline(
     code: str,
     *,

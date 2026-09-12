@@ -355,16 +355,23 @@ def load_history(date_text: str, force: bool = False) -> dict[str, Any]:
     return _store.load(date_text, force=force)
 
 
+def load_local_snapshot(day: date | None = None) -> dict[str, Any] | None:
+    """本地快照（含三级涨跌）。没有则 None，不回退申万日报。"""
+    if day is None:
+        day = snapshot_day()
+    hit = _store._cached(day)
+    if hit is None or hit.get("source") != _SOURCE_SNAPSHOT:
+        return None
+    return hit
+
+
 def load_sealed_snapshot(day: date | None = None) -> dict[str, Any] | None:
     """盘后已封存的完整树；没有则返回 None。"""
     if day is None:
         day = snapshot_day()
     if not _store.is_sealed(day):
         return None
-    hit = _store._cached(day)
-    if hit is None or hit.get("source") != _SOURCE_SNAPSHOT:
-        return None
-    return hit
+    return load_local_snapshot(day)
 
 
 def save_snapshot(payload: dict[str, Any], *, force: bool = False) -> bool:

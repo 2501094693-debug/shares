@@ -8,7 +8,7 @@
 - ``gmap``：Google Maps 全球检索与定位
 - ``list``：龙虎榜个股历史上榜（公司详情页）
 - ``funds.fund`` / ``funds.otc_fund``：统一基金页（场内 ETF/LOF + 场外开放式）
-- ``analysis``：研判（涨跌停分析 / 个股分析）
+- ``analysis``：研判（涨跌停分析 / 个股分析 / 行业行情分析）
 """
 
 from __future__ import annotations
