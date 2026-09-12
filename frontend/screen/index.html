@@ -3,56 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ORBIT · 形态筛选</title>
+  <title>ORBIT · 涨跌停分析</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=screen-20260909-headlink" />
+  <link rel="stylesheet" href="/css/style.css?v=stock-analysis-20260912" />
 </head>
 <body class="app-shell company-page-root market-page-root screen-page-root" data-nav="screen">
-  <nav class="app-rail" aria-label="主导航">
-    <a class="app-rail-brand" href="/" title="ORBIT 申万终端">
-      <span class="app-rail-mark">OR</span>
-      <span class="app-rail-word">ORBIT</span>
-    </a>
-    <div class="app-rail-links">
-      <a class="app-rail-link" href="/" data-nav="industry" title="行业树 · 地图与分类">
-        <span class="app-rail-ico" aria-hidden="true">◈</span>
-        <span>行业树</span>
-      </a>
-      <a class="app-rail-link" href="/market" data-nav="market" title="行业行情 · 涨跌与资金">
-        <span class="app-rail-ico" aria-hidden="true">▣</span>
-        <span>行业行情</span>
-      </a>
-      <a class="app-rail-link" href="/world" data-nav="world" title="全球市场 · 股指利率国债原油">
-        <span class="app-rail-ico" aria-hidden="true">◎</span>
-        <span>全球</span>
-      </a>
-      <a class="app-rail-link" href="/fund" data-nav="fund" title="场内基金 · ETF / LOF">
-        <span class="app-rail-ico" aria-hidden="true">◎</span>
-        <span>场内</span>
-      </a>
-      <a class="app-rail-link" href="/otc-fund" data-nav="otc-fund" title="场外基金 · 开放式">
-        <span class="app-rail-ico" aria-hidden="true">◍</span>
-        <span>场外</span>
-      </a>
-      <a class="app-rail-link" href="/steep" data-nav="steep" title="涨跌停 · 多日名单">
-        <span class="app-rail-ico" aria-hidden="true">↕</span>
-        <span>涨跌停</span>
-      </a>
-      <a class="app-rail-link" href="/screen" data-nav="screen" title="形态筛选 · 阴跌横盘涨停">
-        <span class="app-rail-ico" aria-hidden="true">⬡</span>
-        <span>形态</span>
-      </a>
-    </div>
-  </nav>
+  <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
 
   <div class="app-stage">
     <div class="app company-page market-page screen-page">
       <header class="topbar company-topbar">
         <div class="brand">
           <div>
-            <h1>形态筛选</h1>
+            <h1>涨跌停分析</h1>
             <p class="company-page-sub">按每日涨停池分批排名：阴跌 → 横盘 → 涨停，软评分排序并附日 K</p>
           </div>
         </div>
@@ -64,11 +29,11 @@
       <div class="market-toolbar">
         <div id="summaryBar" class="market-summary"></div>
         <div class="market-toolbar-tail">
-          <div id="daysSeg" class="market-seg screen-range" role="group" aria-label="涨停窗口">
+          <div id="daysSeg" class="market-seg screen-range" role="group" aria-label="回看窗口">
             <button type="button" data-days="15">15日</button>
             <button type="button" data-days="30">30日</button>
           </div>
-          <div id="topSeg" class="market-seg screen-range" role="group" aria-label="每日显示数量">
+          <div id="topSeg" class="market-seg screen-range" role="group" aria-label="显示数量">
             <button type="button" data-top="30">每日Top30</button>
             <button type="button" data-top="50">每日Top50</button>
             <button type="button" data-top="0">全部</button>
@@ -92,8 +57,10 @@
       </div>
     </div>
   </div>
-  <script src="/js/shared/nav.js?v=orbit-shell-20260909"></script>
+  <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
+  <script src="/js/shared/orbit-prefetch.js?v=cn-fund-unify-20260912"></script>
+  <script src="/js/shared/nav.js?v=stock-analysis-20260912"></script>
   <script src="/js/shared/kline-draw.js?v=screen-20260909-kpan"></script>
-  <script src="/js/screen.js?v=screen-20260909-headlink"></script>
+  <script src="/js/screen.js?v=stock-analysis-20260912"></script>
 </body>
 </html>

@@ -28,6 +28,28 @@ def attach_sw_quotes(
     return overlay
 
 
+def attach_sw_daily(
+    nodes: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """把申万行业日报按代码贴到树上。"""
+    by_code = {bare_code(n["code"]): n for n in nodes}
+    overlay: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        node = by_code.get(row.get("sw_code") or "")
+        if node is None:
+            continue
+        overlay[node["code"]] = {
+            "price": row.get("close"),
+            "change_pct": row.get("change_pct"),
+            "turnover": row.get("turnover"),
+            "pe": row.get("pe"),
+            "pb": row.get("pb"),
+            "source": "sw_daily",
+        }
+    return overlay
+
+
 def aggregate_from_stocks(
     nodes: list[dict[str, Any]],
     stocks: list[dict[str, Any]],

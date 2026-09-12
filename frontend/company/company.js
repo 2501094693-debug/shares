@@ -2,6 +2,8 @@ const params = new URLSearchParams(window.location.search);
 const code = (params.get("code") || "").trim();
 const nameHint = (params.get("name") || "").trim();
 const industry = (params.get("industry") || "").trim();
+const fromPage = (params.get("from") || "").trim();
+const fromCat = (params.get("cat") || "").trim();
 
 const DEFAULT_DAYS = 3;
 const CNINFO_DEFAULT_DAYS = 365;
@@ -9,11 +11,14 @@ const EXCHANGE_DEFAULT_DAYS = 365;
 const PRESS_DEFAULT_DAYS = 30;
 const PLATFORM_DEFAULT_DAYS = 30;
 const NEWS_GROUP_OFFICIAL = "official";
+const NEWS_GROUP_FINANCIALS = "financials";
 const NEWS_GROUP_OTHER = "other";
 const NEWS_GROUP_LABELS = {
   official: "官方",
+  financials: "财报",
   other: "其他",
 };
+const NEWS_FINANCIALS_ALIASES = new Set(["reports", "financials", "financial", "financial-report", "caibao"]);
 const EMOTION_DEFAULT_DAYS = 3;
 const EMOTION_SOURCE = "eastmoney";
 const THS_EMOTION_SOURCE = "tonghuashun";
@@ -366,6 +371,15 @@ const els = {
   fundHoldersDate: document.getElementById("fundHoldersDate"),
   fundHoldersBody: document.getElementById("fundHoldersBody"),
   fundHoldersBodyRows: document.getElementById("fundHoldersBodyRows"),
+  refreshFinancialsBtn: document.getElementById("refreshFinancialsBtn"),
+  financialsTitle: document.getElementById("financialsTitle"),
+  financialsMeta: document.getElementById("financialsMeta"),
+  financialsHint: document.getElementById("financialsHint"),
+  financialsSheetSeg: document.getElementById("financialsSheetSeg"),
+  financialsFilterSeg: document.getElementById("financialsFilterSeg"),
+  financialsBody: document.getElementById("financialsBody"),
+  financialsHead: document.getElementById("financialsHead"),
+  financialsBodyRows: document.getElementById("financialsBodyRows"),
   errorBox: document.getElementById("errorBox"),
 };
 
@@ -387,6 +401,20 @@ const fundHoldersState = {
   items: [],
   count: 0,
   reportDate: "",
+  updatedAt: "",
+  error: "",
+};
+let financialsBootstrapped = false;
+const financialsState = {
+  loading: false,
+  sheet: "balance",
+  items: [],
+  income: [],
+  balance: [],
+  cashflow: [],
+  lines: { income: [], balance: [], cashflow: [] },
+  count: 0,
+  filter: "all",
   updatedAt: "",
   error: "",
 };
@@ -523,7 +551,7 @@ const xqEmotionState = {
   detail: { loading: false, postId: "", pack: null, error: "" },
 };
 let newsGroup = normalizeNewsGroup(params.get("news") || "");
-let newsBootstrapped = { official: false, other: false };
+let newsBootstrapped = { official: false, financials: false, other: false };
 let emotionBootstrapped = { eastmoney: false, tonghuashun: false, xueqiu: false };
 const ANALYSIS_PANELS = new Set(["business", "earnings", "competition", "risk"]);
 const tabParamRaw = (params.get("tab") || "").trim().toLowerCase();
@@ -538,6 +566,12 @@ if (["list", "lhb", "longhu"].includes(tabParamRaw)) {
   othersSubTab = "lhb";
 } else if (["fund-holders", "funds", "fund"].includes(tabParamRaw)) {
   othersSubTab = "fund-holders";
+}
+if (
+  NEWS_FINANCIALS_ALIASES.has(tabParamRaw)
+  || NEWS_FINANCIALS_ALIASES.has(String(params.get("others") || "").trim().toLowerCase())
+) {
+  newsGroup = NEWS_GROUP_FINANCIALS;
 }
 let judgmentSubTab = normalizeJudgmentSubTab(params.get("judgment") || "");
 if (isAnalysisPanel(tabParamRaw) || tabParamRaw === "analysis") {
@@ -580,7 +614,16 @@ function notifyAnalysisIdentity(stock = {}, { ready = false } = {}) {
 
 function normalizeMainPanel(panelId) {
   if (panelId === "quotes" || panelId === "charts" || panelId === "overview") return "quotes";
-  if (panelId === "news") return "news";
+  if (
+    panelId === "news"
+    || panelId === "reports"
+    || panelId === "financials"
+    || panelId === "financial"
+    || panelId === "financial-report"
+    || panelId === "caibao"
+  ) {
+    return "news";
+  }
   if (panelId === "emotion" || panelId === "ths-emotion" || panelId === "ths" || panelId === "circle" || panelId === "xueqiu" || panelId === "xq") return "emotion";
   if (
     panelId === "others" ||
@@ -612,6 +655,7 @@ function normalizeOthersSubTab(view) {
 function normalizeNewsGroup(group) {
   const raw = String(group || "").trim().toLowerCase();
   if (raw === "other" || raw === "platform" || raw === "platforms" || raw === "media") return NEWS_GROUP_OTHER;
+  if (NEWS_FINANCIALS_ALIASES.has(raw)) return NEWS_GROUP_FINANCIALS;
   return NEWS_GROUP_OFFICIAL;
 }
 
@@ -792,6 +836,7 @@ function getKlineMaBundle() {
 }
 
 async function api(path, options = {}) {
+  if (window.OrbitHttp) return OrbitHttp.get(path, options);
   const res = await fetch(path, options);
   const json = await res.json();
   if (!res.ok || !json.ok) {
@@ -1438,10 +1483,25 @@ async function loadOtherNews() {
 async function loadNewsGroup(group = newsGroup, { refresh = false } = {}) {
   if (!code) return;
   if (refresh) newsBootstrapped[group] = true;
+  if (group === NEWS_GROUP_FINANCIALS) {
+    await loadFinancials({ refresh });
+    return;
+  }
   if (group === NEWS_GROUP_OTHER) {
     await loadOtherNews();
   } else {
     await loadOfficialNews();
+  }
+}
+
+function syncNewsRefreshButtons() {
+  const onNews = activeMainPanel === "news";
+  const onFinancials = newsGroup === NEWS_GROUP_FINANCIALS;
+  if (els.refreshNewsBtn) {
+    els.refreshNewsBtn.hidden = !onNews || onFinancials;
+  }
+  if (els.refreshFinancialsBtn) {
+    els.refreshFinancialsBtn.hidden = !onNews || !onFinancials;
   }
 }
 
@@ -1457,6 +1517,7 @@ function syncNewsGroupUi() {
       btn.setAttribute("aria-selected", active ? "true" : "false");
     });
   }
+  syncNewsRefreshButtons();
   syncNewsHubLayout();
 }
 
@@ -2242,6 +2303,395 @@ function lhbFmtYi(value) {
   if (abs >= 1e8) return `${sign}${(abs / 1e8).toFixed(2)}亿`;
   if (abs >= 1e4) return `${sign}${(abs / 1e4).toFixed(1)}万`;
   return `${sign}${abs.toFixed(0)}`;
+}
+
+function financialsPick(row, ...keys) {
+  for (const key of keys) {
+    if (!row || !Object.prototype.hasOwnProperty.call(row, key)) continue;
+    const value = row[key];
+    if (value != null && value !== "" && value !== "-" && value !== "--") return value;
+  }
+  return null;
+}
+
+function financialsDate(row) {
+  return String(row?.REPORT_DATE || row?.REPORTDATE || "").slice(0, 10);
+}
+
+function financialsIsAnnual(row) {
+  const day = financialsDate(row);
+  return day.length >= 7 && day.slice(5, 7) === "12";
+}
+
+function financialsPeriodLabel(row) {
+  const name = String(row?.PERIOD_LABEL || row?.REPORT_DATE_NAME || "").trim();
+  if (name) return name;
+  const day = financialsDate(row);
+  if (day.length < 7) return day || "—";
+  const year = day.slice(0, 4);
+  const month = day.slice(5, 7);
+  const mapping = { "03": "一季报", "06": "中报", "09": "三季报", "12": "年报" };
+  return `${year}${mapping[month] || day}`;
+}
+
+function financialsNumCell(value, kind = "money") {
+  const n = Number(value);
+  if (value == null || value === "" || !Number.isFinite(n)) {
+    return `<td class="num">—</td>`;
+  }
+  let text = "—";
+  let tone = "flat";
+  if (kind === "pct") {
+    text = lhbFmtPct(n);
+    tone = lhbTone(n);
+  } else if (kind === "ratio") {
+    text = `${n.toFixed(2)}%`;
+  } else if (kind === "x") {
+    const x = n > 50 ? n / 100 : n;
+    text = `${x.toFixed(2)}x`;
+  } else if (kind === "eps") {
+    text = n.toFixed(3);
+    if (n < 0) tone = "down";
+  } else {
+    text = lhbFmtYi(n);
+    if (n < 0) tone = "down";
+  }
+  const attr = tone === "flat" ? "" : ` data-tone="${tone}"`;
+  return `<td class="num"${attr}>${escapeHtml(text)}</td>`;
+}
+
+const FINANCIALS_SHEETS = {
+  balance: {
+    title: "资产负债表",
+    hint: "东财 F10 完整资产负债表，期末时点数；空科目已隐藏。",
+    lines: [
+      { label: "货币资金", keys: ["MONETARYFUNDS"] },
+      { label: "应收账款", keys: ["ACCOUNTS_RECE"] },
+      { label: "存货", keys: ["INVENTORY"] },
+      { label: "固定资产", keys: ["FIXED_ASSET"] },
+      { label: "总资产", keys: ["TOTAL_ASSETS", "TOTAL_ASSETS_PK"], strong: true },
+      { label: "应付账款", keys: ["ACCOUNTS_PAYABLE"] },
+      { label: "总负债", keys: ["TOTAL_LIABILITIES", "LIABILITY"], strong: true },
+      { label: "净资产", keys: ["TOTAL_EQUITY", "TOTAL_EQUITY_PK"], strong: true },
+      { label: "资产负债率", keys: ["DEBT_ASSET_RATIO", "ZCFZL"], kind: "ratio" },
+      { label: "流动比率", keys: ["CURRENT_RATIO", "LD"], kind: "x" },
+    ],
+  },
+  income: {
+    title: "利润表",
+    hint: "东财 F10 完整利润表。金额为报告期累计数：中报=上半年，三季报=前三季度，年报=全年；空科目已隐藏。",
+    lines: [
+      { label: "营业总收入", keys: ["TOTAL_OPERATE_INCOME", "TOTALOPERATEREVE", "OPERATE_INCOME_PK"] },
+      { label: "营业总成本", keys: ["TOTAL_OPERATE_COST"] },
+      { label: "营业成本", keys: ["OPERATE_COST", "OPERATE_EXPENSE"], indent: true },
+      { label: "税金及附加", keys: ["OPERATE_TAX_ADD"], indent: true },
+      { label: "销售费用", keys: ["SALE_EXPENSE"], indent: true },
+      { label: "管理费用", keys: ["MANAGE_EXPENSE"], indent: true },
+      { label: "财务费用", keys: ["FINANCE_EXPENSE"], indent: true },
+      { label: "营业利润", keys: ["OPERATE_PROFIT", "OPERATE_PROFIT_PK"], strong: true },
+      { label: "利润总额", keys: ["TOTAL_PROFIT"], strong: true },
+      { label: "所得税", keys: ["INCOME_TAX"] },
+      { label: "归母净利润", keys: ["PARENT_NETPROFIT", "PARENTNETPROFIT"], strong: true },
+      { label: "扣非净利润", keys: ["DEDUCT_PARENT_NETPROFIT", "KCFJCXSYJLR"] },
+    ],
+  },
+  cashflow: {
+    title: "现金流量表",
+    hint: "东财 F10 完整现金流量表。金额为报告期累计数：中报=上半年，三季报=前三季度，年报=全年；空科目已隐藏。",
+    lines: [
+      { label: "销售商品收现", keys: ["SALES_SERVICES"] },
+      { label: "支付职工现金", keys: ["PAY_STAFF_CASH"] },
+      { label: "经营现金流", keys: ["NETCASH_OPERATE", "NETCASH_OPERATE_PK"], strong: true },
+      { label: "购建固定资产", keys: ["CONSTRUCT_LONG_ASSET"] },
+      { label: "取得投资收益", keys: ["RECEIVE_INVEST_INCOME"] },
+      { label: "投资现金流", keys: ["NETCASH_INVEST", "NETCASH_INVEST_PK"], strong: true },
+      { label: "筹资现金流", keys: ["NETCASH_FINANCE", "NETCASH_FINANCE_PK"], strong: true },
+      { label: "现金净增加", keys: ["CCE_ADD"], strong: true },
+    ],
+  },
+  main: {
+    title: "主要指标",
+    hint: "营收 / 净利润 / 现金流为累计口径；ROE、毛利率、负债率为期末值。",
+  },
+};
+
+function financialsNormalizeSheet(sheet) {
+  const raw = String(sheet || "").trim().toLowerCase();
+  if (raw === "income" || raw === "cashflow" || raw === "main") return raw;
+  return "balance";
+}
+
+function financialsSheetLines(sheet) {
+  const key = financialsNormalizeSheet(sheet);
+  const fromApi = financialsState.lines?.[key];
+  if (Array.isArray(fromApi) && fromApi.length) return fromApi;
+  return FINANCIALS_SHEETS[key]?.lines || FINANCIALS_SHEETS.balance.lines || [];
+}
+
+function financialsSheetRows(sheet = financialsState.sheet) {
+  const key = financialsNormalizeSheet(sheet);
+  if (key === "income") return financialsState.income;
+  if (key === "balance") return financialsState.balance;
+  if (key === "cashflow") return financialsState.cashflow;
+  return financialsState.items;
+}
+
+function financialsVisibleItems(rows = financialsSheetRows()) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (financialsState.filter === "annual") return list.filter(financialsIsAnnual);
+  return list;
+}
+
+function syncFinancialsFilterUi() {
+  if (!els.financialsFilterSeg) return;
+  els.financialsFilterSeg.querySelectorAll("[data-filter]").forEach((btn) => {
+    btn.classList.toggle("is-active", btn.getAttribute("data-filter") === financialsState.filter);
+  });
+}
+
+function syncFinancialsSheetUi() {
+  const sheet = financialsNormalizeSheet(financialsState.sheet);
+  financialsState.sheet = sheet;
+  if (!els.financialsSheetSeg) return;
+  els.financialsSheetSeg.querySelectorAll("[data-sheet]").forEach((btn) => {
+    const active = btn.getAttribute("data-sheet") === sheet;
+    btn.classList.toggle("is-active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+  });
+}
+
+function financialsEmptyRow(colspan, text) {
+  return `<tr class="is-empty"><td colspan="${colspan}">${escapeHtml(text)}</td></tr>`;
+}
+
+function paintFinancialsMain(rows) {
+  if (els.financialsHead) {
+    els.financialsHead.innerHTML = `<tr>
+      <th scope="col">报告期</th>
+      <th scope="col" class="num">营收</th>
+      <th scope="col" class="num">同比</th>
+      <th scope="col" class="num">净利润</th>
+      <th scope="col" class="num">同比</th>
+      <th scope="col" class="num">扣非净利</th>
+      <th scope="col" class="num">经营现金流</th>
+      <th scope="col" class="num">EPS</th>
+      <th scope="col" class="num">ROE</th>
+      <th scope="col" class="num">毛利率</th>
+      <th scope="col" class="num">负债率</th>
+    </tr>`;
+  }
+  els.financialsBodyRows.innerHTML = rows
+    .map((row) => {
+      const label = escapeHtml(financialsPeriodLabel(row));
+      const day = escapeHtml(financialsDate(row) || "—");
+      return `<tr class="is-row">
+        <td>
+          <div class="financials-period">${label}</div>
+          <div class="muted financials-period-date">${day}</div>
+        </td>
+        ${financialsNumCell(financialsPick(row, "TOTALOPERATEREVE", "TOTAL_OPERATE_INCOME", "OPERATE_INCOME_PK"))}
+        ${financialsNumCell(financialsPick(row, "TOTALOPERATEREVETZ", "TOI_RATIO"), "pct")}
+        ${financialsNumCell(financialsPick(row, "PARENTNETPROFIT", "PARENT_NETPROFIT"))}
+        ${financialsNumCell(financialsPick(row, "PARENTNETPROFITTZ", "PARENT_NETPROFIT_RATIO"), "pct")}
+        ${financialsNumCell(financialsPick(row, "KCFJCXSYJLR", "DEDUCT_PARENT_NETPROFIT"))}
+        ${financialsNumCell(financialsPick(row, "NETCASH_OPERATE_PK", "NETCASH_OPERATE"))}
+        ${financialsNumCell(financialsPick(row, "EPSJB", "BASIC_EPS"), "eps")}
+        ${financialsNumCell(financialsPick(row, "ROEJQ", "WEIGHTAVG_ROE"), "pct")}
+        ${financialsNumCell(financialsPick(row, "XSMLL"), "ratio")}
+        ${financialsNumCell(financialsPick(row, "ZCFZL", "DEBT_ASSET_RATIO"), "ratio")}
+      </tr>`;
+    })
+    .join("");
+}
+
+function financialsLineEmpty(line, periods) {
+  const keys = line?.keys || [];
+  if (!keys.length) return false;
+  return periods.every((period) => financialsPick(period.row, ...keys) == null);
+}
+
+function financialsVisibleLines(lines, periods) {
+  const list = Array.isArray(lines) ? lines : [];
+  const out = [];
+  for (let i = 0; i < list.length; i += 1) {
+    const line = list[i];
+    if (line.group || !(line.keys || []).length) {
+      let hasChild = false;
+      for (let j = i + 1; j < list.length; j += 1) {
+        const next = list[j];
+        if (next.group || !(next.keys || []).length) break;
+        if (!financialsLineEmpty(next, periods)) {
+          hasChild = true;
+          break;
+        }
+      }
+      if (hasChild) out.push(line);
+      continue;
+    }
+    if (!financialsLineEmpty(line, periods)) out.push(line);
+  }
+  return out;
+}
+
+function paintFinancialsStatement(sheet, rows) {
+  const periods = rows.map((row) => ({
+    label: financialsPeriodLabel(row),
+    day: financialsDate(row) || "—",
+    row,
+  }));
+  const lines = financialsVisibleLines(financialsSheetLines(sheet), periods);
+  if (els.financialsHead) {
+    els.financialsHead.innerHTML = `<tr>
+      <th scope="col">科目</th>
+      ${periods
+        .map(
+          (period) => `<th scope="col" class="num">
+            <div class="financials-period">${escapeHtml(period.label)}</div>
+            <div class="muted financials-period-date">${escapeHtml(period.day)}</div>
+          </th>`
+        )
+        .join("")}
+    </tr>`;
+  }
+  els.financialsBodyRows.innerHTML = lines
+    .map((line) => {
+      const classes = ["financials-line"];
+      if (line.indent) classes.push("financials-line-indent");
+      if (line.strong || line.group) classes.push("financials-line-strong");
+      if (line.group) classes.push("financials-line-group");
+      const cells = periods
+        .map((period) =>
+          line.group || !(line.keys || []).length
+            ? `<td class="num"></td>`
+            : financialsNumCell(financialsPick(period.row, ...(line.keys || [])), line.kind || "money")
+        )
+        .join("");
+      return `<tr class="is-row${line.group ? " financials-group-row" : ""}">
+        <td class="${classes.join(" ")}">${escapeHtml(line.label)}</td>
+        ${cells}
+      </tr>`;
+    })
+    .join("");
+}
+
+function paintFinancials() {
+  const st = financialsState;
+  const sheet = financialsNormalizeSheet(st.sheet);
+  const spec = FINANCIALS_SHEETS[sheet] || FINANCIALS_SHEETS.balance;
+  const rows = financialsVisibleItems();
+  const colspan = sheet === "main" ? 11 : Math.max(1, rows.length + 1);
+  if (els.financialsTitle) els.financialsTitle.textContent = spec.title;
+  if (els.financialsMeta) {
+    const bits = [];
+    if (rows.length) bits.push(`${rows.length} 期`);
+    if (st.filter === "annual") bits.push("年报");
+    if (st.updatedAt) bits.push(st.updatedAt);
+    els.financialsMeta.textContent = st.loading
+      ? "加载中…"
+      : st.error
+        ? st.error
+        : bits.join(" · ");
+  }
+  if (els.financialsHint) {
+    els.financialsHint.textContent = st.loading
+      ? "正在从东财拉取历史财报…"
+      : st.error
+        ? st.error
+        : spec.hint;
+  }
+  if (!els.financialsBodyRows) return;
+  if (st.loading) {
+    if (els.financialsHead) els.financialsHead.innerHTML = "";
+    els.financialsBodyRows.innerHTML = financialsEmptyRow(colspan, "正在加载…");
+    return;
+  }
+  if (st.error) {
+    if (els.financialsHead) els.financialsHead.innerHTML = "";
+    els.financialsBodyRows.innerHTML = financialsEmptyRow(colspan, st.error);
+    return;
+  }
+  if (!rows.length) {
+    if (els.financialsHead) els.financialsHead.innerHTML = "";
+    els.financialsBodyRows.innerHTML = financialsEmptyRow(colspan, `暂无${spec.title}数据`);
+    return;
+  }
+  if (sheet === "main") paintFinancialsMain(rows);
+  else paintFinancialsStatement(sheet, rows);
+}
+
+async function loadFinancials({ refresh = false } = {}) {
+  if (!code || financialsState.loading) return;
+  financialsState.loading = true;
+  financialsState.error = "";
+  paintFinancials();
+  if (els.refreshFinancialsBtn) els.refreshFinancialsBtn.disabled = true;
+  try {
+    const qs = new URLSearchParams({ code, scope: "all", limit: "24" });
+    if (refresh) qs.set("refresh", "1");
+    const json = await api(`/api/stocks/financial-report?${qs.toString()}`);
+    const data = json.data || {};
+    const statements = data.statements || {};
+    financialsState.items = Array.isArray(data.merged)
+      ? data.merged
+      : Array.isArray(data.items)
+        ? data.items
+        : [];
+    financialsState.income = Array.isArray(statements.income) ? statements.income : [];
+    financialsState.balance = Array.isArray(statements.balance) ? statements.balance : [];
+    financialsState.cashflow = Array.isArray(statements.cashflow) ? statements.cashflow : [];
+    const sheets = data.sheets || {};
+    financialsState.lines = {
+      income: Array.isArray(sheets.income?.lines) ? sheets.income.lines : [],
+      balance: Array.isArray(sheets.balance?.lines) ? sheets.balance.lines : [],
+      cashflow: Array.isArray(sheets.cashflow?.lines) ? sheets.cashflow.lines : [],
+    };
+    financialsState.count = Number(data.count) || financialsState.items.length;
+    financialsState.updatedAt = data.updated_at || new Date().toLocaleString("zh-CN", { hour12: false });
+    if (els.financialsBody) els.financialsBody.scrollTop = 0;
+  } catch (err) {
+    financialsState.items = [];
+    financialsState.income = [];
+    financialsState.balance = [];
+    financialsState.cashflow = [];
+    financialsState.lines = { income: [], balance: [], cashflow: [] };
+    financialsState.count = 0;
+    financialsState.error = err.message || String(err);
+  } finally {
+    financialsState.loading = false;
+    if (els.refreshFinancialsBtn) els.refreshFinancialsBtn.disabled = false;
+    paintFinancials();
+  }
+}
+
+function setupFinancialsBox() {
+  syncFinancialsSheetUi();
+  syncFinancialsFilterUi();
+  if (els.financialsSheetSeg && els.financialsSheetSeg.dataset.bound !== "1") {
+    els.financialsSheetSeg.dataset.bound = "1";
+    els.financialsSheetSeg.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-sheet]");
+      if (!btn || !els.financialsSheetSeg.contains(btn)) return;
+      const next = financialsNormalizeSheet(btn.getAttribute("data-sheet"));
+      if (next === financialsState.sheet) return;
+      financialsState.sheet = next;
+      syncFinancialsSheetUi();
+      paintFinancials();
+      if (els.financialsBody) els.financialsBody.scrollTop = 0;
+    });
+  }
+  if (els.financialsFilterSeg && els.financialsFilterSeg.dataset.bound !== "1") {
+    els.financialsFilterSeg.dataset.bound = "1";
+    els.financialsFilterSeg.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-filter]");
+      if (!btn || !els.financialsFilterSeg.contains(btn)) return;
+      const next = btn.getAttribute("data-filter") === "annual" ? "annual" : "all";
+      if (next === financialsState.filter) return;
+      financialsState.filter = next;
+      syncFinancialsFilterUi();
+      paintFinancials();
+      if (els.financialsBody) els.financialsBody.scrollTop = 0;
+    });
+  }
 }
 
 function lhbRowKey(row) {
@@ -4990,12 +5440,10 @@ function switchMainPanel(panelId) {
     panel.hidden = !active;
   });
 
-  if (els.refreshNewsBtn) {
-    els.refreshNewsBtn.hidden = next !== "news";
-  }
   if (els.refreshEmotionBtn) {
     els.refreshEmotionBtn.hidden = next !== "emotion";
   }
+  syncNewsRefreshButtons();
   syncOthersRefreshButtons();
 
   if (isQuotesPanel(next)) {
@@ -5033,22 +5481,57 @@ function setupMainTabs() {
     if (!tab || !stack.contains(tab)) return;
     switchMainPanel(tab.getAttribute("data-panel") || "");
   });
+  stack.addEventListener("pointerover", (event) => {
+    const tab = event.target.closest("[data-panel]");
+    if (!tab || !stack.contains(tab)) return;
+    window.OrbitPrefetch?.prefetchTab(tab.getAttribute("data-panel") || "");
+  });
 
-  if (els.refreshNewsBtn) {
-    els.refreshNewsBtn.hidden = activeMainPanel !== "news";
-  }
   if (els.refreshEmotionBtn) {
     els.refreshEmotionBtn.hidden = activeMainPanel !== "emotion";
   }
+  syncNewsRefreshButtons();
   syncOthersRefreshButtons();
 }
 
 function setupBackLink() {
-  if (industry) {
-    els.backLink.href = `/?industry=${encodeURIComponent(industry)}`;
-  } else {
-    els.backLink.href = "/";
-  }
+  if (!els.backLink) return;
+  const cname = (params.get("cname") || "").trim();
+  const ccode = (params.get("ccode") || "").trim();
+  const industryHref = industry
+    ? `/industry?industry=${encodeURIComponent(industry)}`
+    : "/industry";
+  const searchQs = new URLSearchParams();
+  if (cname) searchQs.set("cname", cname);
+  if (ccode) searchQs.set("ccode", ccode);
+  const searchSuffix = searchQs.toString();
+
+  const targets = {
+    market: { href: "/market", label: "返回行业行情" },
+    shares: { href: "/shares", label: "返回个股行情" },
+    steep: { href: "/steep", label: "返回涨跌停" },
+    industry: { href: industryHref, label: "返回行业树" },
+    search: {
+      href: searchSuffix ? `/industry?${searchSuffix}` : "/industry",
+      label: "返回行业树",
+    },
+    fund: {
+      href: fromCat ? `/fund?cat=${encodeURIComponent(fromCat)}` : "/fund",
+      label: "返回基金",
+    },
+    "otc-fund": {
+      href: `/fund?cat=${encodeURIComponent(fromCat || "gp")}`,
+      label: "返回基金",
+    },
+    screen: { href: "/analysis?view=limit", label: "返回研判" },
+    analysis: { href: "/analysis?view=stock", label: "返回研判" },
+  };
+  const fallback = industry
+    ? { href: industryHref, label: "返回行业树" }
+    : { href: "/market", label: "返回市场" };
+  const target = targets[fromPage] || fallback;
+  els.backLink.href = target.href;
+  els.backLink.textContent = target.label;
 }
 
 /* ---------- 行情图表 ---------- */
@@ -6350,7 +6833,7 @@ function drawGroupedSignedBars(ctx, layout, items, tiers, colors, hoverIndex, { 
     ctx.restore();
   }
 
-  drawPaneLabel(ctx, price, mode === "day" ? "净流入" : "净流入(汇总)", colors);
+  if (mode !== "day") drawPaneLabel(ctx, price, "(汇总)", colors);
   drawAxesLabels(ctx, layout, priceScale, items, mode, colors, {
     yFormat: fmtVol,
     skipTimeLabels: false,
@@ -6502,23 +6985,23 @@ function fillKlineQuoteCard(absIndex) {
       `<span style="color:${line.color}">${escapeHtml(fmtNum(v))}</span>`
     );
   }).filter(Boolean);
-  const rows = [
+  const quoteRows = [
     row("开盘", escapeHtml(fmtNum(d.open))),
     row("最低", escapeHtml(fmtNum(d.low))),
     row("最高", escapeHtml(fmtNum(d.high))),
     row("收盘", escapeHtml(fmtNum(d.close)), closeCls),
     p ? row("涨跌幅", escapeHtml(p.text), p.cls) : "",
-    ...maRows,
     row("成交量", escapeHtml(fmtVol(d.volume))),
   ].filter(Boolean);
+  const auxRows = [...maRows];
   if (comboPanesEnabled()) {
     if (comboMetricState === "fundflow") {
       const ff = fundflowAtTime(d.time);
-      if (ff) rows.push(...fundflowHoverRows(ff, row));
+      if (ff) auxRows.push(...fundflowHoverRows(ff, row));
     } else {
       const pe = metricValueAtTime(peState.allItems, peValue, d.time);
       if (pe != null) {
-        rows.push(
+        auxRows.push(
           row(
             peSeriesConf().label,
             `<span style="color:var(--accent)">${escapeHtml(fmtNum(pe))}</span>`
@@ -6528,7 +7011,13 @@ function fillKlineQuoteCard(absIndex) {
     }
   }
 
-  els.chartHoverCard.innerHTML = `<div class="chart-hover-card-rows chart-hover-card-rows--inline"><span class="chart-hover-card-time">${escapeHtml(d.time || "")}</span>${rows.join("")}</div>`;
+  const line = (items, withTime = false) =>
+    `<div class="chart-hover-card-rows chart-hover-card-rows--inline">${
+      withTime ? `<span class="chart-hover-card-time">${escapeHtml(d.time || "")}</span>` : ""
+    }${items.join("")}</div>`;
+  els.chartHoverCard.innerHTML = `<div class="chart-hover-card-stack">${line(quoteRows, true)}${
+    auxRows.length ? line(auxRows) : ""
+  }</div>`;
   showHoverCard();
 }
 
@@ -7993,7 +8482,7 @@ async function loadFundflowChart() {
     let data = { items: [] };
     for (let attempt = 0; attempt < 3; attempt += 1) {
       data = await fetchFundflowPayload({ refresh: attempt > 0 });
-      if (Array.isArray(data.items) && data.items.length) break;
+      if (Array.isArray(data.items) && data.items.length > 1) break;
       if (attempt < 2) {
         await new Promise((resolve) => {
           window.setTimeout(resolve, 450 * (attempt + 1));
@@ -8386,6 +8875,11 @@ if (els.refreshFundHoldersBtn) {
     loadFundHolders({ refresh: true })
   );
 }
+if (els.refreshFinancialsBtn) {
+  els.refreshFinancialsBtn.addEventListener("click", () =>
+    loadFinancials({ refresh: true })
+  );
+}
 function setupChartsViewport() {
   const relayout = () => {
     fitChartsToViewport();
@@ -8402,7 +8896,11 @@ function setupChartsViewport() {
   syncEmotionSourceUi();
   syncOthersSubTabUi();
   syncJudgmentSubTabUi();
-  const tab = normalizeMainPanel((params.get("tab") || "").trim());
+  const tabRaw = (params.get("tab") || "").trim();
+  const othersRaw = (params.get("others") || "").trim().toLowerCase();
+  let tab = normalizeMainPanel(tabRaw);
+  if (!tab && NEWS_FINANCIALS_ALIASES.has(othersRaw)) tab = "news";
+  if (tab === "others" && NEWS_FINANCIALS_ALIASES.has(othersRaw)) tab = "news";
   if (tab) switchMainPanel(tab);
   fitChartsToViewport();
 }
@@ -8414,6 +8912,7 @@ setupPlatformBoxes();
 setupCninfoBox();
 setupEmotionBox();
 setupFundHoldersBox();
+setupFinancialsBox();
 setupCompanyListBox();
 setupOthersSubTabs();
 setupJudgmentSubTabs();
@@ -8429,6 +8928,7 @@ setupTurnoverChart();
 (async () => {
   await loadProfile();
   await loadChart("day");
+  window.OrbitPrefetch?.boot("company", { from: fromPage, industry, code });
   await Promise.all([
     loadTicksChart(),
     loadPeChart(),

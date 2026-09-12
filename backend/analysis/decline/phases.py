@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from analysis.bars import moving_average, slice_segment
-from analysis.config import (
+from analysis.decline.bars import moving_average, slice_segment
+from analysis.decline.config import (
     CONSOLIDATION_DAILY_THRESHOLD,
     DECLINE_DAILY_THRESHOLD,
 )

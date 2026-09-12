@@ -3,11 +3,12 @@
 三套业务：
 - ``industry``：申万分类、成分股检索、地图标注
 - ``company``：单只股票的盘口、K 线、资讯
-- ``market``：申万行业涨跌、资金流向、行业轮动
+- ``market``：申万行业涨跌、资金流向、个股涨跌榜、行业轮动
 - ``world``：全球主要股指、央行利率、国债收益率、原油期货
+- ``gmap``：Google Maps 全球检索与定位
 - ``list``：龙虎榜个股历史上榜（公司详情页）
-- ``funds.fund``：场内 ETF / LOF 分类与检索
-- ``funds.otc_fund``：场外开放式基金检索与净值排行
+- ``funds.fund`` / ``funds.otc_fund``：统一基金页（场内 ETF/LOF + 场外开放式）
+- ``analysis``：研判（涨跌停分析 / 个股分析）
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-# 保证从仓库根目录启动 / PyCharm 调试时也能解析 industry / company / agent
+# 保证从仓库根目录启动 / PyCharm 调试时也能解析 industry / company / agent / analysis
 _BACKEND_DIR = Path(__file__).resolve().parent
 _ROOT_DIR = _BACKEND_DIR.parent
 if str(_BACKEND_DIR) not in sys.path:
@@ -26,7 +27,7 @@ if str(_ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(_ROOT_DIR))
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -42,7 +43,7 @@ from funds.fund.service import service as fund_service
 from list.api import router as list_router
 from market.api import router as market_router
 from world.api import router as world_router
-from screen.api import router as screen_router
+from analysis.api import router as screen_router
 from funds.otc_fund.api import router as otc_fund_router
 from funds.otc_fund.service import service as otc_fund_service
 
@@ -120,6 +121,48 @@ async def lifespan(_app: FastAPI):
     except Exception as exc:  # noqa: BLE001
         print(f"场外基金索引启动失败: {exc}")
 
+    try:
+        import threading
+
+        from market.shares.service import service as shares_service
+        from market.sw.service import service as market_service
+
+        def _warmup_market() -> None:
+            try:
+                market_service.tree()
+                print("行业行情树预热完成")
+            except Exception as exc:  # noqa: BLE001
+                print(f"行业行情树预热失败: {exc}")
+            try:
+                shares_service.list()
+                print("个股行情预热完成")
+            except Exception as exc:  # noqa: BLE001
+                print(f"个股行情预热失败: {exc}")
+            try:
+                from market.steep.service import service as steep_service
+
+                steep_service.recent(days=15)
+                print("涨跌停预热完成")
+            except Exception as exc:  # noqa: BLE001
+                print(f"涨跌停预热失败: {exc}")
+
+        threading.Thread(
+            target=_warmup_market,
+            daemon=True,
+            name="market-tree-warmup",
+        ).start()
+        print("已启动行业/个股行情预热")
+    except Exception as exc:  # noqa: BLE001
+        print(f"行业行情预热启动失败: {exc}")
+
+    try:
+        from market.sw.history import start_snapshot_loop
+
+        start_snapshot_loop()
+        print("已启动行业行情每日快照")
+    except Exception as exc:  # noqa: BLE001
+        print(f"行业行情快照启动失败: {exc}")
+
     yield
 
 
@@ -156,8 +199,32 @@ def health():
 
 
 @app.get("/")
-def index():
-    return FileResponse(FRONTEND / "industry" / "index.html")
+def index(request: Request):
+    qs = request.query_params
+    if any(qs.get(key) for key in ("industry", "cname", "ccode")):
+        target = "/industry"
+        raw = request.url.query
+        if raw:
+            target = f"{target}?{raw}"
+        return RedirectResponse(url=target, status_code=302)
+    return FileResponse(
+        FRONTEND / "world" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/industry")
+@app.get("/industry.html")
+def industry_page():
+    return FileResponse(
+        FRONTEND / "industry" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/cn")
+def china_market_entry():
+    return RedirectResponse(url="/market", status_code=302)
 
 
 @app.get("/market")
@@ -173,6 +240,24 @@ def market_page():
 def js_market():
     return FileResponse(
         FRONTEND / "market" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/shares")
+@app.get("/shares.html")
+def shares_page():
+    return FileResponse(
+        FRONTEND / "shares" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/shares.js")
+def js_shares():
+    return FileResponse(
+        FRONTEND / "shares" / "app.js",
         media_type="application/javascript",
         headers={"Cache-Control": "no-store, max-age=0"},
     )
@@ -199,10 +284,7 @@ def js_steep():
 @app.get("/world")
 @app.get("/world.html")
 def world_page():
-    return FileResponse(
-        FRONTEND / "world" / "index.html",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
+    return RedirectResponse(url="/", status_code=302)
 
 
 @app.get("/js/world.js")
@@ -214,19 +296,52 @@ def js_world():
     )
 
 
+@app.get("/gmap")
+@app.get("/gmap.html")
+def gmap_page():
+    return FileResponse(
+        FRONTEND / "gmap" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/gmap.js")
+def js_gmap():
+    return FileResponse(
+        FRONTEND / "gmap" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
 @app.get("/screen")
 @app.get("/screen.html")
 def screen_page():
-    return FileResponse(
-        FRONTEND / "screen" / "index.html",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
+    return RedirectResponse(url="/analysis?view=limit", status_code=302)
 
 
 @app.get("/js/screen.js")
 def js_screen():
     return FileResponse(
         FRONTEND / "screen" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/analysis")
+@app.get("/analysis.html")
+def analysis_page():
+    return FileResponse(
+        FRONTEND / "analysis" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/analysis.js")
+def js_analysis():
+    return FileResponse(
+        FRONTEND / "analysis" / "app.js",
         media_type="application/javascript",
         headers={"Cache-Control": "no-store, max-age=0"},
     )
@@ -253,19 +368,12 @@ def js_fund():
 @app.get("/otc-fund")
 @app.get("/otc-fund.html")
 def otc_fund_page():
-    return FileResponse(
-        FRONTEND / "otc-fund" / "index.html",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
+    return RedirectResponse("/fund?cat=gp", status_code=301)
 
 
 @app.get("/js/otc-fund.js")
 def js_otc_fund():
-    return FileResponse(
-        FRONTEND / "otc-fund" / "app.js",
-        media_type="application/javascript",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
+    return RedirectResponse("/js/fund.js", status_code=301)
 
 
 @app.get("/company")

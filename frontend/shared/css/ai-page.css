@@ -313,7 +313,7 @@ body.app-shell.ai-page-root .ai-page {
 }
 
 .ai-report-head {
-  align-items: flex-start;
+  align-items: center;
   border-bottom: 1px solid rgba(70, 210, 190, 0.1);
 }
 
@@ -330,6 +330,10 @@ body.app-shell.ai-page-root .ai-page {
 .ai-report-title-block p {
   margin: 3px 0 0;
   font-size: 0.76rem;
+}
+
+.ai-report-title-block p:empty {
+  display: none;
 }
 
 .ai-report-tools {

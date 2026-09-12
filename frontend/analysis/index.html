@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="app-shell-root">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ORBIT · 研判</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css?v=judgment-20260912" />
+</head>
+<body class="app-shell company-page-root market-page-root screen-page-root" data-nav="analysis" data-screen-mode="limit">
+  <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
+
+  <div class="app-stage">
+    <div class="app company-page market-page screen-page analysis-page">
+      <header class="topbar company-topbar">
+        <div class="brand">
+          <div>
+            <h1>研判</h1>
+            <p class="company-page-sub" id="pageSub">按每日涨停池分批排名：阴跌 → 横盘 → 涨停，软评分排序并附日 K</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <div id="viewSeg" class="market-seg judgment-view" role="tablist" aria-label="研判类型">
+            <button type="button" data-view="limit" class="is-active" role="tab" aria-selected="true">涨跌停分析</button>
+            <button type="button" data-view="stock" role="tab" aria-selected="false">个股分析</button>
+          </div>
+          <button id="refreshBtn" class="btn ghost" type="button">重新分析</button>
+        </div>
+      </header>
+
+      <div class="market-toolbar">
+        <div id="summaryBar" class="market-summary"></div>
+        <div class="market-toolbar-tail">
+          <label class="search-box analysis-code-box judgment-stock">
+            <span class="sr-only">股票代码</span>
+            <input id="codeInput" type="search" placeholder="代码，留空全市场" maxlength="8" autocomplete="off" />
+          </label>
+          <div id="limitDaysSeg" class="market-seg screen-range judgment-limit" role="group" aria-label="回看窗口">
+            <button type="button" data-days="15" class="is-active">15日</button>
+            <button type="button" data-days="30">30日</button>
+          </div>
+          <div id="stockDaysSeg" class="market-seg screen-range judgment-stock" role="group" aria-label="回看窗口">
+            <button type="button" data-days="40">40日</button>
+            <button type="button" data-days="60" class="is-active">60日</button>
+            <button type="button" data-days="120">120日</button>
+          </div>
+          <div id="kindSeg" class="market-seg screen-range judgment-stock" role="group" aria-label="走势">
+            <button type="button" data-kind="all" class="is-active">全部</button>
+            <button type="button" data-kind="decline">阴跌</button>
+            <button type="button" data-kind="consolidation">横盘</button>
+          </div>
+          <div id="limitTopSeg" class="market-seg screen-range judgment-limit" role="group" aria-label="显示数量">
+            <button type="button" data-top="30" class="is-active">每日Top30</button>
+            <button type="button" data-top="50">每日Top50</button>
+            <button type="button" data-top="0">全部</button>
+          </div>
+          <div id="stockTopSeg" class="market-seg screen-range judgment-stock" role="group" aria-label="显示数量">
+            <button type="button" data-top="50" class="is-active">Top50</button>
+            <button type="button" data-top="100">Top100</button>
+            <button type="button" data-top="0">全部</button>
+          </div>
+          <span id="liveDot" class="market-live" data-state="idle">IDLE</span>
+          <span id="marketMeta" class="muted market-meta"></span>
+        </div>
+      </div>
+
+      <div id="errorBox" class="error hidden"></div>
+      <div id="loading" class="loading screen-progress hidden">正在分析…</div>
+
+      <div class="screen-layout">
+        <nav id="dayRail" class="screen-day-rail judgment-limit" aria-label="交易日"></nav>
+        <div class="screen-day-main">
+          <div id="dayHead" class="screen-day-head"></div>
+          <div id="resultList" class="screen-result-list">
+            <p class="screen-empty muted">加载中…</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
+  <script src="/js/shared/orbit-prefetch.js?v=judgment-20260912"></script>
+  <script src="/js/shared/nav.js?v=judgment-after-fund-20260912"></script>
+  <script src="/js/shared/kline-draw.js?v=screen-20260909-kpan"></script>
+  <script src="/js/analysis.js?v=judgment-poll-20260912"></script>
+</body>
+</html>

@@ -18,6 +18,7 @@ from company.news.financialreport._common import (
     is_annual,
     period_label,
 )
+from company.news.financialreport.full import f10_lines, fetch_f10_statements
 from core.codes import normalize_code
 
 
@@ -75,28 +76,38 @@ def fetch_all_statements(code: str, *, page_size: int = 24) -> dict[str, Any]:
     if not norm:
         raise ValueError("无效股票代码")
 
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=6) as pool:
         fut_main = pool.submit(em_get, MAIN_REPORT, code, page_size=page_size)
         fut_income = pool.submit(em_get, INCOME_REPORT, code, page_size=page_size)
         fut_balance = pool.submit(em_get, BALANCE_REPORT, code, page_size=page_size)
         fut_cash = pool.submit(em_get, CASH_REPORT, code, page_size=page_size)
         fut_lico = pool.submit(em_get, LICO_REPORT, code, page_size=page_size)
+        fut_f10 = pool.submit(fetch_f10_statements, code, page_size=page_size)
         main_rows = fut_main.result()
         income_rows = fut_income.result()
         balance_rows = fut_balance.result()
         cash_rows = fut_cash.result()
         lico_rows = fut_lico.result()
+        f10 = fut_f10.result() or {}
 
-    merged = merge_statements(main_rows, income_rows, balance_rows, cash_rows, lico_rows)
+    income_full = f10.get("income") or income_rows
+    balance_full = f10.get("balance") or balance_rows
+    cash_full = f10.get("cashflow") or cash_rows
+    merged = merge_statements(main_rows, income_full, balance_full, cash_full, lico_rows)
     return {
         "code": norm,
         "source": "eastmoney" if merged else "",
         "statements": {
             "main": dedupe_periods(main_rows),
-            "income": dedupe_periods(income_rows),
-            "balance": dedupe_periods(balance_rows),
-            "cashflow": dedupe_periods(cash_rows),
+            "income": dedupe_periods(income_full),
+            "balance": dedupe_periods(balance_full),
+            "cashflow": dedupe_periods(cash_full),
             "lico": dedupe_periods(lico_rows),
+        },
+        "sheets": {
+            "income": {"lines": f10_lines("income")},
+            "balance": {"lines": f10_lines("balance")},
+            "cashflow": {"lines": f10_lines("cashflow")},
         },
         "merged": merged,
         "annual": annual_rows(merged, 5),

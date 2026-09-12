@@ -53,6 +53,8 @@ const els = {
 const MAP_BASE_MODE_KEY = "sw:mapBaseMode";
 
 async function api(path, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  if (window.OrbitHttp && method === "GET") return OrbitHttp.get(path, options);
   const res = await fetch(path, options);
   const json = await res.json();
   if (!res.ok || !json.ok) {
@@ -491,6 +493,7 @@ async function selectIndustry(code, rowEl = null, options = {}) {
     }
 
     renderStocks();
+    window.OrbitPrefetch?.intent({ industry: code, stocks: state.stocks });
     companyMap.refreshFromStocks();
 
     if (state.highlightCode) {
@@ -579,6 +582,8 @@ function renderStocks() {
       ev.stopPropagation();
       openCompanyPage(s);
     });
+    card.addEventListener("pointerenter", () => window.OrbitPrefetch?.hover(s.code || stockKey(s)));
+    card.addEventListener("pointerleave", () => window.OrbitPrefetch?.hoverLeave());
     els.stockBody.appendChild(card);
   });
 
@@ -654,6 +659,7 @@ async function showSearchResults(results, meta = {}) {
   window.history.replaceState({}, "", url);
 
   renderStocks();
+  window.OrbitPrefetch?.intent({ stocks: results });
   if (!results.length) {
     await companyMap.refreshFromStocks();
     return;
@@ -833,6 +839,7 @@ els.reloadStocksBtn.addEventListener("click", async () => {
     companyMap.resetDrilldown();
     els.industryMeta.textContent = `行业代码 ${data.industry?.code || state.selectedCode} · 共 ${data.count ?? state.stocks.length} 家上市公司 · 更新于 ${data.updated_at || "-"}`;
     renderStocks();
+    window.OrbitPrefetch?.intent({ industry: state.selectedCode, stocks: state.stocks });
     companyMap.refreshFromStocks();
   } catch (err) {
     setError(err.message);
@@ -895,6 +902,7 @@ els.mapBaseMode?.addEventListener("change", () => {
     });
 
   await loadTree();
+  window.OrbitPrefetch?.boot("industry");
 
   const restored = await restoreListState(consumeListRestoreState());
   if (restored) {

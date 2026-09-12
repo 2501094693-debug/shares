@@ -7,45 +7,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=orbit-shell-20260902" />
+  <link rel="stylesheet" href="/css/style.css?v=market-history-20260912" />
 </head>
 <body class="app-shell company-page-root market-page-root" data-nav="market">
-  <nav class="app-rail" aria-label="主导航">
-    <a class="app-rail-brand" href="/" title="ORBIT 申万终端">
-      <span class="app-rail-mark">OR</span>
-      <span class="app-rail-word">ORBIT</span>
-    </a>
-    <div class="app-rail-links">
-      <a class="app-rail-link" href="/" data-nav="industry" title="行业树 · 地图与分类">
-        <span class="app-rail-ico" aria-hidden="true">◈</span>
-        <span>行业树</span>
-      </a>
-      <a class="app-rail-link" href="/market" data-nav="market" title="行业行情 · 涨跌与资金">
-        <span class="app-rail-ico" aria-hidden="true">▣</span>
-        <span>行业行情</span>
-      </a>
-      <a class="app-rail-link" href="/world" data-nav="world" title="全球市场 · 股指利率国债原油">
-        <span class="app-rail-ico" aria-hidden="true">◎</span>
-        <span>全球</span>
-      </a>
-      <a class="app-rail-link" href="/fund" data-nav="fund" title="场内基金 · ETF / LOF">
-        <span class="app-rail-ico" aria-hidden="true">◎</span>
-        <span>场内</span>
-      </a>
-      <a class="app-rail-link" href="/otc-fund" data-nav="otc-fund" title="场外基金 · 开放式">
-        <span class="app-rail-ico" aria-hidden="true">◍</span>
-        <span>场外</span>
-      </a>
-      <a class="app-rail-link" href="/steep" data-nav="steep" title="涨跌停 · 多日名单">
-        <span class="app-rail-ico" aria-hidden="true">↕</span>
-        <span>涨跌停</span>
-      </a>
-      <a class="app-rail-link" href="/screen" data-nav="screen" title="形态筛选 · 阴跌横盘涨停">
-        <span class="app-rail-ico" aria-hidden="true">⬡</span>
-        <span>形态</span>
-      </a>
-    </div>
-  </nav>
+  <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
 
   <div class="app-stage">
     <div class="app company-page market-page">
@@ -53,10 +18,16 @@
         <div class="brand">
           <div>
             <h1>行业行情</h1>
-            <p class="company-page-sub">一级 → 二级 → 三级 → 成分股，每张表按涨跌排序</p>
+            <p class="company-page-sub" id="marketSub">一级 → 二级 → 三级 → 成分股，每张表按涨跌排序</p>
           </div>
         </div>
         <div class="top-actions">
+          <div class="market-date-nav">
+            <button id="prevDateBtn" class="btn ghost" type="button" aria-label="前一日">‹</button>
+            <input id="dateInput" class="market-date" type="date" aria-label="行情日期" />
+            <button id="nextDateBtn" class="btn ghost" type="button" aria-label="后一日">›</button>
+            <button id="todayBtn" class="btn ghost" type="button">今天</button>
+          </div>
           <button id="refreshBtn" class="btn ghost" type="button">刷新</button>
         </div>
       </header>
@@ -84,11 +55,15 @@
                 <tr>
                   <th>名称</th>
                   <th class="num">涨跌</th>
-                  <th class="num">涨(停)</th>
-                  <th class="num">跌(停)</th>
-                  <th class="num">今日</th>
-                  <th class="num">5日</th>
-                  <th class="num">10日</th>
+                  <th class="num market-col-live">涨(停)</th>
+                  <th class="num market-col-live">跌(停)</th>
+                  <th class="num market-col-live">今日</th>
+                  <th class="num market-col-live">5日</th>
+                  <th class="num market-col-live">10日</th>
+                  <th class="num market-col-hist">收盘</th>
+                  <th class="num market-col-hist">换手</th>
+                  <th class="num market-col-hist">PE</th>
+                  <th class="num market-col-hist">PB</th>
                 </tr>
               </thead>
               <tbody id="l1Body"></tbody>
@@ -106,11 +81,15 @@
                 <tr>
                   <th>名称</th>
                   <th class="num">涨跌</th>
-                  <th class="num">涨(停)</th>
-                  <th class="num">跌(停)</th>
-                  <th class="num">今日</th>
-                  <th class="num">5日</th>
-                  <th class="num">10日</th>
+                  <th class="num market-col-live">涨(停)</th>
+                  <th class="num market-col-live">跌(停)</th>
+                  <th class="num market-col-live">今日</th>
+                  <th class="num market-col-live">5日</th>
+                  <th class="num market-col-live">10日</th>
+                  <th class="num market-col-hist">收盘</th>
+                  <th class="num market-col-hist">换手</th>
+                  <th class="num market-col-hist">PE</th>
+                  <th class="num market-col-hist">PB</th>
                 </tr>
               </thead>
               <tbody id="l2Body"></tbody>
@@ -128,11 +107,15 @@
                 <tr>
                   <th>名称</th>
                   <th class="num">涨跌</th>
-                  <th class="num">涨(停)</th>
-                  <th class="num">跌(停)</th>
-                  <th class="num">今日</th>
-                  <th class="num">5日</th>
-                  <th class="num">10日</th>
+                  <th class="num market-col-live">涨(停)</th>
+                  <th class="num market-col-live">跌(停)</th>
+                  <th class="num market-col-live">今日</th>
+                  <th class="num market-col-live">5日</th>
+                  <th class="num market-col-live">10日</th>
+                  <th class="num market-col-hist">收盘</th>
+                  <th class="num market-col-hist">换手</th>
+                  <th class="num market-col-hist">PE</th>
+                  <th class="num market-col-hist">PB</th>
                 </tr>
               </thead>
               <tbody id="l3Body"></tbody>
@@ -152,9 +135,9 @@
                   <th class="num">涨跌</th>
                   <th class="num">PE</th>
                   <th class="num">PB</th>
-                  <th class="num">今日</th>
-                  <th class="num">5日</th>
-                  <th class="num">10日</th>
+                  <th class="num market-col-live">今日</th>
+                  <th class="num market-col-live">5日</th>
+                  <th class="num market-col-live">10日</th>
                 </tr>
               </thead>
               <tbody id="l4Body"></tbody>
@@ -164,7 +147,9 @@
       </div>
     </div>
   </div>
-  <script src="/js/shared/nav.js?v=orbit-no-list-nav-20260911"></script>
-  <script src="/js/market.js?v=orbit-shell-20260902"></script>
+  <script src="/js/shared/orbit-http.js?v=market-history-20260912"></script>
+  <script src="/js/shared/orbit-prefetch.js?v=cn-fund-unify-20260912"></script>
+  <script src="/js/shared/nav.js?v=judgment-after-fund-20260912"></script>
+  <script src="/js/market.js?v=market-sealed-20260912"></script>
 </body>
 </html>

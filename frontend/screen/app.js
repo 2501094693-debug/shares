@@ -58,6 +58,11 @@
     return state.dayRows.find((d) => d.date === state.selectedDate) || state.dayRows[0] || null;
   }
 
+  function resultItems() {
+    const day = selectedDay();
+    return (day && day.items) || [];
+  }
+
   function setLive(kind) {
     const el = $("liveDot");
     el.dataset.state = kind;
@@ -91,10 +96,10 @@
   }
 
   function renderSummary() {
+    const analyzed = state.analyzedCount || 0;
     const day = selectedDay();
     const dayN = day ? day.candidate_count || 0 : 0;
     const dayDone = day ? day.analyzed_count || (day.items || []).length : 0;
-    const analyzed = state.analyzedCount || 0;
     $("summaryBar").innerHTML = `
       <span>已分析 <b>${analyzed}</b> / ${state.candidateCount || 0}</span>
       <span>当日 <b>${dayDone}</b> / ${dayN}</span>
@@ -160,9 +165,9 @@
     const cons = detected.consolidation || {};
     const scores = row.scores || {};
     const industry = [row.l1_name, row.l2_name, row.l3_name].filter(Boolean).join(" / ");
-    const board = row.board_count ? `${row.board_count}板` : "—";
+    const badge = row.board_count ? `${row.board_count}板` : "—";
     const err = row.error ? `<span class="screen-card-error">${esc(row.error)}</span>` : "";
-    const href = `/company.html?code=${encodeURIComponent(row.code || "")}`;
+    const href = `/company.html?code=${encodeURIComponent(row.code || "")}&from=screen`;
     return `<article class="screen-card is-stock" data-code="${esc(row.code || "")}" data-key="${esc(stockKey(row))}" tabindex="0">
       <a class="screen-card-head" href="${esc(href)}" title="打开公司详情">
         <span class="screen-rank">${row.rank || ""}</span>
@@ -173,7 +178,7 @@
         </div>
         <div class="screen-card-score">
           <b>${fmtNum(scores.total, 1)}</b>
-          <span>${esc(board)}</span>
+          <span>${esc(badge)}</span>
         </div>
       </a>
       <article class="chart-card chart-card--kline" data-kline-code="${esc(row.code || "")}">
@@ -248,8 +253,7 @@
 
   function renderCards() {
     const list = $("resultList");
-    const day = selectedDay();
-    const items = (day && day.items) || [];
+    const items = resultItems();
     if (!items.length) {
       const text = state.status === "running" ? "正在分析，结果会逐只出现…" : "该日暂无结果";
       list.innerHTML = `<p class="screen-empty muted">${esc(text)}</p>`;
@@ -259,9 +263,10 @@
     const empty = list.querySelector(".screen-empty");
     if (empty) empty.remove();
 
-    if (list.dataset.date !== (state.selectedDate || "")) {
+    const viewKey = state.selectedDate || "";
+    if (list.dataset.date !== viewKey) {
       list.scrollLeft = 0;
-      list.dataset.date = state.selectedDate || "";
+      list.dataset.date = viewKey;
     }
 
     const prev = new Map();
@@ -300,14 +305,15 @@
 
   function applyData(data) {
     state.dayRows = data.days || [];
+    if (!state.dayRows.some((d) => d.date === state.selectedDate)) {
+      state.selectedDate = (state.dayRows[0] && state.dayRows[0].date) || "";
+    }
     state.updatedAt = data.updated_at || "";
     state.candidateCount = data.candidate_count || 0;
     state.resultCount = data.result_count || 0;
     state.analyzedCount = data.analyzed_count || data.result_count || 0;
-    if (!state.dayRows.some((d) => d.date === state.selectedDate)) {
-      state.selectedDate = (state.dayRows[0] && state.dayRows[0].date) || "";
-    }
     renderAll();
+    window.OrbitPrefetch?.intent({ stocks: resultItems() });
   }
 
   function applyPayload(payload) {
@@ -374,7 +380,7 @@
     });
 
     try {
-      const res = await fetch(`/api/screen/yindie?${qs}`);
+      const res = await fetch(`/api/screen/decline?${qs}`);
       const json = await res.json();
       if (!json.ok) {
         throw new Error(json.error || "请求失败");
@@ -397,7 +403,7 @@
 
   function openCompany(code) {
     if (!code) return;
-    window.location.href = `/company.html?code=${encodeURIComponent(code)}`;
+    window.location.href = `/company.html?code=${encodeURIComponent(code)}&from=screen`;
   }
 
   function bindEvents() {
@@ -519,5 +525,7 @@
 
   renderSeg();
   bindEvents();
+  window.OrbitPrefetch?.bindHover($("resultList"), "article.is-stock[data-code]");
+  window.OrbitPrefetch?.boot("screen");
   load(false);
 })();

@@ -12,12 +12,12 @@ import json
 import sys
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[1]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+_BACKEND = Path(__file__).resolve().parents[1]
+if str(_BACKEND) not in sys.path:
+    sys.path.insert(0, str(_BACKEND))
 
-from analysis.config import DEFAULT_LOOKBACK_DAYS
-from analysis.screen import screen_yindie
+from analysis.decline.config import DEFAULT_LOOKBACK_DAYS
+from analysis.decline.screen import screen_decline
 
 
 def _print_table(items: list[dict]) -> None:
@@ -58,7 +58,7 @@ def main() -> None:
     args = parser.parse_args()
 
     top = None if args.top <= 0 else args.top
-    data = screen_yindie(
+    data = screen_decline(
         days=args.days,
         force=args.refresh,
         workers=args.workers,

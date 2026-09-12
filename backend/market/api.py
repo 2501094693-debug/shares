@@ -1,11 +1,13 @@
-"""申万行业行情 HTTP 路由：树、涨跌、资金流向、涨跌停日历。"""
+"""申万行业行情 HTTP 路由：树、历史日报、涨跌、个股榜、资金流向、涨跌停日历。"""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
 from core.api import err, ok
+from market.shares.service import service as shares_service
 from market.steep.service import DEFAULT_DAYS, service as steep_service
+from market.sw.history import load_history
 from market.sw.service import service
 
 router = APIRouter()
@@ -20,12 +22,14 @@ def market_tree(
     period: str = Query("today", description="today | 5d | 10d"),
     refresh: str = Query("0"),
     live: str = Query("0", description="1=只刷新申万指数点位，树结构不动"),
+    lite: str = Query("0", description="1=不返回成分股，仅一/二/三级"),
 ):
     try:
         data = service.tree(
             period=period,
             force=refresh == "1",
             live=live == "1",
+            lite=lite == "1",
         )
         return ok(data)
     except ValueError as exc:
@@ -59,6 +63,21 @@ def market_quotes(
         return err(str(exc), 500)
 
 
+@router.get("/api/market/history")
+def market_history(
+    date: str = Query(..., description="YYYY-MM-DD"),
+    refresh: str = Query("0"),
+):
+    """本地收盘快照优先；没有快照时退回申万一 / 二级日报。"""
+    try:
+        data = load_history(date, force=refresh == "1")
+        return ok(data)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
 @router.get("/api/market/fund-flow")
 def market_fund_flow(
     level: str = Query("1"),
@@ -74,14 +93,37 @@ def market_fund_flow(
         return err(str(exc), 500)
 
 
+@router.get("/api/market/shares")
+def market_shares(
+    refresh: str = Query("0"),
+    live: str = Query("0", description="1=用已缓存成分股覆盖盘口涨跌"),
+    lite: str = Query("0", description="1=只返回涨幅前 80，给首屏用"),
+):
+    """申万成分股摊平，按涨跌从高到低。"""
+    try:
+        data = shares_service.list(
+            force=refresh == "1",
+            live=live == "1",
+            lite=lite == "1",
+        )
+        return ok(data)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
 @router.get("/api/market/steep")
 def market_steep(
     days: int = Query(DEFAULT_DAYS, description="最近几个交易日，默认 15，最大 30"),
     refresh: str = Query("0"),
+    lite: str = Query("0", description="1=只带最近一天名单，其余天只返回家数"),
 ):
     """最近几个交易日的涨停 / 跌停名单，按天分组。"""
     try:
-        data = steep_service.recent(days=days, force=refresh == "1")
+        data = steep_service.recent(
+            days=days, force=refresh == "1", lite=lite == "1"
+        )
         return ok(data)
     except ValueError as exc:
         return err(str(exc), 400)

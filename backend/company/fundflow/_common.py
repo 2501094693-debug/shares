@@ -16,6 +16,7 @@ _HEADERS = {
     "Accept": "application/json, text/plain, */*",
 }
 
+# push2his 才有完整日线；delay / push2 的 daykline 经常只给最新一根。
 _HIS_HOSTS = (
     "https://push2his.eastmoney.com",
     "https://push2delay.eastmoney.com",
@@ -33,6 +34,9 @@ _DAILY_FIELDS2 = "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"
 _MINUTE_FIELDS2 = "f51,f52,f53,f54,f55,f56,f57"
 _FIELDS1 = "f1,f2,f3,f7"
 _SNAPSHOT_FIELDS = "f62,f184,f66,f69,f72,f75,f78,f81,f84,f87,f14"
+_DC_FUNDFLOW_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+_DC_FUNDFLOW_REPORT = "RPT_DMSK_TS_FUNDFLOW"
+_WAN_YUAN = 10000.0
 
 
 def _dash_to_none(value: Any) -> Any:
@@ -116,6 +120,88 @@ def parse_snapshot_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _yuan_from_wan(value: Any) -> float | None:
+    number = to_flow_float(value)
+    if number is None:
+        return None
+    return round(number * _WAN_YUAN, 2)
+
+
+def parse_datacenter_row(row: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(row, dict):
+        return None
+    time_s = str(row.get("TRADE_DATE") or "").strip()[:10]
+    if len(time_s) < 10:
+        return None
+    return {
+        "time": time_s,
+        "main_net": _yuan_from_wan(row.get("NET_INFLOW")),
+        "small_net": _yuan_from_wan(row.get("SMALLDEAL_NET")),
+        "mid_net": _yuan_from_wan(row.get("MIDDEAL_NET")),
+        "big_net": _yuan_from_wan(row.get("BIGDEAL_NET")),
+        "super_net": _yuan_from_wan(row.get("SUPERDEAL_NET")),
+        "main_net_pct": to_flow_float(row.get("NET_INFLOW_RATIO")),
+        "small_net_pct": to_flow_float(row.get("SMALLDEAL_NET_RATIO")),
+        "mid_net_pct": to_flow_float(row.get("MIDDEAL_NET_RATIO")),
+        "big_net_pct": to_flow_float(row.get("BIGDEAL_NET_RATIO")),
+        "super_net_pct": to_flow_float(row.get("SUPERDEAL_NET_RATIO")),
+    }
+
+
+def _code_from_secid(secid: str) -> str:
+    text = str(secid or "").strip()
+    if "." in text:
+        return text.split(".", 1)[1]
+    return text
+
+
+def fetch_datacenter_daily(code: str, *, limit: int = 120) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """东财数据中心个股资金流历史。金额字段为万元，这里换成元。"""
+    cap = max(1, min(int(limit or 120), 500))
+    norm = str(code or "").strip()
+    meta = {"code": norm, "name": ""}
+    if not norm:
+        return [], meta
+    payload = get_json(
+        _DC_FUNDFLOW_URL,
+        params={
+            "reportName": _DC_FUNDFLOW_REPORT,
+            "columns": "ALL",
+            "filter": f'(SECURITY_CODE="{norm}")',
+            "pageNumber": "1",
+            "pageSize": str(cap),
+            "sortColumns": "TRADE_DATE",
+            "sortTypes": "-1",
+            "source": "WEB",
+            "client": "WEB",
+        },
+        headers=_HEADERS,
+        timeout=15,
+        retries=1,
+    )
+    result = payload.get("result") if isinstance(payload, dict) else None
+    rows = (result or {}).get("data") if isinstance(result, dict) else None
+    items: list[dict[str, Any]] = []
+    for row in rows or []:
+        parsed = parse_datacenter_row(row if isinstance(row, dict) else {})
+        if parsed:
+            items.append(parsed)
+            if not meta["name"]:
+                meta["name"] = str(row.get("SECURITY_NAME_ABBR") or "").strip()
+            if not meta["code"]:
+                meta["code"] = str(row.get("SECURITY_CODE") or "").strip()
+    items.sort(key=lambda d: str(d.get("time") or ""))
+    if len(items) > cap:
+        items = items[-cap:]
+    return items, meta
+
+
+def _klines_count(payload: dict[str, Any]) -> int:
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    klines = data.get("klines")
+    return len(klines) if isinstance(klines, list) else 0
+
+
 def _request_hosts(
     hosts: tuple[str, ...],
     path: str,
@@ -123,8 +209,11 @@ def _request_hosts(
     params: dict[str, Any],
     timeout: int | tuple[float, float] = 15,
     label: str,
+    min_klines: int = 0,
 ) -> dict[str, Any]:
     last_error: Exception | None = None
+    best: dict[str, Any] | None = None
+    best_n = -1
     for host in hosts:
         try:
             payload = get_json(
@@ -133,17 +222,39 @@ def _request_hosts(
                 headers=_HEADERS,
                 timeout=timeout,
             )
-            if isinstance(payload, dict):
+            if not isinstance(payload, dict):
+                last_error = RuntimeError(f"东财{label}返回非 JSON")
+                continue
+            n = _klines_count(payload)
+            if n > best_n:
+                best = payload
+                best_n = n
+            if min_klines <= 0 or n >= min_klines:
                 return payload
-            last_error = RuntimeError(f"东财{label}返回非 JSON")
+            logger.info("fundflow %s skip %s: only %s klines", label, host, n)
         except Exception as exc:  # noqa: BLE001
             last_error = exc
             logger.info("fundflow %s skip %s: %s", label, host, exc)
+    if best is not None:
+        return best
     raise RuntimeError(f"东财{label}失败: {last_error}")
 
 
-def request_his(path: str, *, params: dict[str, Any], timeout: int | tuple[float, float] = 15) -> dict[str, Any]:
-    return _request_hosts(_HIS_HOSTS, path, params=params, timeout=timeout, label="历史资金流")
+def request_his(
+    path: str,
+    *,
+    params: dict[str, Any],
+    timeout: int | tuple[float, float] = 15,
+    min_klines: int = 0,
+) -> dict[str, Any]:
+    return _request_hosts(
+        _HIS_HOSTS,
+        path,
+        params=params,
+        timeout=timeout,
+        label="历史资金流",
+        min_klines=min_klines,
+    )
 
 
 def request_push2(path: str, *, params: dict[str, Any], timeout: int | tuple[float, float] = 15) -> dict[str, Any]:
@@ -158,23 +269,26 @@ def fetch_fflow_klines(
     fields2: str,
     parser: Callable[[str], dict[str, Any] | None],
     use_his: bool = True,
+    code: str = "",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     cap = max(1, min(int(limit or 120), 10000))
     params: dict[str, Any] = {
         "secid": secid,
         "klt": str(klt),
-        "lmt": str(cap),
+        "lmt": "0" if use_his else str(cap),
         "fields1": _FIELDS1,
         "fields2": fields2,
         "ut": _UT,
     }
     path = "/api/qt/stock/fflow/daykline/get" if use_his else "/api/qt/stock/fflow/kline/get"
-    request_fn = request_his if use_his else request_push2
     items: list[dict[str, Any]] = []
     meta = {"code": "", "name": ""}
     for attempt in range(5):
         try:
-            payload = request_fn(path, params=params)
+            if use_his:
+                payload = request_his(path, params=params, min_klines=2 if cap > 1 else 0)
+            else:
+                payload = request_push2(path, params=params)
             data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
             meta = {
                 "code": str(data.get("code") or "").strip(),
@@ -191,6 +305,20 @@ def fetch_fflow_klines(
             logger.info("fundflow klines retry %s/%s: %s", attempt + 1, 5, exc)
         if attempt < 4:
             time.sleep(0.5 * (attempt + 1))
+    if use_his and cap > 1 and len(items) <= 1:
+        dc_code = (code or meta.get("code") or _code_from_secid(secid)).strip()
+        try:
+            dc_items, dc_meta = fetch_datacenter_daily(dc_code, limit=cap)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("fundflow datacenter fallback failed: %s", exc)
+            dc_items, dc_meta = [], {}
+        if len(dc_items) > len(items):
+            logger.info("fundflow datacenter fallback %s: %s bars", dc_code, len(dc_items))
+            items = dc_items
+            meta = {
+                "code": dc_meta.get("code") or meta.get("code") or dc_code,
+                "name": dc_meta.get("name") or meta.get("name") or "",
+            }
     if len(items) > cap:
         items = items[-cap:]
     return items, meta

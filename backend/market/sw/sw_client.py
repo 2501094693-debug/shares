@@ -97,7 +97,7 @@ def fetch_daily_analysis(
     start: date,
     end: date,
 ) -> list[dict[str, Any]]:
-    """一级 / 二级行业区间日报（涨跌幅、换手、估值）。"""
+    """一级 / 二级行业区间日报（涨跌幅、换手、估值）。给历史行业行情用。"""
     index_type = _LEVEL_TYPE.get(level)
     if not index_type:
         raise ValueError("申万日报只覆盖一级、二级行业")

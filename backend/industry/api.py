@@ -121,6 +121,23 @@ def map_config():
     )
 
 
+@router.get("/api/gmap/config")
+def gmap_config():
+    """前端 Google Maps Key（来自环境变量 / .env）。"""
+    key = (
+        os.environ.get("GOOGLE_MAPS_API_KEY")
+        or os.environ.get("GOOGLE_MAPS_JS_KEY")
+        or ""
+    ).strip()
+    return ok(
+        {
+            "provider": "google",
+            "key": key,
+            "configured": bool(key),
+        }
+    )
+
+
 @router.get("/api/map/place-photos")
 def map_place_photos(
     poi_id: str = Query(""),

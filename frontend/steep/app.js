@@ -326,40 +326,93 @@
     state.open = new Set([...state.open].filter((key) => valid.has(key)));
   }
 
+  function steepPath({ refresh = false, lite = false } = {}) {
+    const q = new URLSearchParams({ days: String(state.days) });
+    if (refresh) q.set("refresh", "1");
+    if (lite) q.set("lite", "1");
+    return `/api/market/steep?${q}`;
+  }
+
+  async function fetchSteep({ refresh = false, lite = false, bypassCache = false } = {}) {
+    const path = steepPath({ refresh, lite });
+    if (window.OrbitHttp) {
+      return OrbitHttp.get(path, bypassCache ? { bypassCache: true, writeCache: true } : {});
+    }
+    const resp = await fetch(path, { cache: "no-store" });
+    const body = await resp.json();
+    if (!body.ok) throw new Error(body.error || "加载失败");
+    return body;
+  }
+
+  function applyPayload(data, { lite = false } = {}) {
+    const items = data.items || [];
+    if ((lite || data.lite) && state.items.some((day) => (day.limit_up || []).length || (day.limit_down || []).length) && items.length <= state.items.length) {
+      const currentFull = state.items.reduce((n, day) => n + (day.limit_up || []).length + (day.limit_down || []).length, 0);
+      const nextFull = items.reduce((n, day) => n + (day.limit_up || []).length + (day.limit_down || []).length, 0);
+      if (nextFull < currentFull) return;
+    }
+    state.items = items;
+    state.updatedAt = data.updated_at || "";
+    pruneOpen();
+    render();
+    window.OrbitPrefetch?.intent({ stocks: visibleSteepStocks() });
+    const errs = data.errors || [];
+    if (errs.length) {
+      $("errorBox").textContent = errs.join("；");
+      $("errorBox").classList.remove("hidden");
+    } else {
+      $("errorBox").classList.add("hidden");
+    }
+  }
+
+  async function paintFromCache() {
+    if (!window.OrbitHttp) return false;
+    const full = await OrbitHttp.peek(steepPath(), { allowStale: true });
+    if (full?.data?.items?.length) {
+      applyPayload(full.data);
+      return true;
+    }
+    const lite = await OrbitHttp.peek(steepPath({ lite: true }), { allowStale: true });
+    if (lite?.data?.items?.length) {
+      applyPayload(lite.data, { lite: true });
+      return true;
+    }
+    return false;
+  }
+
   async function load({ silent = false, refresh = false } = {}) {
     if (state.fetching) {
       state.pendingLoad = { silent, refresh };
       return;
     }
+    if (!silent && !refresh && !state.items.length) {
+      const hit = await paintFromCache();
+      if (!hit) {
+        void fetchSteep({ lite: true })
+          .then((json) => {
+            if (json?.data?.items?.length) {
+              applyPayload(json.data, { lite: true });
+              $("loading").classList.add("hidden");
+              setLive("busy");
+            }
+          })
+          .catch(() => {});
+      }
+    }
     state.fetching = true;
-    if (!silent) $("loading").classList.remove("hidden");
+    if (!silent && !state.items.length) $("loading").classList.remove("hidden");
     if (!silent) $("errorBox").classList.add("hidden");
     setLive("busy");
     try {
-      const q = new URLSearchParams({ days: String(state.days) });
-      if (refresh) q.set("refresh", "1");
-      const resp = await fetch(`/api/market/steep?${q}`, { cache: "no-store" });
-      const json = await resp.json();
-      if (!json.ok) throw new Error(json.error || "加载失败");
-      const data = json.data || {};
-      state.items = data.items || [];
-      state.updatedAt = data.updated_at || "";
-      pruneOpen();
-      render();
-      const errs = data.errors || [];
-      if (errs.length) {
-        $("errorBox").textContent = errs.join("；");
-        $("errorBox").classList.remove("hidden");
-      } else if (silent) {
-        $("errorBox").classList.add("hidden");
-      }
+      const json = await fetchSteep({ refresh, bypassCache: silent });
+      applyPayload(json.data || {});
       setLive("live");
     } catch (exc) {
-      if (!silent) {
+      if (!silent && !state.items.length) {
         $("errorBox").textContent = String(exc.message || exc);
         $("errorBox").classList.remove("hidden");
       }
-      setLive("idle");
+      setLive(state.items.length ? "live" : "idle");
     } finally {
       state.fetching = false;
       $("loading").classList.add("hidden");
@@ -414,10 +467,15 @@
     bindScroll();
   }
 
+  function visibleSteepStocks() {
+    const first = state.items[0] || {};
+    return [...(first.limit_up || []), ...(first.limit_down || [])].slice(0, 6);
+  }
+
   function onTrackClick(ev) {
     const stock = ev.target.closest("tr.is-stock[data-code]");
     if (stock) {
-      const qs = new URLSearchParams({ code: stock.dataset.code });
+      const qs = new URLSearchParams({ code: stock.dataset.code, from: "steep" });
       if (stock.dataset.industry) qs.set("industry", stock.dataset.industry);
       window.location.href = `/company.html?${qs}`;
       return;
@@ -429,5 +487,11 @@
   loadFold();
   applyRowFold();
   bind();
-  void load().then(startPoll);
+  window.OrbitPrefetch?.bindHover($("upTrack"), "tr.is-stock[data-code]");
+  window.OrbitPrefetch?.bindHover($("downTrack"), "tr.is-stock[data-code]");
+  window.OrbitPrefetch?.boot("steep");
+  void load().then(() => {
+    startPoll();
+    window.OrbitPrefetch?.intent({ stocks: visibleSteepStocks() });
+  });
 })();

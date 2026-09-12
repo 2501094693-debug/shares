@@ -377,13 +377,14 @@
     });
   }
 
-  function showReportLoading(message) {
+  function showReportLoading(message, title = "正在加载") {
     setBoardMode("result");
     if ($("reportMeta")) $("reportMeta").textContent = message;
     if ($("reportView")) {
       $("reportView").innerHTML = `
         <div class="ai-empty-state">
-          <h3>报告已生成</h3>
+          <div class="ai-empty-icon" aria-hidden="true">◌</div>
+          <h3>${esc(title)}</h3>
           <p>${esc(message)}</p>
         </div>
       `;
@@ -443,7 +444,7 @@
       setRunningStatus(false);
       const content = resultText(job.result);
       if (!content) {
-        showReportLoading("报告已生成，正在打开…");
+        showReportLoading("正在打开…", "报告已生成");
         return;
       }
       renderResult(job.result);
@@ -507,8 +508,9 @@
       renderJob(ms.job);
       return;
     }
-    if (ms.job?.status === "completed" && resultText(ms.job.result)) {
+    if (ms.job?.status === "completed") {
       renderJob(ms.job);
+      if (!resultText(ms.job.result)) await revealCompleted(ms.job);
       return;
     }
     if (ms.activeReportFile) {
@@ -586,7 +588,7 @@
       focusReportPane();
     } catch (err) {
       showError(err.message);
-      if ($("reportMeta")) $("reportMeta").textContent = "报告已生成，请点左侧历史报告打开";
+      showReportLoading("请点左侧历史报告打开", "报告已生成");
     }
   }
 
@@ -738,9 +740,10 @@
       return;
     }
 
-    if (!force && ms.job?.status === "completed" && resultText(ms.job.result)) {
+    if (!force && ms.job?.status === "completed") {
       if (state.mode === mode) {
         renderJob(ms.job);
+        if (!resultText(ms.job.result)) await revealCompleted(ms.job);
         await loadReports().catch(() => {});
       }
       ms.ready = true;
@@ -750,7 +753,7 @@
     if (state.mode === mode && !force) {
       const view = $("reportView");
       const empty = !view?.textContent?.trim() || view.querySelector(".ai-empty-state");
-      if (empty) showReportLoading("正在加载…");
+      if (empty) showReportLoading("正在读取已有报告…", "正在加载");
     }
 
     if (!force) await waitForIdentity();
@@ -796,7 +799,12 @@
         ms.ready = true;
         return;
       } catch (err) {
-        if (state.mode === mode) showError(err.message);
+        if (state.mode === mode) {
+          showError(err.message);
+          showReportLoading("请点左侧历史报告打开", "报告已生成");
+          ms.ready = true;
+          return;
+        }
       }
     }
 

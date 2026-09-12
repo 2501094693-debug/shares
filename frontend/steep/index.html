@@ -7,45 +7,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=steep-fullbleed-20260903" />
+  <link rel="stylesheet" href="/css/style.css?v=cn-nav-20260912" />
 </head>
 <body class="app-shell company-page-root market-page-root steep-page-root" data-nav="steep">
-  <nav class="app-rail" aria-label="主导航">
-    <a class="app-rail-brand" href="/" title="ORBIT 申万终端">
-      <span class="app-rail-mark">OR</span>
-      <span class="app-rail-word">ORBIT</span>
-    </a>
-    <div class="app-rail-links">
-      <a class="app-rail-link" href="/" data-nav="industry" title="行业树 · 地图与分类">
-        <span class="app-rail-ico" aria-hidden="true">◈</span>
-        <span>行业树</span>
-      </a>
-      <a class="app-rail-link" href="/market" data-nav="market" title="行业行情 · 涨跌与资金">
-        <span class="app-rail-ico" aria-hidden="true">▣</span>
-        <span>行业行情</span>
-      </a>
-      <a class="app-rail-link" href="/world" data-nav="world" title="全球市场 · 股指利率国债原油">
-        <span class="app-rail-ico" aria-hidden="true">◎</span>
-        <span>全球</span>
-      </a>
-      <a class="app-rail-link" href="/fund" data-nav="fund" title="场内基金 · ETF / LOF">
-        <span class="app-rail-ico" aria-hidden="true">◎</span>
-        <span>场内</span>
-      </a>
-      <a class="app-rail-link" href="/otc-fund" data-nav="otc-fund" title="场外基金 · 开放式">
-        <span class="app-rail-ico" aria-hidden="true">◍</span>
-        <span>场外</span>
-      </a>
-      <a class="app-rail-link" href="/steep" data-nav="steep" title="涨跌停 · 多日名单">
-        <span class="app-rail-ico" aria-hidden="true">↕</span>
-        <span>涨跌停</span>
-      </a>
-      <a class="app-rail-link" href="/screen" data-nav="screen" title="形态筛选 · 阴跌横盘涨停">
-        <span class="app-rail-ico" aria-hidden="true">⬡</span>
-        <span>形态</span>
-      </a>
-    </div>
-  </nav>
+  <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
 
   <div class="app-stage">
     <div class="app company-page market-page steep-page">
@@ -102,7 +67,9 @@
       </div>
     </div>
   </div>
-  <script src="/js/shared/nav.js?v=orbit-no-list-nav-20260911"></script>
-  <script src="/js/steep.js?v=orbit-shell-20260902"></script>
+  <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
+  <script src="/js/shared/orbit-prefetch.js?v=cn-fund-unify-20260912"></script>
+  <script src="/js/shared/nav.js?v=judgment-after-fund-20260912"></script>
+  <script src="/js/steep.js?v=cn-from-20260912"></script>
 </body>
 </html>

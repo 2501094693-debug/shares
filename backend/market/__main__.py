@@ -3,6 +3,7 @@
     python -m market tree
     python -m market quotes --level 1
     python -m market flow --level 2 --period 5d
+    python -m market snapshot
 """
 
 from __future__ import annotations
@@ -45,7 +46,7 @@ def _walk(nodes: list[dict], depth: int = 0) -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="申万行业行情")
-    parser.add_argument("cmd", choices=("tree", "quotes", "flow"))
+    parser.add_argument("cmd", choices=("tree", "quotes", "flow", "snapshot"))
     parser.add_argument("--level", type=int, default=1, choices=(1, 2, 3))
     parser.add_argument("--period", default="today")
     parser.add_argument("--refresh", action="store_true")
@@ -63,6 +64,17 @@ def main() -> None:
             ("up_count", "上涨", 6),
             ("down_count", "下跌", 6),
         ]
+    elif args.cmd == "snapshot":
+        from market.sw.history import save_snapshot, snapshot_day
+
+        data = service.tree(force=args.refresh)
+        saved = save_snapshot(data, force=True)
+        print(
+            f"snapshot day={snapshot_day()} saved={saved} "
+            f"stocks={data.get('stock_node_count')} "
+            f"updated={data.get('updated_at')}"
+        )
+        return
     elif args.cmd == "flow":
         data = service.fund_flow(args.level, period=args.period, force=args.refresh)
         items = list(data.get("items") or [])

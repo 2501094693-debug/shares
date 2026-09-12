@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="app-shell-root">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ORBIT · 谷歌地图</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://maps.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css?v=cn-nav-20260912" />
+</head>
+<body class="app-shell gmap-page-root" data-nav="gmap">
+  <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
+
+  <div class="app-stage">
+    <div id="gmapStreetWrap" class="gmap-street-wrap">
+      <div class="gmap-street-bar">
+        <strong>街景</strong>
+        <span id="gmapStreetMeta" class="muted">拖动地图上的小人，或选中地点后打开</span>
+        <button id="gmapStreetClose" class="btn ghost" type="button">关闭</button>
+      </div>
+      <div id="streetStage" class="gmap-street-canvas" role="application" aria-label="谷歌街景"></div>
+    </div>
+    <div id="gmapAerialWrap" class="gmap-aerial-wrap">
+      <div class="gmap-aerial-bar">
+        <strong>俯瞰</strong>
+        <span id="gmapAerialMeta" class="muted">卫星 45° / 三维实景</span>
+        <button type="button" class="btn ghost" data-aerial="left" title="左转 45°">左转</button>
+        <button type="button" class="btn ghost" data-aerial="right" title="右转 45°">右转</button>
+        <button type="button" class="btn ghost" data-aerial="steep" title="加大倾角">更陡</button>
+        <button type="button" class="btn ghost" data-aerial="flat" title="减小倾角">更平</button>
+        <button id="gmapAerialClose" class="btn ghost" type="button">关闭</button>
+      </div>
+      <div id="aerialStage" class="gmap-aerial-canvas" role="application" aria-label="俯瞰图"></div>
+    </div>
+    <div id="gmapStage" class="gmap-stage" role="application" aria-label="谷歌地图"></div>
+
+    <div class="gmap-hud" aria-label="谷歌地图控制台">
+      <header class="gmap-hud-head">
+        <div>
+          <h1>谷歌地图</h1>
+          <p class="muted gmap-hud-sub">检索 · 街景 · 俯瞰</p>
+        </div>
+        <div class="gmap-hud-tools">
+          <div class="gmap-type-toggle" role="group" aria-label="底图类型">
+            <button type="button" class="btn ghost gmap-type-btn is-active" data-type="roadmap" aria-pressed="true">标准</button>
+            <button type="button" class="btn ghost gmap-type-btn" data-type="satellite" aria-pressed="false">卫星</button>
+            <button type="button" class="btn ghost gmap-type-btn" data-type="hybrid" aria-pressed="false">混合</button>
+            <button type="button" class="btn ghost gmap-type-btn" data-type="terrain" aria-pressed="false">地形</button>
+          </div>
+          <span id="gmapStatus" class="muted">加载中…</span>
+        </div>
+      </header>
+
+      <form id="gmapSearchForm" class="gmap-search" autocomplete="off">
+        <label class="search-box gmap-search-box">
+          <span class="sr-only">搜索地点</span>
+          <input id="gmapSearch" type="search" placeholder="搜索地点、地址或经纬度…" />
+        </label>
+        <button class="btn ghost" type="submit">搜索</button>
+        <button id="gmapLocateBtn" class="btn ghost" type="button" title="定位到当前位置">定位</button>
+        <button id="gmapStreetBtn" class="btn ghost" type="button" title="在选中位置打开街景">街景</button>
+        <button id="gmapAerialBtn" class="btn ghost" type="button" title="打开 45° 俯瞰 / 三维实景">俯瞰</button>
+      </form>
+
+      <div id="gmapDetail" class="gmap-detail-panel">
+        <p class="muted gmap-detail-empty">搜索地点后可打开街景或俯瞰。俯瞰在旧金山、东京、香港等城市效果较好。</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
+  <script src="/js/shared/orbit-prefetch.js?v=cn-fund-unify-20260912"></script>
+  <script src="/js/shared/nav.js?v=judgment-after-fund-20260912"></script>
+  <script type="module" src="/js/gmap.js?v=gmap-aerial-20260912"></script>
+</body>
+</html>

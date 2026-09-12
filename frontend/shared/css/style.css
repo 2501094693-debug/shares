@@ -79,11 +79,13 @@ body.app-shell {
 }
 
 body.app-shell.market-page-root,
+body.app-shell.shares-page-root,
 body.app-shell.steep-page-root,
 body.app-shell.fund-page-root,
 body.app-shell.otc-fund-page-root,
 body.app-shell.ai-page-root,
 body.app-shell.world-page-root,
+body.app-shell.gmap-page-root,
 html.map-app-root body.app-shell.map-app {
   height: 100dvh;
   overflow: hidden;
@@ -142,6 +144,9 @@ html.map-app-root body.app-shell.map-app {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .app-rail-link {
@@ -178,6 +183,41 @@ html.map-app-root body.app-shell.map-app {
   font-size: 0.95rem;
   line-height: 1;
   opacity: 0.9;
+}
+
+.app-rail-more {
+  position: relative;
+}
+
+button.app-rail-more-btn {
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.app-rail-more-panel {
+  position: absolute;
+  left: calc(100% + 8px);
+  bottom: 0;
+  min-width: 88px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 40;
+  background:
+    var(--grid),
+    rgba(7, 11, 18, 0.96);
+  background-size: 22px 22px, auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.app-rail-more-panel[hidden] {
+  display: none;
 }
 
 .app-stage {
@@ -515,7 +555,17 @@ body.app-shell.market-page-root .app-stage {
 body.app-shell .market-page {
   flex: 1;
   min-height: 0;
-  height: auto;
+  height: 100%;
+  width: 100%;
+}
+
+body.app-shell.market-page-root .company-page.market-page:not(.shares-page):not(.steep-page):not(.fund-page):not(.otc-fund-page):not(.screen-page) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 body.app-shell .company-page.app {
@@ -579,17 +629,30 @@ body.app-shell .market-page .brand h1 {
     box-shadow: inset 0 -2px 0 var(--accent);
   }
 
+  .app-rail-more-panel {
+    left: auto;
+    right: 0;
+    bottom: calc(100% + 8px);
+    flex-direction: row;
+    min-width: 0;
+  }
+
   body.app-shell.market-page-root,
   body.app-shell.steep-page-root,
   body.app-shell.fund-page-root,
   body.app-shell.otc-fund-page-root,
   body.app-shell.world-page-root,
+  body.app-shell.gmap-page-root,
   html.map-app-root body.app-shell.map-app {
     height: 100dvh;
   }
 
   body.app-shell .app-stage {
     height: calc(100dvh - var(--rail-h));
+  }
+
+  body.app-shell.world-page-root .app-stage {
+    height: 100dvh;
   }
 
   html.company-charts-on body.app-shell .app-stage {
@@ -2092,15 +2155,11 @@ html.company-charts-on .company-page.app {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
-    "title hover source"
-    "controls controls controls";
+    "title controls source"
+    "hover hover hover";
   align-items: center;
   column-gap: 8px;
   row-gap: 4px;
-}
-
-.chart-card--kline .chart-card__head-main {
-  display: contents;
 }
 
 .chart-card--kline .chart-card__title {
@@ -2109,6 +2168,10 @@ html.company-charts-on .company-page.app {
 
 .chart-card--kline .chart-kline-hover {
   grid-area: hover;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 2px;
 }
 
 .chart-card--kline .chart-card__meta {
@@ -2116,23 +2179,40 @@ html.company-charts-on .company-page.app {
   position: static;
   flex: none;
   justify-self: end;
-  align-self: start;
-  margin-top: 2px;
+  align-self: center;
+  margin-top: 0;
   max-width: 9rem;
 }
 
 .chart-card--kline .chart-card__controls {
   grid-area: controls;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  flex-direction: row;
   justify-content: flex-start;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  row-gap: 4px;
+  gap: 10px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chart-card--kline .chart-card__controls::-webkit-scrollbar {
+  display: none;
 }
 
 .chart-card--kline .fundflow-legend {
-  flex: 1 1 100%;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
   margin-top: 0;
+}
+
+.chart-card--kline .chart-hover-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  width: 100%;
 }
 
 .chart-card__title {
@@ -2264,7 +2344,6 @@ button.chart-legend-item.is-active {
   min-width: 0;
 }
 
-.chart-card--kline .chart-card__controls,
 .chart-card--pe .chart-card__controls,
 .chart-card--turnover .chart-card__controls {
   flex-direction: row;
@@ -2494,7 +2573,6 @@ button.chart-legend-item.is-active {
 }
 
 @media (max-width: 960px) {
-  .chart-card--kline .chart-card__controls,
   .chart-card--pe .chart-card__controls,
   .chart-card--turnover .chart-card__controls {
     flex-wrap: wrap;
@@ -2684,6 +2762,23 @@ button.chart-legend-item.is-active {
   display: none !important;
 }
 
+.company-panel[data-panel="news"][data-news-source="financials"] .news-open,
+.company-panel[data-panel="news"][data-news-source="financials"] .news-folded {
+  display: none !important;
+}
+
+.company-panel[data-panel="news"] .financials-hub {
+  display: none;
+  flex: 1 1 0%;
+  min-height: 0;
+  margin-bottom: 0;
+  flex-direction: column;
+}
+
+.company-panel[data-panel="news"][data-news-source="financials"] .financials-hub {
+  display: flex !important;
+}
+
 .company-panel[data-panel="news"] .news-source-bar {
   flex: 0 0 auto;
 }
@@ -2735,13 +2830,13 @@ button.chart-legend-item.is-active {
 .company-panel[data-panel="others"] .others-view {
   flex: 1 1 0%;
   min-height: 0;
-  display: flex;
+  display: none;
   flex-direction: column;
 }
 
-.company-panel[data-panel="others"][data-others-view="lhb"] .others-view[data-others-view="fund-holders"],
-.company-panel[data-panel="others"][data-others-view="fund-holders"] .others-view[data-others-view="lhb"] {
-  display: none !important;
+.company-panel[data-panel="others"][data-others-view="lhb"] .others-view[data-others-view="lhb"],
+.company-panel[data-panel="others"][data-others-view="fund-holders"] .others-view[data-others-view="fund-holders"] {
+  display: flex !important;
 }
 
 .company-panel[data-panel="judgment"] .judgment-layout {
@@ -5042,11 +5137,27 @@ body.market-page-root {
 
 .market-page {
   max-width: none;
-  height: 100dvh;
+  height: 100%;
   display: flex;
   flex-direction: column;
   min-height: 0;
   padding: 12px 14px;
+}
+
+.market-page:not(.shares-page):not(.steep-page):not(.fund-page):not(.otc-fund-page):not(.screen-page) .topbar,
+.market-page:not(.shares-page):not(.steep-page):not(.fund-page):not(.otc-fund-page):not(.screen-page) .market-toolbar,
+.market-page:not(.shares-page):not(.steep-page):not(.fund-page):not(.otc-fund-page):not(.screen-page) > .error,
+.market-page:not(.shares-page):not(.steep-page):not(.fund-page):not(.otc-fund-page):not(.screen-page) > .loading {
+  margin-inline: 12px;
+}
+
+.market-page:not(.shares-page):not(.steep-page):not(.fund-page):not(.otc-fund-page):not(.screen-page) .topbar {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.market-page:not(.shares-page):not(.steep-page):not(.fund-page):not(.otc-fund-page):not(.screen-page) .market-board {
+  margin: 8px 10px 10px;
 }
 
 .market-page .topbar {
@@ -5146,6 +5257,50 @@ body.market-page-root {
 
 .market-live[data-state="busy"] {
   color: var(--accent-hot);
+}
+
+.market-live[data-state="hist"] {
+  color: var(--muted);
+}
+
+.market-date-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.market-date-nav .btn {
+  min-width: 32px;
+  padding: 6px 10px;
+}
+
+.market-date-nav .btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  filter: none;
+}
+
+.market-date {
+  width: 10.4rem;
+  min-width: 10.4rem;
+  padding: 4px 8px;
+  border: 1px solid rgba(42, 212, 184, 0.14);
+  border-radius: calc(var(--radius) + 1px);
+  background: rgba(4, 8, 14, 0.58);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 0.78rem;
+  color-scheme: dark;
+}
+
+.market-date:focus {
+  outline: none;
+  border-color: rgba(42, 212, 184, 0.45);
+}
+
+.market-page.is-history .market-col-live,
+.market-page:not(.is-history) .market-col-hist {
+  display: none;
 }
 
 .market-board {
@@ -5348,6 +5503,125 @@ body.market-page-root {
   .market-pane {
     min-height: 280px;
   }
+}
+
+/* —— 个股涨跌榜 —— */
+body.app-shell.shares-page-root .app-stage {
+  display: flex;
+  flex-direction: column;
+}
+
+body.app-shell.shares-page-root .shares-page.market-page {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.shares-page .topbar,
+.shares-page .shares-toolbar,
+.shares-page > .error,
+.shares-page > .loading {
+  margin-inline: 12px;
+}
+
+.shares-page .topbar {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.shares-page .shares-toolbar {
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.shares-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.shares-search-box input {
+  min-width: 180px;
+  width: min(260px, 42vw);
+}
+
+.shares-select-box select {
+  min-width: 140px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(4, 8, 14, 0.65);
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
+.shares-select-box select:focus {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 1px rgba(42, 212, 184, 0.35);
+}
+
+.shares-board {
+  flex: 1;
+  min-height: 0;
+  margin: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.shares-board-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.shares-table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.shares-table thead th:nth-child(2),
+.shares-table .is-row td:nth-child(2) {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 6.4rem;
+  background: #090e18;
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.06);
+}
+
+.shares-table thead th:nth-child(2) {
+  z-index: 3;
+  background: rgba(9, 14, 24, 0.96);
+}
+
+.shares-table .is-row:hover td:nth-child(2) {
+  background: #101a22;
+}
+
+.shares-rank {
+  color: var(--muted);
+  width: 3.2rem;
+}
+
+.shares-industry {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 /* —— 涨跌停日历 —— */
@@ -5841,6 +6115,32 @@ html.company-charts-on .company-panel[data-panel="others"] .others-view[data-oth
   box-sizing: border-box;
 }
 
+html.company-charts-on .company-panel[data-panel="news"][data-news-source="financials"] .financials-hub {
+  flex: 1 1 0%;
+  min-height: 0;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+html.company-charts-on .company-panel[data-panel="news"] .financials-body {
+  flex: 1 1 0%;
+  max-height: none;
+  overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html.company-charts-on .company-panel[data-panel="news"] .financials-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+html.company-charts-on .company-panel[data-panel="news"] .financials-hub {
+  overflow: hidden;
+}
+
 .company-lhb-identity {
   min-width: 0;
 }
@@ -6037,9 +6337,31 @@ body.app-shell.otc-fund-page-root .otc-fund-page.market-page {
   color: var(--accent);
 }
 
+.fund-table .fund-name-row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
 .fund-table .fund-name {
   display: block;
   font-weight: 500;
+}
+
+.fund-table .fund-venue-tag {
+  display: inline-block;
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 5px;
+  line-height: 1.4;
+}
+
+.fund-toolbar .market-seg.hidden {
+  display: none;
 }
 
 .fund-pager {
@@ -6151,6 +6473,88 @@ body.app-shell.otc-fund-page-root .otc-fund-page.market-page {
   font-family: var(--mono);
 }
 
+.financials-hub .financials-head {
+  align-items: flex-end;
+}
+
+.financials-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
+}
+
+.financials-body {
+  max-height: min(72vh, 760px);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.financials-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.financials-table {
+  min-width: 920px;
+}
+
+.financials-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-elevated);
+}
+
+.financials-table th:first-child,
+.financials-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg-elevated);
+  white-space: nowrap;
+}
+
+.financials-table thead th:first-child {
+  z-index: 3;
+}
+
+.financials-table th.num,
+.financials-table td.num {
+  min-width: 5.8rem;
+}
+
+.financials-period {
+  font-weight: 600;
+}
+
+.financials-period-date {
+  margin-top: 2px;
+  font-size: 0.75rem;
+}
+
+.financials-line-indent {
+  padding-left: 1.35rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.financials-line-strong {
+  font-weight: 700;
+}
+
+.financials-group-row td {
+  background: color-mix(in srgb, var(--line) 18%, var(--bg-elevated));
+}
+
+.financials-line-group {
+  font-weight: 700;
+}
+
 .fund-table tr.fund-row.is-active {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
@@ -6175,9 +6579,9 @@ body.app-shell.otc-fund-page-root .otc-fund-page.market-page {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 8px 12px 12px;
+  padding: 0 10px 10px;
   margin: 0;
-  gap: 10px;
+  gap: 8px;
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -6188,20 +6592,6 @@ body.app-shell.otc-fund-page-root .otc-fund-page.market-page {
 .company-analysis-page .error.hidden,
 .company-analysis-page .market-live.hidden {
   display: none !important;
-}
-
-.company-analysis-page .ai-command-row {
-  flex: 0 0 auto;
-  margin-top: 0;
-  padding-top: 0;
-  border-top: 0;
-}
-
-.company-analysis-page .ai-company-lock {
-  margin: 0;
-  font-size: 0.85rem;
-  padding: 8px 0;
-  color: var(--ink);
 }
 
 .company-analysis-page .error {
@@ -6266,7 +6656,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .company-analysis-p
   height: 100%;
 }
 
-/* —— 形态筛选 —— */
+/* —— 研判（涨跌停分析 / 个股分析） —— */
 body.app-shell.screen-page-root .app-stage {
   display: flex;
   flex-direction: column;
@@ -6367,6 +6757,28 @@ body.app-shell.screen-page-root .screen-page.market-page {
   max-width: 100%;
   flex: 1 1 0%;
   overflow: hidden;
+}
+
+.screen-page-root.analysis-page-root .screen-day-rail,
+.screen-page-root[data-screen-mode="stock"] .screen-day-rail,
+.screen-page-root[data-screen-mode="limit"] .judgment-stock,
+.screen-page-root[data-screen-mode="stock"] .judgment-limit {
+  display: none;
+}
+
+.screen-page-root .market-toolbar,
+.screen-page-root .market-toolbar-tail {
+  flex-wrap: wrap;
+}
+
+.screen-page-root .judgment-view button {
+  min-width: 6.6em;
+}
+
+.analysis-page-root .analysis-code-box input,
+.screen-page-root .analysis-code-box input {
+  width: min(168px, 36vw);
+  padding: 8px 12px;
 }
 
 .screen-day-rail {
@@ -6801,51 +7213,59 @@ body.app-shell.screen-page-root .screen-page.market-page {
   }
 }
 
-/* —— 全球市场 · 三维地球 —— */
+/* —— 全球市场 · 地图（Google，不可用时回退高德） —— */
+body.app-shell.world-page-root {
+  margin: 0;
+}
+
+body.app-shell.world-page-root .app-rail {
+  display: none;
+}
+
 body.app-shell.world-page-root .app-stage {
   position: relative;
-  flex: 1;
+  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
+  height: 100dvh;
   overflow: hidden;
 }
 
-.world-globe-stage,
 .world-map-stage {
   position: absolute;
   inset: 0;
+  z-index: 1;
   background:
     radial-gradient(ellipse 70% 55% at 50% 45%, rgba(42, 212, 184, 0.08), transparent 65%),
     radial-gradient(circle at 50% 120%, rgba(10, 20, 40, 0.9), transparent 60%),
     var(--bg);
 }
 
-.world-map-stage {
-  z-index: 1;
+.world-map-stage .gm-style {
+  font-family: var(--font);
 }
 
 .world-map-stage.amap-container,
-.world-map-stage .amap-container,
 .world-map-stage .amap-layers {
-  width: 100%;
-  height: 100%;
-  background: var(--bg);
-  font-family: var(--font);
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.world-map-stage .amap-controls,
+.world-map-stage .amap-markers,
+.world-map-stage .amap-overlays {
+  height: auto !important;
+  width: auto !important;
 }
 
 .world-map-stage .amap-logo,
 .world-map-stage .amap-copyright {
-  opacity: 0.55;
-  filter: grayscale(0.2);
-}
-
-.world-globe-stage canvas {
-  display: block;
-}
-
-.world-label-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+  height: auto !important;
+  width: auto !important;
+  top: auto !important;
+  pointer-events: none !important;
+  opacity: 0.45;
+  filter: grayscale(0.4);
 }
 
 .world-marker-label {
@@ -6883,6 +7303,14 @@ body.app-shell.world-page-root .app-stage {
 .world-marker-city {
   font-size: 0.65rem;
   margin-bottom: 4px;
+}
+
+.world-marker-enter {
+  margin-top: 6px;
+  font-family: var(--display);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: var(--accent);
 }
 
 .world-marker-lines {
@@ -6971,6 +7399,16 @@ body.app-shell.world-page-root .app-stage {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
+}
+
+body.app-shell.world-page-root .world-view-toggle {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 12;
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow);
 }
 
 .world-view-btn {
@@ -7068,6 +7506,16 @@ body.app-shell.world-page-root .app-stage {
   font-size: 1rem;
 }
 
+.world-detail-enter-hint {
+  margin: 8px 0 10px;
+  font-size: 0.74rem;
+}
+
+.world-detail-enter {
+  display: inline-flex;
+  text-decoration: none;
+}
+
 .world-detail-block {
   margin-bottom: 14px;
 }
@@ -7159,5 +7607,403 @@ body.app-shell.world-page-root .app-stage {
   .world-marker-label {
     max-width: 150px;
     font-size: 0.65rem;
+  }
+}
+
+/* —— 谷歌地图 —— */
+body.app-shell.gmap-page-root .app-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.gmap-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 45%, rgba(42, 212, 184, 0.08), transparent 65%),
+    var(--bg);
+  transition: left 0.2s ease;
+}
+
+.gmap-street-wrap {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  border-right: 0 solid var(--line);
+  pointer-events: none;
+}
+
+.app-stage.is-street-open .gmap-street-wrap {
+  width: min(58%, calc(100% - 392px));
+  min-width: 280px;
+  pointer-events: auto;
+  border-right-width: 1px;
+}
+
+.app-stage.is-street-open .gmap-stage {
+  left: min(58%, calc(100% - 392px));
+}
+
+.gmap-street-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+}
+
+.gmap-street-bar strong {
+  font-family: var(--display);
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+}
+
+.gmap-street-bar .muted {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+}
+
+.gmap-street-canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+.gmap-detail-actions {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gmap-street-hint {
+  margin: 10px 0 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.gmap-aerial-wrap {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  border-right: 0 solid var(--line);
+  pointer-events: none;
+}
+
+.app-stage.is-aerial-open .gmap-aerial-wrap {
+  width: min(58%, calc(100% - 392px));
+  min-width: 280px;
+  pointer-events: auto;
+  border-right-width: 1px;
+}
+
+.app-stage.is-aerial-open .gmap-stage {
+  left: min(58%, calc(100% - 392px));
+}
+
+.app-stage.is-aerial-2d .gmap-aerial-wrap {
+  inset: 12px auto auto 12px;
+  width: min(520px, calc(100% - 420px));
+  min-width: 0;
+  height: auto;
+  pointer-events: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+}
+
+.app-stage.is-aerial-2d .gmap-aerial-canvas {
+  display: none;
+}
+
+.gmap-aerial-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.gmap-aerial-bar strong {
+  font-family: var(--display);
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+}
+
+.gmap-aerial-bar .muted {
+  flex: 1;
+  min-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+}
+
+.gmap-aerial-canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+.gmap-aerial-canvas gmp-map-3d {
+  width: 100%;
+  height: 100%;
+}
+
+#gmapStreetBtn.is-active,
+#gmapAerialBtn.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--line-strong);
+}
+
+.gmap-stage .gm-style {
+  font-family: var(--font);
+}
+
+.gmap-hud {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(360px, calc(100% - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.gmap-hud > * {
+  pointer-events: auto;
+}
+
+.gmap-hud-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+}
+
+.gmap-hud-head h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+}
+
+.gmap-hud-sub {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+}
+
+.gmap-hud-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.gmap-type-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.gmap-type-btn {
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  border: none;
+  border-radius: 0;
+  min-width: 40px;
+}
+
+.gmap-type-btn + .gmap-type-btn {
+  border-left: 1px solid var(--line);
+}
+
+.gmap-type-btn.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+#gmapStatus[data-state="live"] { color: var(--accent); }
+#gmapStatus[data-state="busy"] { color: var(--accent-hot); }
+#gmapStatus[data-state="error"] { color: var(--warn); }
+
+.gmap-search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+}
+
+.gmap-search-box {
+  flex: 1;
+  min-width: 0;
+}
+
+.gmap-search-box input {
+  width: 100%;
+}
+
+.gmap-detail-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+}
+
+.gmap-detail-empty {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.gmap-detail-head h2 {
+  margin: 0 0 4px;
+  font-family: var(--display);
+  font-size: 1rem;
+}
+
+.gmap-detail-meta {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.gmap-detail-meta div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.82rem;
+}
+
+.gmap-detail-meta dt {
+  color: var(--muted);
+}
+
+.gmap-detail-meta dd {
+  margin: 0;
+  font-family: var(--mono);
+  color: var(--accent);
+}
+
+.pac-container {
+  z-index: 1200;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(9, 14, 24, 0.96);
+  box-shadow: var(--shadow);
+  font-family: var(--font);
+  margin-top: 4px;
+}
+
+.pac-item {
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  padding: 8px 10px;
+}
+
+.pac-item:hover,
+.pac-item-selected {
+  background: var(--accent-soft);
+}
+
+.pac-item-query,
+.pac-matched {
+  color: var(--accent);
+}
+
+.pac-icon {
+  filter: grayscale(0.3);
+}
+
+@media (max-width: 900px) {
+  .gmap-hud {
+    top: auto;
+    right: 8px;
+    left: 8px;
+    bottom: 8px;
+    width: auto;
+    max-height: 46vh;
+  }
+
+  .gmap-hud-head {
+    flex-direction: column;
+  }
+
+  .gmap-hud-tools {
+    width: 100%;
+  }
+
+  .app-stage.is-street-open .gmap-street-wrap {
+    width: auto;
+    min-width: 0;
+    inset: 0 0 auto 0;
+    height: 38%;
+    border-right-width: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .app-stage.is-street-open .gmap-stage {
+    left: 0;
+    top: 38%;
+  }
+
+  .app-stage.is-aerial-open .gmap-aerial-wrap {
+    width: auto;
+    min-width: 0;
+    inset: 0 0 auto 0;
+    height: 38%;
+    border-right-width: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .app-stage.is-aerial-open .gmap-stage {
+    left: 0;
+    top: 38%;
+  }
+
+  .app-stage.is-aerial-2d .gmap-aerial-wrap {
+    inset: 8px 8px auto 8px;
+    width: auto;
+    height: auto;
   }
 }

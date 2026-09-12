@@ -1,10 +1,4 @@
-import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { toAmapLngLat } from "/js/industry/map/coords.js";
-
 const POLL_MS = 60_000;
-const GLOBE_RADIUS = 1.6;
 
 const REGION_COORDS = {
   us: { lat: 40.7128, lng: -74.006, city: "纽约" },
@@ -35,36 +29,22 @@ const CAT_COLORS = {
 const $ = (id) => document.getElementById(id);
 
 const state = {
-  viewMode: "globe",
+  viewMode: "roadmap",
   overview: null,
   layers: { indices: true, rates: true, bonds: true, oil: true },
   markerDefs: [],
-  markers3d: [],
   markers2d: [],
   selectedId: null,
   pollTimer: 0,
 };
 
-let scene;
-let camera;
-let renderer;
-let labelRenderer;
-let controls;
-let globe;
-let markerGroup;
-let raycaster;
-let pointer;
-let resizeObserver;
-let globeActive = true;
-
-const MAP_HUD_PADDING = [48, 380, 48, 48];
-
-const map2d = {
+const mapRuntime = {
+  provider: "amap",
   map: null,
-  overlays: [],
   ready: false,
   loading: null,
-  loadingSdk: null,
+  satelliteLayer: null,
+  roadNetLayer: null,
 };
 
 function esc(text) {
@@ -93,270 +73,189 @@ function tone(value) {
   return n > 0 ? "up" : "down";
 }
 
-function latLngToVec3(lat, lng, radius) {
-  const phi = (90 - lat) * (Math.PI / 180);
-  const theta = (lng + 180) * (Math.PI / 180);
-  return new THREE.Vector3(
-    -radius * Math.sin(phi) * Math.cos(theta),
-    radius * Math.cos(phi),
-    radius * Math.sin(phi) * Math.sin(theta),
-  );
-}
-
 function setStatus(text, kind = "") {
   const el = $("worldStatus");
+  if (!el) return;
   el.textContent = text;
   el.dataset.state = kind;
 }
 
+function isChinaMarket(marker) {
+  return marker?.id === "region:cn" || marker?.data?.region === "cn";
+}
+
 function emptyDetailText() {
-  return state.viewMode === "map"
-    ? "点击地图标注查看详情，或拖动平移缩放地图。"
-    : "点击地球上的标注查看详情，或拖动旋转地球。";
+  return "点击地图标注查看详情，或拖动平移缩放地图。";
 }
 
-function initGlobe() {
-  const stage = $("globeStage");
-  const w = stage.clientWidth;
-  const h = stage.clientHeight;
+function resetMapStage() {
+  const stage = $("mapStage");
+  if (!stage) return null;
+  stage.replaceChildren();
+  stage.classList.remove("amap-container");
+  stage.removeAttribute("data-provider");
+  return stage;
+}
 
-  scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(42, w / h, 0.1, 100);
-  camera.position.set(0, 0.4, 4.8);
-
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(w, h);
-  renderer.setClearColor(0x000000, 0);
-  stage.appendChild(renderer.domElement);
-
-  labelRenderer = new CSS2DRenderer();
-  labelRenderer.setSize(w, h);
-  labelRenderer.domElement.className = "world-label-layer";
-  stage.appendChild(labelRenderer.domElement);
-
-  controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.06;
-  controls.minDistance = 2.4;
-  controls.maxDistance = 8;
-  controls.autoRotate = true;
-  controls.autoRotateSpeed = 0.35;
-
-  const ambient = new THREE.AmbientLight(0xffffff, 0.55);
-  scene.add(ambient);
-  const sun = new THREE.DirectionalLight(0xffffff, 1.1);
-  sun.position.set(5, 2, 4);
-  scene.add(sun);
-
-  const loader = new THREE.TextureLoader();
-  const earthTex = loader.load(
-    "https://unpkg.com/three-globe@2.31.1/example/img/earth-blue-marble.jpg",
-  );
-  const bumpTex = loader.load(
-    "https://unpkg.com/three-globe@2.31.1/example/img/earth-topology.png",
-  );
-
-  const geometry = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
-  const material = new THREE.MeshPhongMaterial({
-    map: earthTex,
-    bumpMap: bumpTex,
-    bumpScale: 0.025,
-    specular: new THREE.Color(0x333333),
-    shininess: 8,
-  });
-  globe = new THREE.Mesh(geometry, material);
-  scene.add(globe);
-
-  const atmosGeo = new THREE.SphereGeometry(GLOBE_RADIUS * 1.015, 64, 64);
-  const atmosMat = new THREE.MeshBasicMaterial({
-    color: 0x2ad4b8,
-    transparent: true,
-    opacity: 0.08,
-    side: THREE.BackSide,
-  });
-  scene.add(new THREE.Mesh(atmosGeo, atmosMat));
-
-  const starsGeo = new THREE.BufferGeometry();
-  const starCount = 1200;
-  const positions = new Float32Array(starCount * 3);
-  for (let i = 0; i < starCount; i += 1) {
-    const r = 18 + Math.random() * 12;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-    positions[i * 3 + 2] = r * Math.cos(phi);
+/** 高德国内点用 GCJ-02；海外点保持 WGS-84。 */
+function wgs84ToGcj02(lng, lat) {
+  const PI = Math.PI;
+  const A = 6378245.0;
+  const EE = 0.00669342162296594323;
+  if (lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271) {
+    return [lng, lat];
   }
-  starsGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const stars = new THREE.Points(
-    starsGeo,
-    new THREE.PointsMaterial({ color: 0x8899aa, size: 0.04, transparent: true, opacity: 0.7 }),
-  );
-  scene.add(stars);
-
-  markerGroup = new THREE.Group();
-  scene.add(markerGroup);
-
-  raycaster = new THREE.Raycaster();
-  pointer = new THREE.Vector2();
-
-  renderer.domElement.addEventListener("pointerdown", onGlobePointerDown);
-  resizeObserver = new ResizeObserver(resizeGlobe);
-  resizeObserver.observe(stage);
-
-  animateGlobe();
+  const transformLat = (x, y) => {
+    let ret =
+      -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+    ret += ((20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0) / 3.0;
+    ret += ((20.0 * Math.sin(y * PI) + 40.0 * Math.sin((y / 3.0) * PI)) * 2.0) / 3.0;
+    ret += ((160.0 * Math.sin((y / 12.0) * PI) + 320 * Math.sin((y * PI) / 30.0)) * 2.0) / 3.0;
+    return ret;
+  };
+  const transformLng = (x, y) => {
+    let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+    ret += ((20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0) / 3.0;
+    ret += ((20.0 * Math.sin(x * PI) + 40.0 * Math.sin((x / 3.0) * PI)) * 2.0) / 3.0;
+    ret += ((150.0 * Math.sin((x / 12.0) * PI) + 300.0 * Math.sin((x / 30.0) * PI)) * 2.0) / 3.0;
+    return ret;
+  };
+  let dLat = transformLat(lng - 105.0, lat - 35.0);
+  let dLng = transformLng(lng - 105.0, lat - 35.0);
+  const radLat = (lat / 180.0) * PI;
+  let magic = Math.sin(radLat);
+  magic = 1 - EE * magic * magic;
+  const sqrtMagic = Math.sqrt(magic);
+  dLat = (dLat * 180.0) / (((A * (1 - EE)) / (magic * sqrtMagic)) * PI);
+  dLng = (dLng * 180.0) / ((A / sqrtMagic) * Math.cos(radLat) * PI);
+  return [lng + dLng, lat + dLat];
 }
 
-function loadAmapScript(key, securityJsCode) {
+function toAmapPos(lat, lng) {
+  return wgs84ToGcj02(Number(lng), Number(lat));
+}
+
+async function fetchMapConfig(url) {
+  const resp = await fetch(url);
+  const json = await resp.json();
+  if (!json.ok) throw new Error(json.error || "地图配置加载失败");
+  return json.data || {};
+}
+
+function loadAmap(key, securityJsCode) {
   if (window.AMap) return Promise.resolve(window.AMap);
-  if (map2d.loadingSdk) return map2d.loadingSdk;
-  map2d.loadingSdk = new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     if (securityJsCode) {
       window._AMapSecurityConfig = { securityJsCode };
     }
+    const timeout = window.setTimeout(() => {
+      reject(new Error("高德地图加载超时"));
+    }, 15000);
     const script = document.createElement("script");
     script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}`;
     script.async = true;
     script.onload = () => {
-      if (!window.AMap) reject(new Error("高德地图 SDK 未就绪"));
-      else resolve(window.AMap);
-    };
-    script.onerror = () => reject(new Error("高德地图脚本加载失败"));
-    document.head.appendChild(script);
-  }).finally(() => {
-    map2d.loadingSdk = null;
-  });
-  return map2d.loadingSdk;
-}
-
-function fitMapMarkers(maxZoom = 8) {
-  if (!map2d.map || !map2d.overlays.length) return;
-  try {
-    map2d.map.setFitView(map2d.overlays, false, MAP_HUD_PADDING, maxZoom);
-  } catch {
-    /* ignore */
-  }
-}
-
-async function ensureMap2d() {
-  if (map2d.ready) return;
-  if (map2d.loading) return map2d.loading;
-
-  map2d.loading = (async () => {
-    const resp = await fetch("/api/map/config");
-    const json = await resp.json();
-    if (!json.ok) throw new Error(json.error || "地图配置加载失败");
-    const key = json.data?.key || "";
-    const securityJsCode = json.data?.securityJsCode || "";
-    if (!key) {
-      throw new Error("未配置高德地图 Key：请在项目根目录 .env 设置 AMAP_JS_KEY");
-    }
-
-    await loadAmapScript(key, securityJsCode);
-
-    const stage = $("mapStage");
-    map2d.map = new AMap.Map(stage, {
-      zoom: 2,
-      center: [20, 25],
-      viewMode: "2D",
-      mapStyle: "amap://styles/normal",
-      zooms: [2, 18],
-      resizeEnable: true,
-      scrollWheel: true,
-      doubleClickZoom: true,
-      dragEnable: true,
-      keyboardEnable: true,
-      features: ["bg", "road", "building", "point"],
-      showLabel: true,
-      showIndoorMap: false,
-    });
-    map2d.overlays = [];
-    map2d.ready = true;
-    requestAnimationFrame(() => {
-      try {
-        map2d.map?.resize();
-      } catch {
-        /* ignore */
+      window.clearTimeout(timeout);
+      if (!window.AMap) {
+        reject(new Error("高德地图 SDK 未就绪"));
+        return;
       }
-    });
+      resolve(window.AMap);
+    };
+    script.onerror = () => {
+      window.clearTimeout(timeout);
+      reject(new Error("高德地图脚本加载失败"));
+    };
+    document.head.appendChild(script);
+  });
+}
+
+async function createAmapMap(stage) {
+  const cfg = await fetchMapConfig("/api/map/config");
+  const key = cfg.key || "";
+  if (!key) {
+    throw new Error("未配置高德地图 Key：请在项目根目录 .env 设置 AMAP_JS_KEY");
+  }
+  await loadAmap(key, cfg.securityJsCode || "");
+  mapRuntime.map = new AMap.Map(stage, {
+    zoom: 3,
+    center: [12, 20],
+    viewMode: "2D",
+    mapStyle: "amap://styles/dark",
+    zooms: [2, 18],
+    resizeEnable: true,
+    scrollWheel: true,
+    doubleClickZoom: true,
+    dragEnable: true,
+    keyboardEnable: true,
+    features: ["bg", "road", "building", "point"],
+    showLabel: true,
+    showIndoorMap: false,
+  });
+  mapRuntime.provider = "amap";
+  stage.dataset.provider = "amap";
+}
+
+async function ensureMap() {
+  if (mapRuntime.ready) return;
+  if (mapRuntime.loading) return mapRuntime.loading;
+
+  mapRuntime.loading = (async () => {
+    const stage = $("mapStage");
+    if (!stage) throw new Error("地图容器不存在");
+    setStatus("加载高德地图…", "busy");
+    await createAmapMap(stage);
+    mapRuntime.ready = true;
+    applyViewMode(state.viewMode);
   })();
 
   try {
-    await map2d.loading;
+    await mapRuntime.loading;
   } finally {
-    map2d.loading = null;
+    mapRuntime.loading = null;
   }
-}
-
-function resizeGlobe() {
-  if (state.viewMode !== "globe") return;
-  const stage = $("globeStage");
-  const w = stage.clientWidth;
-  const h = stage.clientHeight;
-  if (!w || !h) return;
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-  renderer.setSize(w, h);
-  labelRenderer.setSize(w, h);
 }
 
 function resizeMap() {
-  if (!map2d.ready || state.viewMode !== "map") return;
+  if (!mapRuntime.ready || !mapRuntime.map) return;
   try {
-    map2d.map.resize();
+    mapRuntime.map.resize();
   } catch {
     /* ignore */
   }
-  requestAnimationFrame(() => {
-    try {
-      map2d.map?.resize();
-    } catch {
-      /* ignore */
-    }
-  });
 }
 
-function onGlobePointerDown(event) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(markerGroup.children, true);
-  if (!hits.length) return;
-  let obj = hits[0].object;
-  while (obj && !obj.userData?.markerId) obj = obj.parent;
-  if (obj?.userData?.markerId) selectMarker(obj.userData.markerId);
-}
-
-function animateGlobe() {
-  requestAnimationFrame(animateGlobe);
-  if (!globeActive || state.viewMode !== "globe") return;
-  controls.update();
-  renderer.render(scene, camera);
-  labelRenderer.render(scene, camera);
-}
-
-function clearMarkers3d() {
-  while (markerGroup.children.length) {
-    const child = markerGroup.children[0];
-    markerGroup.remove(child);
-    child.traverse((node) => {
-      if (node.element?.parentNode) node.element.parentNode.removeChild(node.element);
-    });
+function fitMapMarkers() {
+  if (!mapRuntime.map || !state.markerDefs.length) return;
+  const overlays = state.markers2d.map((rec) => rec.overlay).filter(Boolean);
+  const padding = [48, 48, 48, 48];
+  if (overlays.length) {
+    mapRuntime.map.setFitView(overlays, false, padding, 5);
+    return;
   }
-  state.markers3d = [];
+  const lngs = [];
+  const lats = [];
+  for (const marker of state.markerDefs) {
+    const [lng, lat] = toAmapPos(marker.lat, marker.lng);
+    lngs.push(lng);
+    lats.push(lat);
+  }
+  mapRuntime.map.setBounds(
+    new AMap.Bounds([Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]),
+    false,
+    padding,
+  );
 }
 
 function clearMarkers2d() {
-  if (map2d.map && map2d.overlays.length) {
+  for (const rec of state.markers2d) {
     try {
-      map2d.map.remove(map2d.overlays);
+      rec.overlay?.setMap(null);
+      mapRuntime.map?.remove(rec.overlay);
     } catch {
       /* ignore */
     }
   }
-  map2d.overlays = [];
   state.markers2d = [];
 }
 
@@ -392,62 +291,19 @@ function buildSummaryLines(marker) {
 }
 
 function markerLabelHtml(marker) {
+  const enter = isChinaMarket(marker)
+    ? `<div class="world-marker-enter">点击进入中国市场</div>`
+    : "";
   return `
     <div class="world-marker-title">${esc(marker.title)}</div>
     <div class="world-marker-city muted">${esc(marker.city || "")}</div>
     <div class="world-marker-lines">${buildSummaryLines(marker).join("")}</div>
+    ${enter}
   `;
 }
 
-function createMarker3d(marker) {
-  const pos = latLngToVec3(marker.lat, marker.lng, GLOBE_RADIUS * 1.002);
-  const normal = pos.clone().normalize();
-
-  const pinGeo = new THREE.SphereGeometry(0.028, 12, 12);
-  const pinMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(marker.color || CAT_COLORS[marker.category] || "#2ad4b8"),
-  });
-  const pin = new THREE.Mesh(pinGeo, pinMat);
-  pin.position.copy(pos);
-  pin.userData.markerId = marker.id;
-
-  const ringGeo = new THREE.RingGeometry(0.04, 0.055, 24);
-  const ringMat = new THREE.MeshBasicMaterial({
-    color: pinMat.color,
-    transparent: true,
-    opacity: 0.55,
-    side: THREE.DoubleSide,
-  });
-  const ring = new THREE.Mesh(ringGeo, ringMat);
-  ring.position.copy(pos.clone().add(normal.clone().multiplyScalar(0.01)));
-  ring.lookAt(pos.clone().add(normal));
-  ring.userData.markerId = marker.id;
-
-  const labelEl = document.createElement("div");
-  labelEl.className = "world-marker-label";
-  labelEl.dataset.markerId = marker.id;
-  labelEl.innerHTML = markerLabelHtml(marker);
-  labelEl.addEventListener("pointerdown", (e) => {
-    e.stopPropagation();
-    selectMarker(marker.id);
-  });
-
-  const label = new CSS2DObject(labelEl);
-  label.position.copy(pos.clone().add(normal.clone().multiplyScalar(0.12)));
-  label.userData.markerId = marker.id;
-
-  const group = new THREE.Group();
-  group.add(pin, ring, label);
-  group.userData.markerId = marker.id;
-  group.userData.marker = marker;
-  markerGroup.add(group);
-  state.markers3d.push({ id: marker.id, group, labelEl, marker });
-}
-
 function createMarker2d(marker) {
-  if (!map2d.map || !window.AMap) return;
-  const pos = toAmapLngLat(marker.lat, marker.lng);
-  if (!pos) return;
+  if (!mapRuntime.map) return;
 
   const labelEl = document.createElement("div");
   labelEl.className = "world-marker-label world-map-marker-label";
@@ -455,19 +311,22 @@ function createMarker2d(marker) {
   labelEl.innerHTML = markerLabelHtml(marker);
   labelEl.addEventListener("click", (e) => {
     e.stopPropagation();
+    if (isChinaMarket(marker)) {
+      window.location.href = "/cn";
+      return;
+    }
     selectMarker(marker.id);
   });
 
-  const amapMarker = new AMap.Marker({
-    position: pos,
+  const overlay = new AMap.Marker({
+    position: toAmapPos(marker.lat, marker.lng),
     content: labelEl,
-    offset: new AMap.Pixel(-95, -68),
+    offset: new AMap.Pixel(0, -8),
+    anchor: "bottom-center",
     zIndex: 120,
   });
-  amapMarker.on("click", () => selectMarker(marker.id));
-  map2d.map.add(amapMarker);
-  map2d.overlays.push(amapMarker);
-  state.markers2d.push({ id: marker.id, amapMarker, labelEl, marker });
+  mapRuntime.map.add(overlay);
+  state.markers2d.push({ id: marker.id, overlay, labelEl, marker });
 }
 
 function groupIndicesByRegion(indices) {
@@ -568,20 +427,14 @@ function buildMarkerDefs() {
   state.markerDefs = defs;
 }
 
-function syncMarkers3d() {
-  clearMarkers3d();
-  for (const marker of state.markerDefs) createMarker3d(marker);
-}
-
 function syncMarkers2d() {
-  if (!map2d.ready) return;
+  if (!mapRuntime.ready) return;
   clearMarkers2d();
   for (const marker of state.markerDefs) createMarker2d(marker);
 }
 
 function rebuildMarkers() {
   buildMarkerDefs();
-  syncMarkers3d();
   syncMarkers2d();
   if (state.selectedId && state.markerDefs.some((m) => m.id === state.selectedId)) {
     selectMarker(state.selectedId, false);
@@ -593,6 +446,7 @@ function rebuildMarkers() {
 
 function renderDetail(markerRec) {
   const panel = $("detailPanel");
+  if (!panel) return;
   const marker = markerRec?.marker || markerRec;
   if (!marker) {
     panel.innerHTML = `<p class="muted world-detail-empty">${emptyDetailText()}</p>`;
@@ -662,34 +516,33 @@ function renderDetail(markerRec) {
     `);
   }
 
+  const chinaCta =
+    marker.id === "region:cn" || marker.data?.region === "cn"
+      ? `
+        <p class="muted world-detail-enter-hint">行业行情 · 个股行情 · 涨跌停</p>
+        <a class="btn world-detail-enter" href="/cn">进入中国市场</a>
+      `
+      : "";
+
   panel.innerHTML = `
     <header class="world-detail-head">
       <h2>${esc(marker.title)}</h2>
       <span class="muted">${esc(marker.city || "")}</span>
+      ${chinaCta}
     </header>
     ${blocks.join("")}
   `;
 }
 
 function findMarkerRec(id) {
+  const rec = state.markers2d.find((m) => m.id === id);
+  if (rec) return rec;
   const def = state.markerDefs.find((m) => m.id === id);
-  if (!def) return null;
-  const rec3d = state.markers3d.find((m) => m.id === id);
-  if (rec3d) return rec3d;
-  const rec2d = state.markers2d.find((m) => m.id === id);
-  if (rec2d) return { id, marker: rec2d.marker };
-  return { id, marker: def };
+  return def ? { id, marker: def } : null;
 }
 
 function selectMarker(id, focus = true) {
   state.selectedId = id;
-
-  state.markers3d.forEach((rec) => {
-    const active = rec.id === id;
-    rec.labelEl.classList.toggle("is-active", active);
-    const pin = rec.group.children.find((c) => c.geometry?.type === "SphereGeometry");
-    if (pin) pin.scale.setScalar(active ? 1.5 : 1);
-  });
 
   document.querySelectorAll(".world-map-marker-label").forEach((el) => {
     el.classList.toggle("is-active", el.dataset.markerId === id);
@@ -698,70 +551,72 @@ function selectMarker(id, focus = true) {
   const rec = findMarkerRec(id);
   renderDetail(rec);
 
-  if (!focus || !rec) return;
+  if (!focus || !rec?.marker || !mapRuntime.map) return;
+  const { lat, lng } = rec.marker;
+  mapRuntime.map.panTo(toAmapPos(lat, lng));
+  if (mapRuntime.map.getZoom() < 4) mapRuntime.map.setZoom(4);
+}
 
-  if (state.viewMode === "globe" && rec.group) {
-    controls.autoRotate = false;
-    const target = rec.group.position.clone().normalize().multiplyScalar(3.2);
-    camera.position.lerp(target, 0.35);
-    controls.target.set(0, 0, 0);
+function applyAmapViewMode(mode) {
+  if (!mapRuntime.map || !window.AMap) return;
+  if (!mapRuntime.satelliteLayer) {
+    mapRuntime.satelliteLayer = new AMap.TileLayer.Satellite({
+      zooms: [2, 20],
+      detectRetina: true,
+      zIndex: 2,
+    });
   }
-
-  if (state.viewMode === "map" && rec.marker && map2d.map) {
-    const pos = toAmapLngLat(rec.marker.lat, rec.marker.lng);
-    if (pos) {
-      map2d.map.setZoomAndCenter(Math.max(map2d.map.getZoom(), 4), pos);
+  if (!mapRuntime.roadNetLayer) {
+    mapRuntime.roadNetLayer = new AMap.TileLayer.RoadNet({
+      zooms: [2, 20],
+      detectRetina: true,
+      zIndex: 3,
+    });
+  }
+  const removeLayer = (layer) => {
+    try {
+      mapRuntime.map.remove(layer);
+    } catch {
+      /* ignore */
     }
+  };
+  removeLayer(mapRuntime.satelliteLayer);
+  removeLayer(mapRuntime.roadNetLayer);
+  if (mode === "satellite") {
+    mapRuntime.map.add([mapRuntime.satelliteLayer, mapRuntime.roadNetLayer]);
+    return;
+  }
+  try {
+    mapRuntime.map.setMapStyle("amap://styles/dark");
+    mapRuntime.map.setFeatures(["bg", "road", "building", "point"]);
+  } catch {
+    /* ignore */
   }
 }
 
-async function setViewMode(mode) {
-  if (mode === state.viewMode) return;
+function applyViewMode(mode) {
+  const next = mode === "satellite" ? "satellite" : "roadmap";
+  state.viewMode = next;
+  if (!mapRuntime.map) return;
+  applyAmapViewMode(next);
+}
 
-  if (mode === "map") {
-    try {
-      await ensureMap2d();
-    } catch (err) {
-      setStatus(err.message || "二维地图加载失败", "error");
-      return;
-    }
-  }
-
-  state.viewMode = mode;
-
-  const globeStage = $("globeStage");
-  const mapStage = $("mapStage");
-  const isGlobe = mode === "globe";
-
-  globeStage.hidden = !isGlobe;
-  mapStage.hidden = isGlobe;
-  globeActive = isGlobe;
-  document.body.classList.toggle("world-view-map", !isGlobe);
-
+function setViewMode(mode) {
+  const next = mode === "satellite" ? "satellite" : "roadmap";
+  state.viewMode = next;
   document.querySelectorAll(".world-view-btn").forEach((btn) => {
-    const active = btn.dataset.view === mode;
+    const active = btn.dataset.view === next;
     btn.classList.toggle("is-active", active);
     btn.setAttribute("aria-pressed", active ? "true" : "false");
   });
-
-  if (!isGlobe) {
-    syncMarkers2d();
-    requestAnimationFrame(() => {
-      resizeMap();
-      if (map2d.ready && state.markerDefs.length) fitMapMarkers();
-    });
-  } else {
-    resizeGlobe();
-  }
-
-  if (!state.selectedId) {
-    renderDetail(null);
-  } else {
-    selectMarker(state.selectedId, false);
-  }
+  applyViewMode(next);
 }
 
-async function fetchJson(url, timeoutMs = 90_000) {
+async function fetchJson(url, timeoutMs = 90_000, extra = {}) {
+  if (window.OrbitHttp) {
+    const json = await OrbitHttp.get(url, { timeoutMs, ...extra });
+    return json.data;
+  }
   const ctrl = new AbortController();
   const timer = window.setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -782,21 +637,22 @@ function apiUrl(path, params = {}) {
   return `${url.pathname}${url.search}`;
 }
 
-async function loadOverview(force = false) {
+async function loadOverview(force = false, { poll = false } = {}) {
   setStatus("同步中…", "busy");
   const refresh = force ? { refresh: "1" } : {};
+  const httpOpts = poll ? { bypassCache: true, writeCache: true } : {};
   try {
     const [indices, oil] = await Promise.all([
-      fetchJson(apiUrl("/api/global/indices", refresh), 30_000),
-      fetchJson(apiUrl("/api/global/oil", refresh), 30_000),
+      fetchJson(apiUrl("/api/global/indices", refresh), 30_000, httpOpts),
+      fetchJson(apiUrl("/api/global/oil", refresh), 30_000, httpOpts),
     ]);
     state.overview = { indices, oil, rates: { items: [] }, bonds: { items: [] } };
     rebuildMarkers();
     setStatus("指数/原油已更新，利率国债加载中…", "busy");
 
     const [rates, bonds] = await Promise.all([
-      fetchJson(apiUrl("/api/global/rates", { ...refresh, limit: 24 }), 60_000),
-      fetchJson(apiUrl("/api/global/bonds", { ...refresh, limit: 60 }), 60_000),
+      fetchJson(apiUrl("/api/global/rates", { ...refresh, limit: 24 }), 60_000, httpOpts),
+      fetchJson(apiUrl("/api/global/bonds", { ...refresh, limit: 60 }), 60_000, httpOpts),
     ]);
     state.overview = {
       indices,
@@ -815,14 +671,10 @@ async function loadOverview(force = false) {
 }
 
 function bindUi() {
-  $("refreshBtn").addEventListener("click", () => loadOverview(true));
+  $("refreshBtn")?.addEventListener("click", () => loadOverview(true));
 
   document.querySelectorAll(".world-view-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      setViewMode(btn.dataset.view).catch((err) => {
-        setStatus(err.message || "切换视图失败", "error");
-      });
-    });
+    btn.addEventListener("click", () => setViewMode(btn.dataset.view));
   });
 
   document.querySelectorAll(".world-layer-chip input").forEach((input) => {
@@ -834,19 +686,20 @@ function bindUi() {
     });
   });
 
-  window.addEventListener("resize", () => {
-    resizeGlobe();
-    resizeMap();
-  });
-
-  state.pollTimer = window.setInterval(() => loadOverview(false), POLL_MS);
+  window.addEventListener("resize", () => resizeMap());
+  state.pollTimer = window.setInterval(() => loadOverview(false, { poll: true }), POLL_MS);
 }
 
-try {
-  initGlobe();
+async function boot() {
   bindUi();
-  loadOverview(false);
-} catch (err) {
+  window.OrbitPrefetch?.boot("world");
+  await ensureMap();
+  resizeMap();
+  await loadOverview(false);
+  fitMapMarkers();
+}
+
+boot().catch((err) => {
   setStatus(err.message || "页面初始化失败", "error");
   console.error(err);
-}
+});

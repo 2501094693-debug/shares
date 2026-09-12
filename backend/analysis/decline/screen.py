@@ -7,27 +7,19 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from analysis._path import ensure_backend_path
-
-ensure_backend_path()
-
 from company.line.fetcher import fetch_kline
 
-from analysis.bars import build_sparkline, find_bar_index, parse_bars, segment_stats
-from analysis.candidates import collect_recent_limit_up
-from analysis.config import (
-    CHART_MAX_BARS,
-    CHART_MA_WARMUP,
-    CHART_PAD_AFTER,
-    CHART_PAD_BEFORE,
+from analysis.decline.bars import find_bar_index, parse_bars, segment_stats
+from analysis.decline.candidates import collect_recent_limit_up
+from analysis.decline.config import (
     CONSOLIDATION_DURATION_SCALE,
     DECLINE_DURATION_SCALE,
     DEFAULT_LOOKBACK_DAYS,
     KLINE_LIMIT,
     WEIGHTS,
 )
-from analysis.phases import detect_phases, phase_segments
-from analysis.scoring import (
+from analysis.decline.phases import detect_phases, phase_segments
+from analysis.decline.scoring import (
     breakout_score,
     consolidation_quality_score,
     decline_quality_score,
@@ -66,7 +58,6 @@ def _analyze_one(meta: dict[str, Any], lookback_days: int) -> dict[str, Any] | N
             **base,
             "error": str(exc),
             "scores": {"total": 0.0},
-            "chart": {"bars": [], "warmup": 0, "decline": [None, None], "consolidation": [None, None], "limit_up": None},
         }
 
     bars = parse_bars(list(pack.get("items") or []))
@@ -77,7 +68,6 @@ def _analyze_one(meta: dict[str, Any], lookback_days: int) -> dict[str, Any] | N
             "name": meta.get("name") or pack.get("name"),
             "error": "涨停日未在日 K 中找到",
             "scores": {"total": 0.0},
-            "chart": {"bars": [], "warmup": 0, "decline": [None, None], "consolidation": [None, None], "limit_up": None},
         }
 
     phases = detect_phases(bars, limit_idx)
@@ -108,15 +98,6 @@ def _analyze_one(meta: dict[str, Any], lookback_days: int) -> dict[str, Any] | N
         },
         "scores": parts,
         "weights": WEIGHTS,
-        "chart": build_sparkline(
-            bars,
-            limit_idx,
-            phases,
-            pad_before=CHART_PAD_BEFORE,
-            pad_after=CHART_PAD_AFTER,
-            max_bars=CHART_MAX_BARS,
-            ma_warmup=CHART_MA_WARMUP,
-        ),
         "kline_source": pack.get("source"),
         "kline_count": len(bars),
     }
@@ -206,7 +187,7 @@ def _empty_payload(days: int, pool: dict[str, Any], note: str) -> dict[str, Any]
     return payload
 
 
-def screen_yindie(
+def screen_decline(
     days: int = DEFAULT_LOOKBACK_DAYS,
     *,
     force: bool = False,

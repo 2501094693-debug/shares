@@ -21,11 +21,14 @@ from .calendar import recent_trade_dates
 from .em_pool import fetch_day_pools
 
 _LIVE_TTL = 20
+_RECENT_TTL = 30
+_SW_MAP_TTL = 600
 _CACHE_VERSION = 1
 _MIN_DAYS = 1
 _MAX_DAYS = 30
 DEFAULT_DAYS = 15
 MAX_DAYS = _MAX_DAYS
+_LITE_KEEP_DAYS = 1
 
 
 def _clamp_days(days: int) -> int:
@@ -90,7 +93,9 @@ def _save_disk(date_raw: str, data: dict[str, Any]) -> None:
 class SteepService:
     def __init__(self) -> None:
         self._live = TtlCache(_LIVE_TTL)
+        self._recent = TtlCache(_RECENT_TTL)
         self._lock = threading.Lock()
+        self._build_lock = threading.Lock()
         self._sealed: dict[str, dict[str, Any]] = {}
 
     def _sealed_get(self, date_raw: str) -> dict[str, Any] | None:
@@ -141,8 +146,26 @@ class SteepService:
             self._live.put(date_raw, row)
         return date_raw, row, error
 
-    def recent(self, days: int = DEFAULT_DAYS, force: bool = False) -> dict[str, Any]:
+    def recent(
+        self, days: int = DEFAULT_DAYS, force: bool = False, lite: bool = False
+    ) -> dict[str, Any]:
         days = _clamp_days(days)
+        cache_key = f"d:{days}"
+        if not force:
+            hit = self._recent.get(cache_key)
+            if hit is not None:
+                return _lite_steep(hit) if lite else hit
+
+        with self._build_lock:
+            if not force:
+                hit = self._recent.get(cache_key)
+                if hit is not None:
+                    return _lite_steep(hit) if lite else hit
+            payload = self._build_recent(days, force=force)
+            self._recent.put(cache_key, payload)
+        return _lite_steep(payload) if lite else payload
+
+    def _build_recent(self, days: int, force: bool = False) -> dict[str, Any]:
         dates = recent_trade_dates(days)
         errors: list[str] = []
 
@@ -170,8 +193,14 @@ class SteepService:
         }
 
 
+_SW_MAP: tuple[float, dict[str, dict[str, str]]] | None = None
+
+
 def _sw_map() -> dict[str, dict[str, str]]:
-    industry_service.stocks.ensure_populated()
+    global _SW_MAP
+    now = time.time()
+    if _SW_MAP is not None and now - _SW_MAP[0] < _SW_MAP_TTL:
+        return _SW_MAP[1]
     out: dict[str, dict[str, str]] = {}
     for stock in industry_service.stocks.all_stocks():
         code = str(stock.get("code") or "").strip()
@@ -183,7 +212,22 @@ def _sw_map() -> dict[str, dict[str, str]]:
             "l3_name": str(stock.get("l3_name") or "").strip(),
             "l3_code": str(stock.get("l3_code") or "").strip(),
         }
+    _SW_MAP = (now, out)
     return out
+
+
+def _lite_steep(payload: dict[str, Any], keep: int = _LITE_KEEP_DAYS) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for index, day in enumerate(payload.get("items") or []):
+        row = dict(day)
+        if index >= keep:
+            row["limit_up"] = []
+            row["limit_down"] = []
+        items.append(row)
+    lite = dict(payload)
+    lite["items"] = items
+    lite["lite"] = True
+    return lite
 
 
 def _attach_sw(items: list[dict[str, Any]]) -> None:

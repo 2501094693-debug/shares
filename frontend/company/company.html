@@ -7,46 +7,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=company-lhb-no-list-page-20260911" />
-  <link rel="stylesheet" href="/css/ai-page.css?v=company-analysis-board-20260910" />
+  <link rel="stylesheet" href="/css/style.css?v=cn-nav-20260912" />
+  <link rel="stylesheet" href="/css/ai-page.css?v=company-judgment-compact-20260912" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
-  <nav class="app-rail" aria-label="主导航">
-    <a class="app-rail-brand" href="/" title="ORBIT 申万终端">
-      <span class="app-rail-mark">OR</span>
-      <span class="app-rail-word">ORBIT</span>
-    </a>
-    <div class="app-rail-links">
-      <a class="app-rail-link" href="/" data-nav="industry" title="行业树 · 地图与分类">
-        <span class="app-rail-ico" aria-hidden="true">◈</span>
-        <span>行业树</span>
-      </a>
-      <a class="app-rail-link" href="/market" data-nav="market" title="行业行情 · 涨跌与资金">
-        <span class="app-rail-ico" aria-hidden="true">▣</span>
-        <span>行业行情</span>
-      </a>
-      <a class="app-rail-link" href="/world" data-nav="world" title="全球市场 · 股指利率国债原油">
-        <span class="app-rail-ico" aria-hidden="true">◎</span>
-        <span>全球</span>
-      </a>
-      <a class="app-rail-link" href="/fund" data-nav="fund" title="场内基金 · ETF / LOF">
-        <span class="app-rail-ico" aria-hidden="true">◎</span>
-        <span>场内</span>
-      </a>
-      <a class="app-rail-link" href="/otc-fund" data-nav="otc-fund" title="场外基金 · 开放式">
-        <span class="app-rail-ico" aria-hidden="true">◍</span>
-        <span>场外</span>
-      </a>
-      <a class="app-rail-link" href="/steep" data-nav="steep" title="涨跌停 · 多日名单">
-        <span class="app-rail-ico" aria-hidden="true">↕</span>
-        <span>涨跌停</span>
-      </a>
-      <a class="app-rail-link" href="/screen" data-nav="screen" title="形态筛选 · 阴跌横盘涨停">
-        <span class="app-rail-ico" aria-hidden="true">⬡</span>
-        <span>形态</span>
-      </a>
-    </div>
-  </nav>
+  <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
 
   <div class="app-stage">
   <div class="app company-page">
@@ -58,9 +23,10 @@
         </div>
       </div>
       <div class="top-actions">
-        <a id="backLink" class="btn ghost" href="/">返回行业树</a>
+        <a id="backLink" class="btn ghost" href="/market">返回市场</a>
         <button id="refreshNewsBtn" class="btn ghost" type="button" hidden>刷新资讯</button>
         <button id="refreshEmotionBtn" class="btn ghost" type="button" hidden>刷新情绪</button>
+        <button id="refreshFinancialsBtn" class="btn ghost" type="button" hidden>刷新财报</button>
         <button id="refreshListBtn" class="btn ghost" type="button" hidden>刷新龙虎榜</button>
         <button id="refreshFundHoldersBtn" class="btn ghost" type="button" hidden>刷新基金持股</button>
       </div>
@@ -87,18 +53,6 @@
           </nav>
           <div class="judgment-view">
         <div class="ai-page company-analysis-page">
-          <div class="ai-command-row">
-            <div class="ai-command-main">
-              <p id="analysisCompanyLabel" class="ai-company-lock">当前公司</p>
-            </div>
-            <div class="ai-command-tail">
-              <span id="liveDot" class="market-live hidden" data-state="idle"></span>
-              <span id="jobMeta" class="ai-job-meta muted"></span>
-              <button id="startBtn" class="btn primary" type="button">生成</button>
-              <button id="stopPollBtn" class="btn ghost hidden" type="button">停止轮询</button>
-            </div>
-          </div>
-
           <div id="analysisErrorBox" class="error hidden"></div>
 
           <div id="aiBoard" class="ai-board is-idle">
@@ -116,10 +70,14 @@
               <header class="ai-pane-head ai-report-head">
                 <div class="ai-report-title-block">
                   <h2 id="reportTitle">分析报告</h2>
-                  <p id="reportMeta" class="muted">当前公司</p>
+                  <p id="reportMeta" class="muted"></p>
                 </div>
                 <div class="ai-report-tools">
+                  <span id="liveDot" class="market-live hidden" data-state="idle"></span>
+                  <span id="jobMeta" class="ai-job-meta muted"></span>
                   <span id="reportStatus" class="ai-status-chip hidden" aria-live="polite"></span>
+                  <button id="startBtn" class="btn primary sm" type="button">生成简述</button>
+                  <button id="stopPollBtn" class="btn ghost sm hidden" type="button">停止轮询</button>
                 </div>
               </header>
               <div class="ai-pane-scroll ai-report-scroll">
@@ -204,14 +162,10 @@
 
           <article class="chart-card chart-card--kline is-combo" aria-label="走势">
             <header class="chart-card__head">
-              <div class="chart-card__head-main">
-                <div class="chart-card__title">
-                  <span class="chart-card__mark" aria-hidden="true"></span>
-                  <h3>走势</h3>
-                </div>
-                <div id="chartHoverCard" class="chart-kline-hover chart-hover-card hidden" aria-hidden="true"></div>
+              <div class="chart-card__title">
+                <span class="chart-card__mark" aria-hidden="true"></span>
+                <h3>走势</h3>
               </div>
-              <p id="chartMeta" class="chart-card__meta muted"></p>
               <div class="chart-card__controls">
                 <div class="chart-select-group">
                   <label class="chart-select-wrap" aria-label="周期">
@@ -271,6 +225,8 @@
                   </label>
                 </div>
               </div>
+              <p id="chartMeta" class="chart-card__meta muted"></p>
+              <div id="chartHoverCard" class="chart-kline-hover chart-hover-card hidden" aria-hidden="true"></div>
             </header>
             <div class="chart-card__stage">
               <div id="chartWrap" class="chart-canvas-wrap">
@@ -302,6 +258,7 @@
         <div class="news-layout">
         <nav id="newsSourceBar" class="emotion-source-bar news-source-bar" aria-label="资讯分类">
           <button type="button" class="emotion-source-btn is-active" data-source="official">官方</button>
+          <button type="button" class="emotion-source-btn" data-source="financials">财报</button>
           <button type="button" class="emotion-source-btn" data-source="other">其他</button>
         </nav>
         <div class="news-folded" hidden></div>
@@ -602,6 +559,35 @@
           </div>
         </section>
         </div>
+        <section class="company-section financials-hub" data-news-group="financials" aria-label="历史财报">
+          <header class="section-head financials-head">
+            <div>
+              <h3 id="financialsTitle">资产负债表</h3>
+              <p id="financialsMeta" class="muted news-hub-meta"></p>
+            </div>
+            <div class="financials-tools">
+              <div id="financialsSheetSeg" class="market-seg" role="tablist" aria-label="报表">
+                <button type="button" data-sheet="balance" class="is-active" aria-selected="true">资产负债表</button>
+                <button type="button" data-sheet="income" aria-selected="false">利润表</button>
+                <button type="button" data-sheet="cashflow" aria-selected="false">现金流量表</button>
+                <button type="button" data-sheet="main" aria-selected="false">主要指标</button>
+              </div>
+              <div id="financialsFilterSeg" class="market-seg" role="group" aria-label="报告类型">
+                <button type="button" data-filter="all" class="is-active">全部</button>
+                <button type="button" data-filter="annual">年报</button>
+              </div>
+            </div>
+          </header>
+          <p id="financialsHint" class="muted news-scroll-hint cninfo-hint"></p>
+          <div id="financialsBody" class="financials-body" tabindex="0">
+            <table class="market-table financials-table">
+              <thead id="financialsHead"></thead>
+              <tbody id="financialsBodyRows">
+                <tr class="is-empty"><td>切换到本页后加载</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
         </div>
       </div>
 
@@ -944,9 +930,11 @@
   </div>
   </div>
 
-  <script src="/js/shared/nav.js?v=orbit-no-list-nav-20260911"></script>
+  <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
+  <script src="/js/shared/orbit-prefetch.js?v=cn-fund-unify-20260912"></script>
+  <script src="/js/shared/nav.js?v=judgment-after-fund-20260912"></script>
   <script src="/js/shared/ai-modes.js?v=company-analysis-no-ai-page-20260910"></script>
-  <script src="/js/shared/company-analysis.js?v=company-analysis-no-flicker-20260911"></script>
-  <script src="/js/company.js?v=company-lhb-no-list-page-20260911"></script>
+  <script src="/js/shared/company-analysis.js?v=company-analysis-loading-20260912"></script>
+  <script src="/js/company.js?v=judgment-20260912"></script>
 </body>
 </html>

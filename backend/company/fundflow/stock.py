@@ -32,6 +32,7 @@ def fetch_daily(code: str, *, limit: int = 120) -> dict[str, Any]:
         fields2=_DAILY_FIELDS2,
         parser=parse_daily_line,
         use_his=True,
+        code=norm,
     )
     return {
         "code": meta.get("code") or norm,

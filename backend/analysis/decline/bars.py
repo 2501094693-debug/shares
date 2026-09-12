@@ -5,10 +5,6 @@ from __future__ import annotations
 import statistics
 from typing import Any
 
-from analysis._path import ensure_backend_path
-
-ensure_backend_path()
-
 from core.fmt import to_float
 
 

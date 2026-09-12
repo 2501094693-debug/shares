@@ -5,8 +5,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from analysis.bars import linear_slope, mean_volume, segment_stats
-from analysis.config import (
+from analysis.decline.bars import linear_slope, mean_volume, segment_stats
+from analysis.decline.config import (
     CONSOLIDATION_DURATION_SCALE,
     DECLINE_DURATION_SCALE,
     WEIGHTS,

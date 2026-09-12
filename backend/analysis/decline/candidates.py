@@ -4,10 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from analysis._path import ensure_backend_path
-
-ensure_backend_path()
-
 from market.steep.service import DEFAULT_DAYS, service as steep_service
 
 

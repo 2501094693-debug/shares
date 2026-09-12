@@ -1,0 +1,2588 @@
+{
+  "income": [
+    {
+      "label": "营业总收入",
+      "keys": [
+        "TOTAL_OPERATE_INCOME"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "营业收入",
+      "keys": [
+        "OPERATE_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "利息收入",
+      "keys": [
+        "INTEREST_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "已赚保费",
+      "keys": [
+        "EARNED_PREMIUM"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "手续费及佣金收入",
+      "keys": [
+        "FEE_COMMISSION_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他业务收入",
+      "keys": [
+        "OTHER_BUSINESS_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "营业总收入其他项目",
+      "keys": [
+        "TOI_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "营业总成本",
+      "keys": [
+        "TOTAL_OPERATE_COST"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "营业成本",
+      "keys": [
+        "OPERATE_COST"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "利息支出",
+      "keys": [
+        "INTEREST_EXPENSE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "手续费及佣金支出",
+      "keys": [
+        "FEE_COMMISSION_EXPENSE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "退保金",
+      "keys": [
+        "SURRENDER_VALUE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "赔付支出净额",
+      "keys": [
+        "NET_COMPENSATE_EXPENSE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "提取保险合同准备金净额",
+      "keys": [
+        "NET_CONTRACT_RESERVE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "保单红利支出",
+      "keys": [
+        "POLICY_BONUS_EXPENSE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "分保费用",
+      "keys": [
+        "REINSURE_EXPENSE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他业务成本",
+      "keys": [
+        "OTHER_BUSINESS_COST"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "税金及附加",
+      "keys": [
+        "OPERATE_TAX_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "销售费用",
+      "keys": [
+        "SALE_EXPENSE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "管理费用",
+      "keys": [
+        "MANAGE_EXPENSE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "研发费用",
+      "keys": [
+        "RESEARCH_EXPENSE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "财务费用",
+      "keys": [
+        "FINANCE_EXPENSE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "资产减值损失",
+      "keys": [
+        "ASSET_IMPAIRMENT_LOSS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "信用减值损失",
+      "keys": [
+        "CREDIT_IMPAIRMENT_LOSS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "营业总成本其他项目",
+      "keys": [
+        "TOC_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他经营收益",
+      "keys": [],
+      "indent": false,
+      "strong": true,
+      "group": true
+    },
+    {
+      "label": "其中:对联营企业和合营企业的投资收益",
+      "keys": [
+        "INVEST_JOINT_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "净敞口套期收益",
+      "keys": [
+        "NET_EXPOSURE_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "汇兑收益",
+      "keys": [
+        "EXCHANGE_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "资产处置收益",
+      "keys": [
+        "ASSET_DISPOSAL_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "资产减值损失(新)",
+      "keys": [
+        "ASSET_IMPAIRMENT_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "信用减值损失(新)",
+      "keys": [
+        "CREDIT_IMPAIRMENT_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他收益",
+      "keys": [
+        "OTHER_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "营业利润其他项目",
+      "keys": [
+        "OPERATE_PROFIT_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "营业利润平衡项目",
+      "keys": [
+        "OPERATE_PROFIT_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "营业利润",
+      "keys": [
+        "OPERATE_PROFIT"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "加:营业外收入",
+      "keys": [
+        "NONBUSINESS_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其中:非流动资产处置利得",
+      "keys": [
+        "NONCURRENT_DISPOSAL_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "减:营业外支出",
+      "keys": [
+        "NONBUSINESS_EXPENSE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其中:非流动资产处置净损失",
+      "keys": [
+        "NONCURRENT_DISPOSAL_LOSS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "加:影响利润总额的其他项目",
+      "keys": [
+        "EFFECT_TP_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "利润总额平衡项目",
+      "keys": [
+        "TOTAL_PROFIT_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "利润总额",
+      "keys": [
+        "TOTAL_PROFIT"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "减:所得税",
+      "keys": [
+        "INCOME_TAX"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "加:影响净利润的其他项目",
+      "keys": [
+        "EFFECT_NETPROFIT_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "未确认投资损失",
+      "keys": [
+        "UNCONFIRM_INVEST_LOSS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其中:被合并方在合并前实现利润",
+      "keys": [
+        "PRECOMBINE_PROFIT"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "(一)按经营持续性分类",
+      "keys": [],
+      "indent": false,
+      "strong": true,
+      "group": true
+    },
+    {
+      "label": "持续经营净利润",
+      "keys": [
+        "CONTINUED_NETPROFIT"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "终止经营净利润",
+      "keys": [
+        "DISCONTINUED_NETPROFIT"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "(二)按所有权归属分类",
+      "keys": [],
+      "indent": false,
+      "strong": true,
+      "group": true
+    },
+    {
+      "label": "归属于母公司股东的净利润",
+      "keys": [
+        "PARENT_NETPROFIT"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "少数股东损益",
+      "keys": [
+        "MINORITY_INTEREST"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "扣除非经常性损益后的净利润",
+      "keys": [
+        "DEDUCT_PARENT_NETPROFIT"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "净利润其他项目",
+      "keys": [
+        "NETPROFIT_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "净利润差额(合计平衡项目)",
+      "keys": [
+        "NETPROFIT_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "每股收益",
+      "keys": [],
+      "indent": false,
+      "strong": true,
+      "group": true
+    },
+    {
+      "label": "基本每股收益",
+      "keys": [],
+      "indent": true,
+      "strong": false,
+      "group": true
+    },
+    {
+      "label": "稀释每股收益",
+      "keys": [],
+      "indent": true,
+      "strong": false,
+      "group": true
+    },
+    {
+      "label": "其他综合收益",
+      "keys": [
+        "OTHER_COMPRE_INCOME"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "归属于母公司股东的其他综合收益",
+      "keys": [
+        "PARENT_OCI"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "归属于少数股东的其他综合收益",
+      "keys": [
+        "MINORITY_OCI"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "综合收益总额",
+      "keys": [
+        "TOTAL_COMPRE_INCOME"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "归属于母公司股东的综合收益总额",
+      "keys": [
+        "PARENT_TCI"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "归属于少数股东的综合收益总额",
+      "keys": [
+        "MINORITY_TCI"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "审计意见(境内)",
+      "keys": [],
+      "indent": true,
+      "strong": false,
+      "group": true
+    }
+  ],
+  "balance": [
+    {
+      "label": "流动资产",
+      "keys": [],
+      "indent": false,
+      "strong": true,
+      "group": true
+    },
+    {
+      "label": "货币资金",
+      "keys": [
+        "MONETARYFUNDS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "结算备付金",
+      "keys": [
+        "SETTLE_EXCESS_RESERVE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "拆出资金",
+      "keys": [
+        "LEND_FUND"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "交易性金融资产",
+      "keys": [
+        "TRADE_FINASSET_NOTFVTPL"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "融出资金",
+      "keys": [
+        "FIN_FUND"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "以公允价值计量且其变动计入当期损益的金融资产",
+      "keys": [
+        "FVTPL_FINASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "衍生金融资产",
+      "keys": [
+        "DERIVE_FINASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "应收票据及应收账款",
+      "keys": [
+        "NOTE_ACCOUNTS_RECE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "应收款项融资",
+      "keys": [
+        "FINANCE_RECE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "预付款项",
+      "keys": [
+        "PREPAYMENT"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "应收保费",
+      "keys": [
+        "PREMIUM_RECE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "应收分保账款",
+      "keys": [
+        "REINSURE_RECE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "应收分保合同准备金",
+      "keys": [
+        "RC_RESERVE_RECE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他应收款合计",
+      "keys": [
+        "TOTAL_OTHER_RECE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "应收出口退税",
+      "keys": [
+        "EXPORT_REFUND_RECE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "应收补贴款",
+      "keys": [
+        "SUBSIDY_RECE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "内部应收款",
+      "keys": [
+        "INTERNAL_RECE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "买入返售金融资产",
+      "keys": [
+        "BUY_RESALE_FINASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "以摊余成本计量的金融资产",
+      "keys": [
+        "AMORTIZE_COST_FINASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "以公允价值计量且其变动计入其他综合收益的金融资产",
+      "keys": [
+        "FVTOCI_FINASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "存货",
+      "keys": [
+        "INVENTORY"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "合同资产",
+      "keys": [
+        "CONTRACT_ASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "持有待售资产",
+      "keys": [
+        "HOLDSALE_ASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "一年内到期的非流动资产",
+      "keys": [
+        "NONCURRENT_ASSET_1YEAR"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他流动资产",
+      "keys": [
+        "OTHER_CURRENT_ASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "流动资产其他项目",
+      "keys": [
+        "CURRENT_ASSET_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "流动资产平衡项目",
+      "keys": [
+        "CURRENT_ASSET_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "流动资产合计",
+      "keys": [
+        "TOTAL_CURRENT_ASSETS"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "非流动资产",
+      "keys": [],
+      "indent": false,
+      "strong": true,
+      "group": true
+    },
+    {
+      "label": "发放贷款及垫款",
+      "keys": [
+        "LOAN_ADVANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "债权投资",
+      "keys": [
+        "CREDITOR_INVEST"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "以摊余成本计量的金融资产（非流动）",
+      "keys": [
+        "AMORTIZE_COST_NCFINASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他债权投资",
+      "keys": [
+        "OTHER_CREDITOR_INVEST"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "以公允价值计量且其变动计入其他综合收益的金融资产（非流动）",
+      "keys": [
+        "FVTOCI_NCFINASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "可供出售金融资产",
+      "keys": [
+        "AVAILABLE_SALE_FINASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "持有至到期投资",
+      "keys": [
+        "HOLD_MATURITY_INVEST"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "长期应收款",
+      "keys": [
+        "LONG_RECE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "长期股权投资",
+      "keys": [
+        "LONG_EQUITY_INVEST"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他权益工具投资",
+      "keys": [
+        "OTHER_EQUITY_INVEST"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他非流动金融资产",
+      "keys": [
+        "OTHER_NONCURRENT_FINASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "投资性房地产",
+      "keys": [
+        "INVEST_REALESTATE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "固定资产",
+      "keys": [
+        "FIXED_ASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "在建工程",
+      "keys": [
+        "CIP"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "使用权资产",
+      "keys": [
+        "USERIGHT_ASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "工程物资",
+      "keys": [
+        "PROJECT_MATERIAL"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "固定资产清理",
+      "keys": [
+        "FIXED_ASSET_DISPOSAL"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "生产性生物资产",
+      "keys": [
+        "PRODUCTIVE_BIOLOGY_ASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "油气资产",
+      "keys": [
+        "OIL_GAS_ASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "无形资产",
+      "keys": [
+        "INTANGIBLE_ASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "开发支出",
+      "keys": [
+        "DEVELOP_EXPENSE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "商誉",
+      "keys": [
+        "GOODWILL"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "长期待摊费用",
+      "keys": [
+        "LONG_PREPAID_EXPENSE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "递延所得税资产",
+      "keys": [
+        "DEFER_TAX_ASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他非流动资产",
+      "keys": [
+        "OTHER_NONCURRENT_ASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "非流动资产其他项目",
+      "keys": [
+        "NONCURRENT_ASSET_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "非流动资产平衡项目",
+      "keys": [
+        "NONCURRENT_ASSET_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "非流动资产合计",
+      "keys": [
+        "TOTAL_NONCURRENT_ASSETS"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "资产其他项目",
+      "keys": [
+        "ASSET_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "资产平衡项目",
+      "keys": [
+        "ASSET_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "资产总计",
+      "keys": [
+        "TOTAL_ASSETS"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "流动负债",
+      "keys": [],
+      "indent": false,
+      "strong": true,
+      "group": true
+    },
+    {
+      "label": "短期借款",
+      "keys": [
+        "SHORT_LOAN"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "向中央银行借款",
+      "keys": [
+        "LOAN_PBC"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "吸收存款及同业存放",
+      "keys": [
+        "ACCEPT_DEPOSIT_INTERBA"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "拆入资金",
+      "keys": [
+        "BORROW_FUND"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "交易性金融负债",
+      "keys": [
+        "TRADE_FINLIAB_NOTFVTPL"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "以公允价值计量且其变动计入当期损益的金融负债",
+      "keys": [
+        "FVTPL_FINLIAB"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "衍生金融负债",
+      "keys": [
+        "DERIVE_FINLIAB"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "应付票据及应付账款",
+      "keys": [
+        "NOTE_ACCOUNTS_PAYABLE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "预收款项",
+      "keys": [
+        "ADVANCE_RECEIVABLES"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "合同负债",
+      "keys": [
+        "CONTRACT_LIAB"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "卖出回购金融资产款",
+      "keys": [
+        "SELL_REPO_FINASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "应付手续费及佣金",
+      "keys": [
+        "FEE_COMMISSION_PAYABLE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "应付职工薪酬",
+      "keys": [
+        "STAFF_SALARY_PAYABLE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "应交税费",
+      "keys": [
+        "TAX_PAYABLE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他应付款合计",
+      "keys": [
+        "TOTAL_OTHER_PAYABLE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "应付分保账款",
+      "keys": [
+        "REINSURE_PAYABLE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "内部应付款",
+      "keys": [
+        "INTERNAL_PAYABLE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "预计流动负债",
+      "keys": [
+        "PREDICT_CURRENT_LIAB"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "保险合同准备金",
+      "keys": [
+        "INSURANCE_CONTRACT_RESERVE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "代理买卖证券款",
+      "keys": [
+        "AGENT_TRADE_SECURITY"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "代理承销证券款",
+      "keys": [
+        "AGENT_UNDERWRITE_SECURITY"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "以摊余成本计量的金融负债",
+      "keys": [
+        "AMORTIZE_COST_FINLIAB"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "应付短期债券",
+      "keys": [
+        "SHORT_BOND_PAYABLE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "持有待售负债",
+      "keys": [
+        "HOLDSALE_LIAB"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "一年内到期的非流动负债",
+      "keys": [
+        "NONCURRENT_LIAB_1YEAR"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他流动负债",
+      "keys": [
+        "OTHER_CURRENT_LIAB"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "流动负债其他项目",
+      "keys": [
+        "CURRENT_LIAB_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "流动负债平衡项目",
+      "keys": [
+        "CURRENT_LIAB_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "流动负债合计",
+      "keys": [
+        "TOTAL_CURRENT_LIAB"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "非流动负债",
+      "keys": [],
+      "indent": false,
+      "strong": true,
+      "group": true
+    },
+    {
+      "label": "长期借款",
+      "keys": [
+        "LONG_LOAN"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "以摊余成本计量的金融负债（非流动）",
+      "keys": [
+        "AMORTIZE_COST_NCFINLIAB"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "应付债券",
+      "keys": [
+        "BOND_PAYABLE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "租赁负债",
+      "keys": [
+        "LEASE_LIAB"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "长期应付款",
+      "keys": [
+        "LONG_PAYABLE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "长期应付职工薪酬",
+      "keys": [
+        "LONG_STAFFSALARY_PAYABLE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "专项应付款",
+      "keys": [
+        "SPECIAL_PAYABLE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "预计负债",
+      "keys": [
+        "PREDICT_LIAB"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "递延收益",
+      "keys": [
+        "DEFER_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "递延所得税负债",
+      "keys": [
+        "DEFER_TAX_LIAB"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他非流动负债",
+      "keys": [
+        "OTHER_NONCURRENT_LIAB"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "非流动负债其他项目",
+      "keys": [
+        "NONCURRENT_LIAB_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "非流动负债平衡项目",
+      "keys": [
+        "NONCURRENT_LIAB_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "非流动负债合计",
+      "keys": [
+        "TOTAL_NONCURRENT_LIAB"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "负债其他项目",
+      "keys": [
+        "LIAB_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "负债平衡项目",
+      "keys": [
+        "LIAB_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "负债合计",
+      "keys": [
+        "TOTAL_LIABILITIES"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "所有者权益(或股东权益)",
+      "keys": [],
+      "indent": false,
+      "strong": true,
+      "group": true
+    },
+    {
+      "label": "实收资本（或股本）",
+      "keys": [
+        "SHARE_CAPITAL"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他权益工具",
+      "keys": [
+        "OTHER_EQUITY_TOOL"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "资本公积",
+      "keys": [
+        "CAPITAL_RESERVE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "减:库存股",
+      "keys": [
+        "TREASURY_SHARES"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他综合收益",
+      "keys": [
+        "OTHER_COMPRE_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "专项储备",
+      "keys": [
+        "SPECIAL_RESERVE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "盈余公积",
+      "keys": [
+        "SURPLUS_RESERVE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "一般风险准备",
+      "keys": [
+        "GENERAL_RISK_RESERVE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "未确定的投资损失",
+      "keys": [
+        "UNCONFIRM_INVEST_LOSS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "未分配利润",
+      "keys": [
+        "UNASSIGN_RPOFIT"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "拟分配现金股利",
+      "keys": [
+        "ASSIGN_CASH_DIVIDEND"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "外币报表折算差额",
+      "keys": [
+        "CONVERT_DIFF"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "归属于母公司股东权益其他项目",
+      "keys": [
+        "PARENT_EQUITY_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "归属于母公司股东权益平衡项目",
+      "keys": [
+        "PARENT_EQUITY_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "归属于母公司股东权益总计",
+      "keys": [
+        "TOTAL_PARENT_EQUITY"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "少数股东权益",
+      "keys": [
+        "MINORITY_EQUITY"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "股东权益其他项目",
+      "keys": [
+        "EQUITY_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "股东权益平衡项目",
+      "keys": [
+        "EQUITY_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "股东权益合计",
+      "keys": [
+        "TOTAL_EQUITY"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "负债和股东权益其他项目",
+      "keys": [
+        "LIAB_EQUITY_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "负债及股东权益平衡项目",
+      "keys": [
+        "LIAB_EQUITY_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "负债和股东权益总计",
+      "keys": [
+        "TOTAL_LIAB_EQUITY"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "审计意见(境内)",
+      "keys": [],
+      "indent": true,
+      "strong": false,
+      "group": true
+    },
+    {
+      "label": "审计意见(境外)",
+      "keys": [],
+      "indent": true,
+      "strong": false,
+      "group": true
+    }
+  ],
+  "cashflow": [
+    {
+      "label": "经营活动产生的现金流量",
+      "keys": [],
+      "indent": false,
+      "strong": true,
+      "group": true
+    },
+    {
+      "label": "销售商品、提供劳务收到的现金",
+      "keys": [
+        "SALES_SERVICES"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "客户存款和同业存放款项净增加额",
+      "keys": [
+        "DEPOSIT_INTERBANK_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "向中央银行借款净增加额",
+      "keys": [
+        "LOAN_PBC_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "向其他金融机构拆入资金净增加额",
+      "keys": [
+        "OFI_BF_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "收到原保险合同保费取得的现金",
+      "keys": [
+        "RECEIVE_ORIGIC_PREMIUM"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "收到再保险业务现金净额",
+      "keys": [
+        "RECEIVE_REINSURE_NET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "保户储金及投资款净增加额",
+      "keys": [
+        "INSURED_INVEST_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "处置交易性金融资产净增加额",
+      "keys": [
+        "DISPOSAL_TFA_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "收取利息、手续费及佣金的现金",
+      "keys": [
+        "RECEIVE_INTEREST_COMMISSION"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "拆入资金净增加额",
+      "keys": [
+        "BORROW_FUND_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "发放贷款及垫款的净减少额",
+      "keys": [
+        "LOAN_ADVANCE_REDUCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "回购业务资金净增加额",
+      "keys": [
+        "REPO_BUSINESS_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "收到的税收返还",
+      "keys": [
+        "RECEIVE_TAX_REFUND"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "收到其他与经营活动有关的现金",
+      "keys": [
+        "RECEIVE_OTHER_OPERATE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "经营活动现金流入的其他项目",
+      "keys": [
+        "OPERATE_INFLOW_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "经营活动现金流入的平衡项目",
+      "keys": [
+        "OPERATE_INFLOW_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "经营活动现金流入小计",
+      "keys": [
+        "TOTAL_OPERATE_INFLOW"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "购买商品、接受劳务支付的现金",
+      "keys": [
+        "BUY_SERVICES"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "客户贷款及垫款净增加额",
+      "keys": [
+        "LOAN_ADVANCE_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "存放中央银行和同业款项净增加额",
+      "keys": [
+        "PBC_INTERBANK_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "支付原保险合同赔付等款项的现金",
+      "keys": [
+        "PAY_ORIGIC_COMPENSATE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "支付利息、手续费及佣金的现金",
+      "keys": [
+        "PAY_INTEREST_COMMISSION"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "支付保单红利的现金",
+      "keys": [
+        "PAY_POLICY_BONUS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "支付给职工以及为职工支付的现金",
+      "keys": [
+        "PAY_STAFF_CASH"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "支付的各项税费",
+      "keys": [
+        "PAY_ALL_TAX"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "支付其他与经营活动有关的现金",
+      "keys": [
+        "PAY_OTHER_OPERATE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "经营活动现金流出的其他项目",
+      "keys": [
+        "OPERATE_OUTFLOW_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "经营活动现金流出的平衡项目",
+      "keys": [
+        "OPERATE_OUTFLOW_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "经营活动现金流出小计",
+      "keys": [
+        "TOTAL_OPERATE_OUTFLOW"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "经营活动产生的现金流量净额其他项目",
+      "keys": [
+        "OPERATE_NETCASH_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "经营活动产生的现金流量净额平衡项目",
+      "keys": [
+        "OPERATE_NETCASH_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "经营活动产生的现金流量净额",
+      "keys": [
+        "NETCASH_OPERATE"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "投资活动产生的现金流量",
+      "keys": [],
+      "indent": false,
+      "strong": true,
+      "group": true
+    },
+    {
+      "label": "收回投资收到的现金",
+      "keys": [
+        "WITHDRAW_INVEST"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "取得投资收益收到的现金",
+      "keys": [
+        "RECEIVE_INVEST_INCOME"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "处置固定资产、无形资产和其他长期资产收回的现金净额",
+      "keys": [
+        "DISPOSAL_LONG_ASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "处置子公司及其他营业单位收到的现金",
+      "keys": [
+        "DISPOSAL_SUBSIDIARY_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "减少质押和定期存款所收到的现金",
+      "keys": [
+        "REDUCE_PLEDGE_TIMEDEPOSITS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "收到的其他与投资活动有关的现金",
+      "keys": [
+        "RECEIVE_OTHER_INVEST"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "投资活动现金流入的其他项目",
+      "keys": [
+        "INVEST_INFLOW_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "投资活动现金流入的平衡项目",
+      "keys": [
+        "INVEST_INFLOW_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "投资活动现金流入小计",
+      "keys": [
+        "TOTAL_INVEST_INFLOW"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "购建固定资产、无形资产和其他长期资产支付的现金",
+      "keys": [
+        "CONSTRUCT_LONG_ASSET"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "投资支付的现金",
+      "keys": [
+        "INVEST_PAY_CASH"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "质押贷款净增加额",
+      "keys": [
+        "PLEDGE_LOAN_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "取得子公司及其他营业单位支付的现金净额",
+      "keys": [
+        "OBTAIN_SUBSIDIARY_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "增加质押和定期存款所支付的现金",
+      "keys": [
+        "ADD_PLEDGE_TIMEDEPOSITS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "支付其他与投资活动有关的现金",
+      "keys": [
+        "PAY_OTHER_INVEST"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "投资活动现金流出的其他项目",
+      "keys": [
+        "INVEST_OUTFLOW_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "投资活动现金流出的平衡项目",
+      "keys": [
+        "INVEST_OUTFLOW_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "投资活动现金流出小计",
+      "keys": [
+        "TOTAL_INVEST_OUTFLOW"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "投资活动产生的现金流量净额其他项目",
+      "keys": [
+        "INVEST_NETCASH_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "投资活动产生的现金流量净额平衡项目",
+      "keys": [
+        "INVEST_NETCASH_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "投资活动产生的现金流量净额",
+      "keys": [
+        "NETCASH_INVEST"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "筹资活动产生的现金流量",
+      "keys": [],
+      "indent": false,
+      "strong": true,
+      "group": true
+    },
+    {
+      "label": "吸收投资收到的现金",
+      "keys": [
+        "ACCEPT_INVEST_CASH"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其中:子公司吸收少数股东投资收到的现金",
+      "keys": [
+        "SUBSIDIARY_ACCEPT_INVEST"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "取得借款收到的现金",
+      "keys": [
+        "RECEIVE_LOAN_CASH"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "发行债券收到的现金",
+      "keys": [
+        "ISSUE_BOND"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "收到的其他与筹资活动有关的现金",
+      "keys": [
+        "RECEIVE_OTHER_FINANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "筹资活动现金流入的其他项目",
+      "keys": [
+        "FINANCE_INFLOW_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "筹资活动现金流入的平衡项目",
+      "keys": [
+        "FINANCE_INFLOW_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "筹资活动现金流入小计",
+      "keys": [
+        "TOTAL_FINANCE_INFLOW"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "偿还债务所支付的现金",
+      "keys": [
+        "PAY_DEBT_CASH"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "分配股利、利润或偿付利息支付的现金",
+      "keys": [
+        "ASSIGN_DIVIDEND_PORFIT"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其中:子公司支付给少数股东的股利、利润",
+      "keys": [
+        "SUBSIDIARY_PAY_DIVIDEND"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "购买子公司少数股权而支付的现金",
+      "keys": [
+        "BUY_SUBSIDIARY_EQUITY"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "支付的其他与筹资活动有关的现金",
+      "keys": [
+        "PAY_OTHER_FINANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其中:子公司减资支付给少数股东的现金",
+      "keys": [
+        "SUBSIDIARY_REDUCE_CASH"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "筹资活动现金流出的其他项目",
+      "keys": [
+        "FINANCE_OUTFLOW_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "筹资活动现金流出的平衡项目",
+      "keys": [
+        "FINANCE_OUTFLOW_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "筹资活动现金流出小计",
+      "keys": [
+        "TOTAL_FINANCE_OUTFLOW"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "筹资活动产生的现金流量净额其他项目",
+      "keys": [
+        "FINANCE_NETCASH_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "筹资活动产生的现金流量净额平衡项目",
+      "keys": [
+        "FINANCE_NETCASH_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "筹资活动产生的现金流量净额",
+      "keys": [
+        "NETCASH_FINANCE"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "汇率变动对现金及现金等价物的影响",
+      "keys": [
+        "RATE_CHANGE_EFFECT"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "现金及现金等价物净增加额其他项目",
+      "keys": [
+        "CCE_ADD_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "现金及现金等价物净增加额平衡项目",
+      "keys": [
+        "CCE_ADD_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "现金及现金等价物净增加额",
+      "keys": [
+        "CCE_ADD"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "加:期初现金及现金等价物余额",
+      "keys": [
+        "BEGIN_CCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "期末现金及现金等价物余额其他项目",
+      "keys": [
+        "END_CCE_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "期末现金及现金等价物余额平衡项目",
+      "keys": [
+        "END_CCE_BALANCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "期末现金及现金等价物余额",
+      "keys": [
+        "END_CCE"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "补充资料",
+      "keys": [],
+      "indent": false,
+      "strong": true,
+      "group": true
+    },
+    {
+      "label": "净利润",
+      "keys": [
+        "NETPROFIT"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "少数股东损益",
+      "keys": [
+        "MINORITY_INTEREST"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "资产减值准备",
+      "keys": [
+        "ASSET_IMPAIRMENT"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "固定资产和投资性房地产折旧",
+      "keys": [
+        "FA_IR_DEPR"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其中:固定资产折旧、油气资产折耗、生产性生物资产折旧",
+      "keys": [
+        "OILGAS_BIOLOGY_DEPR"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "投资性房地产折旧",
+      "keys": [
+        "IR_DEPR"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "无形资产摊销",
+      "keys": [
+        "IA_AMORTIZE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "长期待摊费用摊销",
+      "keys": [
+        "LPE_AMORTIZE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "递延收益摊销",
+      "keys": [
+        "DEFER_INCOME_AMORTIZE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "待摊费用的减少",
+      "keys": [
+        "PREPAID_EXPENSE_REDUCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "预提费用的增加",
+      "keys": [
+        "ACCRUED_EXPENSE_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "处置固定资产、无形资产和其他长期资产的损失",
+      "keys": [
+        "DISPOSAL_LONGASSET_LOSS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "固定资产报废损失",
+      "keys": [
+        "FA_SCRAP_LOSS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "公允价值变动损失",
+      "keys": [
+        "FAIRVALUE_CHANGE_LOSS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "财务费用",
+      "keys": [
+        "FINANCE_EXPENSE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "投资损失",
+      "keys": [
+        "INVEST_LOSS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "递延所得税",
+      "keys": [
+        "DEFER_TAX"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其中:递延所得税资产减少",
+      "keys": [
+        "DT_ASSET_REDUCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "递延所得税负债增加",
+      "keys": [
+        "DT_LIAB_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "预计负债的增加",
+      "keys": [
+        "PREDICT_LIAB_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "存货的减少",
+      "keys": [
+        "INVENTORY_REDUCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "经营性应收项目的减少",
+      "keys": [
+        "OPERATE_RECE_REDUCE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "经营性应付项目的增加",
+      "keys": [
+        "OPERATE_PAYABLE_ADD"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "其他",
+      "keys": [
+        "OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "经营活动产生的现金流量净额其他项目",
+      "keys": [
+        "OPERATE_NETCASH_OTHERNOTE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "经营活动产生的现金流量净额平衡项目",
+      "keys": [
+        "OPERATE_NETCASH_BALANCENOTE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "经营活动产生的现金流量净额",
+      "keys": [
+        "NETCASH_OPERATENOTE"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "债务转为资本",
+      "keys": [
+        "DEBT_TRANSFER_CAPITAL"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "一年内到期的可转换公司债券",
+      "keys": [
+        "CONVERT_BOND_1YEAR"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "融资租入固定资产",
+      "keys": [
+        "FINLEASE_OBTAIN_FA"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "不涉及现金收支的投资和筹资活动金额其他项目",
+      "keys": [
+        "UNINVOLVE_INVESTFIN_OTHER"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "现金的期末余额",
+      "keys": [
+        "END_CASH"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "减:现金的期初余额",
+      "keys": [
+        "BEGIN_CASH"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "加:现金等价物的期末余额",
+      "keys": [
+        "END_CASH_EQUIVALENTS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "减:现金等价物的期初余额",
+      "keys": [
+        "BEGIN_CASH_EQUIVALENTS"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "现金及现金等价物净增加额其他项目",
+      "keys": [
+        "CCE_ADD_OTHERNOTE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "现金及现金等价物净增加额平衡项目",
+      "keys": [
+        "CCE_ADD_BALANCENOTE"
+      ],
+      "indent": true,
+      "strong": false
+    },
+    {
+      "label": "现金及现金等价物的净增加额",
+      "keys": [
+        "CCE_ADDNOTE"
+      ],
+      "indent": false,
+      "strong": true
+    },
+    {
+      "label": "审计意见(境内)",
+      "keys": [],
+      "indent": true,
+      "strong": false,
+      "group": true
+    },
+    {
+      "label": "审计意见(境外)",
+      "keys": [],
+      "indent": true,
+      "strong": false,
+      "group": true
+    }
+  ]
+}

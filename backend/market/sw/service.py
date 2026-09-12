@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -18,6 +19,7 @@ from .fund_flow import (
     normalize_period,
 )
 from .parse import parse_num, parse_pct, parse_yi
+from .history import load_sealed_snapshot, save_snapshot, snapshot_day
 from .quotes import aggregate_from_stocks, attach_sw_quotes, merge_quote_row
 from .taxonomy import filter_level, flatten_tree, nest_rows
 
@@ -33,6 +35,7 @@ class MarketService:
         self._stock_flows = TtlCache(_FLOW_TTL)
         self._limit_pools = TtlCache(_FLOW_TTL)
         self._tree = TtlCache(_TREE_TTL)
+        self._tree_lock = threading.Lock()
 
     def _nodes(self) -> list[dict[str, Any]]:
         return flatten_tree(industry_service.get_tree())
@@ -151,22 +154,46 @@ class MarketService:
         return payload
 
     def tree(
-        self, period: str = "today", force: bool = False, live: bool = False
+        self,
+        period: str = "today",
+        force: bool = False,
+        live: bool = False,
+        lite: bool = False,
     ) -> dict[str, Any]:
         """一棵申万树：一级/二级官方涨跌，三级市值加权，资金流成分股加总。
 
         ``live=True`` 且已有缓存时，只重拉申万一/二级实时点位，树结构不动。
+        ``lite=True`` 去掉四级成分股，给行业行情首屏用。
         ``period`` 参数保留兼容，树内同时含今日 / 5 日 / 10 日资金。
         """
         _ = normalize_period(period)
+        sealed = load_sealed_snapshot(snapshot_day())
+        if sealed is not None:
+            return _lite_tree(sealed) if lite else sealed
+
         cache_key = "t:all"
         if not force:
             hit = self._tree.get(cache_key)
             if hit is not None:
                 if live:
-                    return self._refresh_index_quotes(hit)
-                return hit
+                    hit = self._refresh_index_quotes(hit)
+                return _lite_tree(hit) if lite else hit
 
+        with self._tree_lock:
+            sealed = load_sealed_snapshot(snapshot_day())
+            if sealed is not None:
+                return _lite_tree(sealed) if lite else sealed
+            if not force:
+                hit = self._tree.get(cache_key)
+                if hit is not None:
+                    if live:
+                        hit = self._refresh_index_quotes(hit)
+                    return _lite_tree(hit) if lite else hit
+            payload = self._build_tree(cache_key, force=force)
+        save_snapshot(payload)
+        return _lite_tree(payload) if lite else payload
+
+    def _build_tree(self, cache_key: str, force: bool = False) -> dict[str, Any]:
         nodes = self._nodes()
         stocks = self._stocks()
         errors: list[str] = []
@@ -300,6 +327,8 @@ class MarketService:
 
     def _refresh_index_quotes(self, payload: dict[str, Any]) -> dict[str, Any]:
         """在已有树上更新申万一/二级点位，并用东财盘口覆盖个股涨跌。"""
+        if load_sealed_snapshot(snapshot_day()) is not None:
+            return payload
         tree = payload.get("tree") or []
         l1_nodes = _nodes_at(tree, 1)
         l2_nodes = _nodes_at(tree, 2)
@@ -352,7 +381,27 @@ class MarketService:
         payload["live"] = True
         payload["up"] = sum(1 for n in l1_nodes if (n.get("change_pct") or 0) > 0)
         payload["down"] = sum(1 for n in l1_nodes if (n.get("change_pct") or 0) < 0)
+        save_snapshot(payload)
         return payload
+
+
+def _lite_tree(payload: dict[str, Any]) -> dict[str, Any]:
+    """浅拷贝并去掉三级下的成分股，避免首屏序列化 5000 只股票。"""
+
+    def strip(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for node in nodes:
+            copied = {key: value for key, value in node.items() if key != "children"}
+            level = int(node.get("level") or 0)
+            copied["children"] = [] if level >= 3 else strip(node.get("children") or [])
+            out.append(copied)
+        return out
+
+    lite = dict(payload)
+    lite["tree"] = strip(payload.get("tree") or [])
+    lite["lite"] = True
+    lite["stock_node_count"] = 0
+    return lite
 
 
 def _flow_totals(rows: list[dict[str, Any]]) -> dict[str, float | None]:

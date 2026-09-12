@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="app-shell-root">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ORBIT · 个股行情</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css?v=cn-nav-20260912" />
+</head>
+<body class="app-shell company-page-root market-page-root shares-page-root" data-nav="shares">
+  <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
+
+  <div class="app-stage">
+    <div class="app company-page market-page shares-page">
+      <header class="topbar company-topbar">
+        <div class="brand">
+          <div>
+            <h1>个股行情</h1>
+            <p class="company-page-sub">申万成分股摊平，按涨幅从高到低</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button id="refreshBtn" class="btn ghost" type="button">刷新</button>
+        </div>
+      </header>
+
+      <div class="market-toolbar shares-toolbar">
+        <div class="shares-filter-row">
+          <label class="search-box shares-search-box">
+            <span class="sr-only">搜索股票</span>
+            <input id="searchInput" type="search" placeholder="搜索名称 / 代码 / 行业…" autocomplete="off" />
+          </label>
+          <label class="shares-select-box">
+            <span class="sr-only">一级行业</span>
+            <select id="industrySelect">
+              <option value="">全部行业</option>
+            </select>
+          </label>
+          <div id="toneSeg" class="market-seg" role="group" aria-label="涨跌">
+            <button type="button" data-tone="" class="is-active">全部</button>
+            <button type="button" data-tone="up">涨</button>
+            <button type="button" data-tone="down">跌</button>
+          </div>
+        </div>
+        <div class="market-toolbar-tail">
+          <div id="summaryBar" class="market-summary"></div>
+          <span id="liveDot" class="market-live" data-state="idle">LIVE</span>
+          <span id="marketMeta" class="muted market-meta"></span>
+        </div>
+      </div>
+
+      <div id="errorBox" class="error hidden"></div>
+      <div id="loading" class="loading hidden">正在加载…</div>
+
+      <div class="shares-board">
+        <div class="shares-board-scroll">
+          <table class="market-table shares-table">
+            <thead>
+              <tr>
+                <th class="num">#</th>
+                <th>名称</th>
+                <th class="num">涨跌</th>
+                <th class="num">现价</th>
+                <th>行业</th>
+                <th class="num">PE</th>
+                <th class="num">PB</th>
+                <th class="num">今日</th>
+                <th class="num">5日</th>
+                <th class="num">10日</th>
+                <th class="num">市值</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
+  <script src="/js/shared/orbit-prefetch.js?v=cn-fund-unify-20260912"></script>
+  <script src="/js/shared/nav.js?v=judgment-after-fund-20260912"></script>
+  <script src="/js/shares.js?v=cn-from-20260912"></script>
+</body>
+</html>

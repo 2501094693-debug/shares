@@ -40,7 +40,7 @@ def get_financial_report(
         raise ValueError(f"scope 须为 {' | '.join(sorted(_VALID_SCOPES))}")
 
     page_size = min(max(int(limit or 24), 1), 60)
-    cache_key = f"{key}:{code}:{page_size}"
+    cache_key = f"{key}:f10:{code}:{page_size}"
     now = time.time()
     if not force:
         hit = _cache.get(cache_key)

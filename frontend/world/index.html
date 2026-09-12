@@ -6,105 +6,20 @@
   <title>ORBIT · 全球市场</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://webapi.amap.com" />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=world-amap-20260911" />
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-    }
-  }
-  </script>
+  <link rel="stylesheet" href="/css/style.css?v=world-amap-only-20260912" />
 </head>
 <body class="app-shell world-page-root" data-nav="world">
-  <nav class="app-rail" aria-label="主导航">
-    <a class="app-rail-brand" href="/" title="ORBIT 申万终端">
-      <span class="app-rail-mark">OR</span>
-      <span class="app-rail-word">ORBIT</span>
-    </a>
-    <div class="app-rail-links">
-      <a class="app-rail-link" href="/" data-nav="industry" title="行业树 · 地图与分类">
-        <span class="app-rail-ico" aria-hidden="true">◈</span>
-        <span>行业树</span>
-      </a>
-      <a class="app-rail-link" href="/market" data-nav="market" title="行业行情 · 涨跌与资金">
-        <span class="app-rail-ico" aria-hidden="true">▣</span>
-        <span>行业行情</span>
-      </a>
-      <a class="app-rail-link" href="/world" data-nav="world" title="全球市场 · 三维地球">
-        <span class="app-rail-ico" aria-hidden="true">◎</span>
-        <span>全球</span>
-      </a>
-      <a class="app-rail-link" href="/fund" data-nav="fund" title="场内基金 · ETF / LOF">
-        <span class="app-rail-ico" aria-hidden="true">◉</span>
-        <span>场内</span>
-      </a>
-      <a class="app-rail-link" href="/otc-fund" data-nav="otc-fund" title="场外基金 · 开放式">
-        <span class="app-rail-ico" aria-hidden="true">◍</span>
-        <span>场外</span>
-      </a>
-      <a class="app-rail-link" href="/steep" data-nav="steep" title="涨跌停 · 多日名单">
-        <span class="app-rail-ico" aria-hidden="true">↕</span>
-        <span>涨跌停</span>
-      </a>
-      <a class="app-rail-link" href="/screen" data-nav="screen" title="形态筛选 · 阴跌横盘涨停">
-        <span class="app-rail-ico" aria-hidden="true">⬡</span>
-        <span>形态</span>
-      </a>
-    </div>
-  </nav>
-
   <div class="app-stage">
-    <div id="globeStage" class="world-globe-stage" aria-label="全球市场三维地球"></div>
-    <div id="mapStage" class="world-map-stage" hidden aria-label="全球市场二维地图"></div>
-
-    <div class="world-hud" aria-label="全球市场控制台">
-      <header class="world-hud-head">
-        <div>
-          <h1>全球市场</h1>
-          <p class="muted world-hud-sub">股指 · 央行利率 · 国债 · 原油</p>
-        </div>
-        <div class="world-hud-tools">
-          <div class="world-view-toggle" role="group" aria-label="视图模式">
-            <button type="button" class="btn ghost world-view-btn is-active" data-view="globe" aria-pressed="true">三维</button>
-            <button type="button" class="btn ghost world-view-btn" data-view="map" aria-pressed="false">二维</button>
-          </div>
-          <span id="worldStatus" class="muted">加载中…</span>
-          <button id="refreshBtn" class="btn ghost" type="button">刷新</button>
-        </div>
-      </header>
-
-      <div class="world-layer-toggles" role="group" aria-label="数据图层">
-        <label class="world-layer-chip" data-layer="indices">
-          <input type="checkbox" checked />
-          <span class="world-layer-dot" data-cat="indices"></span>
-          股市指数
-        </label>
-        <label class="world-layer-chip" data-layer="rates">
-          <input type="checkbox" checked />
-          <span class="world-layer-dot" data-cat="rates"></span>
-          央行利率
-        </label>
-        <label class="world-layer-chip" data-layer="bonds">
-          <input type="checkbox" checked />
-          <span class="world-layer-dot" data-cat="bonds"></span>
-          国债收益率
-        </label>
-        <label class="world-layer-chip" data-layer="oil">
-          <input type="checkbox" checked />
-          <span class="world-layer-dot" data-cat="oil"></span>
-          原油价格
-        </label>
-      </div>
-
-      <div id="detailPanel" class="world-detail-panel">
-        <p class="muted world-detail-empty">点击地球上的标注查看详情，或拖动旋转地球。</p>
-      </div>
+    <div id="mapStage" class="world-map-stage" role="application" aria-label="全球市场地图"></div>
+    <div class="world-view-toggle" role="group" aria-label="底图类型">
+      <button type="button" class="btn ghost world-view-btn is-active" data-view="roadmap" aria-pressed="true">标准</button>
+      <button type="button" class="btn ghost world-view-btn" data-view="satellite" aria-pressed="false">卫星</button>
     </div>
   </div>
-
-  <script src="/js/shared/nav.js?v=world-20260911"></script>
-  <script type="module" src="/js/world.js?v=world-amap-normal-20260911"></script>
+  <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
+  <script src="/js/shared/orbit-prefetch.js?v=cn-fund-unify-20260912"></script>
+  <script type="module" src="/js/world.js?v=world-amap-only-20260912"></script>
 </body>
 </html>
