@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import threading
 import time
-from collections import Counter
 from typing import Any
 
 from core.cache import TtlCache
@@ -79,6 +78,53 @@ def _rank(items: list[dict[str, Any]]) -> None:
         row["rank"] = i
 
 
+def _sort_industry_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    nodes.sort(key=lambda node: (-int(node.get("count") or 0), str(node.get("name") or "")))
+    for node in nodes:
+        children = node.get("children")
+        if children:
+            _sort_industry_nodes(children)
+    return nodes
+
+
+def _industry_tree(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """成分股 → 申万一 / 二 / 三级行业树，节点 count 为该层覆盖的股票数。"""
+    roots: dict[str, dict[str, Any]] = {}
+    l2_index: dict[str, dict[str, dict[str, Any]]] = {}
+    l3_index: dict[str, dict[str, dict[str, Any]]] = {}
+    for row in items:
+        l1 = str(row.get("l1_name") or "").strip()
+        if not l1:
+            continue
+        l1_node = roots.get(l1)
+        if l1_node is None:
+            l1_node = {"name": l1, "level": 1, "count": 0, "children": []}
+            roots[l1] = l1_node
+            l2_index[l1] = {}
+        l1_node["count"] += 1
+        l2 = str(row.get("l2_name") or "").strip()
+        if not l2:
+            continue
+        l2_node = l2_index[l1].get(l2)
+        if l2_node is None:
+            l2_node = {"name": l2, "level": 2, "count": 0, "children": []}
+            l2_index[l1][l2] = l2_node
+            l1_node["children"].append(l2_node)
+            l3_index[f"{l1}/{l2}"] = {}
+        l2_node["count"] += 1
+        l3 = str(row.get("l3_name") or "").strip()
+        if not l3:
+            continue
+        l2_key = f"{l1}/{l2}"
+        l3_node = l3_index[l2_key].get(l3)
+        if l3_node is None:
+            l3_node = {"name": l3, "level": 3, "count": 0}
+            l3_index[l2_key][l3] = l3_node
+            l2_node["children"].append(l3_node)
+        l3_node["count"] += 1
+    return _sort_industry_nodes(list(roots.values()))
+
+
 def _summarize(items: list[dict[str, Any]]) -> dict[str, Any]:
     up = down = flat = 0
     for row in items:
@@ -95,13 +141,7 @@ def _summarize(items: list[dict[str, Any]]) -> dict[str, Any]:
             down += 1
         else:
             flat += 1
-    counts = Counter(row.get("l1_name") or "" for row in items)
-    industries = [
-        {"name": name, "count": count}
-        for name, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
-        if name
-    ]
-    return {"up": up, "down": down, "flat": flat, "industries": industries}
+    return {"up": up, "down": down, "flat": flat, "industries": _industry_tree(items)}
 
 
 def _lite_list(payload: dict[str, Any], limit: int = _LITE_LIMIT) -> dict[str, Any]:

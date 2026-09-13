@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=cn-nav-20260912" />
+  <link rel="stylesheet" href="/css/style.css?v=shares-kline-cards-20260913" />
 </head>
 <body class="app-shell company-page-root market-page-root shares-page-root" data-nav="shares">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
@@ -32,16 +32,31 @@
             <span class="sr-only">搜索股票</span>
             <input id="searchInput" type="search" placeholder="搜索名称 / 代码 / 行业…" autocomplete="off" />
           </label>
-          <label class="shares-select-box">
-            <span class="sr-only">一级行业</span>
-            <select id="industrySelect">
-              <option value="">全部行业</option>
-            </select>
-          </label>
+          <div class="shares-industry-picker" id="industryPicker">
+            <button
+              id="industryTrigger"
+              class="shares-industry-trigger"
+              type="button"
+              aria-haspopup="tree"
+              aria-expanded="false"
+              aria-controls="industryMenu"
+            >
+              <span id="industryLabel">全部行业</span>
+              <span class="shares-industry-caret" aria-hidden="true">▾</span>
+            </button>
+            <div id="industryMenu" class="shares-industry-menu" role="tree" hidden>
+              <button type="button" class="shares-tree-all" data-all="1">全部行业</button>
+              <div id="industryTree"></div>
+            </div>
+          </div>
           <div id="toneSeg" class="market-seg" role="group" aria-label="涨跌">
             <button type="button" data-tone="" class="is-active">全部</button>
             <button type="button" data-tone="up">涨</button>
             <button type="button" data-tone="down">跌</button>
+          </div>
+          <div id="viewSeg" class="market-seg" role="group" aria-label="展示">
+            <button type="button" data-view="list" class="is-active">列表</button>
+            <button type="button" data-view="cards">卡片</button>
           </div>
         </div>
         <div class="market-toolbar-tail">
@@ -54,7 +69,7 @@
       <div id="errorBox" class="error hidden"></div>
       <div id="loading" class="loading hidden">正在加载…</div>
 
-      <div class="shares-board">
+      <div class="shares-board" data-view="list">
         <div class="shares-board-scroll">
           <table class="market-table shares-table">
             <thead>
@@ -75,12 +90,14 @@
             <tbody id="tableBody"></tbody>
           </table>
         </div>
+        <div id="sharesCardList" class="shares-card-list screen-result-list" aria-label="个股卡片"></div>
       </div>
     </div>
   </div>
   <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
   <script src="/js/shared/orbit-prefetch.js?v=cn-fund-unify-20260912"></script>
   <script src="/js/shared/nav.js?v=judgment-after-fund-20260912"></script>
-  <script src="/js/shares.js?v=cn-from-20260912"></script>
+  <script src="/js/shared/kline-draw.js?v=screen-20260909-kpan"></script>
+  <script src="/js/shares.js?v=shares-kline-cards-20260913"></script>
 </body>
 </html>

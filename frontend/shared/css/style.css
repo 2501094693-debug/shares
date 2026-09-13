@@ -5560,6 +5560,11 @@ body.market-page-root {
 }
 
 /* —— 个股涨跌榜 —— */
+body.app-shell.shares-page-root {
+  --company-quotes-inner: calc(100vw - var(--rail-w) - 24px);
+  --company-hero-w: clamp(280px, calc(var(--company-quotes-inner) * 0.34), 380px);
+  --company-kline-w: calc((var(--company-quotes-inner) - var(--company-hero-w) - 20px) * 1.2 / 2.2);
+}
 body.app-shell.shares-page-root .app-stage {
   display: flex;
   flex-direction: column;
@@ -5590,6 +5595,7 @@ body.app-shell.shares-page-root .shares-page.market-page {
   margin-bottom: 6px;
   flex-wrap: wrap;
   gap: 10px;
+  overflow: visible;
 }
 
 .shares-filter-row {
@@ -5606,20 +5612,189 @@ body.app-shell.shares-page-root .shares-page.market-page {
   width: min(260px, 42vw);
 }
 
-.shares-select-box select {
-  min-width: 140px;
+.shares-industry-picker {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.shares-industry-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(280px, 52vw);
+  min-width: 148px;
   padding: 9px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: rgba(4, 8, 14, 0.65);
   color: var(--ink);
   font: inherit;
+  line-height: 1.2;
+  cursor: pointer;
   outline: none;
 }
 
-.shares-select-box select:focus {
+.shares-industry-trigger:hover,
+.shares-industry-picker.is-open .shares-industry-trigger,
+.shares-industry-trigger:focus {
   border-color: var(--line-strong);
   box-shadow: 0 0 0 1px rgba(42, 212, 184, 0.35);
+}
+
+.shares-industry-trigger #industryLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.shares-industry-caret {
+  color: var(--muted);
+  font-size: 0.72rem;
+  transition: transform 0.15s ease;
+}
+
+.shares-industry-picker.is-open .shares-industry-caret {
+  transform: rotate(180deg);
+}
+
+.shares-industry-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: max(100%, 268px);
+  max-width: min(420px, 82vw);
+  max-height: min(62vh, 520px);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: rgba(8, 14, 24, 0.97);
+  box-shadow: var(--shadow);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.shares-industry-menu::-webkit-scrollbar {
+  display: none;
+}
+
+.shares-industry-menu[hidden] {
+  display: none;
+}
+
+.shares-tree-all,
+.shares-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.shares-tree-all {
+  padding: 7px 8px;
+  margin-bottom: 2px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shares-tree-all:hover,
+.shares-tree-all.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.shares-tree-chevron,
+.shares-tree-pick {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.shares-tree-chevron {
+  flex: 0 0 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  padding: 6px 0;
+  color: var(--muted);
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+
+.shares-tree-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.shares-tree-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px 6px 2px;
+  border-radius: var(--radius);
+  text-align: left;
+}
+
+.shares-tree-pick:hover,
+.shares-tree-row.is-active .shares-tree-pick {
+  background: var(--accent-soft);
+}
+
+.shares-tree-row.is-active .shares-tree-pick {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.shares-tree-row.level-1 .shares-tree-name {
+  font-weight: 700;
+  color: var(--l1);
+}
+
+.shares-tree-row.level-2 {
+  padding-left: 10px;
+}
+
+.shares-tree-row.level-2 .shares-tree-name {
+  color: var(--l2);
+}
+
+.shares-tree-row.level-3 {
+  padding-left: 22px;
+}
+
+.shares-tree-row.level-3 .shares-tree-name {
+  color: var(--l3);
+}
+
+.shares-tree-row.is-active.level-1 .shares-tree-name,
+.shares-tree-row.is-active.level-2 .shares-tree-name,
+.shares-tree-row.is-active.level-3 .shares-tree-name {
+  color: var(--accent);
+}
+
+.shares-tree-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shares-industry-picker .count {
+  margin-left: auto;
 }
 
 .shares-board {
@@ -5676,6 +5851,39 @@ body.app-shell.shares-page-root .shares-page.market-page {
   white-space: nowrap;
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.shares-board[data-view="list"] .shares-card-list,
+.shares-board[data-view="cards"] .shares-board-scroll {
+  display: none;
+}
+
+.shares-board[data-view="cards"] .shares-card-list {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.shares-card-pad {
+  flex: 0 0 auto;
+  align-self: stretch;
+  pointer-events: none;
+}
+
+.shares-page .screen-card-score b[data-tone="up"] {
+  color: var(--up);
+}
+
+.shares-page .screen-card-score b[data-tone="down"] {
+  color: var(--down);
+}
+
+.shares-page .screen-card-score b[data-tone="flat"] {
+  color: var(--ink);
 }
 
 /* —— 涨跌停日历 —— */
