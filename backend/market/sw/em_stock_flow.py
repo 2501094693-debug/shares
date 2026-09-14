@@ -30,13 +30,7 @@ _HEADERS = {
 }
 _PAGE = 200
 # push2 / 数字节点经常被对端掐线；delay 相对稳。失败节点短冷却，避免并发全打到死节点。
-_HOSTS = (
-    "https://push2delay.eastmoney.com/api/qt/clist/get",
-    "https://push2.eastmoney.com/api/qt/clist/get",
-    "https://71.push2.eastmoney.com/api/qt/clist/get",
-    "https://82.push2.eastmoney.com/api/qt/clist/get",
-    "https://88.push2.eastmoney.com/api/qt/clist/get",
-)
+_HOSTS = ("https://push2delay.eastmoney.com/api/qt/clist/get",)
 _FAIL_COOLDOWN_SEC = 45.0
 _PAGE_ROUNDS = 3
 _WORKERS = 3
@@ -65,6 +59,9 @@ def _mark_fail(url: str) -> None:
 def _hosts() -> list[str]:
     now = time.monotonic()
     with _good_lock:
+        global _good_host
+        if _good_host and _good_host not in _HOSTS:
+            _good_host = None
         preferred = _good_host
         dead = {host for host, until in _host_fail_until.items() if until > now}
     hosts = [host for host in _HOSTS if host not in dead] or list(_HOSTS)
@@ -87,7 +84,6 @@ def _page(pn: int) -> dict[str, Any]:
         "fields": _FIELDS,
         "ut": _UT,
     }
-    first_error: Exception | None = None
     last_error: Exception | None = None
     for round_i in range(_PAGE_ROUNDS):
         for url in _hosts():
@@ -100,8 +96,6 @@ def _page(pn: int) -> dict[str, Any]:
                     retries=1,
                 )
             except Exception as exc:  # noqa: BLE001
-                if first_error is None:
-                    first_error = exc
                 last_error = exc
                 _mark_fail(url)
                 logger.info("东财资金流 %s pn=%s 失败: %s", url.split("/")[2], pn, exc)
@@ -110,12 +104,9 @@ def _page(pn: int) -> dict[str, Any]:
             if isinstance(data, dict):
                 _mark_good(url)
                 return payload
-            err = RuntimeError("东财个股资金流返回非 JSON")
-            if first_error is None:
-                first_error = err
-            last_error = err
+            last_error = RuntimeError("东财个股资金流返回非 JSON")
         time.sleep(0.4 * (round_i + 1))
-    raise RuntimeError(f"东财个股资金流失败: {first_error or last_error}")
+    raise RuntimeError(f"东财个股资金流失败: {last_error}")
 
 
 def _rows(payload: dict[str, Any]) -> list[dict[str, Any]]:

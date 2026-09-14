@@ -42,4 +42,4 @@ KLINE_LIMIT = 500
 KLINE_WORKERS = 16
 
 # 落盘键版本，算法变更后与旧缓存隔离
-CACHE_TAG = "s6"
+CACHE_TAG = "s9"

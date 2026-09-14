@@ -24,6 +24,7 @@ class JobSlot:
     status: str = "idle"
     result: dict[str, Any] | None = None
     error: str | None = None
+    message: str = ""
     started_at: float = 0.0
     finished_at: float = 0.0
     run_id: int = 0

@@ -32,6 +32,7 @@ from analysis.rotation.config import (
     WATCH_CHANGE_PCT,
 )
 from analysis.rotation.daycache import day_frozen, load_l3_day, save_l3_day
+from analysis.rotation.flows import build_l3_flow_maps
 from analysis.rotation.score import cap_tier_of, score_row, trailing_sigma
 from company.line.fetcher import fetch_kline, load_kline_disk
 from company.line.session import is_cn_market_live
@@ -56,6 +57,17 @@ _QUOTE_KEYS = (
     "limit_up_1d",
     "limit_down_1d",
     "strong_1d",
+)
+_DAY_QUOTE_KEYS = (
+    "change_1d",
+    "up_1d",
+    "down_1d",
+    "limit_up_1d",
+    "limit_down_1d",
+    "change_5d",
+    "main_net",
+    "main_net_5d",
+    "main_net_10d",
 )
 
 
@@ -314,6 +326,137 @@ def _latest_l3_quotes() -> dict[str, dict[str, Any]]:
         for row in rows
         if isinstance(row, dict) and row.get("code")
     }
+
+
+def _l3_flows_from_tree(tree: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for l1 in tree or []:
+        if not isinstance(l1, dict):
+            continue
+        for l2 in l1.get("children") or []:
+            if not isinstance(l2, dict):
+                continue
+            for l3 in l2.get("children") or []:
+                if not isinstance(l3, dict):
+                    continue
+                code = str(l3.get("code") or "").strip()
+                if not code:
+                    continue
+                flow = {
+                    "main_net": _round(l3.get("main_net"), 0),
+                    "main_net_5d": _round(l3.get("main_net_5d"), 0),
+                    "main_net_10d": _round(l3.get("main_net_10d"), 0),
+                }
+                if any(v is not None for v in flow.values()):
+                    out[code] = flow
+    return out
+
+
+def _change_5d_from_history(
+    history: dict[str, dict[str, float]],
+    code: str,
+    iso: str,
+    chronological: list[str],
+    *,
+    n: int = 5,
+) -> float | None:
+    series = history.get(code) or {}
+    vals: list[float] = []
+    for day in chronological:
+        if day > iso:
+            break
+        val = series.get(day)
+        if val is not None:
+            vals.append(float(val))
+    tail = vals[-n:]
+    if not tail:
+        return None
+    if len(tail) == 1:
+        return _round(tail[0])
+    compound = 1.0
+    for val in tail:
+        compound *= 1.0 + val / 100.0
+    return _round((compound - 1.0) * 100.0)
+
+
+def _compact_day_quote(
+    row: dict[str, Any],
+    flow: dict[str, Any] | None,
+    change_5d: float | None,
+) -> dict[str, Any]:
+    extra = flow or {}
+    return {
+        "change_1d": row.get("change_1d"),
+        "up_1d": row.get("up_1d"),
+        "down_1d": row.get("down_1d"),
+        "limit_up_1d": row.get("limit_up_1d"),
+        "limit_down_1d": row.get("limit_down_1d"),
+        "change_5d": change_5d,
+        "main_net": extra.get("main_net"),
+        "main_net_5d": extra.get("main_net_5d"),
+        "main_net_10d": extra.get("main_net_10d"),
+    }
+
+
+def _paint_day_quote(item: dict[str, Any], quote: dict[str, Any] | None) -> None:
+    if not quote:
+        return
+    for key in _DAY_QUOTE_KEYS:
+        val = quote.get(key)
+        if val is not None:
+            item[key] = val
+
+
+def _snapshot_daily_flows(chronological: list[str]) -> dict[str, dict[str, float]]:
+    l3_daily: dict[str, dict[str, float]] = defaultdict(dict)
+    for iso in chronological:
+        snap = load_local_snapshot(_as_date(iso))
+        if not snap:
+            continue
+        for l3, flow in _l3_flows_from_tree(_payload_tree(snap)).items():
+            main = flow.get("main_net")
+            if main is not None:
+                l3_daily[l3][iso] = float(main)
+    return l3_daily
+
+
+def _flow_maps_for_days(
+    stocks: list[dict[str, Any]],
+    dates: list[str],
+    chronological: list[str],
+    metrics: dict[str, dict[str, Any]],
+    *,
+    force: bool,
+    fetch_network: bool,
+    workers: int,
+    errors: list[str],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    snapshot_daily = _snapshot_daily_flows(chronological)
+    out = build_l3_flow_maps(
+        stocks,
+        chronological,
+        snapshot_daily,
+        force=force,
+        fetch_network=fetch_network,
+        workers=workers,
+        errors=errors,
+    )
+    window_end = chronological[-1] if chronological else ""
+    if window_end:
+        live: dict[str, dict[str, Any]] = {}
+        for code, row in metrics.items():
+            flow = {
+                key: row.get(key)
+                for key in ("main_net", "main_net_5d", "main_net_10d")
+                if row.get(key) is not None
+            }
+            if flow:
+                live[code] = flow
+        if live:
+            merged = dict(out.get(window_end) or {})
+            merged.update(live)
+            out[window_end] = merged
+    return out
 
 
 def _paint_quotes(
@@ -646,6 +789,66 @@ def _current_metrics(stocks: list[dict[str, Any]], errors: list[str]) -> dict[st
     return rows
 
 
+def _apply_flow_map(row: dict[str, Any], flow_map: dict[str, dict[str, Any]]) -> None:
+    code = str(row.get("code") or "")
+    extra = flow_map.get(code) or {}
+    for key in ("main_net", "main_net_5d", "main_net_10d"):
+        val = extra.get(key)
+        if val is not None:
+            row[key] = _round(val, 0)
+
+
+def refresh_fund_flows(data: dict[str, Any] | None) -> dict[str, Any] | None:
+    """缓存结果里若资金流曾失败，返回前重拉并去掉对应 errors。"""
+    if not isinstance(data, dict):
+        return data
+    errors = [str(e) for e in (data.get("errors") or [])]
+    if not any(e.startswith("资金流:") for e in errors):
+        return data
+    try:
+        industry_service.stocks.ensure_populated()
+        stocks = industry_service.stocks.all_stocks()
+        nodes = flatten_tree(industry_service.get_tree())
+        flows = market_service._raw_stock_flows(force=True)
+        flow_map = aggregate_stock_flows_all(nodes, stocks, flows)
+    except Exception:  # noqa: BLE001
+        return data
+    out = dict(data)
+    latest_day = next(
+        (day for day in (out.get("days") or []) if isinstance(day, dict) and day.get("date")),
+        None,
+    )
+    if latest_day is not None:
+        quotes = latest_day.get("quotes")
+        if isinstance(quotes, dict):
+            for code, row in flow_map.items():
+                flow = {
+                    key: _round(row.get(key), 0)
+                    for key in ("main_net", "main_net_5d", "main_net_10d")
+                    if row.get(key) is not None
+                }
+                if not flow:
+                    continue
+                quote = quotes.get(code)
+                if quote is None:
+                    quotes[code] = dict(flow)
+                else:
+                    quote.update(flow)
+    for day in out.get("days") or []:
+        if not isinstance(day, dict):
+            continue
+        for key in ("first", "again"):
+            for row in day.get(key) or []:
+                if isinstance(row, dict):
+                    _apply_flow_map(row, flow_map)
+    for key in ("covered", "ranking", "untouched"):
+        for row in out.get(key) or []:
+            if isinstance(row, dict):
+                _apply_flow_map(row, flow_map)
+    out["errors"] = [e for e in errors if not e.startswith("资金流:")]
+    return out
+
+
 def _merge_metrics(row: dict[str, Any], metrics: dict[str, Any] | None) -> dict[str, Any]:
     extra = metrics or {}
     out = dict(row)
@@ -732,11 +935,79 @@ def _attach_limits(
         row["limit_down_1d"] = int(down_map.get(code, 0))
 
 
+def _patch_day_flow_quotes(
+    day: dict[str, Any], flow_map: dict[str, dict[str, Any]]
+) -> None:
+    quotes = day.get("quotes")
+    if isinstance(quotes, dict):
+        for code, quote in quotes.items():
+            if not isinstance(quote, dict):
+                continue
+            flow = flow_map.get(str(code)) or {}
+            for key in ("main_net", "main_net_5d", "main_net_10d"):
+                quote[key] = flow.get(key)
+    for bucket in ("first", "again"):
+        for row in day.get(bucket) or []:
+            if not isinstance(row, dict):
+                continue
+            flow = flow_map.get(str(row.get("code") or "")) or {}
+            for key in ("main_net", "main_net_5d", "main_net_10d"):
+                if key in flow:
+                    row[key] = flow.get(key)
+
+
+def enrich_rotation_flows(
+    data: dict[str, Any],
+    stocks: list[dict[str, Any]],
+    *,
+    force: bool = False,
+    workers: int = KLINE_WORKERS,
+) -> dict[str, Any]:
+    """后台补齐历史主力净流入，更新各交易日 quotes。"""
+    days_in = data.get("days")
+    if not isinstance(days_in, list) or not days_in:
+        return data
+    chronological = [
+        str(day.get("date") or "") for day in reversed(days_in) if day.get("date")
+    ]
+    if not chronological:
+        return data
+    errors: list[str] = []
+    metrics = _current_metrics(stocks, errors)
+    flow_maps = _flow_maps_for_days(
+        stocks,
+        chronological,
+        chronological,
+        metrics,
+        force=force,
+        fetch_network=True,
+        workers=workers,
+        errors=errors,
+    )
+    out = dict(data)
+    out["days"] = []
+    for day in days_in:
+        if not isinstance(day, dict):
+            out["days"].append(day)
+            continue
+        item = dict(day)
+        iso = str(item.get("date") or "")
+        _patch_day_flow_quotes(item, flow_maps.get(iso) or {})
+        out["days"].append(item)
+    merged_errors = [str(e) for e in (data.get("errors") or [])]
+    for err in errors:
+        if err not in merged_errors:
+            merged_errors.append(err)
+    out["errors"] = merged_errors
+    return out
+
+
 def screen_rotation(
     *,
     days: int = DEFAULT_LOOKBACK_DAYS,
     force: bool = False,
     workers: int = KLINE_WORKERS,
+    fetch_flow_network: bool = False,
 ) -> dict[str, Any]:
     """近 N 个交易日的三级轮动日历 + 还没涨过名单。"""
     days = clamp_days(days)
@@ -876,8 +1147,33 @@ def screen_rotation(
     date_pos = {iso: idx for idx, iso in enumerate(chronological)}
     end_pos = len(chronological) - 1 if chronological else 0
     window_end = chronological[-1] if chronological else ""
+    flow_maps_by_day = _flow_maps_for_days(
+        stocks,
+        dates,
+        chronological,
+        metrics,
+        force=force,
+        fetch_network=fetch_flow_network,
+        workers=workers,
+        errors=errors,
+    )
 
     for day in day_rows:
+        iso = str(day.get("date") or "")
+        rows, _ = by_day.get(iso) or ([], "")
+        flow_map = flow_maps_by_day.get(iso) or {}
+        quotes: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            code = str(row.get("code") or "")
+            if not code:
+                continue
+            quotes[code] = _compact_day_quote(
+                row,
+                flow_map.get(code),
+                _change_5d_from_history(history, code, iso, chronological),
+            )
+        day["quotes"] = quotes
+
         first_rows: list[dict[str, Any]] = []
         again_rows: list[dict[str, Any]] = []
         for item in day.get("_risen") or []:
@@ -885,11 +1181,8 @@ def screen_rotation(
             item["first_date"] = first
             extra = metrics.get(item["code"])
             if extra:
-                item["change_5d"] = extra.get("change_5d")
                 item["change_ytd"] = extra.get("change_ytd")
-                item["main_net"] = extra.get("main_net")
-                item["main_net_5d"] = extra.get("main_net_5d")
-                item["main_net_10d"] = extra.get("main_net_10d")
+            _paint_day_quote(item, quotes.get(str(item.get("code") or "")))
             item["hits"] = len([d for d in (hits.get(item["code"]) or []) if d <= day["date"]])
             if day["date"] == first:
                 item["tag"] = "首次"
@@ -974,8 +1267,9 @@ def screen_rotation(
         f"窗口 {days} 个交易日：得分>{SCORE_NAMED:g} 进入当天榜单"
         "（涨幅强度、上涨占比、进攻扩散等权）。"
         "涨幅强度=当日加权涨幅/近20日标准差。"
-        "首次=窗口内第一次上榜，记入当天上涨；待涨为窗口内尚未轮到，不随交易日切换。"
-        "次数=截至当天的上榜次数。领涨按窗口内上榜总天数排序。"
+        "首次=窗口内第一次上榜，记入当天上涨；待涨=截至所选日尚未轮到或距上次最久。"
+        "次数=截至当天的上榜次数。领涨=截至所选日上榜次数从高到低。"
+        "主力净流入=东财个股历史日线按成分股加总（当日/近5/近10交易日累计）。"
     )
     return {
         "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -1006,8 +1300,8 @@ def _rules() -> dict[str, str]:
             "因子：涨幅强度、上涨占比、进攻扩散，三项等权；样本不足"
             f"{MIN_STOCKS}只剔除"
         ),
-        "untouched": "待涨：窗口内尚未上榜或距上次最久，不随所选交易日变化",
-        "ranking": "领涨：窗口内上榜次数从高到低",
+        "untouched": "待涨：截至所选日尚未上榜或距上次最久（前端按交易日切片）",
+        "ranking": "领涨：截至所选日上榜次数从高到低（前端按交易日切片）",
         "watch": "还没过线，但5日和10日资金都在进",
     }
 
@@ -1095,7 +1389,7 @@ def _fill_day_hits(data: dict[str, Any]) -> None:
 
 
 def _ensure_boards(data: dict[str, Any]) -> dict[str, Any]:
-    """旧缓存补上次数、统计榜；待涨用最新行情，上涨用当天评分。"""
+    """旧缓存补上次数、统计榜；无 quotes 的日面板仍用最新行情兜底。"""
     ranking = data.get("ranking")
     if not isinstance(ranking, list) or not ranking:
         by_code: dict[str, dict[str, Any]] = {}

@@ -6,6 +6,7 @@ Windows 上东财 ``push2*`` 经常 11001（getaddrinfo failed），
 
 from __future__ import annotations
 
+import re
 import socket
 import threading
 import time
@@ -21,11 +22,41 @@ _DOH_PROVIDERS: tuple[tuple[str, str], ...] = (
     ("1.1.1.1", "cloudflare-dns.com"),
 )
 # 数字 push2 子域在 Windows 上偶发 11001；同 CDN 集群可复用 delay / 主域 IP。
+PUSH2_DELAY_HOST = "push2delay.eastmoney.com"
 _PUSH2_FALLBACK_HOSTS = (
-    "push2delay.eastmoney.com",
+    PUSH2_DELAY_HOST,
     "push2.eastmoney.com",
 )
+# DoH / 系统 DNS 全挂时兜底（东财 delay 节点 A 记录，会轮换但总比直接失败好）。
+_PUSH2_STATIC_IPS = (
+    "117.184.33.53",
+    "101.226.30.136",
+)
 _doh_lock = threading.Lock()
+_NUMERIC_PUSH2 = re.compile(r"^\d+\.push2\.eastmoney\.com$")
+_PUSH2_EXEMPT = frozenset(
+    {PUSH2_DELAY_HOST, "push2his.eastmoney.com", "push2ex.eastmoney.com"}
+)
+
+
+def _is_numeric_push2(host: str) -> bool:
+    return bool(_NUMERIC_PUSH2.match(host))
+
+
+def is_eastmoney_push2_sharded(host: str) -> bool:
+    """``push2`` / ``79.push2`` 等分片节点；``push2his`` / ``push2ex`` / ``delay`` 不算。"""
+    host = (host or "").strip().lower().rstrip(".")
+    if not host.endswith(".eastmoney.com") or host in _PUSH2_EXEMPT:
+        return False
+    return host == "push2.eastmoney.com" or _is_numeric_push2(host)
+
+
+def canonical_push2_host(host: str) -> str:
+    """分片 push2 统一走 delay 节点，避免 Windows 解析 ``79.push2`` 等失败。"""
+    host = (host or "").strip().lower().rstrip(".")
+    if is_eastmoney_push2_sharded(host):
+        return PUSH2_DELAY_HOST
+    return host
 
 
 def _is_ipv4(text: str) -> bool:
@@ -49,7 +80,13 @@ def resolve_ipv4(host: str) -> list[str]:
     hit = _CACHE.get(host)
     if hit and hit[0] > now and hit[1]:
         return list(hit[1])
-    ips = _lookup_ips(host) or _push2_parent_ips(host)
+    canon = canonical_push2_host(host)
+    if canon != host:
+        ips = _lookup_ips(canon) or list(_PUSH2_STATIC_IPS)
+    elif _is_numeric_push2(host):
+        ips = _push2_parent_ips(host) or list(_PUSH2_STATIC_IPS)
+    else:
+        ips = _lookup_ips(host) or _push2_parent_ips(host)
     if ips:
         _CACHE[host] = (now + _TTL, ips)
     return ips
@@ -73,7 +110,7 @@ def _push2_parent_ips(host: str) -> list[str]:
         if ips:
             _CACHE[parent] = (now + _TTL, ips)
             return ips
-    return []
+    return list(_PUSH2_STATIC_IPS)
 
 
 def remember_host(host: str) -> None:

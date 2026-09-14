@@ -15,7 +15,7 @@
     },
     industry: {
       title: "ORBIT · 研判",
-      sub: "按交易日复盘申万三级行业轮动：上涨为当天上榜（含首次），待涨为窗口内尚未轮到，不随交易日切换；领涨按上榜次数排序。点击行业进入行情树",
+      sub: "按交易日复盘申万三级行业轮动：上涨/待涨/领涨均按所选交易日切片；行情与主力净流入（当日/5日/10日）回溯至该日。点击行业进入行情树",
       from: "analysis",
     },
   };
@@ -351,9 +351,160 @@
     return `${n}日`;
   }
 
+  const WATCH_CHANGE_PCT = 2.0;
+
+  function industryChrono() {
+    return [...(industry.dayRows || [])].reverse();
+  }
+
+  function paintDayQuote(row, quotes, hasQuotes) {
+    if (!row) return row;
+    if (!hasQuotes) return row;
+    const q = row.code && quotes && quotes[row.code];
+    const merged = { ...row };
+    if (q) {
+      Object.assign(merged, q);
+    }
+    for (const key of ["main_net", "main_net_5d", "main_net_10d"]) {
+      merged[key] = q && Object.prototype.hasOwnProperty.call(q, key) ? q[key] : null;
+    }
+    return merged;
+  }
+
+  function updateWaitTableHeaders(day) {
+    const table = $("indWaitBody")?.closest("table");
+    const ths = table?.querySelectorAll("thead th");
+    if (!ths || ths.length < 9) return;
+    const latest = industry.dayRows[0]?.date;
+    const hist = day && day.date && day.date !== latest;
+    ths[3].textContent = hist ? "当日涨跌" : "涨跌";
+    ths[6].textContent = hist ? "当日" : "今日";
+    ths[7].textContent = hist ? "近5日" : "5日";
+    ths[8].textContent = hist ? "近10日" : "10日";
+  }
+
+  function untouchedTag(row) {
+    const flow5 = row.main_net_5d;
+    const flow10 = row.main_net_10d;
+    const d5 = row.change_5d;
+    const money =
+      flow5 != null && Number(flow5) > 0 && flow10 != null && Number(flow10) > 0;
+    if (money && (d5 == null || Number(d5) < WATCH_CHANGE_PCT)) {
+      return { tag: "资金先行", reason: "窗口内没被点名，但5日和10日资金都在进" };
+    }
+    if (d5 != null && Number(d5) >= WATCH_CHANGE_PCT) {
+      return { tag: "近5日跟上", reason: "窗口内没被点名，近5日已经转强" };
+    }
+    return { tag: "", reason: "窗口内从未达到轮动分数线" };
+  }
+
+  function industryBoardsAsOf(selectedDate) {
+    const chrono = industryChrono();
+    if (!chrono.length) {
+      return { wait: [], ranking: [], coveredCount: 0, untouchedCount: 0 };
+    }
+    const date = selectedDate || chrono[chrono.length - 1]?.date || "";
+    const datePos = {};
+    chrono.forEach((d, i) => {
+      if (d.date) datePos[d.date] = i;
+    });
+    const endPos = datePos[date];
+    if (endPos === undefined) {
+      return { wait: [], ranking: [], coveredCount: 0, untouchedCount: 0 };
+    }
+
+    const hitsMap = {};
+    for (let i = 0; i <= endPos; i++) {
+      const day = chrono[i];
+      const risen = [...(day.first || []), ...(day.again || [])];
+      for (const item of risen) {
+        const code = item.code;
+        if (!code) continue;
+        if (!hitsMap[code]) hitsMap[code] = [];
+        hitsMap[code].push(day.date);
+      }
+    }
+
+    const selectedDay = chrono[endPos];
+    const hasQuotes =
+      selectedDay && Object.prototype.hasOwnProperty.call(selectedDay, "quotes");
+    const dayQuotes = hasQuotes ? selectedDay.quotes || {} : null;
+    const risenToday = new Set(
+      [...(selectedDay.first || []), ...(selectedDay.again || [])]
+        .map((r) => r.code)
+        .filter(Boolean),
+    );
+
+    const base =
+      industry.ranking && industry.ranking.length
+        ? industry.ranking
+        : [...(industry.untouched || [])];
+
+    const ranking = base
+      .map((row) => {
+        const hitDates = hitsMap[row.code] || [];
+        return paintDayQuote(
+          {
+            ...row,
+            hits: hitDates.length,
+            first_date: hitDates[0] || "",
+            last_date: hitDates[hitDates.length - 1] || "",
+          },
+          dayQuotes,
+          hasQuotes,
+        );
+      })
+      .sort((a, b) => {
+        const ah = Number(a.hits) || 0;
+        const bh = Number(b.hits) || 0;
+        if (bh !== ah) return bh - ah;
+        const ad = String(a.last_date || "");
+        const bd = String(b.last_date || "");
+        if (ad !== bd) return bd.localeCompare(ad);
+        return String(a.name || "").localeCompare(String(b.name || ""), "zh");
+      });
+
+    const coveredCount = ranking.filter((r) => Number(r.hits) > 0).length;
+
+    const wait = ranking
+      .filter((row) => !risenToday.has(row.code))
+      .map((row) => {
+        const last = row.last_date || "";
+        let idleDays;
+        if (last) {
+          idleDays = endPos - (datePos[last] ?? endPos);
+        } else {
+          idleDays = endPos + 1;
+        }
+        const { tag, reason } = untouchedTag(row);
+        const item = {
+          ...row,
+          idle_days: idleDays,
+          tag: tag || "待涨",
+        };
+        if (last) {
+          item.reason = `距上次上榜 ${idleDays} 个交易日（${last}）${tag ? `；${reason}` : ""}`;
+        } else if (!tag) {
+          item.reason = "窗口内从未上榜";
+        } else {
+          item.reason = reason;
+        }
+        return item;
+      })
+      .sort((a, b) => {
+        const ai = Number(a.idle_days) || 0;
+        const bi = Number(b.idle_days) || 0;
+        if (bi !== ai) return bi - ai;
+        return String(a.last_date || "").localeCompare(String(b.last_date || ""));
+      });
+
+    return { wait, ranking, coveredCount, untouchedCount: wait.length };
+  }
+
   function renderIndustrySummary() {
-    const coveredN = industry.coveredCount || 0;
-    const leftN = industry.untouchedCount || (industry.untouched || []).length;
+    const boards = industryBoardsAsOf(industry.selectedDate);
+    const coveredN = boards.coveredCount || 0;
+    const leftN = boards.untouchedCount || 0;
     $("summaryBar").innerHTML = `
       <span>扫描 <b>${industry.universe || 0}</b> 个三级</span>
       <span><b class="is-up">${coveredN}</b> 已上榜</span>
@@ -428,9 +579,10 @@
   }
 
   function renderIndustryHead(day) {
-    const waitN = (industry.untouched || []).length;
+    const boards = industryBoardsAsOf(industry.selectedDate || day?.date);
+    const waitN = boards.untouchedCount;
     const againN = risenList(day).length;
-    const rankN = (industry.ranking || []).length;
+    const rankN = boards.ranking.length;
     const when = day ? `${fmtMd(day.date)} ${weekday(day.date)}` : "";
     const waitHint = $("rotWaitHint");
     const againHint = $("rotAgainHint");
@@ -505,13 +657,6 @@
     return String(n);
   }
 
-  function waitList() {
-    return (industry.untouched || []).map((row) => ({
-      ...row,
-      tag: row.tag || "待涨",
-    }));
-  }
-
   function risenList(day) {
     const first = ((day && day.first) || []).map((row) => ({
       ...row,
@@ -580,9 +725,11 @@
 
   function renderIndustry() {
     const day = selectedIndustryDay();
-    const wait = waitList();
+    const boards = industryBoardsAsOf(industry.selectedDate || day?.date);
+    const wait = boards.wait;
     const again = risenList(day);
-    const ranking = industry.ranking || [];
+    const ranking = boards.ranking;
+    updateWaitTableHeaders(day);
     const waitBody = $("indWaitBody");
     const againBody = $("indAgainBody");
     const rankBody = $("indRankBody");
@@ -863,8 +1010,13 @@
       st.message = `${payload.message || "正在分析…"}${elapsed}`;
       st.error = "";
       if (st === current()) {
-        showLoading(true, st.message);
-        setLive("busy");
+        const partialIndustry =
+          view === "industry" && (industry.dayRows || []).length > 0;
+        showLoading(!partialIndustry, st.message);
+        setLive(partialIndustry ? "live" : "busy");
+        if (partialIndustry) {
+          $("marketMeta").textContent = st.message;
+        }
       }
     }
   }

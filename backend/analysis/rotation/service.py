@@ -7,7 +7,13 @@ import time
 from typing import Any
 
 from analysis.persist import KIND_ROTATION, JobSlot, is_fresh, load_disk, save_disk
-from analysis.rotation.calendar import apply_top, screen_rotation
+from analysis.rotation.calendar import (
+    apply_top,
+    enrich_rotation_flows,
+    refresh_fund_flows,
+    screen_rotation,
+)
+from industry.service import service as industry_service
 from analysis.rotation.config import CACHE_TAG, DEFAULT_LOOKBACK_DAYS, KLINE_WORKERS
 
 
@@ -33,9 +39,10 @@ class RotationScreenService:
             payload["error"] = slot.error or "分析失败"
             return payload
         if slot.result is not None and slot.status in ("running", "done"):
+            slot.result = refresh_fund_flows(slot.result) or slot.result
             payload["data"] = apply_top(slot.result, None)
         if slot.status == "running":
-            payload["message"] = "正在统计三级行业每天谁轮到了…"
+            payload["message"] = slot.message or "正在统计三级行业每天谁轮到了…"
         return payload
 
     def run_or_poll(
@@ -60,7 +67,7 @@ class RotationScreenService:
                     if is_fresh(cached_at):
                         slot = slot or JobSlot()
                         slot.status = "done"
-                        slot.result = data
+                        slot.result = refresh_fund_flows(data) or data
                         slot.started_at = cached_at
                         slot.finished_at = cached_at
                         self._slots[key] = slot
@@ -68,6 +75,7 @@ class RotationScreenService:
             slot = slot or JobSlot()
             slot.status = "running"
             slot.error = None
+            slot.message = "正在统计三级行业每天谁轮到了…"
             slot.started_at = time.time()
             slot.finished_at = 0.0
             slot.run_id += 1
@@ -76,7 +84,26 @@ class RotationScreenService:
 
         def work() -> None:
             try:
-                data = screen_rotation(days=days, force=force, workers=workers)
+                data = screen_rotation(
+                    days=days,
+                    force=force,
+                    workers=workers,
+                    fetch_flow_network=False,
+                )
+                with self._lock:
+                    current = self._slots.get(key)
+                    if current is None or current.run_id != run_id:
+                        return
+                    current.result = data
+                    current.message = "轮动日历已就绪，正在补齐历史主力净流入…"
+                industry_service.stocks.ensure_populated()
+                stocks = industry_service.stocks.all_stocks()
+                data = enrich_rotation_flows(
+                    data,
+                    stocks,
+                    force=force,
+                    workers=workers,
+                )
                 # 重新分析只跳过整表结果缓存；已冻结的三级日面板仍复用。
                 save_disk(KIND_ROTATION, key, data)
                 with self._lock:
@@ -84,6 +111,7 @@ class RotationScreenService:
                     if current is None or current.run_id != run_id:
                         return
                     current.result = data
+                    current.message = ""
                     current.status = "done"
                     current.finished_at = time.time()
             except Exception as exc:  # noqa: BLE001

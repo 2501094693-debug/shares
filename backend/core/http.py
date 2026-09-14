@@ -19,7 +19,7 @@ import urllib3
 from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
 
-from core.resolve import remember_host, resolve_ipv4
+from core.resolve import canonical_push2_host, remember_host, resolve_ipv4
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -39,7 +39,14 @@ def _session(*, verify: bool = True) -> requests.Session:
 
 def _is_dns_error(exc: BaseException) -> bool:
     text = str(exc).lower()
-    if "failed to resolve" in text or "getaddrinfo" in text or "nameresolution" in text:
+    if (
+        "failed to resolve" in text
+        or "getaddrinfo" in text
+        or "nameresolution" in text
+        or "11001" in text
+        or "无法解析" in text
+        or ".push2.eastmoney.com" in text
+    ):
         return True
     cause = getattr(exc, "__cause__", None)
     if cause is not None and cause is not exc:
@@ -67,6 +74,17 @@ def _url_with_ip(url: str, ip: str) -> str:
     return urlunparse(parsed._replace(netloc=netloc))
 
 
+def _push2_request(url: str) -> tuple[str, str]:
+    """分片 push2（含 ``79.push2``）改连 delay 节点，Host/SNI 同步。"""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").strip().lower()
+    canon = canonical_push2_host(host)
+    if canon == host:
+        return url, host
+    port = f":{parsed.port}" if parsed.port else ""
+    return urlunparse(parsed._replace(netloc=f"{canon}{port}")), canon
+
+
 def _get_via_ip(
     url: str,
     *,
@@ -74,7 +92,7 @@ def _get_via_ip(
     headers: dict[str, str] | None,
     timeout: int | tuple[float, float],
 ) -> requests.Response:
-    host = (urlparse(url).hostname or "").strip()
+    url, host = _push2_request(url)
     ips = resolve_ipv4(host)
     if not ips:
         raise requests.ConnectionError(f"无法解析 {host}")
@@ -86,7 +104,11 @@ def _get_via_ip(
             sess.mount("https://", _SNIAdapter(host))
             hdrs = {"User-Agent": _UA, **(headers or {}), "Host": host}
             resp = sess.get(
-                _url_with_ip(url, ip), params=params, headers=hdrs, timeout=timeout
+                _url_with_ip(url, ip),
+                params=params,
+                headers=hdrs,
+                timeout=timeout,
+                allow_redirects=False,
             )
             resp.raise_for_status()
             return resp
@@ -107,14 +129,18 @@ def _get(
     """GET；超时重试；DNS 11001 改走 DoH 解析后的 IP。"""
     if not verify:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    url, host = _push2_request(url)
     last_error: Exception | None = None
     attempts = max(1, int(retries) + 1)
-    host = urlparse(url).hostname or ""
     for attempt in range(attempts):
         try:
             sess = _session(verify=verify)
             resp = sess.get(
-                url, params=params, headers=headers or {}, timeout=timeout
+                url,
+                params=params,
+                headers=headers or {},
+                timeout=timeout,
+                allow_redirects=False,
             )
             resp.raise_for_status()
             remember_host(host)
