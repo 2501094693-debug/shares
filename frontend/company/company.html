@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=cn-nav-20260912" />
+  <link rel="stylesheet" href="/css/style.css?v=financials-income-eq-20260914" />
   <link rel="stylesheet" href="/css/ai-page.css?v=company-judgment-compact-20260912" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
@@ -561,25 +561,40 @@
         </section>
         </div>
         <section class="company-section financials-hub" data-news-group="financials" aria-label="历史财报">
-          <header class="section-head financials-head">
-            <div>
-              <h3 id="financialsTitle">资产负债表</h3>
-              <p id="financialsMeta" class="muted news-hub-meta"></p>
-            </div>
-            <div class="financials-tools">
-              <div id="financialsSheetSeg" class="market-seg" role="tablist" aria-label="报表">
-                <button type="button" data-sheet="balance" class="is-active" aria-selected="true">资产负债表</button>
+          <div class="financials-chrome">
+            <div class="financials-toolbar">
+              <div id="financialsSheetSeg" class="financials-tabs" role="tablist" aria-label="报表">
+                <button type="button" data-sheet="balance" class="is-active" aria-selected="true">资产负债</button>
                 <button type="button" data-sheet="income" aria-selected="false">利润表</button>
-                <button type="button" data-sheet="cashflow" aria-selected="false">现金流量表</button>
-                <button type="button" data-sheet="main" aria-selected="false">主要指标</button>
+                <button type="button" data-sheet="cashflow" aria-selected="false">现金流</button>
               </div>
-              <div id="financialsFilterSeg" class="market-seg" role="group" aria-label="报告类型">
-                <button type="button" data-filter="all" class="is-active">全部</button>
-                <button type="button" data-filter="annual">年报</button>
+              <div class="financials-toggles">
+                <div id="financialsFilterSeg" class="financials-seg" role="group" aria-label="口径">
+                  <button type="button" data-cadence="quarterly" class="is-active">季报</button>
+                  <button type="button" data-cadence="annual">年报</button>
+                </div>
+                <div id="financialsRangeSeg" class="financials-seg" role="group" aria-label="期数">
+                  <button type="button" data-range="short" class="is-active" id="financialsRangeShortBtn">近8期</button>
+                  <button type="button" data-range="all">全部</button>
+                </div>
+                <div id="financialsReadSeg" class="financials-seg" role="group" aria-label="读法">
+                  <button type="button" data-read="yoy" class="is-active">同比</button>
+                  <button type="button" data-read="mix">占比</button>
+                  <button type="button" data-read="amount">金额</button>
+                </div>
+                <div id="financialsUnitSeg" class="financials-seg" role="group" aria-label="单位">
+                  <button type="button" data-unit="yi" class="is-active">亿</button>
+                  <button type="button" data-unit="wan">万</button>
+                </div>
+                <div id="financialsDensitySeg" class="financials-seg" role="group" aria-label="密度" hidden>
+                  <button type="button" data-density="focus" class="is-active">精读</button>
+                  <button type="button" data-density="full">完整</button>
+                </div>
               </div>
+              <p id="financialsMeta" class="financials-meta"></p>
             </div>
-          </header>
-          <p id="financialsHint" class="muted news-scroll-hint cninfo-hint"></p>
+            <div id="financialsKpis" class="financials-kpis" hidden></div>
+          </div>
           <div id="financialsBody" class="financials-body" tabindex="0">
             <table class="market-table financials-table">
               <thead id="financialsHead"></thead>
@@ -936,6 +951,6 @@
   <script src="/js/shared/nav.js?v=judgment-after-fund-20260912"></script>
   <script src="/js/shared/ai-modes.js?v=company-analysis-no-ai-page-20260910"></script>
   <script src="/js/shared/company-analysis.js?v=company-analysis-loading-20260912"></script>
-  <script src="/js/company.js?v=judgment-20260912"></script>
+  <script src="/js/company.js?v=financials-income-eq-20260914"></script>
 </body>
 </html>

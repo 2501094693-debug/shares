@@ -1,7 +1,7 @@
 """拉取腾讯 qt 实时盘口并按分类打印。
 
-    python company/statistics/tools/dump_tencent_quote.py
-    python company/statistics/tools/dump_tencent_quote.py 000001
+    python company/statistics/quote/live/dump_tencent_quote.py
+    python company/statistics/quote/live/dump_tencent_quote.py 000001
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-_BACKEND = Path(__file__).resolve().parents[3]
+_BACKEND = Path(__file__).resolve().parents[4]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 

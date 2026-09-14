@@ -6,8 +6,8 @@
 年化系数：一季报×4、中报×2、三季报×4/3、年报×1。
 EPS 用当日总股本去除以归属净利润，与盘口 ``f162`` 对齐。
 
-    python company/statistics/series/pe_history.py 600519
-    python company/statistics/series/pe_history.py 600519 --limit 10
+    python company/statistics/quote/fetch/pe_history.py 600519
+    python company/statistics/quote/fetch/pe_history.py 600519 --limit 10
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-_BACKEND = Path(__file__).resolve().parents[3]
+_BACKEND = Path(__file__).resolve().parents[4]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 

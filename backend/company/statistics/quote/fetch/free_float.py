@@ -1,10 +1,13 @@
-"""计算自由流通股、自由流通市值。
+"""自由流通股、自由流通市值。
 
-口径与盘口编排层一致：流通 A 股 − 持股 ≥5% 的流通股东（剔除港股通）。
+优先用东财 ``RPT_F10_EH_EQUITY.FREELIQCI_SHARES``（中证自由流通股本），
+不再用十大流通股东自行扣减——后者漏了战略持股/靠档，AH 股还会误扣 H 股代持。
+字段缺失时才回退：流通 A 股 − 持股 ≥5% 的流通股东（剔除港股通 / HKSCC）。
+
 自由流通市值 = 现价 × 自由流通股；没有现价时按流通市值等比折算。
 
-    python company/statistics/metrics/free_float.py
-    python company/statistics/metrics/free_float.py 000001
+    python company/statistics/quote/fetch/free_float.py
+    python company/statistics/quote/fetch/free_float.py 000001
 """
 
 from __future__ import annotations
@@ -15,7 +18,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-_BACKEND = Path(__file__).resolve().parents[3]
+_BACKEND = Path(__file__).resolve().parents[4]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
@@ -23,8 +26,8 @@ from core.codes import em_code, normalize_code, safe_str, secid
 from core.fmt import fmt_price, fmt_shares, fmt_yi_wan, to_float
 from core.http import get_json
 
-# 港股通持仓不计入「持股 ≥5% 扣除」，以匹配东财自由流通口径
-_FREE_FLOAT_SKIP_NAMES = ("香港中央结算", "香港中央結算")
+# 港股通 / H 股中央结算不计入「持股 ≥5% 扣除」
+_FREE_FLOAT_SKIP_NAMES = ("香港中央结算", "香港中央結算", "HKSCC")
 
 _HOSTS = (
     "https://push2delay.eastmoney.com",
@@ -36,6 +39,8 @@ _HOSTS = (
 _F10_HEADERS = {
     "Accept": "application/json, text/plain, */*",
 }
+
+_DC_HEADERS = {"Referer": "https://data.eastmoney.com/"}
 
 
 def _first_dict(node: Any) -> dict[str, Any]:
@@ -120,6 +125,33 @@ def _push2(code: str) -> dict[str, Any]:
     return {}
 
 
+def _equity(code: str) -> dict[str, Any]:
+    """东财 F10 股本变动，含 ``FREELIQCI_SHARES``（自由流通股本）。"""
+    payload = get_json(
+        "https://datacenter-web.eastmoney.com/api/data/v1/get",
+        params={
+            "reportName": "RPT_F10_EH_EQUITY",
+            "columns": "ALL",
+            "filter": f'(SECURITY_CODE="{code}")',
+            "pageNumber": "1",
+            "pageSize": "1",
+            "sortColumns": "END_DATE",
+            "sortTypes": "-1",
+            "source": "WEB",
+            "client": "WEB",
+        },
+        headers=_DC_HEADERS,
+        timeout=12,
+    ) or {}
+    rows = (
+        ((payload.get("result") or {}) if isinstance(payload.get("result"), dict) else {}).get(
+            "data"
+        )
+        or []
+    )
+    return rows[0] if rows and isinstance(rows[0], dict) else {}
+
+
 def _capital(code: str) -> dict[str, Any]:
     em = em_code(code)
     payload = get_json(
@@ -155,24 +187,26 @@ def _shareholders(code: str) -> list[Any]:
     return rows if isinstance(rows, list) else []
 
 
-def calc(code: str) -> dict[str, Any]:
-    """拉股本 + 十大流通股东 + 现价，算出自由流通股和自由流通市值。"""
-    code = normalize_code(code)
-    if not code:
-        raise ValueError("无效股票代码")
+def _free_mcap(
+    free: float | None,
+    price: float | None,
+    float_mcap: float | None,
+    float_shares: float | None,
+) -> float | None:
+    if not free or free <= 0:
+        return None
+    if price is not None:
+        return price * free
+    if float_mcap is not None and float_shares:
+        return float_mcap * (free / float_shares)
+    return None
 
-    quote = _push2(code)
-    capital = _capital(code)
+
+def _from_holders(
+    code: str,
+    float_shares: float | None,
+) -> tuple[float | None, str, float, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     latest, holders_raw = _latest_holders(_shareholders(code))
-
-    listed_a = to_float(capital.get("LISTED_A_SHARES"))
-    unlimited = to_float(capital.get("UNLIMITED_SHARES"))
-    float_shares = listed_a or unlimited or to_float(quote.get("f85") or quote.get("f277"))
-    total_shares = to_float(capital.get("TOTAL_SHARES")) or to_float(quote.get("f84"))
-    price = to_float(quote.get("f43"))
-    float_mcap = to_float(quote.get("f117"))
-    total_mcap = to_float(quote.get("f116"))
-
     holders = [_holder_row(row) for row in holders_raw]
     deducted = [row for row in holders if row["deduct"]]
     skipped = [row for row in holders if row["skip_hkconnect"]]
@@ -182,18 +216,50 @@ def calc(code: str) -> dict[str, Any]:
     free = max(float_shares - big, 0) if float_shares is not None else None
     if (not free) and float_shares:
         free = float_shares
+    return free, latest, big, holders, deducted, skipped
 
-    free_mcap = None
-    if free and free > 0:
-        if price is not None:
-            free_mcap = price * free
-        elif float_mcap is not None and float_shares:
-            free_mcap = float_mcap * (free / float_shares)
+
+def calc(code: str) -> dict[str, Any]:
+    """拉东财自由流通股本 + 现价，算出自由流通股和自由流通市值。"""
+    code = normalize_code(code)
+    if not code:
+        raise ValueError("无效股票代码")
+
+    quote = _push2(code)
+    equity = _equity(code)
+    capital = {} if equity else _capital(code)
+
+    listed_a = to_float(equity.get("LISTED_A_SHARES")) or to_float(capital.get("LISTED_A_SHARES"))
+    unlimited = to_float(equity.get("UNLIMITED_SHARES")) or to_float(capital.get("UNLIMITED_SHARES"))
+    float_shares = listed_a or unlimited or to_float(quote.get("f85") or quote.get("f277"))
+    total_shares = (
+        to_float(equity.get("TOTAL_SHARES"))
+        or to_float(capital.get("TOTAL_SHARES"))
+        or to_float(quote.get("f84"))
+    )
+    price = to_float(quote.get("f43"))
+    float_mcap = to_float(quote.get("f117"))
+    total_mcap = to_float(quote.get("f116"))
+
+    free = to_float(equity.get("FREELIQCI_SHARES"))
+    source = "eastmoney"
+    end_date = _end_date(equity)
+    big = 0.0
+    holders: list[dict[str, Any]] = []
+    deducted: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    if free is None:
+        source = "holders"
+        free, holder_date, big, holders, deducted, skipped = _from_holders(code, float_shares)
+        end_date = holder_date or end_date
+
+    free_mcap = _free_mcap(free, price, float_mcap, float_shares)
 
     return {
         "code": code,
         "name": safe_str(quote.get("f58")),
-        "end_date": latest,
+        "source": source,
+        "end_date": end_date,
         "price": price,
         "price_fmt": fmt_price(price),
         "total_shares": total_shares,
@@ -221,9 +287,12 @@ def calc(code: str) -> dict[str, Any]:
 def print_result(data: dict[str, Any]) -> None:
     title = f"{data['code']} {data['name']}".strip()
     print(f"代码 {title}")
-    print("口径：流通A股 − 持股≥5%（剔除港股通）")
+    if data.get("source") == "eastmoney":
+        print("口径：东财 FREELIQCI_SHARES（中证自由流通股本）")
+    else:
+        print("口径：流通A股 − 持股≥5%（剔除港股通，字段缺失回退）")
     if data["end_date"]:
-        print(f"股东报告期 {data['end_date']}")
+        print(f"股本报告期 {data['end_date']}")
     print()
     print(f"{'项目':<16}{'数值':<16}原始值")
     print("-" * 64)
@@ -238,13 +307,18 @@ def print_result(data: dict[str, Any]) -> None:
         ("自由流通市值", data["free_float_market_cap_fmt"], data["free_float_market_cap"]),
     )
     for label, text, raw in rows:
+        if label == "≥5%扣除" and data.get("source") == "eastmoney":
+            continue
         raw_text = "" if raw is None else raw
         print(f"{label:<16}{text:<16}{raw_text}")
 
+    holders = data.get("holders") or []
+    if not holders:
+        return
     print("\n[十大流通股东]")
     print(f"{'操作':<10}{'持股':<14}{'占流通比':<12}股东")
     print("-" * 64)
-    for row in data["holders"]:
+    for row in holders:
         if row["deduct"]:
             action = "扣除"
         elif row["skip_hkconnect"]:
@@ -257,6 +331,9 @@ def print_result(data: dict[str, Any]) -> None:
 def main() -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         sys.stderr.reconfigure(encoding="utf-8")
     except Exception:  # noqa: BLE001
         pass

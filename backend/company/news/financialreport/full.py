@@ -21,13 +21,16 @@ _SCHEMA_PATH = Path(__file__).with_name("f10_qy_lines.json")
 _TABS = {"income": "lrb", "balance": "zcfzb", "cashflow": "xjllb"}
 
 _lines_cache: dict[str, list[dict[str, Any]]] | None = None
+_lines_mtime: float = 0.0
 
 
 def f10_lines(sheet: str = "") -> list[dict[str, Any]] | dict[str, list[dict[str, Any]]]:
-    """一般企业完整科目（与东财 F10 利润表/资产负债表/现金流量表一致）。"""
-    global _lines_cache
-    if _lines_cache is None:
+    """一般企业完整科目（2019 一般企业格式骨架，东财 F10 字段）。"""
+    global _lines_cache, _lines_mtime
+    mtime = _SCHEMA_PATH.stat().st_mtime if _SCHEMA_PATH.exists() else 0.0
+    if _lines_cache is None or mtime != _lines_mtime:
         _lines_cache = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+        _lines_mtime = mtime
     if sheet:
         return list(_lines_cache.get(sheet) or [])
     return {key: list(val) for key, val in _lines_cache.items()}

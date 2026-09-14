@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from company.line.fetcher import fetch_kline
-from company.statistics.metrics.free_float import calc as calc_free_float
+from company.statistics.quote.fetch.free_float import calc as calc_free_float
 from core.cache import TtlCache
 from core.codes import normalize_code
 from core.fmt import to_float
@@ -55,7 +55,7 @@ def fetch_turnover_history(
         raise ValueError("无效股票代码")
 
     cap = max(1, min(int(limit or 2500), 5000))
-    cache_key = f"{code}:{cap}:turnover:v6"
+    cache_key = f"{code}:{cap}:turnover:v7"
     now = time.time()
     if not force:
         hit = _cache.get(cache_key)

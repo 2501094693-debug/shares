@@ -2772,6 +2772,9 @@ button.chart-legend-item.is-active {
   flex: 1 1 0%;
   min-height: 0;
   margin-bottom: 0;
+  padding: 0;
+  box-shadow: none;
+  overflow: hidden;
   flex-direction: column;
 }
 
@@ -6389,14 +6392,6 @@ html.company-charts-on .company-panel[data-panel="news"] .financials-body {
   flex: 1 1 0%;
   max-height: none;
   overflow: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-html.company-charts-on .company-panel[data-panel="news"] .financials-body::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
 }
 
 html.company-charts-on .company-panel[data-panel="news"] .financials-hub {
@@ -6735,34 +6730,152 @@ body.app-shell.otc-fund-page-root .otc-fund-page.market-page {
   font-family: var(--mono);
 }
 
-.financials-hub .financials-head {
-  align-items: flex-end;
+.financials-chrome,
+.financials-toolbar,
+.financials-kpis {
+  flex-shrink: 0;
 }
 
-.financials-tools {
+.financials-chrome {
+  padding: 8px 12px 0;
+}
+
+.financials-toolbar {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
+  gap: 8px 14px;
   align-items: center;
 }
 
+.financials-tabs,
+.financials-toggles,
+.financials-seg {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.financials-toggles {
+  gap: 10px;
+}
+
+.financials-tabs button,
+.financials-seg button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 0.8rem;
+  line-height: 1.2;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.financials-tabs button.is-active {
+  color: var(--ink);
+  background: var(--accent-soft);
+}
+
+.financials-seg button.is-active {
+  color: var(--accent);
+}
+
+.financials-meta {
+  margin: 0 0 0 auto;
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.financials-kpis {
+  display: flex;
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.financials-kpi {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 8px 12px 8px 0;
+}
+
+.financials-kpi + .financials-kpi {
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+
+.financials-kpi-label {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.financials-kpi-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 1px;
+}
+
+.financials-kpi-value {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.financials-kpi-chg {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.financials-kpi-chg[data-tone="up"] {
+  color: var(--up);
+}
+
+.financials-kpi-chg[data-tone="down"] {
+  color: var(--down);
+}
+
 .financials-body {
-  max-height: min(72vh, 760px);
+  flex: 1 1 0%;
+  min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent) 45%, transparent) transparent;
+  background: var(--bg-elevated);
 }
 
 .financials-body::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
+  width: 8px;
+  height: 8px;
+}
+
+.financials-body::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 99px;
+}
+
+.financials-body::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .financials-table {
-  min-width: 920px;
+  min-width: 0;
+  width: 100%;
+}
+
+.financials-table .is-row {
+  cursor: default;
+}
+
+.financials-table th,
+.financials-table td {
+  padding: 5px 10px;
 }
 
 .financials-table thead th {
@@ -6777,8 +6890,12 @@ body.app-shell.otc-fund-page-root .otc-fund-page.market-page {
   position: sticky;
   left: 0;
   z-index: 1;
+  min-width: 8.5rem;
+  max-width: 12rem;
   background: var(--bg-elevated);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .financials-table thead th:first-child {
@@ -6787,34 +6904,180 @@ body.app-shell.otc-fund-page-root .otc-fund-page.market-page {
 
 .financials-table th.num,
 .financials-table td.num {
-  min-width: 5.8rem;
+  min-width: 7.2rem;
 }
 
-.financials-period {
+.financials-table td.financials-amt {
+  text-align: right;
+}
+
+.financials-amt-wrap {
+  display: inline-grid;
+  grid-template-columns: 4.6rem 4rem;
+  justify-content: end;
+  align-items: baseline;
+  column-gap: 8px;
+}
+
+.financials-amt-main,
+.financials-amt-sub {
+  min-width: 0;
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.financials-amt-sub {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.financials-table th.financials-latest {
+  color: var(--ink);
   font-weight: 600;
 }
 
-.financials-period-date {
-  margin-top: 2px;
-  font-size: 0.75rem;
+.financials-table td.financials-latest .financials-amt-main {
+  font-weight: 600;
+}
+
+.financials-table .is-row:hover td,
+.financials-table .is-row:hover td:first-child {
+  background: color-mix(in srgb, var(--ink) 8%, var(--bg-elevated));
+}
+
+.financials-table .financials-subtotal-row td,
+.financials-table .financials-subtotal-row td:first-child {
+  font-weight: 650;
+}
+
+.financials-table .financials-grand-row td,
+.financials-table .financials-grand-row td:first-child {
+  padding-top: 10px;
+  font-weight: 700;
+}
+
+.financials-table .financials-subtotal-row .financials-amt-main {
+  font-weight: 650;
+}
+
+.financials-table .financials-grand-row .financials-amt-main {
+  font-weight: 700;
+}
+
+.financials-amt {
+  white-space: nowrap;
+}
+
+.financials-amt-sub[data-tone="up"] {
+  color: var(--up);
+}
+
+.financials-amt-sub[data-tone="down"] {
+  color: var(--down);
+}
+
+.financials-table td.num.is-neg .financials-amt-main {
+  color: var(--warn);
 }
 
 .financials-line-indent {
-  padding-left: 1.35rem;
   color: var(--muted);
   font-weight: 400;
 }
 
-.financials-line-strong {
-  font-weight: 700;
+.financials-table td.financials-line-indent {
+  padding-left: 2rem;
 }
 
-.financials-group-row td {
-  background: color-mix(in srgb, var(--line) 18%, var(--bg-elevated));
+.financials-table td.financials-line-indent.is-note {
+  padding-left: 2.8rem;
+}
+
+.financials-line-strong {
+  font-weight: 650;
+}
+
+.financials-group-row {
+  cursor: pointer;
+}
+
+.financials-table .financials-group-row td {
+  position: static;
+  left: auto;
+  z-index: 0;
+  min-width: 0;
+  max-width: none;
+  overflow: visible;
+  padding: 6px 10px;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-elevated));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.financials-table .financials-group-row:hover td {
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-elevated));
 }
 
 .financials-line-group {
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.financials-caption-row {
+  cursor: default;
+}
+
+.financials-table .financials-caption-row td {
+  position: static;
+  left: auto;
+  z-index: 0;
+  min-width: 0;
+  max-width: none;
+  padding: 8px 10px 2px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  background: transparent;
+}
+
+.financials-table .financials-caption-row td.financials-line-indent {
+  padding-left: 2rem;
+}
+
+.financials-table .financials-caption-row td.is-note {
+  padding-left: 2.8rem;
+}
+
+.financials-line-caption {
+  color: var(--muted);
+}
+
+.financials-group-toggle {
+  display: inline-block;
+  width: 1.1rem;
+  margin-right: 4px;
+  color: var(--accent);
   font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .financials-kpis {
+    flex-wrap: wrap;
+  }
+
+  .financials-kpi {
+    flex: 1 1 40%;
+  }
+
+  .financials-meta {
+    margin-left: 0;
+  }
 }
 
 .fund-table tr.fund-row.is-active {

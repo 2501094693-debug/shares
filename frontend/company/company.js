@@ -377,6 +377,12 @@ const els = {
   financialsHint: document.getElementById("financialsHint"),
   financialsSheetSeg: document.getElementById("financialsSheetSeg"),
   financialsFilterSeg: document.getElementById("financialsFilterSeg"),
+  financialsRangeSeg: document.getElementById("financialsRangeSeg"),
+  financialsRangeShortBtn: document.getElementById("financialsRangeShortBtn"),
+  financialsReadSeg: document.getElementById("financialsReadSeg"),
+  financialsUnitSeg: document.getElementById("financialsUnitSeg"),
+  financialsDensitySeg: document.getElementById("financialsDensitySeg"),
+  financialsKpis: document.getElementById("financialsKpis"),
   financialsBody: document.getElementById("financialsBody"),
   financialsHead: document.getElementById("financialsHead"),
   financialsBodyRows: document.getElementById("financialsBodyRows"),
@@ -414,7 +420,12 @@ const financialsState = {
   cashflow: [],
   lines: { income: [], balance: [], cashflow: [] },
   count: 0,
-  filter: "all",
+  cadence: "quarterly",
+  range: "short",
+  read: "yoy",
+  unit: "yi",
+  density: "focus",
+  collapsed: {},
   updatedAt: "",
   error: "",
 };
@@ -2324,108 +2335,102 @@ function financialsIsAnnual(row) {
 }
 
 function financialsPeriodLabel(row) {
-  const name = String(row?.PERIOD_LABEL || row?.REPORT_DATE_NAME || "").trim();
-  if (name) return name;
   const day = financialsDate(row);
-  if (day.length < 7) return day || "—";
+  if (day.length < 7) {
+    const name = String(row?.PERIOD_LABEL || row?.REPORT_DATE_NAME || "").trim();
+    return name || day || "—";
+  }
   const year = day.slice(0, 4);
   const month = day.slice(5, 7);
-  const mapping = { "03": "一季报", "06": "中报", "09": "三季报", "12": "年报" };
-  return `${year}${mapping[month] || day}`;
-}
-
-function financialsNumCell(value, kind = "money") {
-  const n = Number(value);
-  if (value == null || value === "" || !Number.isFinite(n)) {
-    return `<td class="num">—</td>`;
-  }
-  let text = "—";
-  let tone = "flat";
-  if (kind === "pct") {
-    text = lhbFmtPct(n);
-    tone = lhbTone(n);
-  } else if (kind === "ratio") {
-    text = `${n.toFixed(2)}%`;
-  } else if (kind === "x") {
-    const x = n > 50 ? n / 100 : n;
-    text = `${x.toFixed(2)}x`;
-  } else if (kind === "eps") {
-    text = n.toFixed(3);
-    if (n < 0) tone = "down";
-  } else {
-    text = lhbFmtYi(n);
-    if (n < 0) tone = "down";
-  }
-  const attr = tone === "flat" ? "" : ` data-tone="${tone}"`;
-  return `<td class="num"${attr}>${escapeHtml(text)}</td>`;
+  if (financialsState.cadence === "annual") return year;
+  const mapping = { "03": "一季", "06": "中报", "09": "三季", "12": "年报" };
+  return `${year}${mapping[month] || ""}`;
 }
 
 const FINANCIALS_SHEETS = {
-  balance: {
-    title: "资产负债表",
-    hint: "东财 F10 完整资产负债表，期末时点数；空科目已隐藏。",
-    lines: [
-      { label: "货币资金", keys: ["MONETARYFUNDS"] },
-      { label: "应收账款", keys: ["ACCOUNTS_RECE"] },
-      { label: "存货", keys: ["INVENTORY"] },
-      { label: "固定资产", keys: ["FIXED_ASSET"] },
-      { label: "总资产", keys: ["TOTAL_ASSETS", "TOTAL_ASSETS_PK"], strong: true },
-      { label: "应付账款", keys: ["ACCOUNTS_PAYABLE"] },
-      { label: "总负债", keys: ["TOTAL_LIABILITIES", "LIABILITY"], strong: true },
-      { label: "净资产", keys: ["TOTAL_EQUITY", "TOTAL_EQUITY_PK"], strong: true },
-      { label: "资产负债率", keys: ["DEBT_ASSET_RATIO", "ZCFZL"], kind: "ratio" },
-      { label: "流动比率", keys: ["CURRENT_RATIO", "LD"], kind: "x" },
-    ],
-  },
   income: {
     title: "利润表",
-    hint: "东财 F10 完整利润表。金额为报告期累计数：中报=上半年，三季报=前三季度，年报=全年；空科目已隐藏。",
-    lines: [
-      { label: "营业总收入", keys: ["TOTAL_OPERATE_INCOME", "TOTALOPERATEREVE", "OPERATE_INCOME_PK"] },
-      { label: "营业总成本", keys: ["TOTAL_OPERATE_COST"] },
-      { label: "营业成本", keys: ["OPERATE_COST", "OPERATE_EXPENSE"], indent: true },
-      { label: "税金及附加", keys: ["OPERATE_TAX_ADD"], indent: true },
-      { label: "销售费用", keys: ["SALE_EXPENSE"], indent: true },
-      { label: "管理费用", keys: ["MANAGE_EXPENSE"], indent: true },
-      { label: "财务费用", keys: ["FINANCE_EXPENSE"], indent: true },
-      { label: "营业利润", keys: ["OPERATE_PROFIT", "OPERATE_PROFIT_PK"], strong: true },
-      { label: "利润总额", keys: ["TOTAL_PROFIT"], strong: true },
-      { label: "所得税", keys: ["INCOME_TAX"] },
-      { label: "归母净利润", keys: ["PARENT_NETPROFIT", "PARENTNETPROFIT"], strong: true },
-      { label: "扣非净利润", keys: ["DEDUCT_PARENT_NETPROFIT", "KCFJCXSYJLR"] },
-    ],
+    hint: "精读藏空行，完整显示全部科目。",
+    mixKeys: ["OPERATE_INCOME", "TOTAL_OPERATE_INCOME", "TOTALOPERATEREVE", "OPERATE_INCOME_PK"],
+    lines: [],
+  },
+  balance: {
+    title: "资产负债表",
+    hint: "期末时点数。精读藏空行，完整显示全部科目。同比为去年同期；占比分母为资产总计。",
+    mixKeys: ["TOTAL_ASSETS", "TOTAL_ASSETS_PK"],
+    lines: [],
   },
   cashflow: {
     title: "现金流量表",
-    hint: "东财 F10 完整现金流量表。金额为报告期累计数：中报=上半年，三季报=前三季度，年报=全年；空科目已隐藏。",
-    lines: [
-      { label: "销售商品收现", keys: ["SALES_SERVICES"] },
-      { label: "支付职工现金", keys: ["PAY_STAFF_CASH"] },
-      { label: "经营现金流", keys: ["NETCASH_OPERATE", "NETCASH_OPERATE_PK"], strong: true },
-      { label: "购建固定资产", keys: ["CONSTRUCT_LONG_ASSET"] },
-      { label: "取得投资收益", keys: ["RECEIVE_INVEST_INCOME"] },
-      { label: "投资现金流", keys: ["NETCASH_INVEST", "NETCASH_INVEST_PK"], strong: true },
-      { label: "筹资现金流", keys: ["NETCASH_FINANCE", "NETCASH_FINANCE_PK"], strong: true },
-      { label: "现金净增加", keys: ["CCE_ADD"], strong: true },
-    ],
-  },
-  main: {
-    title: "主要指标",
-    hint: "营收 / 净利润 / 现金流为累计口径；ROE、毛利率、负债率为期末值。",
+    hint: "直接法三段：经营 / 投资 / 筹资净额 ± 汇率 = 现金净增加。精读藏空行，补充资料默认收起。",
+    mixKeys: ["SALES_SERVICES"],
+    lines: [],
   },
 };
 
+const FINANCIALS_KPIS = [
+  {
+    label: "营业收入",
+    keys: ["OPERATE_INCOME", "TOTAL_OPERATE_INCOME", "TOTALOPERATEREVE", "OPERATE_INCOME_PK"],
+    kind: "money",
+  },
+  {
+    label: "归母净利润",
+    keys: ["PARENT_NETPROFIT", "PARENTNETPROFIT"],
+    kind: "money",
+  },
+  {
+    label: "经营现金流",
+    keys: ["NETCASH_OPERATE", "NETCASH_OPERATE_PK"],
+    kind: "money",
+  },
+  {
+    label: "ROE",
+    keys: ["ROEJQ", "WEIGHTAVG_ROE"],
+    kind: "pct",
+  },
+];
+
 function financialsNormalizeSheet(sheet) {
   const raw = String(sheet || "").trim().toLowerCase();
-  if (raw === "income" || raw === "cashflow" || raw === "main") return raw;
+  if (raw === "income" || raw === "cashflow") return raw;
   return "balance";
+}
+
+function financialsSheetHasDensity(sheet) {
+  return Boolean(financialsNormalizeSheet(sheet));
+}
+
+function financialsNormalizeCadence(value) {
+  return value === "annual" ? "annual" : "quarterly";
+}
+
+function financialsNormalizeRange(value) {
+  return value === "all" ? "all" : "short";
+}
+
+function financialsNormalizeRead(value) {
+  if (value === "amount" || value === "mix") return value;
+  return "yoy";
+}
+
+function financialsNormalizeDensity(value) {
+  return value === "full" ? "full" : "focus";
+}
+
+function financialsNormalizeUnit(value) {
+  return value === "wan" ? "wan" : "yi";
+}
+
+function financialsUnitLabel(unit = financialsState.unit) {
+  return financialsNormalizeUnit(unit) === "wan" ? "万元" : "亿元";
 }
 
 function financialsSheetLines(sheet) {
   const key = financialsNormalizeSheet(sheet);
   const fromApi = financialsState.lines?.[key];
   if (Array.isArray(fromApi) && fromApi.length) return fromApi;
-  return FINANCIALS_SHEETS[key]?.lines || FINANCIALS_SHEETS.balance.lines || [];
+  return FINANCIALS_SHEETS[key]?.lines || [];
 }
 
 function financialsSheetRows(sheet = financialsState.sheet) {
@@ -2436,138 +2441,405 @@ function financialsSheetRows(sheet = financialsState.sheet) {
   return financialsState.items;
 }
 
-function financialsVisibleItems(rows = financialsSheetRows()) {
+function financialsCadenceItems(rows = financialsSheetRows()) {
   const list = Array.isArray(rows) ? rows : [];
-  if (financialsState.filter === "annual") return list.filter(financialsIsAnnual);
+  if (financialsState.cadence === "annual") return list.filter(financialsIsAnnual);
   return list;
 }
 
-function syncFinancialsFilterUi() {
-  if (!els.financialsFilterSeg) return;
-  els.financialsFilterSeg.querySelectorAll("[data-filter]").forEach((btn) => {
-    btn.classList.toggle("is-active", btn.getAttribute("data-filter") === financialsState.filter);
-  });
+function financialsVisibleItems(rows = financialsSheetRows()) {
+  const list = financialsCadenceItems(rows);
+  if (financialsState.range === "all") return list;
+  const limit = financialsState.cadence === "annual" ? 5 : 8;
+  return list.slice(0, limit);
 }
 
-function syncFinancialsSheetUi() {
-  const sheet = financialsNormalizeSheet(financialsState.sheet);
-  financialsState.sheet = sheet;
-  if (!els.financialsSheetSeg) return;
-  els.financialsSheetSeg.querySelectorAll("[data-sheet]").forEach((btn) => {
-    const active = btn.getAttribute("data-sheet") === sheet;
-    btn.classList.toggle("is-active", active);
-    btn.setAttribute("aria-selected", active ? "true" : "false");
-  });
+function financialsPeriodIndex(rows) {
+  const map = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const day = financialsDate(row);
+    if (day.length >= 7) map.set(day.slice(0, 7), row);
+  }
+  return map;
+}
+
+function financialsPriorRow(row, index) {
+  const day = financialsDate(row);
+  if (day.length < 7) return null;
+  const year = Number(day.slice(0, 4));
+  if (!Number.isFinite(year)) return null;
+  return index.get(`${year - 1}-${day.slice(5, 7)}`) || null;
+}
+
+function financialsIsAppendixGroup(label) {
+  return /补充资料|不能重分类|能重分类/.test(String(label || ""));
+}
+
+function financialsIsSkipGroup(line) {
+  return financialsIsGroupRow(line) && /审计意见/.test(String(line.label || ""));
+}
+
+function financialsIsCaptionGroup(line) {
+  if (!financialsIsGroupRow(line)) return false;
+  if (line.caption) return true;
+  return /按经营持续性|按所有权归属/.test(String(line.label || ""));
+}
+
+function financialsIndentDepth(line) {
+  const raw = line?.indent;
+  if (raw === true) return 1;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function financialsLineNoise(line) {
+  return /平衡项目|其他项目/.test(String(line?.label || ""));
+}
+
+function financialsEnsureCollapsed(sheet) {
+  const key = financialsNormalizeSheet(sheet);
+  if (!financialsState.collapsed[key]) {
+    const pack = {};
+    for (const line of financialsSheetLines(key)) {
+      if (line.group && financialsIsAppendixGroup(line.label)) pack[line.label] = true;
+    }
+    financialsState.collapsed[key] = pack;
+  }
+  return financialsState.collapsed[key];
+}
+
+function financialsNum(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function financialsFmtMoney(n, unit = financialsState.unit) {
+  if (n == null || !Number.isFinite(n)) return "—";
+  const x = n / (financialsNormalizeUnit(unit) === "wan" ? 1e4 : 1e8);
+  const sign = x < 0 ? "-" : "";
+  const abs = Math.abs(x);
+  return `${sign}${abs >= 100 ? abs.toFixed(1) : abs.toFixed(2)}`;
+}
+
+function financialsFmtLevel(n, kind = "money", unit = financialsState.unit) {
+  if (n == null || !Number.isFinite(n)) return "—";
+  if (kind === "pct" || kind === "ratio") return `${n.toFixed(2)}%`;
+  if (kind === "x") {
+    const x = n > 50 ? n / 100 : n;
+    return `${x.toFixed(2)}x`;
+  }
+  if (kind === "eps") return n.toFixed(3);
+  return financialsFmtMoney(n, unit);
+}
+
+function financialsYoyPack(curr, prev, kind = "money") {
+  if (curr == null || prev == null || !Number.isFinite(curr) || !Number.isFinite(prev)) return null;
+  if (kind === "pct" || kind === "ratio" || kind === "x") {
+    const delta = curr - prev;
+    if (!Number.isFinite(delta)) return null;
+    const suffix = kind === "x" ? "x" : "";
+    return { text: `${delta > 0 ? "+" : ""}${delta.toFixed(1)}${suffix}`, tone: lhbTone(delta) };
+  }
+  if (prev === 0) return null;
+  const yoy = ((curr - prev) / Math.abs(prev)) * 100;
+  return { text: `${yoy > 0 ? "+" : ""}${yoy.toFixed(1)}%`, tone: lhbTone(yoy) };
+}
+
+function syncFinancialsToolbar() {
+  const st = financialsState;
+  st.sheet = financialsNormalizeSheet(st.sheet);
+  st.cadence = financialsNormalizeCadence(st.cadence);
+  st.range = financialsNormalizeRange(st.range);
+  st.read = financialsNormalizeRead(st.read);
+  st.unit = financialsNormalizeUnit(st.unit);
+  st.density = financialsNormalizeDensity(st.density);
+  if (els.financialsSheetSeg) {
+    els.financialsSheetSeg.querySelectorAll("[data-sheet]").forEach((btn) => {
+      const active = btn.getAttribute("data-sheet") === st.sheet;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+  }
+  if (els.financialsFilterSeg) {
+    els.financialsFilterSeg.querySelectorAll("[data-cadence]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.getAttribute("data-cadence") === st.cadence);
+    });
+  }
+  if (els.financialsRangeSeg) {
+    els.financialsRangeSeg.querySelectorAll("[data-range]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.getAttribute("data-range") === st.range);
+    });
+  }
+  if (els.financialsRangeShortBtn) {
+    els.financialsRangeShortBtn.textContent = st.cadence === "annual" ? "近5年" : "近8期";
+  }
+  if (els.financialsReadSeg) {
+    els.financialsReadSeg.querySelectorAll("[data-read]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.getAttribute("data-read") === st.read);
+    });
+  }
+  if (els.financialsUnitSeg) {
+    els.financialsUnitSeg.querySelectorAll("[data-unit]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.getAttribute("data-unit") === st.unit);
+    });
+  }
+  if (els.financialsDensitySeg) {
+    els.financialsDensitySeg.hidden = !financialsSheetHasDensity(st.sheet);
+    els.financialsDensitySeg.querySelectorAll("[data-density]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.getAttribute("data-density") === st.density);
+    });
+  }
 }
 
 function financialsEmptyRow(colspan, text) {
   return `<tr class="is-empty"><td colspan="${colspan}">${escapeHtml(text)}</td></tr>`;
 }
 
-function paintFinancialsMain(rows) {
-  if (els.financialsHead) {
-    els.financialsHead.innerHTML = `<tr>
-      <th scope="col">报告期</th>
-      <th scope="col" class="num">营收</th>
-      <th scope="col" class="num">同比</th>
-      <th scope="col" class="num">净利润</th>
-      <th scope="col" class="num">同比</th>
-      <th scope="col" class="num">扣非净利</th>
-      <th scope="col" class="num">经营现金流</th>
-      <th scope="col" class="num">EPS</th>
-      <th scope="col" class="num">ROE</th>
-      <th scope="col" class="num">毛利率</th>
-      <th scope="col" class="num">负债率</th>
-    </tr>`;
+function paintFinancialsKpis(rows) {
+  if (!els.financialsKpis) return;
+  const latest = rows[0];
+  if (!latest) {
+    els.financialsKpis.hidden = true;
+    els.financialsKpis.innerHTML = "";
+    return;
   }
-  els.financialsBodyRows.innerHTML = rows
-    .map((row) => {
-      const label = escapeHtml(financialsPeriodLabel(row));
-      const day = escapeHtml(financialsDate(row) || "—");
-      return `<tr class="is-row">
-        <td>
-          <div class="financials-period">${label}</div>
-          <div class="muted financials-period-date">${day}</div>
-        </td>
-        ${financialsNumCell(financialsPick(row, "TOTALOPERATEREVE", "TOTAL_OPERATE_INCOME", "OPERATE_INCOME_PK"))}
-        ${financialsNumCell(financialsPick(row, "TOTALOPERATEREVETZ", "TOI_RATIO"), "pct")}
-        ${financialsNumCell(financialsPick(row, "PARENTNETPROFIT", "PARENT_NETPROFIT"))}
-        ${financialsNumCell(financialsPick(row, "PARENTNETPROFITTZ", "PARENT_NETPROFIT_RATIO"), "pct")}
-        ${financialsNumCell(financialsPick(row, "KCFJCXSYJLR", "DEDUCT_PARENT_NETPROFIT"))}
-        ${financialsNumCell(financialsPick(row, "NETCASH_OPERATE_PK", "NETCASH_OPERATE"))}
-        ${financialsNumCell(financialsPick(row, "EPSJB", "BASIC_EPS"), "eps")}
-        ${financialsNumCell(financialsPick(row, "ROEJQ", "WEIGHTAVG_ROE"), "pct")}
-        ${financialsNumCell(financialsPick(row, "XSMLL"), "ratio")}
-        ${financialsNumCell(financialsPick(row, "ZCFZL", "DEBT_ASSET_RATIO"), "ratio")}
-      </tr>`;
-    })
-    .join("");
+  const day = financialsDate(latest);
+  const merged = (Array.isArray(financialsState.items) ? financialsState.items : []).find(
+    (row) => financialsDate(row) === day,
+  ) || latest;
+  const index = financialsPeriodIndex(financialsState.items.length ? financialsState.items : rows);
+  const prior = financialsPriorRow(merged, index);
+  const unit = financialsState.unit;
+  els.financialsKpis.hidden = false;
+  els.financialsKpis.innerHTML = FINANCIALS_KPIS.map((kpi) => {
+    const curr = financialsNum(financialsPick(merged, ...(kpi.keys || [])));
+    const prev = prior ? financialsNum(financialsPick(prior, ...(kpi.keys || []))) : null;
+    const yoy = financialsYoyPack(curr, prev, kpi.kind);
+    const value = kpi.kind === "money" && curr != null
+      ? `${financialsFmtMoney(curr, unit)} ${unit === "wan" ? "万" : "亿"}`
+      : financialsFmtLevel(curr, kpi.kind, unit);
+    const chg = yoy
+      ? `<span class="financials-kpi-chg" data-tone="${yoy.tone}">${escapeHtml(yoy.text)}</span>`
+      : `<span class="financials-kpi-chg">—</span>`;
+    return `<div class="financials-kpi">
+      <div class="financials-kpi-label">${escapeHtml(kpi.label)}</div>
+      <div class="financials-kpi-row">
+        <span class="financials-kpi-value">${escapeHtml(value)}</span>
+        ${chg}
+      </div>
+    </div>`;
+  }).join("");
 }
 
 function financialsLineEmpty(line, periods) {
   const keys = line?.keys || [];
   if (!keys.length) return false;
-  return periods.every((period) => financialsPick(period.row, ...keys) == null);
+  return periods.every((period) => {
+    const value = financialsPick(period.row, ...keys);
+    if (value == null) return true;
+    return Boolean(line.sparse) && financialsNum(value) === 0;
+  });
 }
 
-function financialsVisibleLines(lines, periods) {
+function financialsIsGroupRow(line) {
+  return Boolean(line?.group) && !(line.keys || []).length;
+}
+
+function financialsLineCore(label) {
+  return String(label || "")
+    .replace(/^[一二三四五六七八]、\s*/, "")
+    .replace(/^其中[:：]\s*/, "")
+    .replace(/^[加减][:：]\s*/, "");
+}
+
+function financialsTotalKind(line) {
+  if (!line || line.group) return "";
+  if (line.role === "result") return "grand";
+  if (line.role === "lead" || line.role === "stage") return "sub";
+  const label = String(line.label || "");
+  const core = financialsLineCore(label);
+  if (/总计$|负债合计$|股东权益合计$|所有者权益合计$/.test(label)) return "grand";
+  if (/现金及现金等价物净增加额$|期末现金及现金等价物余额$/.test(label)) return "grand";
+  if (/^(营业利润|利润总额|净利润|综合收益总额)$/.test(core)) return "grand";
+  if (!line.strong || financialsIndentDepth(line)) return "";
+  if (/合计$|小计$|现金流量净额$/.test(label)) return "sub";
+  if (line.strong) return "sub";
+  return "";
+}
+
+function financialsLineRedundant(line, lines, periods) {
+  const label = String(line?.label || "");
+  if (line?.combined) {
+    const splits = /应付/.test(label) ? ["应付票据", "应付账款"] : ["应收票据", "应收账款"];
+    const splitLines = (lines || []).filter((item) => splits.includes(item.label));
+    if (!splitLines.length) return false;
+    return periods.some((period) =>
+      splitLines.some((item) => financialsNum(financialsPick(period.row, ...(item.keys || []))) != null),
+    );
+  }
+  if (label !== "营业收入" && label !== "其中：营业收入") return false;
+  const parent = (lines || []).find((item) => item.label === "营业总收入" || item.label === "一、营业总收入");
+  if (!parent) return false;
+  return periods.every((period) => {
+    const curr = financialsNum(financialsPick(period.row, ...(line.keys || [])));
+    const base = financialsNum(financialsPick(period.row, ...(parent.keys || [])));
+    return curr == null || base == null || curr === base;
+  });
+}
+
+function financialsVisibleLines(lines, periods, collapsed, { keepEmpty = false } = {}) {
   const list = Array.isArray(lines) ? lines : [];
   const out = [];
+  let hiding = false;
+  let hideDepth = 0;
   for (let i = 0; i < list.length; i += 1) {
     const line = list[i];
-    if (line.group || !(line.keys || []).length) {
+    const depth = financialsIndentDepth(line);
+    const isGroup = financialsIsGroupRow(line);
+    if (hiding && !(isGroup && depth <= hideDepth)) continue;
+    hiding = false;
+    if (isGroup) {
+      if (financialsIsSkipGroup(line) || financialsLineNoise(line)) continue;
+      const section = Boolean(line.section);
       let hasChild = false;
       for (let j = i + 1; j < list.length; j += 1) {
         const next = list[j];
-        if (next.group || !(next.keys || []).length) break;
-        if (!financialsLineEmpty(next, periods)) {
+        const nextDepth = financialsIndentDepth(next);
+        if (financialsIsGroupRow(next) && nextDepth <= depth) break;
+        if (!section && !nextDepth && !financialsIsGroupRow(next)) break;
+        if (financialsIsSkipGroup(next) || financialsIsCaptionGroup(next) || financialsIsGroupRow(next)) continue;
+        if (financialsLineNoise(next) || (!keepEmpty && financialsLineRedundant(next, list, periods))) continue;
+        if (keepEmpty || !financialsLineEmpty(next, periods)) {
           hasChild = true;
           break;
         }
       }
-      if (hasChild) out.push(line);
+      if (!hasChild) continue;
+      out.push(line);
+      if (collapsed?.[line.label]) {
+        hiding = true;
+        hideDepth = depth;
+      }
       continue;
     }
-    if (!financialsLineEmpty(line, periods)) out.push(line);
+    if (financialsLineNoise(line)) continue;
+    if (!keepEmpty && financialsLineRedundant(line, list, periods)) continue;
+    if (line.role === "stage") {
+      let hasChild = false;
+      for (let j = i + 1; j < list.length; j += 1) {
+        const next = list[j];
+        if (!financialsIndentDepth(next)) break;
+        if (financialsLineNoise(next)) continue;
+        if (!keepEmpty && financialsLineEmpty(next, periods)) continue;
+        hasChild = true;
+        break;
+      }
+      if (keepEmpty || hasChild) {
+        out.push(line);
+      }
+      continue;
+    }
+    if (keepEmpty || !financialsLineEmpty(line, periods)) out.push(line);
   }
   return out;
 }
 
+function financialsAmtCell({ value, kind, yoy, mix, latest, read }) {
+  const latestClass = latest ? " financials-latest" : "";
+  const n = financialsNum(value);
+  if (n == null) {
+    return `<td class="num${latestClass}">—</td>`;
+  }
+  const main = financialsFmtLevel(n, kind, financialsState.unit);
+  const neg = kind !== "pct" && kind !== "ratio" && kind !== "x" && n < 0 ? " is-neg" : "";
+  let sub = "";
+  if (read === "yoy") {
+    sub = `<span class="financials-amt-sub"${yoy ? ` data-tone="${yoy.tone}"` : ""}">${yoy ? escapeHtml(yoy.text) : ""}</span>`;
+  } else if (read === "mix" && kind === "money") {
+    sub = `<span class="financials-amt-sub">${mix == null ? "" : escapeHtml(`${mix.toFixed(1)}%`)}</span>`;
+  }
+  return `<td class="num financials-amt${latestClass}${neg}">
+    <span class="financials-amt-wrap">${sub}<span class="financials-amt-main">${escapeHtml(main)}</span></span>
+  </td>`;
+}
+
 function paintFinancialsStatement(sheet, rows) {
+  const spec = FINANCIALS_SHEETS[sheet] || FINANCIALS_SHEETS.income;
   const periods = rows.map((row) => ({
     label: financialsPeriodLabel(row),
     day: financialsDate(row) || "—",
     row,
   }));
-  const lines = financialsVisibleLines(financialsSheetLines(sheet), periods);
+  const collapsed = financialsEnsureCollapsed(sheet);
+  const keepEmpty = financialsSheetHasDensity(sheet) && financialsState.density === "full";
+  const lines = financialsVisibleLines(financialsSheetLines(sheet), periods, collapsed, {
+    keepEmpty,
+  });
+  const index = financialsPeriodIndex(financialsCadenceItems(financialsSheetRows(sheet)));
+  const read = financialsState.read;
+  const mixKeys = spec.mixKeys || [];
   if (els.financialsHead) {
     els.financialsHead.innerHTML = `<tr>
       <th scope="col">科目</th>
       ${periods
         .map(
-          (period) => `<th scope="col" class="num">
-            <div class="financials-period">${escapeHtml(period.label)}</div>
-            <div class="muted financials-period-date">${escapeHtml(period.day)}</div>
-          </th>`
+          (period, col) => `<th scope="col" class="num${col === 0 ? " financials-latest" : ""}" title="${escapeHtml(period.day)}">${escapeHtml(period.label)}</th>`,
         )
         .join("")}
     </tr>`;
   }
   els.financialsBodyRows.innerHTML = lines
     .map((line) => {
+      const isGroup = financialsIsGroupRow(line);
+      if (isGroup) {
+        if (financialsIsCaptionGroup(line)) {
+          const depth = financialsIndentDepth(line);
+          const capClass = ["financials-line-caption"];
+          if (depth >= 1) capClass.push("financials-line-indent");
+          if (depth >= 2) capClass.push("is-note");
+          return `<tr class="financials-caption-row">
+            <td colspan="${periods.length + 1}" class="${capClass.join(" ")}">${escapeHtml(line.label)}</td>
+          </tr>`;
+        }
+        const closed = Boolean(collapsed[line.label]);
+        return `<tr class="financials-group-row" data-group="${escapeHtml(line.label)}" aria-expanded="${closed ? "false" : "true"}">
+          <td colspan="${periods.length + 1}" class="financials-line-group"><span class="financials-group-toggle" aria-hidden="true">${closed ? "▸" : "▾"}</span>${escapeHtml(line.label)}</td>
+        </tr>`;
+      }
+      const totalKind = financialsTotalKind(line);
+      const depth = financialsIndentDepth(line);
       const classes = ["financials-line"];
-      if (line.indent) classes.push("financials-line-indent");
-      if (line.strong || line.group) classes.push("financials-line-strong");
-      if (line.group) classes.push("financials-line-group");
+      if (depth >= 1 && !totalKind) classes.push("financials-line-indent");
+      if (depth >= 2 && !totalKind) classes.push("is-note");
+      if (totalKind) classes.push("financials-line-strong");
+      const kind = line.kind || "money";
+      const keys = line.keys || [];
       const cells = periods
-        .map((period) =>
-          line.group || !(line.keys || []).length
-            ? `<td class="num"></td>`
-            : financialsNumCell(financialsPick(period.row, ...(line.keys || [])), line.kind || "money")
-        )
+        .map((period, col) => {
+          if (!keys.length) {
+            return `<td class="num${col === 0 ? " financials-latest" : ""}"></td>`;
+          }
+          const curr = financialsPick(period.row, ...keys);
+          const priorRow = financialsPriorRow(period.row, index);
+          const prev = priorRow ? financialsNum(financialsPick(priorRow, ...keys)) : null;
+          const yoy = financialsYoyPack(financialsNum(curr), prev, kind);
+          const base = financialsNum(financialsPick(period.row, ...mixKeys));
+          const n = financialsNum(curr);
+          const mix = n == null || base == null || base === 0 ? null : (n / Math.abs(base)) * 100;
+          return financialsAmtCell({
+            value: curr,
+            kind,
+            yoy,
+            mix,
+            latest: col === 0,
+            read,
+          });
+        })
         .join("");
-      return `<tr class="is-row${line.group ? " financials-group-row" : ""}">
-        <td class="${classes.join(" ")}">${escapeHtml(line.label)}</td>
+      const rowKind = totalKind === "grand" ? " financials-grand-row" : totalKind === "sub" ? " financials-subtotal-row" : "";
+      return `<tr class="is-row${rowKind}">
+        <td class="${classes.join(" ")}" title="${escapeHtml(line.label)}">${escapeHtml(line.label)}</td>
         ${cells}
       </tr>`;
     })
@@ -2577,46 +2849,38 @@ function paintFinancialsStatement(sheet, rows) {
 function paintFinancials() {
   const st = financialsState;
   const sheet = financialsNormalizeSheet(st.sheet);
-  const spec = FINANCIALS_SHEETS[sheet] || FINANCIALS_SHEETS.balance;
+  st.sheet = sheet;
+  const spec = FINANCIALS_SHEETS[sheet] || FINANCIALS_SHEETS.income;
   const rows = financialsVisibleItems();
-  const colspan = sheet === "main" ? 11 : Math.max(1, rows.length + 1);
-  if (els.financialsTitle) els.financialsTitle.textContent = spec.title;
+  const colspan = Math.max(1, rows.length + 1);
+  const cadenceLabel = st.cadence === "annual" ? "年报" : "季报";
+  const readLabel = st.read === "mix" ? "占比" : st.read === "yoy" ? "同比" : "金额";
   if (els.financialsMeta) {
     const bits = [];
-    if (rows.length) bits.push(`${rows.length} 期`);
-    if (st.filter === "annual") bits.push("年报");
-    if (st.updatedAt) bits.push(st.updatedAt);
+    if (rows.length) bits.push(`${rows.length}期`);
+    bits.push(cadenceLabel);
+    bits.push(financialsUnitLabel());
+    bits.push(readLabel);
+    if (financialsSheetHasDensity(sheet)) bits.push(st.density === "full" ? "完整" : "精读");
     els.financialsMeta.textContent = st.loading
       ? "加载中…"
       : st.error
         ? st.error
         : bits.join(" · ");
   }
-  if (els.financialsHint) {
-    els.financialsHint.textContent = st.loading
-      ? "正在从东财拉取历史财报…"
-      : st.error
-        ? st.error
-        : spec.hint;
-  }
   if (!els.financialsBodyRows) return;
-  if (st.loading) {
+  if (st.loading || st.error || !rows.length) {
+    if (els.financialsKpis) {
+      els.financialsKpis.hidden = true;
+      els.financialsKpis.innerHTML = "";
+    }
     if (els.financialsHead) els.financialsHead.innerHTML = "";
-    els.financialsBodyRows.innerHTML = financialsEmptyRow(colspan, "正在加载…");
+    const text = st.loading ? "正在加载…" : st.error || `暂无${spec.title}数据`;
+    els.financialsBodyRows.innerHTML = financialsEmptyRow(colspan, text);
     return;
   }
-  if (st.error) {
-    if (els.financialsHead) els.financialsHead.innerHTML = "";
-    els.financialsBodyRows.innerHTML = financialsEmptyRow(colspan, st.error);
-    return;
-  }
-  if (!rows.length) {
-    if (els.financialsHead) els.financialsHead.innerHTML = "";
-    els.financialsBodyRows.innerHTML = financialsEmptyRow(colspan, `暂无${spec.title}数据`);
-    return;
-  }
-  if (sheet === "main") paintFinancialsMain(rows);
-  else paintFinancialsStatement(sheet, rows);
+  paintFinancialsKpis(rows);
+  paintFinancialsStatement(sheet, rows);
 }
 
 async function loadFinancials({ refresh = false } = {}) {
@@ -2645,6 +2909,7 @@ async function loadFinancials({ refresh = false } = {}) {
       balance: Array.isArray(sheets.balance?.lines) ? sheets.balance.lines : [],
       cashflow: Array.isArray(sheets.cashflow?.lines) ? sheets.cashflow.lines : [],
     };
+    financialsState.collapsed = {};
     financialsState.count = Number(data.count) || financialsState.items.length;
     financialsState.updatedAt = data.updated_at || new Date().toLocaleString("zh-CN", { hour12: false });
     if (els.financialsBody) els.financialsBody.scrollTop = 0;
@@ -2654,6 +2919,7 @@ async function loadFinancials({ refresh = false } = {}) {
     financialsState.balance = [];
     financialsState.cashflow = [];
     financialsState.lines = { income: [], balance: [], cashflow: [] };
+    financialsState.collapsed = {};
     financialsState.count = 0;
     financialsState.error = err.message || String(err);
   } finally {
@@ -2663,33 +2929,67 @@ async function loadFinancials({ refresh = false } = {}) {
   }
 }
 
+function financialsBindSeg(el, attr, apply) {
+  if (!el || el.dataset.bound === "1") return;
+  el.dataset.bound = "1";
+  el.addEventListener("click", (event) => {
+    const btn = event.target.closest(`[${attr}]`);
+    if (!btn || !el.contains(btn)) return;
+    if (!apply(btn.getAttribute(attr))) return;
+    syncFinancialsToolbar();
+    paintFinancials();
+    if (els.financialsBody) els.financialsBody.scrollTop = 0;
+  });
+}
+
 function setupFinancialsBox() {
-  syncFinancialsSheetUi();
-  syncFinancialsFilterUi();
-  if (els.financialsSheetSeg && els.financialsSheetSeg.dataset.bound !== "1") {
-    els.financialsSheetSeg.dataset.bound = "1";
-    els.financialsSheetSeg.addEventListener("click", (event) => {
-      const btn = event.target.closest("[data-sheet]");
-      if (!btn || !els.financialsSheetSeg.contains(btn)) return;
-      const next = financialsNormalizeSheet(btn.getAttribute("data-sheet"));
-      if (next === financialsState.sheet) return;
-      financialsState.sheet = next;
-      syncFinancialsSheetUi();
+  syncFinancialsToolbar();
+  financialsBindSeg(els.financialsSheetSeg, "data-sheet", (value) => {
+    const next = financialsNormalizeSheet(value);
+    if (next === financialsState.sheet) return false;
+    financialsState.sheet = next;
+    return true;
+  });
+  financialsBindSeg(els.financialsFilterSeg, "data-cadence", (value) => {
+    const next = financialsNormalizeCadence(value);
+    if (next === financialsState.cadence) return false;
+    financialsState.cadence = next;
+    return true;
+  });
+  financialsBindSeg(els.financialsRangeSeg, "data-range", (value) => {
+    const next = financialsNormalizeRange(value);
+    if (next === financialsState.range) return false;
+    financialsState.range = next;
+    return true;
+  });
+  financialsBindSeg(els.financialsReadSeg, "data-read", (value) => {
+    const next = financialsNormalizeRead(value);
+    if (next === financialsState.read) return false;
+    financialsState.read = next;
+    return true;
+  });
+  financialsBindSeg(els.financialsUnitSeg, "data-unit", (value) => {
+    const next = financialsNormalizeUnit(value);
+    if (next === financialsState.unit) return false;
+    financialsState.unit = next;
+    return true;
+  });
+  financialsBindSeg(els.financialsDensitySeg, "data-density", (value) => {
+    const next = financialsNormalizeDensity(value);
+    if (next === financialsState.density) return false;
+    financialsState.density = next;
+    return true;
+  });
+  if (els.financialsBodyRows && els.financialsBodyRows.dataset.groupBound !== "1") {
+    els.financialsBodyRows.dataset.groupBound = "1";
+    els.financialsBodyRows.addEventListener("click", (event) => {
+      const row = event.target.closest("[data-group]");
+      if (!row || !els.financialsBodyRows.contains(row)) return;
+      const label = row.getAttribute("data-group");
+      if (!label) return;
+      const pack = financialsEnsureCollapsed(financialsState.sheet);
+      pack[label] = !pack[label];
       paintFinancials();
-      if (els.financialsBody) els.financialsBody.scrollTop = 0;
-    });
-  }
-  if (els.financialsFilterSeg && els.financialsFilterSeg.dataset.bound !== "1") {
-    els.financialsFilterSeg.dataset.bound = "1";
-    els.financialsFilterSeg.addEventListener("click", (event) => {
-      const btn = event.target.closest("[data-filter]");
-      if (!btn || !els.financialsFilterSeg.contains(btn)) return;
-      const next = btn.getAttribute("data-filter") === "annual" ? "annual" : "all";
-      if (next === financialsState.filter) return;
-      financialsState.filter = next;
-      syncFinancialsFilterUi();
-      paintFinancials();
-      if (els.financialsBody) els.financialsBody.scrollTop = 0;
     });
   }
 }
