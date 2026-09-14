@@ -2,12 +2,10 @@
 
 三套业务：
 - ``industry``：申万分类、成分股检索、地图标注
-- ``company``：单只股票的盘口、K 线、资讯
-- ``market``：申万行业涨跌、资金流向、个股涨跌榜、行业轮动
+- ``company``：单只股票的盘口、K 线、资讯、龙虎榜历史上榜
+- ``market``：申万行业涨跌、资金流向、个股涨跌榜、行业轮动、基金（场内 ETF/LOF + 场外开放式）
 - ``world``：全球主要股指、央行利率、国债收益率、原油期货
 - ``gmap``：Google Maps 全球检索与定位
-- ``list``：龙虎榜个股历史上榜（公司详情页）
-- ``funds.fund`` / ``funds.otc_fund``：统一基金页（场内 ETF/LOF + 场外开放式）
 - ``analysis``：研判（涨跌停分析 / 个股分析 / 行业行情分析）
 """
 
@@ -34,18 +32,18 @@ from fastapi.staticfiles import StaticFiles
 
 from agent.api import router as ai_router
 from company.api import router as company_router
-from company.fundflow.api import router as fundflow_router
+from company.statistics.fundflow.api import router as fundflow_router
 from company.news.financialreport.api import router as financialreport_router
-from funds.fund.api import router as fund_router
+from market.funds.fund.api import router as fund_router
 from industry.api import router as industry_router
 from industry.service import service as industry_service
-from funds.fund.service import service as fund_service
-from list.api import router as list_router
+from market.funds.fund.service import service as fund_service
+from company.statistics.list.api import router as list_router
 from market.api import router as market_router
 from world.api import router as world_router
 from analysis.api import router as screen_router
-from funds.otc_fund.api import router as otc_fund_router
-from funds.otc_fund.service import service as otc_fund_service
+from market.funds.otc_fund.api import router as otc_fund_router
+from market.funds.otc_fund.service import service as otc_fund_service
 
 ROOT = _BACKEND_DIR.parent
 FRONTEND = ROOT / "frontend"

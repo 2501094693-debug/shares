@@ -5,8 +5,8 @@
 - ``api``      FastAPI 路由
 """
 
-from company.fundflow.fetcher import get_fund_flow
-from company.fundflow.stock import fetch_daily, fetch_minute, fetch_snapshot
+from company.statistics.fundflow.fetcher import get_fund_flow
+from company.statistics.fundflow.stock import fetch_daily, fetch_minute, fetch_snapshot
 
 __all__ = [
     "fetch_daily",

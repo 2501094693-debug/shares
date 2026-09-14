@@ -1,9 +1,10 @@
-"""申万行业行情包。
+"""市场行情包。
 
-- ``api``    FastAPI 路由
+- ``api``    申万行业行情 FastAPI 路由
 - ``sw``     行情树、资金流、东财数据源等实现
 - ``shares`` 成分股摊平，按涨跌排序
 - ``steep``  最近几个交易日的涨停 / 跌停
+- ``funds``  场内 ETF/LOF 与场外开放式基金
 """
 
 from market.sw import service

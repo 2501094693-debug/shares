@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from company.fundflow._common import (
+from company.statistics.fundflow._common import (
     _DAILY_FIELDS2,
     _MINUTE_FIELDS2,
     _SNAPSHOT_FIELDS,

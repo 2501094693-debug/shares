@@ -34,15 +34,15 @@ from company.emotion.xueqiu import (
     search_posts as search_xq_posts,
 )
 from company.line import fetch_kline, fetch_ticks
-from company.statistics.pe_history import fetch_pe_history
-from company.statistics.turnover_history import fetch_turnover_history
+from company.statistics.series.pe_history import fetch_pe_history
+from company.statistics.series.turnover_history import fetch_turnover_history
 from company.news.feed import collect_company_messages, pages_for_days
 from company.news.official.cninfo.constants import MAX_PAGES as CNINFO_MAX_PAGES
 from company.news.official.exchange.sse import MAX_PAGES as EXCHANGE_MAX_PAGES
 from company.news.profile import query_company_profile
 from company.news.query import query_cninfo, query_exchange, query_platform, query_press
 from company.news.taxonomy.constants import ALL_SECTIONS, DEFAULT_SECTIONS
-from company.fund_holders import fetch_fund_holders
+from company.statistics.holdings.fund_holders import fetch_fund_holders
 from company.profile import get_stock_profile
 from core.api import err, ok
 

@@ -1,10 +1,8 @@
-"""个股统计：盘口编排、历史序列、派生指标、资金流向、持仓截面、龙虎榜。"""
+"""历史时间序列：估值、换手、区间涨跌。"""
 
-from company.statistics.holdings.fund_holders import fetch_fund_holders
-from company.statistics.quote.fetcher import QUOTE_TTL, fetch_live_quote, fetch_stock_quote
 from company.statistics.series.pe_history import PE_TTL, fetch_pe_history
 from company.statistics.series.period_returns import (
-    PERIODS as RETURN_PERIODS,
+    PERIODS,
     calc_period_returns,
     fetch_daily_line,
     fetch_period_returns,
@@ -13,15 +11,11 @@ from company.statistics.series.turnover_history import TURNOVER_TTL, fetch_turno
 
 __all__ = [
     "PE_TTL",
-    "QUOTE_TTL",
-    "RETURN_PERIODS",
+    "PERIODS",
     "TURNOVER_TTL",
     "calc_period_returns",
     "fetch_daily_line",
-    "fetch_fund_holders",
-    "fetch_live_quote",
     "fetch_pe_history",
     "fetch_period_returns",
-    "fetch_stock_quote",
     "fetch_turnover_history",
 ]

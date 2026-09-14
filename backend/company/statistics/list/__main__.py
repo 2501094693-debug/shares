@@ -1,9 +1,9 @@
 """命令行查龙虎榜。
 
-    python -m list
-    python -m list --date 2026-08-28
-    python -m list --code 000001
-    python -m list --json
+    python -m company.statistics.list
+    python -m company.statistics.list --date 2026-08-28
+    python -m company.statistics.list --code 000001
+    python -m company.statistics.list --json
 """
 
 from __future__ import annotations
@@ -13,11 +13,11 @@ import json
 import sys
 from pathlib import Path
 
-_BACKEND = Path(__file__).resolve().parents[1]
+_BACKEND = Path(__file__).resolve().parents[3]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-from list.service import service
+from company.statistics.list.service import service
 
 
 def _fmt_yi(value: object) -> str:

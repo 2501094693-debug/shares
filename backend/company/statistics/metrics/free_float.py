@@ -3,8 +3,8 @@
 口径与盘口编排层一致：流通 A 股 − 持股 ≥5% 的流通股东（剔除港股通）。
 自由流通市值 = 现价 × 自由流通股；没有现价时按流通市值等比折算。
 
-    python company/statistics/free_float.py
-    python company/statistics/free_float.py 000001
+    python company/statistics/metrics/free_float.py
+    python company/statistics/metrics/free_float.py 000001
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-_BACKEND = Path(__file__).resolve().parents[2]
+_BACKEND = Path(__file__).resolve().parents[3]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 

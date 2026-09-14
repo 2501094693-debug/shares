@@ -697,7 +697,7 @@ def fetch_valuation_pack(code: str, name: str, stock: dict[str, Any], industry: 
 
         if str(BACKEND_ROOT) not in sys.path:
             sys.path.insert(0, str(BACKEND_ROOT))
-        from company.statistics.pe_history import fetch_pe_history
+        from company.statistics.series.pe_history import fetch_pe_history
 
         pack = fetch_pe_history(code, limit=1200)
         pe_items = list(pack.get("items") or []) if isinstance(pack, dict) else []

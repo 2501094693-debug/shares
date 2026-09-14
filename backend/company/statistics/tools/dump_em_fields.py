@@ -1,7 +1,7 @@
 """拉取东财 push2 已释义字段并打印。
 
-    python company/statistics/dump_em_fields.py
-    python company/statistics/dump_em_fields.py 000001
+    python company/statistics/tools/dump_em_fields.py
+    python company/statistics/tools/dump_em_fields.py 000001
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-_BACKEND = Path(__file__).resolve().parents[2]
+_BACKEND = Path(__file__).resolve().parents[3]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 

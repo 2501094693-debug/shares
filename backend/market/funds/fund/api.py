@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 
 from core.api import err, ok
-from funds.fund.service import service
+from market.funds.fund.service import service
 
 router = APIRouter()
 

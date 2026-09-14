@@ -7,7 +7,7 @@ import re
 from fastapi import APIRouter, Query
 
 from core.api import err, ok
-from funds.otc_fund.service import service
+from market.funds.otc_fund.service import service
 
 router = APIRouter()
 

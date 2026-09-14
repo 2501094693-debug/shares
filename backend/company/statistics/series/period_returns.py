@@ -3,9 +3,9 @@
 日 K 走 ``company.line.fetcher.fetch_kline``（腾讯优先，东财兜底）。
 区间按交易日近似（不是自然日）。20≈月、60≈季、120≈半年、250≈年。
 
-    python company/statistics/period_returns.py 600519
-    python company/statistics/period_returns.py 000001 --adjust none
-    python company/statistics/period_returns.py sh000001
+    python company/statistics/series/period_returns.py 600519
+    python company/statistics/series/period_returns.py 000001 --adjust none
+    python company/statistics/series/period_returns.py sh000001
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-_BACKEND = Path(__file__).resolve().parents[2]
+_BACKEND = Path(__file__).resolve().parents[3]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 

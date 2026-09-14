@@ -1,15 +1,15 @@
 """个股盘口的各数据源。
 
-``company.statistics.fetcher.fetch_stock_quote`` 并行调用这里的函数，再拼成一张字段表。
+``company.statistics.quote.fetcher.fetch_stock_quote`` 并行调用这里的函数，再拼成一张字段表。
 单个源失败返回 ``{}``，不抛给上层，由编排层用乐咕成分股字段兜底。
 
 数据源分工：
 - 实时盘口：东财 push2，失败再腾讯 qt.gtimg.cn
-- 区间涨幅：``company.statistics.period_returns.fetch_period_returns``（腾讯日 K 优先，东财补充）
+- 区间涨幅：``company.statistics.series.period_returns.fetch_period_returns``（腾讯日 K 优先，东财补充）
 - 历史/52 周高低：腾讯前复权日 K（按年并行）
 - 现手：``company.line.fetcher.fetch_ticks`` 最近一笔
 - F10：注册资本、发行股本
-- 自由流通：``company.statistics.free_float``
+- 自由流通：``company.statistics.metrics.free_float``
 - 估值：市销率、近一年现金分红 → 股息(TTM)
 """
 
@@ -35,8 +35,8 @@ from core.fmt import (
 )
 from core.http import get_json, get_text
 from company.line.fetcher import fetch_ticks as fetch_kline_ticks
-from company.statistics.period_returns import fetch_period_returns as fetch_kline_period_returns
-from company.statistics.free_float import calc as calc_free_float
+from company.statistics.series.period_returns import fetch_period_returns as fetch_kline_period_returns
+from company.statistics.metrics.free_float import calc as calc_free_float
 from core.codes import normalize_code, safe_str
 
 logger = logging.getLogger(__name__)
@@ -292,7 +292,7 @@ def map_push2(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def fetch_period_returns(code: str) -> dict[str, Any]:
-    """区间涨幅。走 ``company.statistics.period_returns.fetch_period_returns``（腾讯日 K 优先）。"""
+    """区间涨幅。走 ``company.statistics.series.period_returns.fetch_period_returns``（腾讯日 K 优先）。"""
     try:
         pack = fetch_kline_period_returns(code, adjust="qfq")
     except Exception as exc:  # noqa: BLE001

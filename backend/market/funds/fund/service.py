@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from core.paths import ensure_cache_dirs
-from funds.fund import holdings as holdings_fetcher
-from funds.fund.store import FundStore
-from funds.fund import taxonomy
+from market.funds.fund import holdings as holdings_fetcher
+from market.funds.fund.store import FundStore
+from market.funds.fund import taxonomy
 
 
 class FundService:

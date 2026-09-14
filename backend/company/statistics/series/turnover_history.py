@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from company.line.fetcher import fetch_kline
-from company.statistics.free_float import calc as calc_free_float
+from company.statistics.metrics.free_float import calc as calc_free_float
 from core.cache import TtlCache
 from core.codes import normalize_code
 from core.fmt import to_float

@@ -8,7 +8,7 @@ K 线磁盘缓存历史根；交易时段只拉最新几根合并；休市走缓
 （已定型的 K 对不上则当复权 / 缺口，整段重拉）。
 
 两边返回字段不完全一样，K 线 / 逐笔会先收成同一套再给 API / 统计用。
-不提供分时 trends2。区间涨跌见 ``company.statistics.period_returns``。
+不提供分时 trends2。区间涨跌见 ``company.statistics.series.period_returns``。
 """
 
 from __future__ import annotations

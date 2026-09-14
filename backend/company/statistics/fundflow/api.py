@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
-from company.fundflow.fetcher import get_fund_flow
+from company.statistics.fundflow.fetcher import get_fund_flow
 from core.api import err, ok
 
 router = APIRouter()

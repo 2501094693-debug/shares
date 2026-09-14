@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from analysis.rotation.config import CACHE_TAG, KLINE_WORKERS
-from company.fundflow._common import (
+from company.statistics.fundflow._common import (
     _DAILY_FIELDS2,
     fetch_datacenter_daily,
     fetch_fflow_klines,

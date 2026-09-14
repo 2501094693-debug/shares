@@ -7,7 +7,7 @@ from typing import Any
 
 from core.cache import TtlCache
 
-from company.fundflow.stock import fetch_daily, fetch_minute, fetch_snapshot
+from company.statistics.fundflow.stock import fetch_daily, fetch_minute, fetch_snapshot
 
 _DAILY_TTL = 600
 _LIVE_TTL = 60

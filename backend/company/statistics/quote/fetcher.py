@@ -30,7 +30,7 @@ from typing import Any, Literal
 from core.cache import TtlCache
 from core.fmt import fmt_list_date, fmt_pct, fmt_price, fmt_shares, fmt_yi_wan, to_float
 from company.line.session import last_session_close, market_phase, today_lunch_start
-from company.statistics.sources import (
+from company.statistics.quote.sources import (
     fetch_current_hand,
     fetch_f10_profile,
     fetch_free_float_fields,
