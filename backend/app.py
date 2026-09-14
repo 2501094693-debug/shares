@@ -18,7 +18,7 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-# 保证从仓库根目录启动 / PyCharm 调试时也能解析 industry / company / agent / analysis
+# 保证从仓库根目录启动 / PyCharm 调试时也能解析 industry  / company / agent / analysis
 _BACKEND_DIR = Path(__file__).resolve().parent
 _ROOT_DIR = _BACKEND_DIR.parent
 if str(_BACKEND_DIR) not in sys.path:
