@@ -1,77 +1,49 @@
-"""个股资金流向统一入口（带 TTL 缓存）。"""
-
-from __future__ import annotations
-
-import time
-from typing import Any
-
-from core.cache import TtlCache
-
-from company.statistics.fundflow.stock import fetch_daily, fetch_minute, fetch_snapshot
-
-_DAILY_TTL = 600
-_LIVE_TTL = 60
-
-_daily_cache = TtlCache(_DAILY_TTL)
-_live_cache = TtlCache(_LIVE_TTL)
-
-
-def _has_flow_payload(data: dict[str, Any]) -> bool:
-    if not isinstance(data, dict):
-        return False
-    items = data.get("items")
-    if isinstance(items, list) and items:
-        return True
-    count = data.get("count")
-    return isinstance(count, int) and count > 0
-
-
-def _cached(
-    cache: TtlCache,
-    key: str,
-    *,
-    force: bool,
-    loader,
-) -> dict[str, Any]:
-    now = time.time()
-    if not force:
-        hit = cache.get(key)
-        if hit is not None:
-            return hit
-    data = loader()
-    if _has_flow_payload(data):
-        cache.put(key, data, cached_at=now)
-    return data
-
-
-def get_fund_flow(
-    code: str,
-    *,
-    scope: str = "daily",
-    limit: int = 120,
-    klt: int = 1,
-    force: bool = False,
-) -> dict[str, Any]:
-    """``scope=daily|minute|snapshot``。"""
-    key = (scope or "daily").strip().lower()
-    if key == "minute":
-        return _cached(
-            _live_cache,
-            f"minute:{code}:{klt}:{limit}",
-            force=force,
-            loader=lambda: fetch_minute(code, limit=limit, klt=klt),
-        )
-    if key == "snapshot":
-        return _cached(
-            _live_cache,
-            f"snapshot:{code}",
-            force=force,
-            loader=lambda: fetch_snapshot(code),
-        )
-    daily_limit = min(max(int(limit or 120), 1), 120)
-    return _cached(
-        _daily_cache,
-        f"daily:{code}:{daily_limit}",
-        force=force,
-        loader=lambda: fetch_daily(code, limit=daily_limit),
-    )
+"""个股资金流向统一入口（东财 / 同花顺路由 + 缓存）。"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from company.statistics.fundflow.eastmoney.fetcher import get_fund_flow as get_em_fund_flow
+from company.statistics.fundflow.tonghuashun.fetcher import get_fund_flow as get_ths_fund_flow
+
+
+def _normalize_source(source: str) -> str:
+    text = (source or "eastmoney").strip().lower()
+    if text in {"ths", "tonghuashun", "10jqka", "thsh"}:
+        return "tonghuashun"
+    return "eastmoney"
+
+
+def get_fund_flow(
+    code: str,
+    *,
+    scope: str = "daily",
+    limit: int = 120,
+    klt: int = 1,
+    page: int = 1,
+    order: str = "desc",
+    force: bool = False,
+    source: str = "eastmoney",
+) -> dict[str, Any]:
+    """``scope=daily|minute|snapshot|big_deal``；``source=eastmoney|tonghuashun``。"""
+    key = (scope or "daily").strip().lower()
+    if key in {"big_deal", "bigdeal", "ddzz", "tick"} and _normalize_source(source) != "tonghuashun":
+        raise ValueError("逐笔大单仅支持 source=tonghuashun")
+    if _normalize_source(source) == "tonghuashun":
+        return get_ths_fund_flow(
+            code,
+            scope=scope,
+            limit=limit,
+            klt=klt,
+            page=page,
+            order=order,
+            force=force,
+        )
+    return get_em_fund_flow(
+        code,
+        scope=scope,
+        limit=limit,
+        klt=klt,
+        force=force,
+    )

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from company.statistics.fundflow._common import (
+from company.line.eastmoney_kline import resolve_secid
+from company.statistics.fundflow.eastmoney._common import (
     _DAILY_FIELDS2,
     _MINUTE_FIELDS2,
     _SNAPSHOT_FIELDS,
@@ -14,7 +15,6 @@ from company.statistics.fundflow._common import (
     parse_snapshot_row,
     request_push2,
 )
-from company.line.eastmoney_kline import resolve_secid
 from core.codes import normalize_code
 
 

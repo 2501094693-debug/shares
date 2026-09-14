@@ -1,12 +1,13 @@
-"""东方财富个股资金流向。
+"""个股资金流向（东财 / 同花顺）。
 
-- ``stock``    历史日线、当日分钟、当日快照
-- ``fetcher``  带缓存的统一入口
-- ``api``      FastAPI 路由
+- ``eastmoney``    东方财富日线、分钟、快照
+- ``tonghuashun``  同花顺 DDE、逐笔大单
+- ``fetcher``      带缓存的统一入口
+- ``api``          FastAPI 路由
 """
 
+from company.statistics.fundflow.eastmoney.stock import fetch_daily, fetch_minute, fetch_snapshot
 from company.statistics.fundflow.fetcher import get_fund_flow
-from company.statistics.fundflow.stock import fetch_daily, fetch_minute, fetch_snapshot
 
 __all__ = [
     "fetch_daily",
