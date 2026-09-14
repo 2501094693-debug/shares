@@ -719,3 +719,97 @@ def fetch_valuation_pack(code: str, name: str, stock: dict[str, Any], industry: 
 
 def build_valuation_helpers(stock: dict[str, Any], annual: list[dict[str, Any]], pe_items: list[dict[str, Any]]) -> str:
     return _valuation_helpers(stock, annual, pe_items)
+
+
+_SEGMENT_REPORTS = (
+    "RPT_F10_FN_MAINOP",
+    "RPT_MAINOP_BUSINESS",
+    "RPT_F10_FINANCE_MAINOP",
+)
+
+
+def fetch_segment_data(code: str, *, limit: int = 24) -> dict[str, Any]:
+    """东财 F10 主营业务/分部收入数据。"""
+    try:
+        from company.news.financialreport._common import em_get, period_label as fr_period_label
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("分部数据导入失败 %s: %s", code, exc)
+        return {"rows": [], "text": "（未能获取主营业务分部数据）", "sources": []}
+
+    segment_rows: list[dict[str, Any]] = []
+    for report in _SEGMENT_REPORTS:
+        try:
+            segment_rows = em_get(report, code, page_size=limit)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("分部报表 %s 失败 %s: %s", report, code, exc)
+            continue
+        if segment_rows:
+            break
+
+    if not segment_rows:
+        return {"rows": [], "text": "（未能获取主营业务分部数据，将依赖年报 PDF 正文）", "sources": []}
+
+    by_period: dict[str, list[dict[str, Any]]] = {}
+    for row in segment_rows:
+        day = str(row.get("REPORT_DATE") or row.get("REPORTDATE") or "")[:10]
+        if day:
+            by_period.setdefault(day, []).append(row)
+
+    blocks: list[str] = []
+    for day in sorted(by_period, reverse=True)[:5]:
+        items = by_period[day]
+        label = fr_period_label(day, str(items[0].get("REPORT_DATE_NAME") or ""))
+        body: list[list[str]] = []
+        for item in items[:12]:
+            name = (
+                item.get("MAIN_BUSINESS")
+                or item.get("MAINOP_TYPE")
+                or item.get("ITEM_NAME")
+                or item.get("BUSINESS_NAME")
+                or item.get("PRODUCT_NAME")
+                or "—"
+            )
+            income = item.get("MBI_RATIO") or item.get("MAIN_BUSINESS_INCOME") or item.get("OPERATE_INCOME")
+            ratio = item.get("MBI_RATIO") or item.get("MAIN_BUSINESS_RATIO") or item.get("INCOME_RATIO")
+            margin = item.get("GROSS_RPOFIT_RATIO") or item.get("GROSS_PROFIT_RATIO") or item.get("GROSS_MARGIN")
+            body.append([str(name), _fmt_yi(income), _fmt_pct(ratio), _fmt_pct(margin)])
+        blocks.append(f"#### {label}\n" + _md_table(["业务/产品", "收入", "占比", "毛利率"], body))
+
+    text = "### 主营业务构成（东财 F10 分部）\n" + "\n\n".join(blocks)
+    return {"rows": segment_rows, "text": text, "sources": ["东方财富 F10 主营业务"]}
+
+
+def fetch_comprehensive_financial_pack(code: str, name: str, *, limit: int = 40) -> dict[str, Any]:
+    """拉取综合研判所需的扩展财务报表包（更多报告期 + 分表原始数据）。"""
+    pack = _fr_backend()["get_financial_report"](code, scope="all", limit=limit)
+    statements = pack.get("statements") or {}
+    main_rows = statements.get("main") or []
+    income_rows = statements.get("income") or []
+    balance_rows = statements.get("balance") or []
+    cash_rows = statements.get("cashflow") or []
+    lico_rows = statements.get("lico") or []
+    merged = pack.get("merged") or []
+    annual = pack.get("annual") or []
+    recent = pack.get("recent") or []
+
+    fin = fetch_financial_pack(code, name)
+    sections = dict(fin.get("sections") or {})
+    sections["资产负债表原始科目"] = _balance_table(annual[:8] or recent)
+    sections["利润表原始科目"] = _income_raw_table(recent[:8] or annual[:8])
+    sections["现金流量表原始科目"] = _cash_raw_table(recent[:8] or annual[:8])
+
+    return {
+        "sections": sections,
+        "text": fin.get("text") or "",
+        "sources": fin.get("sources") or [],
+        "errors": fin.get("errors") or [],
+        "annual": annual,
+        "recent": recent,
+        "merged": merged,
+        "main_rows": main_rows,
+        "income_rows": income_rows,
+        "balance_rows": balance_rows,
+        "cash_rows": cash_rows,
+        "lico_rows": lico_rows,
+        "cross_validate": _cross_validate(merged, income_rows, lico_rows),
+    }

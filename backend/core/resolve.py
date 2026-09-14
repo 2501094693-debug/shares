@@ -20,6 +20,11 @@ _DOH_PROVIDERS: tuple[tuple[str, str], ...] = (
     ("223.5.5.5", "dns.alidns.com"),
     ("1.1.1.1", "cloudflare-dns.com"),
 )
+# 数字 push2 子域在 Windows 上偶发 11001；同 CDN 集群可复用 delay / 主域 IP。
+_PUSH2_FALLBACK_HOSTS = (
+    "push2delay.eastmoney.com",
+    "push2.eastmoney.com",
+)
 _doh_lock = threading.Lock()
 
 
@@ -44,10 +49,31 @@ def resolve_ipv4(host: str) -> list[str]:
     hit = _CACHE.get(host)
     if hit and hit[0] > now and hit[1]:
         return list(hit[1])
-    ips = _system_dns(host) or _doh(host)
+    ips = _lookup_ips(host) or _push2_parent_ips(host)
     if ips:
         _CACHE[host] = (now + _TTL, ips)
     return ips
+
+
+def _lookup_ips(host: str) -> list[str]:
+    return _system_dns(host) or _doh(host)
+
+
+def _push2_parent_ips(host: str) -> list[str]:
+    if ".push2" not in host or not host.endswith(".eastmoney.com"):
+        return []
+    now = time.monotonic()
+    for parent in _PUSH2_FALLBACK_HOSTS:
+        if parent == host:
+            continue
+        hit = _CACHE.get(parent)
+        if hit and hit[0] > now and hit[1]:
+            return list(hit[1])
+        ips = _lookup_ips(parent)
+        if ips:
+            _CACHE[parent] = (now + _TTL, ips)
+            return ips
+    return []
 
 
 def remember_host(host: str) -> None:

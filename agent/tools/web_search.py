@@ -40,6 +40,15 @@ COMPETITION_SEARCH_QUERIES: tuple[str, ...] = (
     "细分赛道 竞争策略 龙头 挑战者",
 )
 
+COMPREHENSIVE_SEARCH_QUERIES: tuple[str, ...] = (
+    "最新年报 半年报 业绩 展望 战略规划",
+    "行业政策 监管 最新 影响",
+    "市场份额 竞争格局 订单 产能",
+    "机构研报 目标价 盈利预测",
+    "新产品 技术突破 海外拓展",
+    "风险 诉讼 监管处罚 最新",
+)
+
 RISK_SEARCH_QUERIES: tuple[str, ...] = (
     "监管处罚 问询函 关注函 立案 最新",
     "CEO 董事长 总经理 管理层 访谈 言论 战略",
@@ -233,6 +242,42 @@ def search_for_competition(
 
     industry_part = f"{industry_name} " if industry_name else ""
     for q in COMPETITION_SEARCH_QUERIES:
+        if progress_cb:
+            progress_cb(q)
+        query_suffix = f"{industry_part}{q}".strip()
+        text, engine = search_company_info(
+            company,
+            query_suffix,
+            stock_code=stock_code,
+            max_results=per_query,
+        )
+        if text and not text.startswith("（"):
+            blocks.append(f"### 检索：{query_suffix}\n{text}")
+            if engine and engine not in engines:
+                engines.append(engine)
+
+    if not blocks:
+        return "", engines
+    return "\n\n".join(blocks), engines
+
+
+def search_for_comprehensive(
+    company: str,
+    *,
+    industry_name: str = "",
+    stock_code: str = "",
+    max_results_per_query: int | None = None,
+    progress_cb: Callable[[str], None] | None = None,
+) -> tuple[str, list[str]]:
+    """综合研判专用检索：行业政策、机构预期、竞争动态、风险事件。"""
+    engines: list[str] = []
+    blocks: list[str] = []
+    per_query = max_results_per_query or max(
+        4, WEB_SEARCH_MAX_RESULTS // max(len(COMPREHENSIVE_SEARCH_QUERIES), 1)
+    )
+
+    industry_part = f"{industry_name} " if industry_name else ""
+    for q in COMPREHENSIVE_SEARCH_QUERIES:
         if progress_cb:
             progress_cb(q)
         query_suffix = f"{industry_part}{q}".strip()

@@ -36,7 +36,6 @@ _HOSTS = (
     "https://71.push2.eastmoney.com/api/qt/clist/get",
     "https://82.push2.eastmoney.com/api/qt/clist/get",
     "https://88.push2.eastmoney.com/api/qt/clist/get",
-    "https://79.push2.eastmoney.com/api/qt/clist/get",
 )
 _FAIL_COOLDOWN_SEC = 45.0
 _PAGE_ROUNDS = 3
@@ -88,6 +87,7 @@ def _page(pn: int) -> dict[str, Any]:
         "fields": _FIELDS,
         "ut": _UT,
     }
+    first_error: Exception | None = None
     last_error: Exception | None = None
     for round_i in range(_PAGE_ROUNDS):
         for url in _hosts():
@@ -100,6 +100,8 @@ def _page(pn: int) -> dict[str, Any]:
                     retries=1,
                 )
             except Exception as exc:  # noqa: BLE001
+                if first_error is None:
+                    first_error = exc
                 last_error = exc
                 _mark_fail(url)
                 logger.info("东财资金流 %s pn=%s 失败: %s", url.split("/")[2], pn, exc)
@@ -108,9 +110,12 @@ def _page(pn: int) -> dict[str, Any]:
             if isinstance(data, dict):
                 _mark_good(url)
                 return payload
-            last_error = RuntimeError("东财个股资金流返回非 JSON")
+            err = RuntimeError("东财个股资金流返回非 JSON")
+            if first_error is None:
+                first_error = err
+            last_error = err
         time.sleep(0.4 * (round_i + 1))
-    raise RuntimeError(f"东财个股资金流失败: {last_error}")
+    raise RuntimeError(f"东财个股资金流失败: {first_error or last_error}")
 
 
 def _rows(payload: dict[str, Any]) -> list[dict[str, Any]]:

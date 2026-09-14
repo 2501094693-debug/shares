@@ -29,6 +29,18 @@ AGENT_LABELS: dict[str, str] = {
     "rr_search": "联网补充",
     "rr_analyze": "生成评估",
     "rr_save": "保存报告",
+    "ca_init": "解析公司",
+    "ca_fetch": "采集数据",
+    "ca_business": "业务分析",
+    "ca_balance": "资产负债表",
+    "ca_income": "利润表",
+    "ca_cashflow": "现金流量表",
+    "ca_synthesis": "三表汇总",
+    "ca_valuation": "估值分析",
+    "ca_search": "市场信息",
+    "ca_outlook": "前景研判",
+    "ca_assemble": "拼装报告",
+    "ca_save": "保存报告",
 }
 
 PHASE_LABELS: dict[str, str] = {
@@ -52,6 +64,20 @@ ALL_AGENTS = ["be_init", "be_fetch", "be_search", "be_explain", "be_save"]
 EARNINGS_AGENTS = ["er_init", "er_fetch", "er_explain", "er_save"]
 COMPETITION_AGENTS = ["ic_init", "ic_fetch", "ic_search", "ic_analyze", "ic_save"]
 RISK_REVIEWER_AGENTS = ["rr_init", "rr_fetch", "rr_search", "rr_analyze", "rr_save"]
+COMPREHENSIVE_AGENTS = [
+    "ca_init",
+    "ca_fetch",
+    "ca_business",
+    "ca_balance",
+    "ca_income",
+    "ca_cashflow",
+    "ca_synthesis",
+    "ca_valuation",
+    "ca_search",
+    "ca_outlook",
+    "ca_assemble",
+    "ca_save",
+]
 
 
 def normalize_node(node: str) -> str:
@@ -100,6 +126,10 @@ def init_industry_competition_agents() -> dict[str, dict[str, str]]:
 
 def init_risk_reviewer_agents() -> dict[str, dict[str, str]]:
     return init_agents_state(RISK_REVIEWER_AGENTS)
+
+
+def init_comprehensive_analyst_agents() -> dict[str, dict[str, str]]:
+    return init_agents_state(COMPREHENSIVE_AGENTS)
 
 
 def report(

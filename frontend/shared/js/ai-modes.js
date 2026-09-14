@@ -199,9 +199,67 @@ window.AI_MODES = {
       return `${company} · 风险与管理层评估`;
     },
   },
+
+  comprehensive: {
+    id: "comprehensive",
+    label: "综合研判",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "综合深度研判",
+    subtitle: "年报/半年报/季报 · 三表独立分析 · 三情景估值 · 市场前景",
+    startBtn: "生成报告",
+    historyHead: "历史报告",
+    reportTitle: "综合深度分析",
+    reportMetaDefault: "选择历史报告或生成新的",
+    historyMeta: "历史报告",
+    emptyReports: "暂无历史报告",
+    resumeFail: "恢复综合研判任务失败",
+    apiRoot: "/api/ai/comprehensive-analysis",
+    jobStoreKey: "orbit.comprehensive.activeJob",
+    reportNameRe: /综合深度分析|综合研判/,
+    agentDefs: [
+      { id: "ca_init", name: "解析公司", subtitle: "识别代码与行业" },
+      { id: "ca_fetch", name: "采集数据", subtitle: "财报 / 估值 / 公告 PDF" },
+      { id: "ca_business", name: "业务分析", subtitle: "构成 · 关键驱动因素" },
+      { id: "ca_balance", name: "资产负债表", subtitle: "资产质量 · 偿债能力" },
+      { id: "ca_income", name: "利润表", subtitle: "盈利质量 · 费用结构" },
+      { id: "ca_cashflow", name: "现金流量表", subtitle: "FCF · 现金流类型" },
+      { id: "ca_synthesis", name: "三表汇总", subtitle: "交叉验证 · 财务画像" },
+      { id: "ca_valuation", name: "估值分析", subtitle: "乐观/中性/悲观三情景" },
+      { id: "ca_search", name: "市场信息", subtitle: "新闻 / 研报 / 政策" },
+      { id: "ca_outlook", name: "前景研判", subtitle: "短中长期展望" },
+      { id: "ca_assemble", name: "拼装报告", subtitle: "整合各章节" },
+      { id: "ca_save", name: "保存报告", subtitle: "写入 Markdown" },
+    ],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">◎</div>
+        <h3>全链路深度研判</h3>
+        <p>从定期报告与三大报表出发，独立分析资产负债、利润与现金流，结合历史 PE/PB/PS 做三情景估值，并联网补充市场信息研判未来前景。</p>
+        <ul class="ai-empty-tips">
+          <li>近5年年报 + 近4季季报</li>
+          <li>三表独立分析 → 汇总交叉验证</li>
+          <li>乐观 / 中性 / 悲观估值情景</li>
+          <li>关键驱动因素 × 市场信号 → 前景</li>
+        </ul>
+      </div>`,
+    resultTitle(result) {
+      const industry = result.industry_name ? ` · ${result.industry_name}` : "";
+      return `${result.stock_name || ""} 综合深度分析${industry}`.trim();
+    },
+    resultMeta(result) {
+      return [
+        result.stock_code ? `代码 ${result.stock_code}` : "",
+        result.industry_name ? `行业 ${result.industry_name}` : "",
+        result.report_path ? "已保存" : "",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 综合深度研判`;
+    },
+  },
 };
 
-window.AI_MODE_ORDER = ["business", "earnings", "competition", "risk"];
+window.AI_MODE_ORDER = ["comprehensive", "business", "earnings", "competition", "risk"];
 
 window.AI_MODE_ALIASES = {
   business: "business",
@@ -210,4 +268,6 @@ window.AI_MODE_ALIASES = {
   earnings: "earnings",
   competition: "competition",
   risk: "risk",
+  comprehensive: "comprehensive",
+  deep: "comprehensive",
 };

@@ -1,6 +1,6 @@
 (() => {
   const MODES = window.AI_MODES || {};
-  const MODE_ORDER = window.AI_MODE_ORDER || ["business", "earnings", "competition", "risk"];
+  const MODE_ORDER = window.AI_MODE_ORDER || ["comprehensive", "business", "earnings", "competition", "risk"];
 
   const STATUS_LABELS = {
     pending: "等待",
@@ -29,7 +29,7 @@
 
   const params = new URLSearchParams(window.location.search);
   const state = {
-    mode: "business",
+    mode: "comprehensive",
     identity: {
       code: (params.get("code") || "").trim(),
       name: (params.get("name") || "").trim(),
