@@ -43,6 +43,28 @@ const EXCHANGE_MARKET_TITLES = {
   bse: "北交所公告",
 };
 
+let metricsStock = {};
+const BIG_DEAL_MIN_KEY = "orbit-big-deal-min-amount";
+const BIG_DEAL_DEFAULT_YUAN = 10_000_000;
+const BIG_DEAL_PAGE_SIZE = 50;
+const BIG_DEAL_WHEEL_ITEM = 18;
+const BIG_DEAL_WAN_OPTIONS = [30, 50, 80, 100, 150, 200, 300, 500, 800, 1000, 1500, 2000, 3000, 5000, 8000, 10000];
+let bigDealWheelSync = 0;
+let bigDealWheelReloadTimer = 0;
+const bigDealState = {
+  loading: false,
+  items: [],
+  note: "",
+  error: "",
+  cached: false,
+  sessionDay: "",
+  minAmount: BIG_DEAL_DEFAULT_YUAN,
+  page: 1,
+  pageSize: BIG_DEAL_PAGE_SIZE,
+  total: 0,
+  pages: 1,
+};
+
 const PRESS_OUTLETS = [
   {
     id: "cs",
@@ -1130,146 +1152,331 @@ function renderInlineMetricRows(title, rows, { highlightFirst = false, rowOpts =
     </section>`;
 }
 
-function renderMetrics(stock) {
+function yuanFromWan(wan) {
+  const n = Number(wan);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 10000);
+}
+
+function wanFromYuan(yuan) {
+  const n = Number(yuan);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  const wan = n / 10000;
+  return Number.isInteger(wan) ? wan : Math.round(wan * 100) / 100;
+}
+
+function nearestBigDealWan(wan) {
+  const n = Number(wan);
+  if (!Number.isFinite(n) || n < 0) return wanFromYuan(BIG_DEAL_DEFAULT_YUAN);
+  let best = BIG_DEAL_WAN_OPTIONS[0];
+  let dist = Infinity;
+  for (const opt of BIG_DEAL_WAN_OPTIONS) {
+    const d = Math.abs(opt - n);
+    if (d < dist) {
+      dist = d;
+      best = opt;
+    }
+  }
+  return best;
+}
+
+function bigDealWanIndex(wan) {
+  const idx = BIG_DEAL_WAN_OPTIONS.indexOf(nearestBigDealWan(wan));
+  return idx < 0 ? BIG_DEAL_WAN_OPTIONS.indexOf(1000) : idx;
+}
+
+function bigDealMinAmount() {
+  const stored = Number(bigDealState.minAmount);
+  if (Number.isFinite(stored) && stored >= 0) {
+    return yuanFromWan(nearestBigDealWan(wanFromYuan(stored)));
+  }
+  return BIG_DEAL_DEFAULT_YUAN;
+}
+
+function bigDealThresholdLabel(amount = bigDealMinAmount()) {
+  return `${nearestBigDealWan(wanFromYuan(amount))}万`;
+}
+
+function readStoredBigDealMinAmount() {
+  try {
+    const raw = Number(localStorage.getItem(BIG_DEAL_MIN_KEY));
+    if (Number.isFinite(raw) && raw >= 0) {
+      return yuanFromWan(nearestBigDealWan(wanFromYuan(raw)));
+    }
+  } catch {
+    /* ignore */
+  }
+  return BIG_DEAL_DEFAULT_YUAN;
+}
+
+function persistBigDealMinAmount(amount) {
+  const yuan = yuanFromWan(nearestBigDealWan(wanFromYuan(amount)));
+  bigDealState.minAmount = yuan;
+  try {
+    localStorage.setItem(BIG_DEAL_MIN_KEY, String(yuan));
+  } catch {
+    /* ignore */
+  }
+}
+
+function renderBigDealWheelOptions() {
+  const current = nearestBigDealWan(wanFromYuan(bigDealMinAmount()));
+  return BIG_DEAL_WAN_OPTIONS.map(
+    (wan) =>
+      `<button type="button" class="big-deal-wheel-item${wan === current ? " is-active" : ""}" role="option" aria-selected="${wan === current ? "true" : "false"}" data-wan="${wan}">${wan}</button>`
+  ).join("");
+}
+
+function paintBigDealWheel(index) {
+  const viewport = document.getElementById("bigDealWheel");
+  if (!viewport) return;
+  const max = BIG_DEAL_WAN_OPTIONS.length - 1;
+  const raw = Number.isFinite(index) ? index : Math.round(viewport.scrollTop / BIG_DEAL_WHEEL_ITEM);
+  const clamped = Math.max(0, Math.min(max, raw));
+  viewport.querySelectorAll(".big-deal-wheel-item").forEach((el, idx) => {
+    const on = idx === clamped;
+    el.classList.toggle("is-active", on);
+    el.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  return clamped;
+}
+
+function scrollBigDealWheelTo(index, behavior = "auto") {
+  const viewport = document.getElementById("bigDealWheel");
+  if (!viewport) return;
+  const max = BIG_DEAL_WAN_OPTIONS.length - 1;
+  const clamped = Math.max(0, Math.min(max, index));
+  bigDealWheelSync += 1;
+  viewport.scrollTo({ top: clamped * BIG_DEAL_WHEEL_ITEM, behavior });
+  paintBigDealWheel(clamped);
+  window.setTimeout(() => {
+    bigDealWheelSync = Math.max(0, bigDealWheelSync - 1);
+  }, behavior === "smooth" ? 280 : 50);
+}
+
+function applyBigDealThreshold(wan) {
+  const snapped = nearestBigDealWan(wan);
+  const yuan = yuanFromWan(snapped);
+  if (yuan == null) return;
+  const changed = yuan !== Number(bigDealState.minAmount);
+  persistBigDealMinAmount(yuan);
+  paintBigDealWheel(bigDealWanIndex(snapped));
+  if (!changed) return;
+  bigDealState.page = 1;
+  window.clearTimeout(bigDealWheelReloadTimer);
+  bigDealWheelReloadTimer = window.setTimeout(() => {
+    void loadBigDeals({ keep: true });
+  }, 180);
+}
+
+function bindBigDealThreshold() {
+  const viewport = document.getElementById("bigDealWheel");
+  if (!viewport || viewport.dataset.bound === "1") return;
+  viewport.dataset.bound = "1";
+  const currentIndex = bigDealWanIndex(wanFromYuan(bigDealMinAmount()));
+  scrollBigDealWheelTo(currentIndex, "auto");
+
+  let settleTimer = 0;
+  const settleFromScroll = () => {
+    if (bigDealWheelSync) return;
+    const idx = paintBigDealWheel();
+    applyBigDealThreshold(BIG_DEAL_WAN_OPTIONS[idx]);
+  };
+
+  viewport.addEventListener("scroll", () => {
+    paintBigDealWheel();
+    if (bigDealWheelSync) return;
+    window.clearTimeout(settleTimer);
+    settleTimer = window.setTimeout(settleFromScroll, 90);
+  });
+  viewport.addEventListener("scrollend", settleFromScroll);
+  viewport.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const dir = event.deltaY > 0 ? 1 : event.deltaY < 0 ? -1 : 0;
+      if (!dir) return;
+      const next = Math.max(0, Math.min(BIG_DEAL_WAN_OPTIONS.length - 1, paintBigDealWheel() + dir));
+      scrollBigDealWheelTo(next, "smooth");
+      applyBigDealThreshold(BIG_DEAL_WAN_OPTIONS[next]);
+    },
+    { passive: false }
+  );
+  viewport.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-wan]");
+    if (!item || !viewport.contains(item)) return;
+    const wan = Number(item.getAttribute("data-wan"));
+    if (!Number.isFinite(wan)) return;
+    scrollBigDealWheelTo(bigDealWanIndex(wan), "smooth");
+    applyBigDealThreshold(wan);
+  });
+  viewport.addEventListener("keydown", (event) => {
+    const idx = paintBigDealWheel();
+    let next = idx;
+    if (event.key === "ArrowDown" || event.key === "ArrowRight" || event.key === "PageDown") next = idx + 1;
+    else if (event.key === "ArrowUp" || event.key === "ArrowLeft" || event.key === "PageUp") next = idx - 1;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = BIG_DEAL_WAN_OPTIONS.length - 1;
+    else return;
+    event.preventDefault();
+    next = Math.max(0, Math.min(BIG_DEAL_WAN_OPTIONS.length - 1, next));
+    scrollBigDealWheelTo(next, "smooth");
+    applyBigDealThreshold(BIG_DEAL_WAN_OPTIONS[next]);
+  });
+}
+
+function bindBigDealPager() {
+  const prev = document.getElementById("bigDealPrev");
+  const next = document.getElementById("bigDealNext");
+  if (prev) {
+    prev.addEventListener("click", () => {
+      if (bigDealState.page <= 1) return;
+      bigDealState.page -= 1;
+      void loadBigDeals({ keep: true });
+    });
+  }
+  if (next) {
+    next.addEventListener("click", () => {
+      if (bigDealState.page >= bigDealState.pages) return;
+      bigDealState.page += 1;
+      void loadBigDeals({ keep: true });
+    });
+  }
+}
+
+function renderBigDealSection() {
+  let body;
+  if (bigDealState.loading && !bigDealState.items.length) {
+    body = `<p class="muted metrics-loading">正在加载大单…</p>`;
+  } else if (bigDealState.error && !bigDealState.items.length) {
+    body = `<p class="muted">${escapeHtml(bigDealState.error)}</p>`;
+  } else if (!bigDealState.items.length) {
+    body = `<p class="muted">暂无超过 ${escapeHtml(bigDealThresholdLabel())} 的大单</p>`;
+  } else {
+    const rows = bigDealState.items
+      .map((row) => {
+        const side = String(row.side || "");
+        const tone = side === "buy" ? "change-up" : side === "sell" ? "change-down" : "";
+        const tag = displayValue(row.aggressor_label);
+        const lots = Number(row.volume_lots);
+        const lotsText = Number.isFinite(lots) ? `${Math.round(lots)}手` : "-";
+        return `<tr class="${tone}">
+          <td>${escapeHtml(displayValue(row.time))}</td>
+          <td><span class="big-deal-tag">${escapeHtml(tag)}</span></td>
+          <td>${escapeHtml(fmtWan(row.amount))}</td>
+          <td>${escapeHtml(lotsText)}</td>
+          <td>${escapeHtml(fmtNum(row.price))}</td>
+        </tr>`;
+      })
+      .join("");
+    const total = Number(bigDealState.total) || bigDealState.items.length;
+    const page = Number(bigDealState.page) || 1;
+    const pages = Number(bigDealState.pages) || 1;
+    const metaBits = [
+      bigDealState.sessionDay || "",
+      bigDealState.cached ? "盘后缓存" : "",
+      `共${total}笔`,
+      pages > 1 ? `${page}/${pages}页` : "",
+    ].filter(Boolean);
+    const pager = pages > 1
+      ? `<div class="big-deal-pager">
+          <button id="bigDealPrev" class="big-deal-page-btn" type="button" ${page <= 1 ? "disabled" : ""}>上一页</button>
+          <span class="big-deal-page-info">${escapeHtml(String(page))} / ${escapeHtml(String(pages))}</span>
+          <button id="bigDealNext" class="big-deal-page-btn" type="button" ${page >= pages ? "disabled" : ""}>下一页</button>
+        </div>`
+      : "";
+    body = `
+      <div class="big-deal-scroll">
+        <table class="big-deal-table">
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>主/被</th>
+              <th>金额</th>
+              <th>手数</th>
+              <th>均价</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${pager}
+      ${metaBits.length ? `<p class="big-deal-meta muted">${escapeHtml(metaBits.join(" · "))}</p>` : ""}`;
+  }
+  return `
+    <section class="metrics-section big-deal-section">
+      <div class="big-deal-head">
+        <h4 class="metrics-section-title">大资金动向</h4>
+        <div class="big-deal-wheel" aria-label="大单门槛（万）">
+          <div id="bigDealWheel" class="big-deal-wheel-viewport" tabindex="0" role="listbox" aria-label="门槛">
+            <div class="big-deal-wheel-list">${renderBigDealWheelOptions()}</div>
+          </div>
+          <span class="big-deal-wheel-unit">万</span>
+        </div>
+      </div>
+      ${body}
+    </section>`;
+}
+
+function renderMetrics(stock = metricsStock) {
   const panels = els.metricsPanels || els.metricsGrid;
   if (!panels) return;
+  metricsStock = stock && typeof stock === "object" ? stock : metricsStock;
 
   const mcap =
-    stock.total_market_cap ||
-    (stock.market_cap ? `${displayValue(stock.market_cap)}亿` : "");
-
-  const periodNear = [
-    ["近3日", stock.change_3d, changeClass(stock.change_3d)],
-    ["5日", stock.change_5d, changeClass(stock.change_5d)],
-    ["10日", stock.change_10d, changeClass(stock.change_10d)],
-    ["20日", stock.change_20d, changeClass(stock.change_20d)],
-  ].filter(([, v]) => displayValue(v) !== "-");
-
-  const periodFar = [
-    ["60日", stock.change_60d, changeClass(stock.change_60d)],
-    ["近半年", stock.change_half_year, changeClass(stock.change_half_year)],
-    ["近1年", stock.change_1y, changeClass(stock.change_1y)],
-    ["今年", stock.change_ytd, changeClass(stock.change_ytd)],
-  ].filter(([, v]) => displayValue(v) !== "-");
-
-  const weekRange = [
-    ["52周最高", stock.high_52w],
-    ["52周最低", stock.low_52w],
-  ].filter(([, v]) => displayValue(v) !== "-");
-
-  const allRange = [
-    ["历史最高", stock.high_all],
-    ["历史最低", stock.low_all],
-  ].filter(([, v]) => displayValue(v) !== "-");
-
-  const daySection = renderInlineMetricRows("当日行情", [
-    [
-      ["最新", stock.price],
-      ["涨幅", stock.change_1d, changeClass(stock.change_1d)],
-      ["涨跌", stock.change_amt, changeClass(stock.change_amt)],
-    ],
-    [
-      ["今开", stock.open],
-      ["昨收", stock.prev_close],
-      ["均价", stock.avg_price],
-    ],
-    [
-      ["最低", stock.low],
-      ["最高", stock.high],
-      ["振幅", stock.amplitude],
-    ],
-    [
-      ["涨停", stock.limit_up],
-      ["跌停", stock.limit_down],
-      ["实体涨幅", stock.solid_change, changeClass(stock.solid_change)],
-    ],
-    [
-      ["总手", stock.volume],
-      ["金额", stock.amount],
-      ["现手", stock.current_volume],
-    ],
-    [
-      ["换手", stock.turnover],
-      ["换手(实)", stock.turnover_real],
-      ["量比", stock.volume_ratio],
-    ],
-    [
-      ["外盘", stock.outer_vol],
-      ["内盘", stock.inner_vol],
-    ],
-    [
-      ["委买", stock.bid_vol],
-      ["委卖", stock.ask_vol],
-      ["委差", stock.bid_ask_diff, changeClass(stock.bid_ask_diff)],
-      ["委比", stock.bid_ask_ratio, changeClass(stock.bid_ask_ratio)],
-    ],
-    [
-      ["盘后委买", stock.after_bid],
-      ["盘后量", stock.after_volume],
-      ["盘后额", stock.after_amount],
-    ],
-  ], { highlightFirst: true });
-
-  const periodSection = renderInlineMetricRows("区间涨幅", [
-    periodNear,
-    periodFar,
-    weekRange,
-    allRange,
-  ]);
+    metricsStock.total_market_cap ||
+    (metricsStock.market_cap ? `${displayValue(metricsStock.market_cap)}亿` : "");
 
   const valuationSection = renderInlineMetricRows("估值与每股", [
     [
-      ["市盈率(动)", stock.pe],
-      ["市盈率(静)", stock.pe_static],
-      ["市盈率(TTM)", stock.pe_ttm],
+      ["市盈率(动)", metricsStock.pe],
+      ["市盈率(静)", metricsStock.pe_static],
+      ["市盈率(TTM)", metricsStock.pe_ttm],
     ],
     [
-      ["市净率", stock.pb],
-      ["每股净资产", stock.bvps],
-      ["净资产收益率", stock.roe],
+      ["市净率", metricsStock.pb],
+      ["每股净资产", metricsStock.bvps],
+      ["净资产收益率", metricsStock.roe],
     ],
     [
-      ["市销率(TTM)", stock.ps_ttm],
+      ["市销率(TTM)", metricsStock.ps_ttm],
     ],
     [
-      ["股息(TTM)", stock.dividend_ttm],
-      ["股息率", stock.dividend_yield],
-      ["每股收益", stock.eps],
+      ["股息(TTM)", metricsStock.dividend_ttm],
+      ["股息率", metricsStock.dividend_yield],
+      ["每股收益", metricsStock.eps],
     ],
     [
-      ["净利增速", stock.profit_growth || stock.profit_yoy],
-      ["营收增速", stock.revenue_growth || stock.revenue_yoy],
+      ["净利增速", metricsStock.profit_growth || metricsStock.profit_yoy],
+      ["营收增速", metricsStock.revenue_growth || metricsStock.revenue_yoy],
     ],
   ]);
 
   const capitalSection = renderInlineMetricRows("股本与市值", [
     [
-      ["上市时间", stock.list_date],
-      ["注册资本", stock.registered_capital],
-      ["发行股本", stock.issued_shares],
+      ["上市时间", metricsStock.list_date],
+      ["注册资本", metricsStock.registered_capital],
+      ["发行股本", metricsStock.issued_shares],
     ],
     [
-      ["总股本", stock.total_shares],
-      ["流通股", stock.float_shares],
-      ["自由流通股", stock.free_float_shares],
+      ["总股本", metricsStock.total_shares],
+      ["流通股", metricsStock.float_shares],
+      ["自由流通股", metricsStock.free_float_shares],
     ],
     [
       ["总市值", mcap],
-      ["流通市值", stock.float_market_cap],
-      ["自由流通市值", stock.free_float_market_cap],
+      ["流通市值", metricsStock.float_market_cap],
+      ["自由流通市值", metricsStock.free_float_market_cap],
     ],
   ]);
 
-  const html = [
-    daySection,
-    periodSection,
-    valuationSection,
-    capitalSection,
-  ]
+  const html = [renderBigDealSection(), valuationSection, capitalSection]
     .filter(Boolean)
     .join("");
-
   panels.innerHTML = html || `<p class="muted">暂无指标数据</p>`;
+  bindBigDealThreshold();
+  bindBigDealPager();
 }
 
 function applyStock(stock, industryMeta = {}) {
@@ -1406,6 +1613,85 @@ function setMetricsLoading(message = "正在加载指标…") {
   }
 }
 
+async function loadBigDeals({ refresh = false, keep = false } = {}) {
+  if (!code) return;
+  bigDealState.minAmount = readStoredBigDealMinAmount();
+  if (!keep || !bigDealState.items.length) {
+    bigDealState.loading = !bigDealState.items.length;
+    renderMetrics(metricsStock);
+  }
+  try {
+    const qs = new URLSearchParams({
+      code,
+      scope: "big_deal",
+      source: "tonghuashun",
+      limit: String(bigDealState.pageSize || BIG_DEAL_PAGE_SIZE),
+      page: String(Math.max(1, bigDealState.page || 1)),
+      min_amount: String(bigDealMinAmount()),
+    });
+    if (refresh) qs.set("refresh", "1");
+    const json = await api(`/api/stocks/fund-flow?${qs.toString()}`);
+    const data = json.data || {};
+    bigDealState.items = Array.isArray(data.items) ? data.items : [];
+    bigDealState.note = String(data.note || "");
+    bigDealState.cached = Boolean(data.cached);
+    bigDealState.sessionDay = String(data.session_day || "");
+    bigDealState.total = Number.isFinite(Number(data.total)) ? Number(data.total) : bigDealState.items.length;
+    bigDealState.page = Math.max(1, Number(data.page) || 1);
+    bigDealState.pages = Math.max(1, Number(data.pages) || 1);
+    if (Number.isFinite(Number(data.min_amount))) {
+      bigDealState.minAmount = Number(data.min_amount);
+    }
+    bigDealState.error = "";
+  } catch (err) {
+    bigDealState.error = err.message || String(err);
+    if (!bigDealState.items.length) bigDealState.items = [];
+  } finally {
+    bigDealState.loading = false;
+    renderMetrics(metricsStock);
+  }
+}
+
+async function loadProfile({ silent = false, refresh = false, liveOnly = false } = {}) {
+  if (!code) {
+    setError("缺少公司代码");
+    return null;
+  }
+
+  if (!silent) {
+    applyHeaderOnly({ code, name: nameHint });
+    bigDealState.loading = !bigDealState.items.length;
+    renderMetrics(metricsStock);
+    void loadBigDeals({ refresh });
+  }
+
+  try {
+    const qs = new URLSearchParams({ code });
+    if (industry) qs.set("industry", industry);
+    if (nameHint) qs.set("name", nameHint);
+    if (refresh) qs.set("refresh", "1");
+    if (liveOnly) qs.set("live", "1");
+    const json = await api(`/api/stocks/profile?${qs.toString()}`);
+    const data = json.data || {};
+    const stock = data.stock || {};
+    applyStock(stock, data.industry || {});
+    if (liveOnly) void loadBigDeals();
+    if (!liveOnly) {
+      try {
+        sessionStorage.removeItem(`stock:${code}`);
+      } catch {
+        /* ignore */
+      }
+    }
+    return stock;
+  } catch (err) {
+    if (!silent) {
+      setError(err.message || String(err));
+    }
+    return null;
+  }
+}
+
 function applyHeaderOnly(stock = {}, industryMeta = {}) {
   const displayName = stock.name || nameHint || code;
   stockDisplayName = displayName;
@@ -1428,59 +1714,6 @@ function applyHeaderOnly(stock = {}, industryMeta = {}) {
     ? breadcrumbParts.join(" / ")
     : "公司详情";
   notifyAnalysisIdentity(stock, { ready: false });
-}
-
-function isQuoteReady(stock) {
-  // 盘口补全成功后通常至少有今开/昨收或完整涨跌幅字段
-  if (!stock || typeof stock !== "object") return false;
-  if (stock.quote_ready === true) return true;
-  if (stock.quote_ready === false) return false;
-  return Boolean(stock.open || stock.prev_close || stock.high || stock.low);
-}
-
-async function loadProfile({ silent = false, refresh = false, liveOnly = false } = {}) {
-  if (!code) {
-    setError("缺少公司代码");
-    return null;
-  }
-
-  if (!silent) {
-    applyHeaderOnly({ code, name: nameHint });
-    setMetricsLoading();
-  }
-
-  try {
-    const qs = new URLSearchParams({ code });
-    if (industry) qs.set("industry", industry);
-    if (nameHint) qs.set("name", nameHint);
-    if (refresh) qs.set("refresh", "1");
-    if (liveOnly) qs.set("live", "1");
-    const json = await api(`/api/stocks/profile?${qs.toString()}`);
-    const data = json.data || {};
-    const stock = data.stock || {};
-    if (!isQuoteReady(stock)) {
-      if (!silent) {
-        setMetricsLoading("盘口指标暂不可用，请稍后刷新");
-        applyHeaderOnly(stock, data.industry || {});
-      }
-      return stock;
-    }
-    applyStock(stock, data.industry || {});
-    if (!liveOnly) {
-      try {
-        sessionStorage.removeItem(`stock:${code}`);
-      } catch {
-        /* ignore */
-      }
-    }
-    return stock;
-  } catch (err) {
-    if (!silent) {
-      setError(err.message || String(err));
-      setMetricsLoading("指标加载失败");
-    }
-    return null;
-  }
 }
 
 async function loadOfficialNews() {
@@ -5844,6 +6077,12 @@ function cssVar(name, fallback) {
 function fmtNum(n, digits = 2) {
   if (n == null || !Number.isFinite(Number(n))) return "-";
   return Number(n).toFixed(digits);
+}
+
+function fmtWan(n) {
+  const value = Number(n);
+  if (!Number.isFinite(value)) return "-";
+  return `${Math.round(value / 10000)}万`;
 }
 
 function fmtPct(n, digits = 2) {

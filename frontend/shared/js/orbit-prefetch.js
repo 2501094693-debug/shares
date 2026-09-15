@@ -137,6 +137,7 @@
     return first.concat([
       `/api/stocks/ticks?code=${enc}`,
       `/api/stocks/fund-flow?code=${enc}&scope=daily&limit=120`,
+      `/api/stocks/fund-flow?code=${enc}&scope=big_deal&source=tonghuashun&limit=50&page=1`,
     ]);
   }
 

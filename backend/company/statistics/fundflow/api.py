@@ -17,11 +17,21 @@ def stocks_fund_flow(
         "daily",
         description="daily 历史日线 | minute 当日分钟 | snapshot 当日快照 | big_deal 大资金动向（同花顺 HQ）",
     ),
-    limit: int = Query(120, ge=1, le=200, description="日线根数（东财最多约 120）或 big_deal 条数（最多 200）"),
+    limit: int = Query(
+        120,
+        ge=0,
+        le=20000,
+        description="日线根数（东财最多约 120）；big_deal 每页条数，0 为门槛筛选后全部",
+    ),
     klt: int = Query(1, description="分钟粒度：1|5|15|30|60，仅 scope=minute 时有效"),
-    page: int = Query(1, ge=1, le=100, description="页码，仅 scope=big_deal 时有效"),
+    page: int = Query(1, ge=1, le=20000, description="页码，仅 scope=big_deal 时有效"),
     order: str = Query("desc", description="排序：desc|asc，仅 scope=big_deal 时有效"),
     source: str = Query("eastmoney", description="eastmoney 东方财富 | tonghuashun 同花顺 HQ 大单"),
+    min_amount: float = Query(
+        10_000_000,
+        ge=0,
+        description="大单金额门槛（元），仅 scope=big_deal 时有效，默认 1000 万",
+    ),
     refresh: str = Query("0"),
 ):
     """个股资金流向：小单 / 中单 / 大单 / 超大单净流入及净占比。"""
@@ -38,6 +48,7 @@ def stocks_fund_flow(
             order=order.strip() or "desc",
             source=source.strip() or "eastmoney",
             force=refresh == "1",
+            min_amount=min_amount,
         )
         return ok(data)
     except ValueError as exc:

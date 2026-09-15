@@ -2014,6 +2014,113 @@ html.company-charts-on .company-page.app {
   padding-bottom: 4px;
 }
 
+.big-deal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(42, 212, 184, 0.1);
+}
+
+.big-deal-head .metrics-section-title {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.big-deal-head .chart-select {
+  min-width: 5.2rem;
+}
+
+.big-deal-wheel {
+  --big-deal-wheel-item: 18px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.big-deal-wheel::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 3.6rem;
+  top: 50%;
+  height: var(--big-deal-wheel-item);
+  transform: translateY(-50%);
+  border-top: 1px solid rgba(42, 212, 184, 0.28);
+  border-bottom: 1px solid rgba(42, 212, 184, 0.28);
+  background: rgba(42, 212, 184, 0.06);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.big-deal-wheel-viewport {
+  width: 3.6rem;
+  height: calc(var(--big-deal-wheel-item) * 3);
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+}
+
+.big-deal-wheel-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.big-deal-wheel-viewport:focus {
+  outline: none;
+}
+
+.big-deal-wheel-list {
+  padding: var(--big-deal-wheel-item) 0;
+}
+
+.big-deal-wheel-item {
+  display: block;
+  width: 100%;
+  height: var(--big-deal-wheel-item);
+  margin: 0;
+  padding: 0 2px 0 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-family: var(--display);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  line-height: var(--big-deal-wheel-item);
+  text-align: right;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+  opacity: 0.32;
+  cursor: pointer;
+}
+
+.big-deal-wheel-item.is-active {
+  opacity: 1;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.big-deal-wheel-unit {
+  flex: 0 0 auto;
+  line-height: 1;
+}
+
 .quotes-layout .company-metrics-panels .company-metrics,
 .quotes-layout .company-metrics.metrics-inline-row,
 .quotes-layout .company-metrics.metrics-period-row,
@@ -2059,6 +2166,119 @@ html.company-charts-on .company-page.app {
 
 .quotes-layout .metrics-highlight-row .stat-cell:first-child .detail-value {
   font-size: clamp(1.2rem, 1.8vw, 1.5rem);
+}
+
+.quotes-layout .company-metrics-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quotes-layout .big-deal-section {
+  flex: 1 1 auto;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.big-deal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.big-deal-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.big-deal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.big-deal-table th,
+.big-deal-table td {
+  padding: 5px 6px 5px 0;
+  text-align: right;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.big-deal-table th:first-child,
+.big-deal-table td:first-child {
+  text-align: left;
+}
+
+.big-deal-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: rgba(4, 8, 14, 0.94);
+  border-bottom: 1px solid rgba(42, 212, 184, 0.12);
+}
+
+.big-deal-table tbody tr + tr td {
+  border-top: 1px solid rgba(42, 212, 184, 0.06);
+}
+
+.big-deal-tag {
+  display: inline-block;
+  min-width: 1.2em;
+  font-weight: 700;
+}
+
+.big-deal-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  flex: 0 0 auto;
+}
+
+.big-deal-page-btn {
+  padding: 2px 8px;
+  border: 1px solid rgba(42, 212, 184, 0.16);
+  border-radius: calc(var(--radius) + 1px);
+  background: rgba(4, 8, 14, 0.45);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.big-deal-page-btn:hover:not(:disabled) {
+  border-color: rgba(42, 212, 184, 0.4);
+}
+
+.big-deal-page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.big-deal-page-info {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.big-deal-meta {
+  margin: 6px 0 0;
+  font-size: 0.68rem;
 }
 
 .charts-deck {
