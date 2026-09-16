@@ -24,6 +24,7 @@ def fetch_big_deals(
     order: str = "desc",
     min_amount: float = 10_000_000,
     force: bool = False,
+    day: str = "",
 ) -> dict[str, Any]:
     """个股 HQ 大单：门槛过滤 + 时间排序 + 分页。"""
     norm = normalize_code(code)
@@ -35,7 +36,7 @@ def fetch_big_deals(
     min_amount = max(float(min_amount or 0), 0.0)
     reverse = str(order or "desc").strip().lower() != "asc"
 
-    session = get_session_orders(norm, force=force)
+    session = get_session_orders(norm, force=force, day=day)
     items = [row for row in session.get("items") or [] if isinstance(row, dict)]
     filtered = [
         row for row in items if float(row.get("amount") or 0) >= min_amount

@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from company.line.session import cn_now
+from company.line.session import cn_now, parse_session_day
 from core.codes import normalize_code
 from core.paths import FUNDFLOW_CACHE_DIR, ensure_cache_dirs
 
@@ -50,15 +50,16 @@ def is_session_open(now: datetime | None = None) -> bool:
     return _SESSION_OPEN <= minutes < _SESSION_END
 
 
-def cache_path(code: str, day: datetime | None = None) -> Path:
+def cache_path(code: str, day=None) -> Path:
     ensure_cache_dirs()
     norm = normalize_code(code)
-    iso = (day.date() if isinstance(day, datetime) else session_day()).isoformat()
+    parsed = parse_session_day(day)
+    iso = (parsed or session_day()).isoformat()
     return FUNDFLOW_CACHE_DIR / f"{norm}_{iso}.json"
 
 
-def load_session_orders(code: str) -> dict[str, Any] | None:
-    path = cache_path(code)
+def load_session_orders(code: str, day=None) -> dict[str, Any] | None:
+    path = cache_path(code, day)
     if not path.is_file():
         return None
     try:
@@ -100,11 +101,35 @@ def save_session_orders(
     return payload
 
 
-def get_session_orders(code: str, *, force: bool = False) -> dict[str, Any]:
-    """返回 ``{items, note, cached, session_day, cached_at}``。"""
+def get_session_orders(code: str, *, force: bool = False, day: str = "") -> dict[str, Any]:
+    """返回 ``{items, note, cached, session_day, cached_at}``。
+
+    传入历史 ``day`` 时只读对应缓存，没有则空列表。
+    """
     norm = normalize_code(code)
     if not norm:
         raise ValueError("缺少股票代码")
+    want_day = parse_session_day(day)
+    today = session_day()
+    if want_day is not None and want_day != today:
+        cached = load_session_orders(norm, want_day)
+        iso = want_day.isoformat()
+        if cached:
+            return {
+                "items": [row for row in cached.get("items") or [] if isinstance(row, dict)],
+                "note": str(cached.get("note") or "同花顺 HQ 个股大单（主/被）"),
+                "cached": True,
+                "session_day": str(cached.get("session_day") or iso),
+                "cached_at": str(cached.get("cached_at") or ""),
+            }
+        return {
+            "items": [],
+            "note": "",
+            "cached": False,
+            "session_day": iso,
+            "cached_at": "",
+        }
+
     live = is_session_open()
     cached = load_session_orders(norm)
 

@@ -154,14 +154,15 @@ def stocks_turnover(
 def stocks_ticks(
     code: str = Query("", description="股票代码，如 601881"),
     pos: str = Query("0", description="0=当天全部；-20 或 20=最近 20 笔"),
+    day: str = Query("", description="交易日 YYYY-MM-DD；历史日只读缓存"),
     refresh: str = Query("0"),
 ):
-    """当日成交明细（实时逐笔）。东财优先，腾讯兜底。"""
+    """成交明细（实时逐笔）。东财优先，腾讯兜底。盘中覆盖当天缓存，盘后直接读。"""
     code = code.strip()
     if not code:
         return err("缺少参数 code", 400)
     try:
-        data = fetch_ticks(code, pos=pos, force=refresh == "1")
+        data = fetch_ticks(code, pos=pos, force=refresh == "1", day=day.strip())
         return ok(data)
     except ValueError as exc:
         return err(str(exc), 400)

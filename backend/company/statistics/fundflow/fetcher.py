@@ -26,6 +26,7 @@ def get_fund_flow(
     force: bool = False,
     source: str = "eastmoney",
     min_amount: float = 10_000_000,
+    day: str = "",
 ) -> dict[str, Any]:
     """``scope=daily|minute|snapshot|big_deal``；``source=eastmoney|tonghuashun``。
 
@@ -44,6 +45,7 @@ def get_fund_flow(
             order=order,
             force=force,
             min_amount=min_amount,
+            day=day,
         )
     return get_em_fund_flow(
         code,

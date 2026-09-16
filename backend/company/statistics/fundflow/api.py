@@ -32,6 +32,7 @@ def stocks_fund_flow(
         ge=0,
         description="大单金额门槛（元），仅 scope=big_deal 时有效，默认 100 万",
     ),
+    day: str = Query("", description="交易日 YYYY-MM-DD；历史日只读缓存"),
     refresh: str = Query("0"),
 ):
     """个股资金流向：小单 / 中单 / 大单 / 超大单净流入及净占比。"""
@@ -49,6 +50,7 @@ def stocks_fund_flow(
             source=source.strip() or "eastmoney",
             force=refresh == "1",
             min_amount=min_amount,
+            day=day.strip(),
         )
         return ok(data)
     except ValueError as exc:

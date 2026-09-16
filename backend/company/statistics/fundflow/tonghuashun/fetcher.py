@@ -16,6 +16,7 @@ def get_fund_flow(
     order: str = "desc",
     force: bool = False,
     min_amount: float = 10_000_000,
+    day: str = "",
     **_unused: Any,
 ) -> dict[str, Any]:
     """仅 ``scope=big_deal``。盘中覆盖磁盘缓存，盘后直接读文件。"""
@@ -29,4 +30,5 @@ def get_fund_flow(
         order=order,
         min_amount=min_amount,
         force=force,
+        day=day,
     )

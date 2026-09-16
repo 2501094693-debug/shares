@@ -45,24 +45,22 @@ const EXCHANGE_MARKET_TITLES = {
 
 let metricsStock = {};
 const BIG_DEAL_MIN_KEY = "orbit-big-deal-min-amount";
+const BIG_DEAL_MAX_KEY = "orbit-big-deal-max-amount";
+const FUNDAMENTALS_FOLD_KEY = "orbit-fundamentals-folded";
 const BIG_DEAL_DEFAULT_YUAN = 1_000_000;
-const BIG_DEAL_PAGE_SIZE = 50;
-const BIG_DEAL_WHEEL_ITEM = 18;
-const BIG_DEAL_WAN_OPTIONS = [30, 50, 80, 100, 150, 200, 300, 500, 800, 1000, 1500, 2000, 3000, 5000, 8000, 10000];
-let bigDealWheelSync = 0;
-let bigDealWheelReloadTimer = 0;
+let bigDealRangeReloadTimer = 0;
 const bigDealState = {
   loading: false,
+  rawItems: [],
   items: [],
   note: "",
   error: "",
   cached: false,
   sessionDay: "",
   minAmount: BIG_DEAL_DEFAULT_YUAN,
-  page: 1,
-  pageSize: BIG_DEAL_PAGE_SIZE,
+  maxAmount: null,
+  rangeHydrated: false,
   total: 0,
-  pages: 1,
 };
 
 const BIG_DEAL_BAR_TYPES = {
@@ -72,8 +70,11 @@ const BIG_DEAL_BAR_TYPES = {
   passive_sell: { label: "被动卖", color: "rgba(61, 214, 140, 0.52)" },
 };
 
+const BIG_DEAL_COLUMNS = ["active_buy", "passive_buy", "active_sell", "passive_sell"];
+
 const bigDealChartState = {
   loading: false,
+  rawItems: [],
   items: [],
   barSlots: [],
   yMax: 1,
@@ -261,6 +262,8 @@ const els = {
   companyCodeChip: document.getElementById("companyCodeChip"),
   metricsGrid: document.getElementById("metricsGrid"),
   metricsPanels: document.getElementById("metricsPanels"),
+  fundamentalsPanel: document.getElementById("fundamentalsPanel"),
+  fundamentalsBody: document.getElementById("fundamentalsBody"),
   chartModeSelect: document.getElementById("chartModeSelect"),
   chartAdjustSelect: document.getElementById("chartAdjustSelect"),
   chartAdjustWrap: document.getElementById("chartAdjustWrap"),
@@ -280,8 +283,7 @@ const els = {
   ticksChartScrollBar: document.getElementById("ticksChartScrollBar"),
   comboMetricSelect: document.getElementById("comboMetricSelect"),
   comboMetricWrap: document.getElementById("comboMetricWrap"),
-  peSeriesSelect: document.getElementById("peSeriesSelect"),
-  peSeriesWrap: document.getElementById("peSeriesWrap"),
+  peLegendWrap: document.getElementById("peLegendWrap"),
   fundflowLegendWrap: document.getElementById("fundflowLegendWrap"),
   peChartMeta: document.getElementById("peChartMeta"),
   peChartHoverCard: document.getElementById("peChartHoverCard"),
@@ -745,7 +747,7 @@ const chartState = {
 /** 走势 combo 底部指标：pe 估值 | fundflow 资金流 */
 let comboMetricState = "fundflow";
 
-/** @type {{ loading: boolean, liveFetching: boolean, liveFetchPending: boolean, liveFetchGen: number, items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, live: boolean, phase: string, tradeDate: string, hoverTime: string|null }} */
+/** @type {{ loading: boolean, liveFetching: boolean, liveFetchPending: boolean, liveFetchGen: number, items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, cached: boolean, live: boolean, phase: string, tradeDate: string, hoverTime: string|null }} */
 const ticksState = {
   loading: false,
   liveFetching: false,
@@ -757,12 +759,25 @@ const ticksState = {
   viewSize: 0,
   preClose: null,
   source: "",
+  cached: false,
   live: false,
   phase: "closed",
   tradeDate: "",
   hoverTime: null,
+  hoverSecond: null,
+  hoverRange: null,
+  hoverTickIndexes: [],
+  hoverLinkKey: "",
+  hoverOrigin: "",
+  listHover: false,
+  chartHovering: false,
+  linkPin: null,
   hoverBigDeal: null,
+  hoverDealPreferred: null,
+  hoverDealPaintId: "",
   sessionView: null,
+  viewDay: "",
+  loadGen: 0,
 };
 
 const livePollState = {
@@ -828,7 +843,7 @@ function syncComboLegend(mode = chartState.mode) {
   const metric = comboMetricState;
   if (card) card.classList.toggle("is-combo", combo);
   if (els.comboMetricWrap) els.comboMetricWrap.classList.toggle("hidden", !combo);
-  if (els.peSeriesWrap) els.peSeriesWrap.classList.toggle("hidden", !combo || metric !== "pe");
+  if (els.peLegendWrap) els.peLegendWrap.classList.toggle("hidden", !combo || metric !== "pe");
   if (els.fundflowLegendWrap) els.fundflowLegendWrap.classList.toggle("hidden", !combo || metric !== "fundflow");
 }
 
@@ -1021,17 +1036,21 @@ function metricTip(label) {
   return METRIC_TIPS[label] || "";
 }
 
-function metricCell([label, value, cls = ""]) {
+function metricCell([label, value, cls = "", note = ""]) {
   const tip = metricTip(label);
   const tipAttr = tip ? ` data-tip="${escapeHtml(tip)}"` : "";
   const tipClass = tip ? " has-tip" : "";
   const tipBtn = tip
     ? ` role="button" tabindex="0" aria-expanded="false" aria-label="${escapeHtml(label)}：查看指标说明"`
     : "";
+  const noteHtml = note
+    ? `<span class="detail-note">${escapeHtml(note).replace(/\n/g, "<br>")}</span>`
+    : "";
   return `
     <div class="stat-cell${tipClass}"${tipAttr}${tipBtn}>
       <span class="detail-label">${escapeHtml(label)}</span>
       <span class="detail-value ${cls}">${escapeHtml(displayValue(value))}</span>
+      ${noteHtml}
     </div>`;
 }
 
@@ -1092,7 +1111,7 @@ function closeMetricTips(except = null) {
 }
 
 function setupMetricTips() {
-  const root = document.querySelector(".company-hero");
+  const root = document.querySelector(".quotes-layout") || document.querySelector(".company-hero");
   if (!root || root.dataset.tipBound === "1") return;
   root.dataset.tipBound = "1";
 
@@ -1187,229 +1206,563 @@ function wanFromYuan(yuan) {
   return Number.isInteger(wan) ? wan : Math.round(wan * 100) / 100;
 }
 
-function nearestBigDealWan(wan) {
-  const n = Number(wan);
-  if (!Number.isFinite(n) || n < 0) return wanFromYuan(BIG_DEAL_DEFAULT_YUAN);
-  let best = BIG_DEAL_WAN_OPTIONS[0];
-  let dist = Infinity;
-  for (const opt of BIG_DEAL_WAN_OPTIONS) {
-    const d = Math.abs(opt - n);
-    if (d < dist) {
-      dist = d;
-      best = opt;
-    }
-  }
-  return best;
+function formatWanInput(yuan) {
+  if (yuan == null || !Number.isFinite(Number(yuan))) return "";
+  return String(wanFromYuan(yuan));
 }
 
-function bigDealWanIndex(wan) {
-  const idx = BIG_DEAL_WAN_OPTIONS.indexOf(nearestBigDealWan(wan));
-  return idx < 0 ? BIG_DEAL_WAN_OPTIONS.indexOf(1000) : idx;
+function parseWanInputValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
 }
 
 function bigDealMinAmount() {
   const stored = Number(bigDealState.minAmount);
-  if (Number.isFinite(stored) && stored >= 0) {
-    return yuanFromWan(nearestBigDealWan(wanFromYuan(stored)));
-  }
+  if (Number.isFinite(stored) && stored >= 0) return stored;
   return BIG_DEAL_DEFAULT_YUAN;
 }
 
-function bigDealThresholdLabel(amount = bigDealMinAmount()) {
-  return `${nearestBigDealWan(wanFromYuan(amount))}万`;
+function bigDealMaxAmount() {
+  const stored = Number(bigDealState.maxAmount);
+  if (Number.isFinite(stored) && stored > 0) return stored;
+  return null;
+}
+
+function bigDealRangeLabel() {
+  const minWan = wanFromYuan(bigDealMinAmount());
+  const maxYuan = bigDealMaxAmount();
+  if (maxYuan == null) return `${minWan}万以上`;
+  return `${minWan}–${wanFromYuan(maxYuan)}万`;
 }
 
 function readStoredBigDealMinAmount() {
   try {
     const raw = Number(localStorage.getItem(BIG_DEAL_MIN_KEY));
-    if (Number.isFinite(raw) && raw >= 0) {
-      return yuanFromWan(nearestBigDealWan(wanFromYuan(raw)));
-    }
+    if (Number.isFinite(raw) && raw >= 0) return raw;
   } catch {
     /* ignore */
   }
   return BIG_DEAL_DEFAULT_YUAN;
 }
 
-function persistBigDealMinAmount(amount) {
-  const yuan = yuanFromWan(nearestBigDealWan(wanFromYuan(amount)));
-  bigDealState.minAmount = yuan;
+function readStoredBigDealMaxAmount() {
   try {
-    localStorage.setItem(BIG_DEAL_MIN_KEY, String(yuan));
+    const raw = localStorage.getItem(BIG_DEAL_MAX_KEY);
+    if (raw == null || raw === "" || raw === "none") return null;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return n;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function persistBigDealRange(minYuan, maxYuan) {
+  const min = Number.isFinite(Number(minYuan)) && Number(minYuan) >= 0 ? Number(minYuan) : BIG_DEAL_DEFAULT_YUAN;
+  const max = Number.isFinite(Number(maxYuan)) && Number(maxYuan) > 0 ? Number(maxYuan) : null;
+  bigDealState.minAmount = min;
+  bigDealState.maxAmount = max;
+  try {
+    localStorage.setItem(BIG_DEAL_MIN_KEY, String(min));
+    if (max == null) localStorage.removeItem(BIG_DEAL_MAX_KEY);
+    else localStorage.setItem(BIG_DEAL_MAX_KEY, String(max));
   } catch {
     /* ignore */
   }
 }
 
-function renderBigDealWheelOptions() {
-  const current = nearestBigDealWan(wanFromYuan(bigDealMinAmount()));
-  return BIG_DEAL_WAN_OPTIONS.map(
-    (wan) =>
-      `<button type="button" class="big-deal-wheel-item${wan === current ? " is-active" : ""}" role="option" aria-selected="${wan === current ? "true" : "false"}" data-wan="${wan}">${wan}</button>`
-  ).join("");
+function hydrateBigDealRange() {
+  if (bigDealState.rangeHydrated) return;
+  persistBigDealRange(readStoredBigDealMinAmount(), readStoredBigDealMaxAmount());
+  bigDealState.rangeHydrated = true;
 }
 
-function paintBigDealWheel(index) {
-  const viewport = document.getElementById("bigDealWheel");
-  if (!viewport) return;
-  const max = BIG_DEAL_WAN_OPTIONS.length - 1;
-  const raw = Number.isFinite(index) ? index : Math.round(viewport.scrollTop / BIG_DEAL_WHEEL_ITEM);
-  const clamped = Math.max(0, Math.min(max, raw));
-  viewport.querySelectorAll(".big-deal-wheel-item").forEach((el, idx) => {
-    const on = idx === clamped;
-    el.classList.toggle("is-active", on);
-    el.setAttribute("aria-selected", on ? "true" : "false");
+function filterBigDealsByRange(items) {
+  const min = bigDealMinAmount();
+  const max = bigDealMaxAmount();
+  return (items || []).filter((row) => {
+    const amount = Number(row?.amount);
+    if (!Number.isFinite(amount)) return false;
+    if (amount < min) return false;
+    if (max != null && amount > max) return false;
+    return true;
   });
-  return clamped;
 }
 
-function scrollBigDealWheelTo(index, behavior = "auto") {
-  const viewport = document.getElementById("bigDealWheel");
-  if (!viewport) return;
-  const max = BIG_DEAL_WAN_OPTIONS.length - 1;
-  const clamped = Math.max(0, Math.min(max, index));
-  bigDealWheelSync += 1;
-  viewport.scrollTo({ top: clamped * BIG_DEAL_WHEEL_ITEM, behavior });
-  paintBigDealWheel(clamped);
-  window.setTimeout(() => {
-    bigDealWheelSync = Math.max(0, bigDealWheelSync - 1);
-  }, behavior === "smooth" ? 280 : 50);
+function applyBigDealRangeFilter() {
+  bigDealState.items = filterBigDealsByRange(bigDealState.rawItems);
+  bigDealState.total = bigDealState.items.length;
+  bigDealChartState.items = filterBigDealsByRange(bigDealChartState.rawItems);
+  refreshBigDealList();
+  if (isQuotesPanel() && els.ticksChart) renderTicksChart();
 }
 
-function applyBigDealThreshold(wan) {
-  const snapped = nearestBigDealWan(wan);
-  const yuan = yuanFromWan(snapped);
-  if (yuan == null) return;
-  const changed = yuan !== Number(bigDealState.minAmount);
-  persistBigDealMinAmount(yuan);
-  paintBigDealWheel(bigDealWanIndex(snapped));
-  if (!changed) return;
-  bigDealState.page = 1;
-  window.clearTimeout(bigDealWheelReloadTimer);
-  bigDealWheelReloadTimer = window.setTimeout(() => {
-    void loadBigDeals({ keep: true });
-    void loadBigDealChart({ refresh: true });
+function syncBigDealRangeInputs() {
+  const minEl = document.getElementById("bigDealMinWan");
+  const maxEl = document.getElementById("bigDealMaxWan");
+  if (minEl && document.activeElement !== minEl) minEl.value = formatWanInput(bigDealMinAmount());
+  if (maxEl && document.activeElement !== maxEl) maxEl.value = formatWanInput(bigDealMaxAmount());
+}
+
+function commitBigDealRange({ swap = true } = {}) {
+  const minEl = document.getElementById("bigDealMinWan");
+  const maxEl = document.getElementById("bigDealMaxWan");
+  const minWan = parseWanInputValue(minEl?.value);
+  const maxWan = parseWanInputValue(maxEl?.value);
+  let minYuan = minWan == null ? bigDealMinAmount() : yuanFromWan(minWan);
+  let maxYuan = maxWan == null ? null : yuanFromWan(maxWan);
+  if (minYuan == null) minYuan = BIG_DEAL_DEFAULT_YUAN;
+  if (swap && maxYuan != null && maxYuan < minYuan) {
+    const tmp = minYuan;
+    minYuan = maxYuan;
+    maxYuan = tmp;
+  }
+  const minChanged = minYuan !== Number(bigDealState.minAmount);
+  const prevMax = bigDealMaxAmount();
+  const maxChanged = maxYuan !== prevMax;
+  persistBigDealRange(minYuan, maxYuan);
+  if (swap) syncBigDealRangeInputs();
+  if (!minChanged && !maxChanged) return;
+  window.clearTimeout(bigDealRangeReloadTimer);
+  bigDealRangeReloadTimer = window.setTimeout(() => {
+    if (minChanged) {
+      void loadBigDeals({ keep: true });
+      void loadBigDealChart({ refresh: true });
+      return;
+    }
+    applyBigDealRangeFilter();
   }, 180);
 }
 
-function bindBigDealThreshold() {
-  const viewport = document.getElementById("bigDealWheel");
-  if (!viewport || viewport.dataset.bound === "1") return;
-  viewport.dataset.bound = "1";
-  const currentIndex = bigDealWanIndex(wanFromYuan(bigDealMinAmount()));
-  scrollBigDealWheelTo(currentIndex, "auto");
-
-  let settleTimer = 0;
-  const settleFromScroll = () => {
-    if (bigDealWheelSync) return;
-    const idx = paintBigDealWheel();
-    applyBigDealThreshold(BIG_DEAL_WAN_OPTIONS[idx]);
-  };
-
-  viewport.addEventListener("scroll", () => {
-    paintBigDealWheel();
-    if (bigDealWheelSync) return;
-    window.clearTimeout(settleTimer);
-    settleTimer = window.setTimeout(settleFromScroll, 90);
+function bindBigDealRange() {
+  const root = els.metricsPanels || els.metricsGrid;
+  if (!root || root.dataset.bigDealRangeBound === "1") return;
+  root.dataset.bigDealRangeBound = "1";
+  const isRangeInput = (el) => el && (el.id === "bigDealMinWan" || el.id === "bigDealMaxWan");
+  root.addEventListener("input", (event) => {
+    if (!isRangeInput(event.target)) return;
+    window.clearTimeout(bigDealRangeReloadTimer);
+    bigDealRangeReloadTimer = window.setTimeout(() => commitBigDealRange({ swap: false }), 320);
   });
-  viewport.addEventListener("scrollend", settleFromScroll);
-  viewport.addEventListener(
-    "wheel",
-    (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const dir = event.deltaY > 0 ? 1 : event.deltaY < 0 ? -1 : 0;
-      if (!dir) return;
-      const next = Math.max(0, Math.min(BIG_DEAL_WAN_OPTIONS.length - 1, paintBigDealWheel() + dir));
-      scrollBigDealWheelTo(next, "smooth");
-      applyBigDealThreshold(BIG_DEAL_WAN_OPTIONS[next]);
-    },
-    { passive: false }
-  );
-  viewport.addEventListener("click", (event) => {
-    const item = event.target.closest("[data-wan]");
-    if (!item || !viewport.contains(item)) return;
-    const wan = Number(item.getAttribute("data-wan"));
-    if (!Number.isFinite(wan)) return;
-    scrollBigDealWheelTo(bigDealWanIndex(wan), "smooth");
-    applyBigDealThreshold(wan);
+  root.addEventListener("change", (event) => {
+    if (!isRangeInput(event.target)) return;
+    commitBigDealRange({ swap: true });
   });
-  viewport.addEventListener("keydown", (event) => {
-    const idx = paintBigDealWheel();
-    let next = idx;
-    if (event.key === "ArrowDown" || event.key === "ArrowRight" || event.key === "PageDown") next = idx + 1;
-    else if (event.key === "ArrowUp" || event.key === "ArrowLeft" || event.key === "PageUp") next = idx - 1;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = BIG_DEAL_WAN_OPTIONS.length - 1;
-    else return;
+  root.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || !isRangeInput(event.target)) return;
     event.preventDefault();
-    next = Math.max(0, Math.min(BIG_DEAL_WAN_OPTIONS.length - 1, next));
-    scrollBigDealWheelTo(next, "smooth");
-    applyBigDealThreshold(BIG_DEAL_WAN_OPTIONS[next]);
+    commitBigDealRange({ swap: true });
+  });
+  syncBigDealRangeInputs();
+}
+
+function shiftIsoDate(iso, days) {
+  const [y, m, d] = String(iso || "").split("-").map(Number);
+  if (!y || !m || !d) return "";
+  const dt = new Date(Date.UTC(y, m - 1, d + Number(days || 0)));
+  return dt.toISOString().slice(0, 10);
+}
+
+function cnSessionDay() {
+  const now = cnNowParts();
+  const open = 9 * 60 + 15;
+  if (now.weekday === 0) return shiftIsoDate(now.dateStr, -2);
+  if (now.weekday === 6) return shiftIsoDate(now.dateStr, -1);
+  if (now.minutes < open) return shiftIsoDate(now.dateStr, now.weekday === 1 ? -3 : -1);
+  return now.dateStr;
+}
+
+function ticksViewDay() {
+  return String(ticksState.viewDay || cnSessionDay()).slice(0, 10);
+}
+
+function isTicksHistoryView() {
+  return ticksViewDay() !== cnSessionDay();
+}
+
+function syncTicksDayInput() {
+  const el = document.getElementById("ticksTapeDay");
+  if (!el) return;
+  el.value = ticksViewDay();
+  el.max = cnNowParts().dateStr;
+}
+
+function bindTicksDayPicker() {
+  const el = document.getElementById("ticksTapeDay");
+  if (!el || el.dataset.bound === "1") return;
+  el.dataset.bound = "1";
+  el.addEventListener("change", () => {
+    void applyTicksViewDay(el.value);
   });
 }
 
-function bindBigDealPager() {
-  const prev = document.getElementById("bigDealPrev");
-  const next = document.getElementById("bigDealNext");
-  if (prev) {
-    prev.addEventListener("click", () => {
-      if (bigDealState.page <= 1) return;
-      bigDealState.page -= 1;
-      void loadBigDeals({ keep: true });
-    });
+async function applyTicksViewDay(iso) {
+  const session = cnSessionDay();
+  const today = cnNowParts().dateStr;
+  let next = String(iso || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(next)) next = session;
+  if (next > today) next = today;
+  const prev = ticksViewDay();
+  ticksState.viewDay = next === session ? "" : next;
+  if (ticksViewDay() === prev && document.getElementById("ticksTapeDay")?.value === ticksViewDay()) {
+    syncTicksDayInput();
+    return;
   }
-  if (next) {
-    next.addEventListener("click", () => {
-      if (bigDealState.page >= bigDealState.pages) return;
-      bigDealState.page += 1;
-      void loadBigDeals({ keep: true });
+  ticksState.liveFetchGen += 1;
+  ticksState.loadGen += 1;
+  ticksState.liveFetchPending = false;
+  ticksState.linkPin = null;
+  ticksState.hoverRange = null;
+  ticksState.hoverSecond = null;
+  ticksState.hoverTickIndexes = [];
+  ticksState.hoverLinkKey = "";
+  ticksState.listHover = false;
+  ticksState.sessionView = null;
+  hideTicksHoverCard();
+  applyTicksItems([], { resetViewport: true });
+  bigDealState.rawItems = [];
+  bigDealState.items = [];
+  bigDealState.total = 0;
+  bigDealState.error = "";
+  bigDealChartState.rawItems = [];
+  bigDealChartState.items = [];
+  bigDealChartState.error = "";
+  syncTicksDayInput();
+  refreshBigDealList();
+  refreshTicksTapeList();
+  const history = isTicksHistoryView();
+  if (history) {
+    ticksState.live = false;
+    ticksState.phase = "closed";
+    setTicksChartStatus("");
+    if (els.ticksChartEmpty) els.ticksChartEmpty.classList.add("hidden");
+    renderTicksChart();
+    void loadTicksChart({ silent: true });
+    void loadBigDeals();
+    void loadBigDealChart();
+    return;
+  }
+  ticksState.phase = cnMarketPhase();
+  ticksState.live = ticksState.phase === "live";
+  void loadTicksChart({ silent: false, refresh: ticksState.live });
+  void loadBigDeals({ refresh: ticksState.live });
+  void loadBigDealChart({ refresh: ticksState.live });
+  if (ticksState.live) void pollTicksLive();
+}
+
+function restoreTapeScroll(scroller, prevTop, prevHeight) {
+  if (!scroller) return;
+  const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  if (!prevHeight) {
+    scroller.scrollTop = maxTop;
+    return;
+  }
+  const prevMax = Math.max(0, prevHeight - scroller.clientHeight);
+  scroller.scrollTop = prevTop >= prevMax - 32 ? maxTop : prevTop;
+}
+
+function tapeTimeKey(row) {
+  return String(row?.time || "");
+}
+
+function sortTapeByTimeAsc(items) {
+  return (items || [])
+    .slice()
+    .sort((a, b) => tapeTimeKey(a).localeCompare(tapeTimeKey(b)) || String(a?.event_id || "").localeCompare(String(b?.event_id || "")));
+}
+
+function tapeTickItems() {
+  return sortTapeByTimeAsc(ticksState.allItems || []);
+}
+
+function timeToSec(value) {
+  const minutes = parseClockMinutes(value);
+  if (minutes == null) return null;
+  return minutes * 60;
+}
+
+function tickLinkInterval(items, index) {
+  if (index < 0 || index >= items.length) return null;
+  const to = timeToSec(items[index]?.time);
+  if (to == null) return null;
+  if (index === 0) return { from: -Infinity, to, indexes: [index] };
+  const from = timeToSec(items[index - 1]?.time);
+  return { from: from == null ? -Infinity : from, to, indexes: [index] };
+}
+
+function tickLinkRangeForClock(clock) {
+  const items = tapeTickItems();
+  const key = tickClockSecond(clock);
+  const sec = timeToSec(clock);
+  if (sec == null) return null;
+  if (!items.length) return { from: -Infinity, to: sec, indexes: [] };
+
+  const atKey = [];
+  for (let i = 0; i < items.length; i += 1) {
+    if (tickClockSecond(items[i].time) === key) atKey.push(i);
+  }
+  if (atKey.length) {
+    const first = atKey[0];
+    const last = atKey[atKey.length - 1];
+    const from = first > 0 ? timeToSec(items[first - 1].time) : -Infinity;
+    const to = timeToSec(items[last].time);
+    return { from: from == null ? -Infinity : from, to: to ?? sec, indexes: atKey };
+  }
+
+  let succ = -1;
+  for (let i = 0; i < items.length; i += 1) {
+    const stamp = timeToSec(items[i].time);
+    if (stamp != null && stamp >= sec) {
+      succ = i;
+      break;
+    }
+  }
+  if (succ >= 0) return tickLinkInterval(items, succ);
+  const lastTo = timeToSec(items[items.length - 1]?.time);
+  return { from: lastTo == null ? -Infinity : lastTo, to: sec, indexes: [] };
+}
+
+function linkedTickClock(range) {
+  const items = tapeTickItems();
+  const indexes = range?.indexes || [];
+  if (!indexes.length) return "";
+  return tickClockSecond(items[indexes[indexes.length - 1]]?.time);
+}
+
+function quoteClockForEvent(clock) {
+  const key = tickClockSecond(clock);
+  if (!key) return "";
+  return linkedTickClock(tickLinkRangeForClock(clock)) || key;
+}
+
+function dealInHoverRange(clock, range = ticksState.hoverRange) {
+  if (!range) return false;
+  const sec = timeToSec(clock);
+  return sec != null && sec > range.from && sec <= range.to;
+}
+
+function tapeLinkOriginOfRow(row) {
+  if (!row) return "list";
+  if (row.closest("#bigDealBody")) return "deals";
+  if (row.closest("#ticksTapeBody")) return "ticks";
+  return "list";
+}
+
+function scrollTapeRowsToCenter(root, rows) {
+  const scroller = root?.querySelector(".big-deal-scroll, .ticks-tape-scroll");
+  if (!scroller || !rows?.length) return;
+  const first = rows[0];
+  const last = rows[rows.length - 1];
+  if (!first.isConnected || !last.isConnected) return;
+  const scrollerRect = scroller.getBoundingClientRect();
+  const top = first.getBoundingClientRect().top;
+  const bottom = last.getBoundingClientRect().bottom;
+  const groupCenter = (top + bottom) / 2;
+  const viewCenter = scrollerRect.top + scroller.clientHeight / 2;
+  const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  scroller.scrollTop = Math.max(0, Math.min(maxTop, scroller.scrollTop + (groupCenter - viewCenter)));
+}
+
+function syncTapeLinkHighlight({ scroll = false, origin = "" } = {}) {
+  const range = ticksState.hoverRange;
+  const tickSet = new Set((ticksState.hoverTickIndexes || []).map(String));
+  const prefId = String(ticksState.hoverDealPreferred?.event_id || "");
+  const targets = [
+    { root: document.getElementById("ticksTapeBody"), skip: origin === "ticks", kind: "ticks" },
+    { root: document.getElementById("bigDealBody"), skip: origin === "deals", kind: "deals" },
+  ];
+  for (const { root, skip, kind } of targets) {
+    if (!root) continue;
+    const linked = [];
+    let primary = null;
+    root.querySelectorAll("tbody tr[data-clock]").forEach((tr) => {
+      const on =
+        kind === "ticks"
+          ? tickSet.has(String(tr.dataset.tickIndex || ""))
+          : dealInHoverRange(tr.dataset.time || tr.dataset.clock, range);
+      const isPrimary = on && prefId && tr.dataset.eventId === prefId;
+      tr.classList.toggle("is-linked", on);
+      tr.classList.toggle("is-linked-primary", Boolean(isPrimary));
+      if (on) linked.push(tr);
+      if (isPrimary) primary = tr;
     });
+    if (scroll && !skip && linked.length) {
+      const focusRows = primary ? [primary] : linked;
+      window.requestAnimationFrame(() => scrollTapeRowsToCenter(root, focusRows));
+    }
   }
 }
 
-function renderBigDealSection() {
-  let body;
+function ensureTicksSecondVisible(clock) {
+  const off = sessionOffset(parseClockMinutes(clock));
+  if (off == null) return false;
+  const range = ticksEffectiveSessionRange();
+  if (!range) return false;
+  if (off >= range.start - 1e-6 && off <= range.end + 1e-6) return false;
+  const span = Math.max(TICKS_SESSION_MIN_SPAN, range.end - range.start);
+  const full = sessionDuration();
+  let start = off - span / 2;
+  let end = start + span;
+  if (start < 0) {
+    start = 0;
+    end = Math.min(full, span);
+  }
+  if (end > full) {
+    end = full;
+    start = Math.max(0, full - span);
+  }
+  ticksState.sessionView = start <= 1e-6 && end >= full - 1e-6 ? null : { start, end };
+  syncTicksChartScrollBar();
+  refreshTicksChartWindowStatus();
+  return true;
+}
+
+function pinTicksChartLink(clock, { preferred, scrollLists = true } = {}) {
+  applyTicksLinkHover(clock, { origin: "chart", preferred, scrollLists });
+  if (!ticksState.hoverSecond || !ticksState.hoverRange) {
+    ticksState.linkPin = null;
+    return "";
+  }
+  ticksState.linkPin = {
+    clock: ticksState.hoverSecond,
+    range: ticksState.hoverRange,
+    indexes: (ticksState.hoverTickIndexes || []).slice(),
+    preferred: ticksState.hoverDealPreferred,
+  };
+  return ticksState.hoverSecond;
+}
+
+function restoreTicksLinkPin() {
+  const pin = ticksState.linkPin;
+  if (!pin?.clock) return false;
+  const range = tickLinkRangeForClock(pin.preferred?.time || pin.clock);
+  ticksState.linkPin = {
+    ...pin,
+    range,
+    indexes: range?.indexes || [],
+  };
+  ticksState.hoverSecond = pin.clock;
+  ticksState.hoverRange = range;
+  ticksState.hoverTickIndexes = range?.indexes || [];
+  ticksState.hoverLinkKey = range
+    ? `chart:${range.from}:${range.to}:${(range.indexes || []).join(",")}:${String(pin.preferred?.event_id || "")}`
+    : "";
+  ticksState.hoverOrigin = "chart";
+  ticksState.hoverDealPreferred = pin.preferred || null;
+  syncTapeLinkHighlight();
+  return true;
+}
+
+function applyTicksLinkHover(clock, { origin = "chart", preferred, tickIndex, scrollLists = true } = {}) {
+  const key = tickClockSecond(clock);
+  if (preferred !== undefined) ticksState.hoverDealPreferred = preferred;
+  const prefId = String(ticksState.hoverDealPreferred?.event_id || "");
+  let range = null;
+  const idx = Number(tickIndex);
+  if (origin === "ticks" && tickIndex != null && String(tickIndex) !== "" && Number.isFinite(idx)) {
+    range = tickLinkInterval(tapeTickItems(), idx);
+  } else if (key) {
+    range = tickLinkRangeForClock(preferred?.time || key);
+  }
+  const nextKey = range
+    ? `${origin}:${range.from}:${range.to}:${(range.indexes || []).join(",")}:${prefId}`
+    : "";
+  const changed = nextKey !== ticksState.hoverLinkKey;
+  ticksState.hoverSecond = key || null;
+  ticksState.hoverRange = range;
+  ticksState.hoverTickIndexes = range?.indexes || [];
+  ticksState.hoverLinkKey = nextKey;
+  ticksState.hoverOrigin = key ? origin : "";
+  if (origin === "list" || origin === "ticks" || origin === "deals") {
+    ticksState.listHover = Boolean(key);
+  } else if (origin === "chart") {
+    ticksState.listHover = false;
+  }
+  if (!key) {
+    ticksState.hoverRange = null;
+    ticksState.hoverTickIndexes = [];
+    ticksState.hoverLinkKey = "";
+    syncTapeLinkHighlight();
+    return "";
+  }
+  if (origin !== "chart") ensureTicksSecondVisible(key);
+  fillTicksQuoteCardFromSecond(linkedTickClock(range) || key);
+  if (changed) {
+    syncTapeLinkHighlight({ scroll: Boolean(scrollLists), origin });
+    if (origin !== "chart") renderTicksChart();
+  } else if (scrollLists && origin !== "chart") {
+    syncTapeLinkHighlight({ scroll: true, origin });
+  }
+  return key;
+}
+
+function bindTapeChartLink() {
+  const root = els.metricsPanels;
+  if (!root || root.dataset.tapeLinkBound === "1") return;
+  root.dataset.tapeLinkBound = "1";
+  root.addEventListener("pointerover", (event) => {
+    const row = event.target.closest("tr[data-clock]");
+    if (!row || !root.contains(row)) return;
+    const from = event.relatedTarget instanceof Element ? event.relatedTarget.closest("tr[data-clock]") : null;
+    if (from === row) return;
+    applyTicksLinkHover(row.dataset.time || row.dataset.clock, {
+      origin: tapeLinkOriginOfRow(row),
+      tickIndex: row.dataset.tickIndex,
+      preferred: row.dataset.eventId
+        ? { event_id: row.dataset.eventId, time: row.dataset.time || row.dataset.clock }
+        : null,
+      scrollLists: true,
+    });
+  });
+  root.addEventListener("pointerout", (event) => {
+    const row = event.target.closest("tr[data-clock]");
+    if (!row) return;
+    const next = event.relatedTarget instanceof Element ? event.relatedTarget.closest("tr[data-clock]") : null;
+    if (next && root.contains(next)) return;
+    ticksState.listHover = false;
+    hideTicksHoverCard();
+    renderTicksChart();
+  });
+}
+
+function renderBigDealListHtml() {
   if (bigDealState.loading && !bigDealState.items.length) {
-    body = `<p class="muted metrics-loading">正在加载大单…</p>`;
-  } else if (bigDealState.error && !bigDealState.items.length) {
-    body = `<p class="muted">${escapeHtml(bigDealState.error)}</p>`;
-  } else if (!bigDealState.items.length) {
-    body = `<p class="muted">暂无超过 ${escapeHtml(bigDealThresholdLabel())} 的大单</p>`;
-  } else {
-    const rows = bigDealState.items
-      .map((row) => {
-        const side = String(row.side || "");
-        const tone = side === "buy" ? "change-up" : side === "sell" ? "change-down" : "";
-        const tag = displayValue(row.aggressor_label);
-        const lots = Number(row.volume_lots);
-        const lotsText = Number.isFinite(lots) ? `${Math.round(lots)}手` : "-";
-        return `<tr class="${tone}">
+    return `<p class="muted metrics-loading">正在加载大单…</p>`;
+  }
+  if (bigDealState.error && !bigDealState.items.length) {
+    return `<p class="muted">${escapeHtml(bigDealState.error)}</p>`;
+  }
+  if (!bigDealState.items.length) {
+    if (isTicksHistoryView() && !bigDealState.loading) return "";
+    return `<p class="muted">暂无 ${escapeHtml(bigDealRangeLabel())} 的大单</p>`;
+  }
+  const rows = sortTapeByTimeAsc(bigDealState.items)
+    .map((row) => {
+      const side = String(row.side || "");
+      const tone = side === "buy" ? "change-up" : side === "sell" ? "change-down" : "";
+      const tag = displayValue(row.aggressor_label);
+      const lots = Number(row.volume_lots);
+      const lotsText = Number.isFinite(lots) ? `${Math.round(lots)}手` : "-";
+      return `<tr class="${tone}" data-clock="${escapeHtml(tickClockSecond(row.time))}" data-time="${escapeHtml(String(row.time || ""))}" data-event-id="${escapeHtml(String(row.event_id || ""))}">
           <td>${escapeHtml(displayValue(row.time))}</td>
           <td><span class="big-deal-tag">${escapeHtml(tag)}</span></td>
           <td>${escapeHtml(fmtWan(row.amount))}</td>
           <td>${escapeHtml(lotsText)}</td>
           <td>${escapeHtml(fmtNum(row.price))}</td>
         </tr>`;
-      })
-      .join("");
-    const total = Number(bigDealState.total) || bigDealState.items.length;
-    const page = Number(bigDealState.page) || 1;
-    const pages = Number(bigDealState.pages) || 1;
-    const metaBits = [
-      bigDealState.sessionDay || "",
-      bigDealState.cached ? "盘后缓存" : "",
-      `共${total}笔`,
-      pages > 1 ? `${page}/${pages}页` : "",
-    ].filter(Boolean);
-    const pager = pages > 1
-      ? `<div class="big-deal-pager">
-          <button id="bigDealPrev" class="big-deal-page-btn" type="button" ${page <= 1 ? "disabled" : ""}>上一页</button>
-          <span class="big-deal-page-info">${escapeHtml(String(page))} / ${escapeHtml(String(pages))}</span>
-          <button id="bigDealNext" class="big-deal-page-btn" type="button" ${page >= pages ? "disabled" : ""}>下一页</button>
-        </div>`
-      : "";
-    body = `
+    })
+    .join("");
+  const total = Number(bigDealState.total) || bigDealState.items.length;
+  const metaBits = [
+    bigDealState.sessionDay || "",
+    bigDealState.cached ? "盘后缓存" : "",
+    `共${total}笔`,
+    bigDealRangeLabel(),
+  ].filter(Boolean);
+  return `
       <div class="big-deal-scroll">
         <table class="big-deal-table">
           <thead>
@@ -1424,82 +1777,281 @@ function renderBigDealSection() {
           <tbody>${rows}</tbody>
         </table>
       </div>
-      ${pager}
       ${metaBits.length ? `<p class="big-deal-meta muted">${escapeHtml(metaBits.join(" · "))}</p>` : ""}`;
+}
+
+function refreshBigDealList() {
+  const body = document.getElementById("bigDealBody");
+  if (!body) {
+    if (els.metricsPanels || els.metricsGrid) renderMetrics(metricsStock);
+    return;
   }
+  const scroller = body.querySelector(".big-deal-scroll");
+  const prevTop = scroller?.scrollTop || 0;
+  const prevHeight = scroller?.scrollHeight || 0;
+  body.innerHTML = renderBigDealListHtml();
+  restoreTapeScroll(body.querySelector(".big-deal-scroll"), prevTop, prevHeight);
+  if (ticksState.linkPin && !ticksState.listHover) restoreTicksLinkPin();
+  else syncTapeLinkHighlight();
+}
+
+function renderBigDealSection() {
+  hydrateBigDealRange();
   return `
     <section class="metrics-section big-deal-section">
       <div class="big-deal-head">
-        <h4 class="metrics-section-title">大资金动向</h4>
-        <div class="big-deal-wheel" aria-label="大单门槛（万）">
-          <div id="bigDealWheel" class="big-deal-wheel-viewport" tabindex="0" role="listbox" aria-label="门槛">
-            <div class="big-deal-wheel-list">${renderBigDealWheelOptions()}</div>
-          </div>
-          <span class="big-deal-wheel-unit">万</span>
+        <h4 class="metrics-section-title">资金动向</h4>
+        <div class="big-deal-range" aria-label="资金范围（万）">
+          <input id="bigDealMinWan" class="big-deal-range-input" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="最低金额（万）" placeholder="最低" value="${escapeHtml(formatWanInput(bigDealMinAmount()))}" />
+          <span class="big-deal-range-sep">–</span>
+          <input id="bigDealMaxWan" class="big-deal-range-input" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="最高金额（万）" placeholder="不限" value="${escapeHtml(formatWanInput(bigDealMaxAmount()))}" />
+          <span class="big-deal-range-unit">万</span>
         </div>
       </div>
-      ${body}
+      <div id="bigDealBody" class="big-deal-body">${renderBigDealListHtml()}</div>
     </section>`;
+}
+
+function renderTicksTapeSection() {
+  return `
+    <section class="metrics-section ticks-tape-section" id="ticksTapeSection">
+      <div class="ticks-tape-head">
+        <h4 class="metrics-section-title">分时成交</h4>
+        <p id="ticksTapeMeta" class="ticks-tape-meta muted"></p>
+      </div>
+      <div id="ticksTapeBody" class="ticks-tape-body"></div>
+    </section>`;
+}
+
+function tickTradeCount(row) {
+  const n = Number(row?.count);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : 1;
+}
+
+function refreshTicksTapeList() {
+  const body = document.getElementById("ticksTapeBody");
+  const meta = document.getElementById("ticksTapeMeta");
+  if (!body) return;
+  const all = ticksState.allItems || [];
+  const total = all.length;
+  const items = total ? sortTapeByTimeAsc(all) : [];
+  const tradeTotal = items.reduce((sum, row) => sum + tickTradeCount(row), 0);
+  const metaText = [
+    ticksState.tradeDate || "",
+    ticksState.cached ? "盘后缓存" : "",
+    ticksState.source || "",
+    total ? `${total}次分时成交` : "",
+    tradeTotal ? `共${tradeTotal}笔交易` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  if (meta) meta.textContent = metaText;
+
+  const newest = items[items.length - 1];
+  const paintKey = [
+    "tick-count-total",
+    ticksState.loading ? "1" : "0",
+    total,
+    tradeTotal,
+    newest?.time || "",
+    newest?.price ?? "",
+    newest?.volume ?? "",
+    newest?.count ?? "",
+  ].join(":");
+  if (paintKey === body.dataset.paintKey && body.querySelector("tbody")) return;
+  body.dataset.paintKey = paintKey;
+
+  let html;
+  if (ticksState.loading && !total) {
+    html = `<p class="muted metrics-loading">正在加载成交明细…</p>`;
+  } else if (!total) {
+    html = isTicksHistoryView() ? "" : `<p class="muted">${ticksState.phase === "live" ? "等待成交" : "暂无成交明细"}</p>`;
+  } else {
+    const rows = items
+      .map((row, index) => {
+        const side = tickSideMeta(row);
+        const tone = side.cls;
+        const clock = tickClockSecond(row.time) || displayValue(row.time);
+        const lots = Number(row.volume);
+        const lotsText = Number.isFinite(lots) ? fmtVolLots(lots) : "-";
+        const count = Number(row.count);
+        const countText = Number.isFinite(count) && count > 1 ? `/${Math.round(count)}笔` : "";
+        return `<tr class="${tone}" data-clock="${escapeHtml(clock)}" data-time="${escapeHtml(String(row.time || ""))}" data-tick-index="${index}">
+          <td>${escapeHtml(clock)}</td>
+          <td>${escapeHtml(fmtNum(row.price))}</td>
+          <td>${escapeHtml(lotsText)}${escapeHtml(countText)}</td>
+          <td><span class="big-deal-tag">${escapeHtml(side.text || "-")}</span></td>
+        </tr>`;
+      })
+      .join("");
+    html = `
+      <div class="big-deal-scroll ticks-tape-scroll">
+        <table class="big-deal-table">
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>成交价</th>
+              <th>手数</th>
+              <th>方向</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+  const scroller = body.querySelector(".ticks-tape-scroll");
+  const prevTop = scroller?.scrollTop || 0;
+  const prevHeight = scroller?.scrollHeight || 0;
+  body.innerHTML = html;
+  restoreTapeScroll(body.querySelector(".ticks-tape-scroll"), prevTop, prevHeight);
+  if (ticksState.linkPin && !ticksState.listHover) restoreTicksLinkPin();
+  else syncTapeLinkHighlight();
+}
+
+function flattenMetricRows(rows) {
+  return (rows || []).flatMap((items) => items.filter(([, v]) => displayValue(v) !== "-"));
+}
+
+const VALUATION_HISTORY_FIELDS = {
+  "市盈率(动)": "pe_dyn",
+  "市盈率(静)": "pe_static",
+  "市盈率(TTM)": "pe_ttm",
+  市净率: "pb",
+  "市销率(TTM)": "ps_ttm",
+};
+
+function valuationSeriesStats(items, key) {
+  const vals = [];
+  for (const item of items || []) {
+    const n = Number(item?.[key]);
+    if (Number.isFinite(n) && n > 0) vals.push(n);
+  }
+  if (!vals.length) return null;
+  let high = vals[0];
+  let low = vals[0];
+  for (const v of vals) {
+    if (v > high) high = v;
+    if (v < low) low = v;
+  }
+  return { high, low, median: quantile(vals, 0.5) };
+}
+
+function valuationHistoryNote(label) {
+  const key = VALUATION_HISTORY_FIELDS[label];
+  if (!key) return "";
+  const stats = valuationSeriesStats(peState.allItems, key);
+  if (!stats) return "";
+  return `历史最高 ${fmtNum(stats.high)}\n历史最低 ${fmtNum(stats.low)}\n中位数 ${fmtNum(stats.median)}`;
+}
+
+function renderFundamentalsRow(items) {
+  if (!items.length) return "";
+  return `<div class="fundamentals-row">
+    <div class="company-metrics metrics-inline-row">${items.map(metricCell).join("")}</div>
+  </div>`;
+}
+
+function readFundamentalsFolded() {
+  try {
+    return localStorage.getItem(FUNDAMENTALS_FOLD_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function persistFundamentalsFolded(folded) {
+  try {
+    localStorage.setItem(FUNDAMENTALS_FOLD_KEY, folded ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
+
+function applyFundamentalsFold(folded) {
+  const panel = els.fundamentalsPanel;
+  if (!panel) return;
+  panel.classList.toggle("is-collapsed", folded);
+  const btn = document.getElementById("fundamentalsFoldBtn");
+  if (!btn) return;
+  btn.setAttribute("aria-expanded", folded ? "false" : "true");
+  btn.setAttribute("aria-label", folded ? "展开基本信息" : "折叠基本信息");
+  btn.title = folded ? "展开" : "折叠";
+  btn.textContent = folded ? "▸" : "▾";
+}
+
+function bindFundamentalsFold() {
+  const head = document.querySelector("#fundamentalsPanel .fundamentals-head");
+  if (!head || head.dataset.bound === "1") return;
+  head.dataset.bound = "1";
+  head.addEventListener("click", (event) => {
+    if (event.target.closest(".stat-cell")) return;
+    const panel = els.fundamentalsPanel;
+    if (!panel || panel.classList.contains("hidden")) return;
+    const next = !panel.classList.contains("is-collapsed");
+    applyFundamentalsFold(next);
+    persistFundamentalsFolded(next);
+  });
+  applyFundamentalsFold(readFundamentalsFolded());
+}
+
+function renderFundamentals(stock = metricsStock) {
+  const panel = els.fundamentalsPanel;
+  const body = els.fundamentalsBody;
+  if (!panel || !body) return;
+
+  const mcap =
+    stock.total_market_cap ||
+    (stock.market_cap ? `${displayValue(stock.market_cap)}亿` : "");
+  const valuation = flattenMetricRows([
+    [
+      ["市盈率(动)", stock.pe],
+      ["市盈率(静)", stock.pe_static],
+      ["市盈率(TTM)", stock.pe_ttm],
+      ["市净率", stock.pb],
+      ["市销率(TTM)", stock.ps_ttm],
+      ["每股净资产", stock.bvps],
+    ],
+  ]);
+  const capital = flattenMetricRows([
+    [
+      ["上市时间", stock.list_date],
+      ["注册资本", stock.registered_capital],
+      ["发行股本", stock.issued_shares],
+      ["总股本", stock.total_shares],
+      ["流通股", stock.float_shares],
+      ["自由流通股", stock.free_float_shares],
+    ],
+    [
+      ["总市值", mcap],
+      ["流通市值", stock.float_market_cap],
+      ["自由流通市值", stock.free_float_market_cap],
+    ],
+  ]);
+  const html = [
+    renderFundamentalsRow(valuation.map((item) => [...item, "", valuationHistoryNote(item[0])])),
+    renderFundamentalsRow(capital),
+  ]
+    .filter(Boolean)
+    .join("");
+  body.innerHTML = html;
+  panel.classList.toggle("hidden", !html);
+  applyFundamentalsFold(readFundamentalsFolded());
 }
 
 function renderMetrics(stock = metricsStock) {
   const panels = els.metricsPanels || els.metricsGrid;
   if (!panels) return;
   metricsStock = stock && typeof stock === "object" ? stock : metricsStock;
+  renderFundamentals(metricsStock);
 
-  const mcap =
-    metricsStock.total_market_cap ||
-    (metricsStock.market_cap ? `${displayValue(metricsStock.market_cap)}亿` : "");
-
-  const valuationSection = renderInlineMetricRows("估值与每股", [
-    [
-      ["市盈率(动)", metricsStock.pe],
-      ["市盈率(静)", metricsStock.pe_static],
-      ["市盈率(TTM)", metricsStock.pe_ttm],
-    ],
-    [
-      ["市净率", metricsStock.pb],
-      ["每股净资产", metricsStock.bvps],
-      ["净资产收益率", metricsStock.roe],
-    ],
-    [
-      ["市销率(TTM)", metricsStock.ps_ttm],
-    ],
-    [
-      ["股息(TTM)", metricsStock.dividend_ttm],
-      ["股息率", metricsStock.dividend_yield],
-      ["每股收益", metricsStock.eps],
-    ],
-    [
-      ["净利增速", metricsStock.profit_growth || metricsStock.profit_yoy],
-      ["营收增速", metricsStock.revenue_growth || metricsStock.revenue_yoy],
-    ],
-  ]);
-
-  const capitalSection = renderInlineMetricRows("股本与市值", [
-    [
-      ["上市时间", metricsStock.list_date],
-      ["注册资本", metricsStock.registered_capital],
-      ["发行股本", metricsStock.issued_shares],
-    ],
-    [
-      ["总股本", metricsStock.total_shares],
-      ["流通股", metricsStock.float_shares],
-      ["自由流通股", metricsStock.free_float_shares],
-    ],
-    [
-      ["总市值", mcap],
-      ["流通市值", metricsStock.float_market_cap],
-      ["自由流通市值", metricsStock.free_float_market_cap],
-    ],
-  ]);
-
-  const html = [renderBigDealSection(), valuationSection, capitalSection]
-    .filter(Boolean)
-    .join("");
+  const html = [renderTicksTapeSection(), renderBigDealSection()].filter(Boolean).join("");
   panels.innerHTML = html || `<p class="muted">暂无指标数据</p>`;
-  bindBigDealThreshold();
-  bindBigDealPager();
+  bindBigDealRange();
+  syncBigDealRangeInputs();
+  bindTapeChartLink();
+  bindTicksDayPicker();
+  syncTicksDayInput();
+  refreshTicksTapeList();
 }
 
 function applyStock(stock, industryMeta = {}) {
@@ -1638,45 +2190,46 @@ function setMetricsLoading(message = "正在加载指标…") {
 
 async function loadBigDeals({ refresh = false, keep = false } = {}) {
   if (!code) return;
-  bigDealState.minAmount = readStoredBigDealMinAmount();
+  hydrateBigDealRange();
   if (!keep || !bigDealState.items.length) {
     bigDealState.loading = !bigDealState.items.length;
-    renderMetrics(metricsStock);
+    refreshBigDealList();
   }
   try {
     const qs = new URLSearchParams({
       code,
       scope: "big_deal",
       source: "tonghuashun",
-      limit: String(bigDealState.pageSize || BIG_DEAL_PAGE_SIZE),
-      page: String(Math.max(1, bigDealState.page || 1)),
+      limit: "0",
+      order: "asc",
       min_amount: String(bigDealMinAmount()),
     });
-    if (refresh) qs.set("refresh", "1");
+    if (refresh && !isTicksHistoryView()) qs.set("refresh", "1");
+    qs.set("day", ticksViewDay());
     const json = await api(`/api/stocks/fund-flow?${qs.toString()}`);
     const data = json.data || {};
-    bigDealState.items = Array.isArray(data.items) ? data.items : [];
+    bigDealState.rawItems = Array.isArray(data.items) ? data.items : [];
+    bigDealState.items = filterBigDealsByRange(bigDealState.rawItems);
     bigDealState.note = String(data.note || "");
     bigDealState.cached = Boolean(data.cached);
     bigDealState.sessionDay = String(data.session_day || "");
-    bigDealState.total = Number.isFinite(Number(data.total)) ? Number(data.total) : bigDealState.items.length;
-    bigDealState.page = Math.max(1, Number(data.page) || 1);
-    bigDealState.pages = Math.max(1, Number(data.pages) || 1);
-    if (Number.isFinite(Number(data.min_amount))) {
-      bigDealState.minAmount = Number(data.min_amount);
-    }
+    bigDealState.total = bigDealState.items.length;
     bigDealState.error = "";
   } catch (err) {
     bigDealState.error = err.message || String(err);
-    if (!bigDealState.items.length) bigDealState.items = [];
+    if (!bigDealState.items.length) {
+      bigDealState.rawItems = [];
+      bigDealState.items = [];
+    }
   } finally {
     bigDealState.loading = false;
-    renderMetrics(metricsStock);
+    refreshBigDealList();
   }
 }
 
 async function loadBigDealChart({ refresh = false } = {}) {
   if (!code) return;
+  hydrateBigDealRange();
   bigDealChartState.loading = !bigDealChartState.items.length;
   try {
     const qs = new URLSearchParams({
@@ -1686,17 +2239,22 @@ async function loadBigDealChart({ refresh = false } = {}) {
       limit: "0",
       min_amount: String(bigDealMinAmount()),
     });
-    if (refresh) qs.set("refresh", "1");
+    if (refresh && !isTicksHistoryView()) qs.set("refresh", "1");
+    qs.set("day", ticksViewDay());
     const json = await api(`/api/stocks/fund-flow?${qs.toString()}`);
     const data = json.data || {};
-    bigDealChartState.items = Array.isArray(data.items) ? data.items : [];
+    bigDealChartState.rawItems = Array.isArray(data.items) ? data.items : [];
+    bigDealChartState.items = filterBigDealsByRange(bigDealChartState.rawItems);
     bigDealChartState.note = String(data.note || "");
     bigDealChartState.cached = Boolean(data.cached);
     bigDealChartState.sessionDay = String(data.session_day || "");
     bigDealChartState.error = "";
   } catch (err) {
     bigDealChartState.error = err.message || String(err);
-    if (!bigDealChartState.items.length) bigDealChartState.items = [];
+    if (!bigDealChartState.items.length) {
+      bigDealChartState.rawItems = [];
+      bigDealChartState.items = [];
+    }
   } finally {
     bigDealChartState.loading = false;
     if (isQuotesPanel() && els.ticksChart) renderTicksChart();
@@ -1727,7 +2285,7 @@ async function loadProfile({ silent = false, refresh = false, liveOnly = false }
     const data = json.data || {};
     const stock = data.stock || {};
     applyStock(stock, data.industry || {});
-    if (liveOnly) {
+    if (liveOnly && !isTicksHistoryView()) {
       void loadBigDeals();
       void loadBigDealChart({ refresh: true });
     }
@@ -6370,7 +6928,7 @@ function applyLinkedRangeToPe(range) {
     renderPeChart();
     return;
   }
-  const hasValue = (peState.items || []).some((d) => peValue(d) != null);
+  const hasValue = hasPeSeriesData(peState.items);
   if (!hasValue) setPeStatus(peEmptyHint(), { empty: true });
   else {
     setPeStatus("");
@@ -6740,6 +7298,9 @@ const SESSION_SEGMENTS = [
   { start: 15 * 60 + 5, end: 15 * 60 + 30 },
 ];
 
+/** 竞价 | 连续交易 | 盘后 */
+const SESSION_PHASE_BREAKS = [9 * 60 + 30, 15 * 60];
+
 const SESSION_X_LABELS = [
   { label: "09:15", minutes: 9 * 60 + 15, align: "left" },
   { label: "10:30", minutes: 10 * 60 + 30, align: "center" },
@@ -6771,6 +7332,93 @@ function sessionOffset(minutes) {
   return acc;
 }
 
+function sessionOffsetAtX(x, layout, sessionRange = null) {
+  const start = sessionRange?.start ?? 0;
+  const end = sessionRange?.end ?? sessionDuration();
+  const span = Math.max(TICKS_SESSION_MIN_SPAN, end - start);
+  const t = (x - layout.price.x) / Math.max(1e-9, layout.price.w);
+  return start + Math.min(1, Math.max(0, t)) * span;
+}
+
+function snapOffsetToSecond(off, sessionRange = null) {
+  const start = sessionRange?.start ?? 0;
+  const end = sessionRange?.end ?? sessionDuration();
+  const sec = 1 / 60;
+  let snapped = Math.floor(off / sec + 1e-6) * sec;
+  if (snapped < start) snapped = start;
+  if (snapped > end) snapped = Math.max(start, Math.floor(end / sec + 1e-6) * sec);
+  return snapped;
+}
+
+function clockSecondAtX(x, layout, sessionRange = null) {
+  const off = snapOffsetToSecond(sessionOffsetAtX(x, layout, sessionRange), sessionRange);
+  return formatClockMinutes(sessionOffsetToClock(off));
+}
+
+const ticksEventSecCache = { key: "", secs: [] };
+
+function ticksOrDealEventSeconds() {
+  const ticks = ticksState.allItems || [];
+  const deals = bigDealChartState.items || [];
+  const lastTick = ticks[ticks.length - 1];
+  const lastDeal = deals[deals.length - 1];
+  const key = [
+    ticks.length,
+    lastTick?.time || "",
+    lastTick?.price ?? "",
+    deals.length,
+    lastDeal?.time || "",
+    lastDeal?.event_id || "",
+  ].join(":");
+  if (key === ticksEventSecCache.key) return ticksEventSecCache.secs;
+  const seen = new Set();
+  const secs = [];
+  const add = (time) => {
+    const sec = timeToSec(time);
+    if (sec == null) return;
+    const stamp = Math.round(sec * 1000) / 1000;
+    if (seen.has(stamp)) return;
+    seen.add(stamp);
+    secs.push(stamp);
+  };
+  for (const row of ticks) add(row.time);
+  for (const row of deals) add(row.time);
+  secs.sort((a, b) => a - b);
+  ticksEventSecCache.key = key;
+  ticksEventSecCache.secs = secs;
+  return secs;
+}
+
+function nearestEventSec(targetSec, events) {
+  if (!events.length) return null;
+  let lo = 0;
+  let hi = events.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (events[mid] < targetSec) lo = mid + 1;
+    else hi = mid;
+  }
+  let best = lo;
+  if (lo > 0 && Math.abs(events[lo - 1] - targetSec) <= Math.abs(events[lo] - targetSec)) best = lo - 1;
+  return events[best];
+}
+
+function eventClockAtX(x, layout, sessionRange = null) {
+  const raw = clockSecondAtX(x, layout, sessionRange);
+  const events = ticksOrDealEventSeconds();
+  const target = timeToSec(raw);
+  if (target == null || !events.length) return raw;
+  const nearest = nearestEventSec(target, events);
+  if (nearest == null) return raw;
+  return formatClockMinutes(nearest / 60);
+}
+
+function sessionSecondKey(clock) {
+  const mins = parseClockMinutes(clock);
+  if (mins == null) return null;
+  return Math.round(mins * 60);
+}
+
 function sessionXAt(minutes, layout) {
   const off = sessionOffset(minutes);
   const total = sessionDuration() || 1;
@@ -6782,9 +7430,36 @@ function sessionXAtInRange(minutes, layout, sessionRange = null) {
   if (!sessionRange) return sessionXAt(minutes, layout);
   const off = sessionOffset(minutes);
   if (off == null) return layout.price.x;
-  const len = Math.max(TICKS_SESSION_MIN_SPAN, sessionRange.end - sessionRange.start);
-  const ratio = (off - sessionRange.start) / len;
+  return sessionXFromOffset(off, layout, sessionRange);
+}
+
+function sessionXFromOffset(off, layout, sessionRange = null) {
+  const start = sessionRange?.start ?? 0;
+  const end = sessionRange?.end ?? sessionDuration();
+  const len = Math.max(TICKS_SESSION_MIN_SPAN, end - start);
+  const ratio = (off - start) / len;
   return layout.price.x + Math.min(1, Math.max(0, ratio)) * layout.price.w;
+}
+
+function drawSessionPhaseDividers(ctx, layout, colors, sessionRange) {
+  const top = layout.price.y;
+  const bottom = ticksChartBottomY(layout);
+  if (bottom <= top || layout.price.w <= 0) return;
+  const visStart = sessionRange?.start ?? 0;
+  const visEnd = sessionRange?.end ?? sessionDuration();
+  ctx.save();
+  ctx.strokeStyle = colors.ref || "rgba(132, 148, 168, 0.7)";
+  ctx.lineWidth = 1;
+  for (const minutes of SESSION_PHASE_BREAKS) {
+    const off = sessionOffset(minutes);
+    if (off == null || off <= visStart + 1e-6 || off >= visEnd - 1e-6) continue;
+    const x = Math.round(sessionXFromOffset(off, layout, sessionRange)) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, bottom);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function sessionOffsetToClock(sessionOff) {
@@ -6919,9 +7594,9 @@ function zoomTicksSessionView(anchorRatio, factor, { render = true } = {}) {
   const span = Math.max(TICKS_SESSION_MIN_SPAN, cur.end - cur.start);
   const ratio = Math.min(1, Math.max(0, Number(anchorRatio) || 0.5));
   const anchor = cur.start + span * ratio;
-  // factor > 1 放大，factor < 1 缩小；统一用 span/factor，勿对 factor 做 max(1.05, …)
+  // 与 K 线/滚轮约定一致：factor>1 显示更多（缩小），factor<1 放大；用 span*factor，勿对 factor 做 max(1.05, …)
   const f = Math.min(6, Math.max(0.18, Number(factor) || 1));
-  let nextSpan = span / f;
+  let nextSpan = span * f;
   nextSpan = Math.max(TICKS_SESSION_MIN_SPAN, Math.min(full, nextSpan));
   let start = anchor - ratio * nextSpan;
   let end = start + nextSpan;
@@ -7100,59 +7775,75 @@ function layoutBigDealBarSlots(items, layout, sessionRange) {
   const pane = layout.bigDeal;
   if (!pane) return [];
   const visible = filterBigDealsInSessionRange(items, sessionRange);
-  const entries = [];
+  const seconds = new Map();
   for (const row of visible) {
     const type = bigDealEventType(row);
-    if (!type) continue;
+    if (!type || !BIG_DEAL_BAR_TYPES[type]) continue;
     const amount = Number(row.amount);
     if (!Number.isFinite(amount) || amount <= 0) continue;
     const time = String(row.time || "");
-    const mins = parseClockMinutes(time);
+    const clock = tickClockSecond(time);
+    const mins = parseClockMinutes(clock || time);
     const off = sessionOffset(mins);
-    if (off == null) continue;
-    entries.push({
+    if (!clock || off == null) continue;
+    let bucket = seconds.get(clock);
+    if (!bucket) {
+      bucket = { clock, mins, off, types: { active_buy: [], passive_buy: [], active_sell: [], passive_sell: [] } };
+      seconds.set(clock, bucket);
+    }
+    bucket.types[type].push({
       row,
       type,
       amount,
       eventId: String(row.event_id || `${time}|${type}|${amount}|${row.volume || 0}`),
       time,
+      clock,
       mins,
       off,
     });
   }
-  entries.sort(
-    (a, b) =>
-      a.off - b.off ||
-      String(a.time).localeCompare(String(b.time)) ||
-      String(a.eventId).localeCompare(String(b.eventId)),
-  );
-  if (!entries.length) return [];
+  if (!seconds.size) return [];
 
-  const minGap = 1;
-  let barW = 6;
-  const place = (width) => {
-    const slots = [];
-    let prevRight = pane.x - minGap;
-    for (const entry of entries) {
-      const idealX = sessionXAtInRange(entry.mins, layout, sessionRange);
-      const half = width / 2;
-      let x = Math.max(pane.x + half, idealX);
-      x = Math.max(x, prevRight + minGap + half);
-      x = Math.min(pane.x + pane.w - half, x);
-      prevRight = x + half;
-      slots.push({ ...entry, x, barW: width });
-    }
-    return slots;
-  };
+  const span = sessionRange
+    ? Math.max(TICKS_SESSION_MIN_SPAN, sessionRange.end - sessionRange.start)
+    : sessionDuration() || 1;
+  const pxPerSec = pane.w / Math.max(1, span * 60);
+  const clusterW = Math.max(4, Math.min(pxPerSec * 0.88, 40));
+  const innerGap = clusterW >= 12 ? 1 : 0;
+  const barW = Math.max(1, (clusterW - innerGap * 3) / 4);
 
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const slots = place(barW);
-    const last = slots[slots.length - 1];
-    const overflow = last ? last.x + barW / 2 - (pane.x + pane.w) : 0;
-    if (overflow <= 0.5) return slots;
-    barW = Math.max(2, barW - 1);
+  const slots = [];
+  const buckets = [...seconds.values()].sort((a, b) => a.off - b.off || a.clock.localeCompare(b.clock));
+  for (const bucket of buckets) {
+    const center = sessionXAtInRange(bucket.mins, layout, sessionRange);
+    const left = center - clusterW / 2;
+    BIG_DEAL_COLUMNS.forEach((type, col) => {
+      const rows = bucket.types[type] || [];
+      if (!rows.length) return;
+      rows.sort(
+        (a, b) =>
+          a.off - b.off ||
+          String(a.time).localeCompare(String(b.time)) ||
+          String(a.eventId).localeCompare(String(b.eventId)),
+      );
+      const x = left + col * (barW + innerGap) + barW / 2;
+      const total = rows.reduce((sum, entry) => sum + entry.amount, 0);
+      let acc = 0;
+      for (const entry of rows) {
+        slots.push({
+          ...entry,
+          x,
+          barW,
+          stackFrom: acc,
+          stackTo: acc + entry.amount,
+          columnTotal: total,
+          stacked: rows.length > 1,
+        });
+        acc += entry.amount;
+      }
+    });
   }
-  return place(Math.max(2, barW));
+  return slots;
 }
 
 function bigDealSlotIsBuy(type) {
@@ -7162,13 +7853,29 @@ function bigDealSlotIsBuy(type) {
 function bigDealBarRect(slot, pane, maxAmt) {
   const halfH = pane.h / 2;
   const yZero = pane.y + halfH;
-  const magnitude = Math.max(1, (slot.amount / Math.max(maxAmt, 1)) * halfH);
+  const scale = halfH / Math.max(maxAmt, 1);
+  const from = Math.min(halfH, Math.max(0, (Number(slot.stackFrom) || 0) * scale));
+  const to = Math.min(halfH, Math.max(from + 1, (Number(slot.stackTo) || Number(slot.amount) || 0) * scale));
+  const h = Math.max(1, to - from);
   const barW = slot.barW;
   const x = slot.x - barW / 2;
   if (bigDealSlotIsBuy(slot.type)) {
-    return { x, y: yZero - magnitude, w: barW, h: magnitude, yZero };
+    return { x, y: yZero - to, w: barW, h, yZero };
   }
-  return { x, y: yZero, w: barW, h: magnitude, yZero };
+  return { x, y: yZero + from, w: barW, h, yZero };
+}
+
+function bigDealColumnTotals(slots) {
+  const seen = new Set();
+  const totals = [];
+  for (const slot of slots || []) {
+    const key = `${slot.clock || ""}|${slot.type}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const total = Number(slot.columnTotal);
+    if (Number.isFinite(total) && total > 0) totals.push(total);
+  }
+  return totals;
 }
 
 function bigDealAtPointer(x, y, layout, sessionRange) {
@@ -7177,14 +7884,19 @@ function bigDealAtPointer(x, y, layout, sessionRange) {
   const slots = bigDealChartState.barSlots || [];
   const yMax = Math.max(Number(bigDealChartState.yMax) || 1, 1);
   let best = null;
-  let bestDist = Infinity;
+  let bestScore = Infinity;
   for (const slot of slots) {
     const rect = bigDealBarRect(slot, pane, yMax);
-    if (x < rect.x - 3 || x > rect.x + rect.w + 3) continue;
-    if (y < rect.y - 3 || y > rect.y + rect.h + 3) continue;
-    const dist = Math.abs(x - slot.x);
-    if (dist < bestDist) {
-      bestDist = dist;
+    const pad = 2;
+    if (x < rect.x - pad || x > rect.x + rect.w + pad) continue;
+    if (y < rect.y - pad || y > rect.y + rect.h + pad) continue;
+    const inside =
+      x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+    const cx = rect.x + rect.w / 2;
+    const cy = rect.y + rect.h / 2;
+    const score = (inside ? 0 : 400) + Math.hypot(x - cx, y - cy);
+    if (score < bestScore) {
+      bestScore = score;
       best = slot;
     }
   }
@@ -7196,6 +7908,8 @@ function drawBigDealEventBars(ctx, layout, items, colors, opts = {}) {
   if (!pane) return [];
   const sessionRange = opts.sessionRange || null;
   const hoverEventId = opts.hoverEventId || null;
+  const hoverSecond = tickClockSecond(opts.hoverSecond || "");
+  const hoverRange = opts.hoverRange || null;
   const slots = layoutBigDealBarSlots(items, layout, sessionRange);
   bigDealChartState.barSlots = slots;
 
@@ -7230,10 +7944,10 @@ function drawBigDealEventBars(ctx, layout, items, colors, opts = {}) {
     return slots;
   }
 
-  const amounts = slots.map((slot) => slot.amount);
-  const sorted = amounts.slice().sort((a, b) => a - b);
+  const totals = bigDealColumnTotals(slots);
+  const sorted = totals.slice().sort((a, b) => a - b);
   const p95 = quantile(sorted, 0.95);
-  const maxAmt = Math.max(p95 ?? sorted[sorted.length - 1], 1);
+  const maxAmt = Math.max(p95 ?? sorted[sorted.length - 1] ?? 1, 1);
   bigDealChartState.yMax = maxAmt;
 
   const yBuyTop = pane.y;
@@ -7269,11 +7983,21 @@ function drawBigDealEventBars(ctx, layout, items, colors, opts = {}) {
   ctx.clip();
   for (const slot of slots) {
     const rect = bigDealBarRect(slot, pane, maxAmt);
-    const dimmed = hoverEventId && hoverEventId !== slot.eventId;
+    const inHoverRange = hoverRange
+      ? dealInHoverRange(slot.time, hoverRange)
+      : Boolean(hoverSecond && (slot.clock || tickClockSecond(slot.time)) === hoverSecond);
+    const dimmed = hoverRange || hoverSecond
+      ? !inHoverRange
+      : hoverEventId && hoverEventId !== slot.eventId;
     ctx.globalAlpha = dimmed ? 0.35 : 1;
     ctx.fillStyle = BIG_DEAL_BAR_TYPES[slot.type]?.color || colors.muted;
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-    if (hoverEventId === slot.eventId) {
+    if (slot.stacked) {
+      ctx.strokeStyle = "rgba(4, 8, 14, 0.55)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, Math.max(0, rect.w - 1), Math.max(0, rect.h - 1));
+    }
+    if (inHoverRange || hoverEventId === slot.eventId) {
       ctx.strokeStyle = colors.cross;
       ctx.lineWidth = 1;
       ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
@@ -7282,7 +8006,7 @@ function drawBigDealEventBars(ctx, layout, items, colors, opts = {}) {
   ctx.globalAlpha = 1;
   ctx.restore();
 
-  if (hoverEventId) {
+  if (hoverEventId && !hoverSecond) {
     const hit = slots.find((slot) => slot.eventId === hoverEventId);
     if (hit) {
       const x = hit.x;
@@ -7434,6 +8158,7 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
     : [0, 0.5, 1].map((t) => price.x + price.w * t);
   drawGrid(ctx, price, yTicks, xTicks, colors);
   drawGrid(ctx, volume, [volume.y, volume.y + volume.h], xTicks, colors);
+  if (sessionAxis) drawSessionPhaseDividers(ctx, layout, colors, sessionRange);
 
   if (Number.isFinite(preClose)) {
     const y = yAt(preClose);
@@ -7559,7 +8284,31 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
     }
   }
 
-  if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
+  const hoverMinutes = Number.isFinite(opts.hoverMinutes) ? Number(opts.hoverMinutes) : null;
+  if (hoverMinutes != null) {
+    const x = sessionXAtInRange(hoverMinutes, layout, sessionRange);
+    const p = Number.isFinite(opts.hoverPrice) ? Number(opts.hoverPrice) : null;
+    ctx.save();
+    ctx.strokeStyle = colors.cross;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, price.y);
+    ctx.lineTo(x, plotBottom);
+    ctx.stroke();
+    if (p != null) {
+      const y = yAt(p);
+      ctx.beginPath();
+      ctx.moveTo(price.x, y);
+      ctx.lineTo(price.x + price.w, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = colors.accent;
+      ctx.beginPath();
+      ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  } else if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
     const x = xAt(hoverIndex);
     const p = Number(items[hoverIndex].price);
     ctx.save();
@@ -7580,18 +8329,6 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
       ctx.beginPath();
       ctx.arc(x, y, 3.2, 0, Math.PI * 2);
       ctx.fill();
-    }
-    if (sessionAxis) {
-      const vol = Number(items[hoverIndex]?.volume) || 0;
-      if (vol > 0) {
-        const maxVol = Math.max(...items.map((d) => Number(d.volume) || 0), 1);
-        const bh = (vol / maxVol) * volume.h;
-        ctx.font = '10px "JetBrains Mono", Consolas, monospace';
-        ctx.fillStyle = colors.muted;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "bottom";
-        ctx.fillText(fmtVolLots(vol), x, Math.max(volume.y + 10, volume.y + volume.h - bh - 3));
-      }
     }
     ctx.restore();
   }
@@ -7823,6 +8560,18 @@ function fundflowHoverRows(ff, row) {
   return rows;
 }
 
+function peHoverRows(peRow, row) {
+  const rows = [];
+  for (const series of visiblePeSeries()) {
+    const v = peSeriesValue(peRow, series);
+    if (v == null) continue;
+    rows.push(
+      row(series.label, `<span style="color:${series.color}">${escapeHtml(fmtNum(v))}</span>`)
+    );
+  }
+  return rows;
+}
+
 function drawGroupedSignedBars(ctx, layout, items, tiers, colors, hoverIndex, { mode = "day" } = {}) {
   const n = items.length;
   if (!n || !tiers.length) return;
@@ -7975,12 +8724,11 @@ function renderChart(hoverIndex = null) {
     return;
   }
   const peItems = alignMetricsToKline(items, peState.allItems);
-  if (peItems.some((d) => peValue(d) != null)) {
-    drawMetricChart(ctx, metricPane, peItems, peValue, metricColors, hoverIndex, {
+  if (hasPeSeriesData(peItems)) {
+    drawPeOverlayChart(ctx, metricPane, peItems, visiblePeSeries(), metricColors, hoverIndex, {
       formatLabel: fmtNum,
       mode: chartState.mode,
       skipHoverHair: true,
-      compactRefs: true,
     });
   } else {
     drawPaneCenterLabel(ctx, layout.pe, peState.loading ? "估值加载中…" : "暂无估值", metricColors);
@@ -8081,15 +8829,8 @@ function fillKlineQuoteCard(absIndex) {
       const ff = fundflowAtTime(d.time);
       if (ff) auxRows.push(...fundflowHoverRows(ff, row));
     } else {
-      const pe = metricValueAtTime(peState.allItems, peValue, d.time);
-      if (pe != null) {
-        auxRows.push(
-          row(
-            peSeriesConf().label,
-            `<span style="color:var(--accent)">${escapeHtml(fmtNum(pe))}</span>`
-          )
-        );
-      }
+      const peRow = alignMetricsToKline([d], peState.allItems)[0];
+      if (peRow) auxRows.push(...peHoverRows(peRow, row));
     }
   }
 
@@ -8353,6 +9094,7 @@ function applyTicksItems(rawItems, { resetViewport = false } = {}) {
     ticksState.viewStart = start;
   }
   syncTicksChartScrollBar();
+  refreshTicksTapeList();
 }
 
 function minuteBarsToTicks(bars) {
@@ -8416,7 +9158,8 @@ function refreshTicksLiveStatus() {
 function refreshTicksChartWindowStatus() {
   const plotCount = ticksPlotItems().length;
   const total = (ticksState.allItems || []).length;
-  if (!total && !ticksState.tradeDate) return;
+  const history = isTicksHistoryView();
+  if (!total && !ticksState.tradeDate && !history) return;
   const sess = ticksSessionViewWindow();
   let zoomTip = "";
   if (sess.zoomed) {
@@ -8429,6 +9172,17 @@ function refreshTicksChartWindowStatus() {
   if (sess.zoomed && plotCount) {
     zoomTip += ` · ${plotCount} 点`;
   }
+  if (history) {
+    const src = ticksState.source ? ` · ${ticksState.source}` : "";
+    const cacheTip = ticksState.cached ? " · 盘后缓存" : "";
+    const date = ticksViewDay();
+    if (!total) {
+      setTicksChartStatus("");
+      return;
+    }
+    setTicksChartStatus(`${date} · 09:15:00–15:30:00${zoomTip}${src}${cacheTip}`);
+    return;
+  }
   if (ticksState.phase === "live") {
     const src = ticksState.source ? ` · ${ticksState.source}` : "";
     const clock = cnNowParts().clockStr;
@@ -8436,18 +9190,19 @@ function refreshTicksChartWindowStatus() {
     return;
   }
   const src = ticksState.source ? ` · ${ticksState.source}` : "";
+  const cacheTip = ticksState.cached ? " · 盘后缓存" : "";
   const date = ticksState.tradeDate ? ` · ${ticksState.tradeDate}` : "";
   const axis = "09:15:00–15:30:00";
   if (ticksState.phase === "lunch") {
-    setTicksChartStatus(`午间休市 · ${axis}${date}${zoomTip}${src}`);
+    setTicksChartStatus(`午间休市 · ${axis}${date}${zoomTip}${src}${cacheTip}`);
     return;
   }
   const today = cnNowParts().dateStr;
   if (ticksState.tradeDate && ticksState.tradeDate === today) {
-    setTicksChartStatus(`已收盘${date} · ${axis}${zoomTip}${src}`);
+    setTicksChartStatus(`已收盘${date} · ${axis}${zoomTip}${src}${cacheTip}`);
     return;
   }
-  setTicksChartStatus(`上一交易日${date} · ${axis}${zoomTip}${src}`);
+  setTicksChartStatus(`上一交易日${date} · ${axis}${zoomTip}${src}${cacheTip}`);
 }
 
 function syncTicksChartScrollBar() {
@@ -8491,7 +9246,7 @@ function ticksHoverIndex() {
   return best;
 }
 
-function renderTicksChart(hoverIndex = undefined) {
+function renderTicksChart(_hoverIndex = undefined) {
   const canvas = els.ticksChart;
   const wrap = els.ticksChartWrap;
   if (!canvas || !wrap) return;
@@ -8511,19 +9266,28 @@ function renderTicksChart(hoverIndex = undefined) {
   const showPctAxis = Number.isFinite(ticksState.preClose) && ticksState.preClose;
   const layout = chartLayout(cssW, cssH, ticksLayoutOptions({ pctAxis: showPctAxis }));
   const drawItems = decimateTicksForPlot(plotItems, layout.price.w);
-  const fullHover = hoverIndex === undefined ? ticksHoverIndex() : hoverIndex;
-  const idx = mapTicksHoverToDrawIndex(fullHover, plotItems, drawItems);
-  const hoverEventId = ticksState.hoverBigDeal
-    ? String(ticksState.hoverBigDeal.event_id || "")
+  const inspectClock =
+    ticksState.chartHovering || ticksState.listHover
+      ? ticksState.hoverSecond
+      : ticksState.linkPin?.clock || null;
+  const snapshot = inspectClock
+    ? summarizeTicksAtSecond(inspectClock) || lastTickSnapshotAtOrBefore(inspectClock) || summarizeDealAtSecond(inspectClock)
     : null;
-  drawRealtimeChart(ctx, layout, drawItems, ticksState.preClose, "ticks", colors, idx, {
+  const barRange = ticksState.listHover ? ticksState.hoverRange : ticksState.linkPin?.range || null;
+  drawRealtimeChart(ctx, layout, drawItems, ticksState.preClose, "ticks", colors, null, {
     sessionAxis: true,
     sessionRange,
     nowMinutes: ticksState.phase === "live" ? cnNowParts().minutes : null,
+    hoverMinutes: inspectClock ? parseClockMinutes(inspectClock) : null,
+    hoverPrice: snapshot?.price,
+    hoverVolume: snapshot?.volume,
   });
   drawBigDealEventBars(ctx, layout, bigDealChartState.items, colors, {
     sessionRange,
-    hoverEventId: hoverEventId || undefined,
+    hoverRange: barRange || undefined,
+    hoverEventId: ticksState.listHover
+      ? ticksState.hoverDealPreferred?.event_id
+      : ticksState.linkPin?.preferred?.event_id,
   });
   drawSessionAxisTicks(ctx, layout, colors, sessionRange, layout.bigDeal);
 }
@@ -8547,10 +9311,132 @@ function ticksLatestItem() {
   return items.length ? items[items.length - 1] : null;
 }
 
+function tickClockSecond(value) {
+  const s = String(value || "").trim();
+  const m = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return "";
+  return `${m[1].padStart(2, "0")}:${m[2]}:${(m[3] || "00").slice(0, 2).padStart(2, "0")}`;
+}
+
+function tickSideMeta(d) {
+  const label = String(d?.side_label || "").toLowerCase();
+  const side = d?.side;
+  if (label === "buy" || side === 1 || side === "buy") return { text: "买", cls: "change-up" };
+  if (label === "sell" || side === 2 || side === "sell") return { text: "卖", cls: "change-down" };
+  if (label === "auction" || side === 4 || side === "auction") return { text: "竞", cls: "" };
+  if (label === "mid" || side === 0 || side === "mid") return { text: "中", cls: "" };
+  return { text: "", cls: "" };
+}
+
+function collectTicksAtSecond(time) {
+  const key = tickClockSecond(time);
+  const all = ticksState.allItems || [];
+  if (!key || !all.length) return [];
+  let lo = 0;
+  let hi = all.length - 1;
+  let hit = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const cur = tickClockSecond(all[mid].time);
+    if (!cur || cur < key) lo = mid + 1;
+    else if (cur > key) hi = mid - 1;
+    else {
+      hit = mid;
+      break;
+    }
+  }
+  if (hit < 0) return [];
+  let start = hit;
+  while (start > 0 && tickClockSecond(all[start - 1].time) === key) start -= 1;
+  let end = hit;
+  while (end + 1 < all.length && tickClockSecond(all[end + 1].time) === key) end += 1;
+  return all.slice(start, end + 1);
+}
+
+function summarizeTicksAtSecond(time) {
+  const list = collectTicksAtSecond(time);
+  if (!list.length) return null;
+  const last = list[list.length - 1];
+  let volume = 0;
+  let count = 0;
+  for (const row of list) {
+    volume += Number(row.volume) || 0;
+    const n = Number(row.count);
+    count += Number.isFinite(n) && n > 0 ? n : 1;
+  }
+  const side = tickSideMeta(last);
+  return {
+    time: last.time || time,
+    clock: tickClockSecond(last.time || time),
+    price: Number(last.price),
+    volume,
+    count,
+    sideText: side.text,
+    sideCls: side.cls,
+  };
+}
+
+function lastTickSnapshotAtOrBefore(time) {
+  const sec = timeToSec(time);
+  if (sec == null) return null;
+  const items = ticksState.allItems || [];
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const stamp = timeToSec(items[i].time);
+    if (stamp != null && stamp <= sec) return summarizeTicksAtSecond(items[i].time);
+  }
+  return null;
+}
+
+function summarizeDealAtSecond(time) {
+  const deals = collectBigDealsAtSecond(time);
+  if (!deals.length) return null;
+  const last = deals[deals.length - 1];
+  const price = Number(last.price);
+  return {
+    time: last.time || time,
+    clock: tickClockSecond(last.time || time),
+    price: Number.isFinite(price) ? price : null,
+    volume: 0,
+    count: deals.length,
+    sideText: "",
+    sideCls: "",
+  };
+}
+
+function collectBigDealsAtSecond(time) {
+  const key = tickClockSecond(time);
+  if (!key) return [];
+  return (bigDealChartState.items || []).filter((row) => tickClockSecond(row.time) === key);
+}
+
+function pickPrimaryDeal(deals, preferred) {
+  if (!deals.length) return null;
+  const prefId = String(preferred?.event_id || "");
+  if (prefId) {
+    const hit = deals.find((row) => String(row.event_id || "") === prefId);
+    if (hit) return hit;
+  }
+  return deals.reduce((best, row) => (Number(row.amount) > Number(best.amount) ? row : best), deals[0]);
+}
+
 function hideTicksHoverCard() {
+  ticksState.listHover = false;
+  ticksState.chartHovering = false;
+  ticksState.hoverOrigin = ticksState.linkPin ? "chart" : "";
   ticksState.hoverTime = null;
   ticksState.hoverBigDeal = null;
-  fillTicksQuoteCard(ticksLatestItem());
+  ticksState.hoverDealPaintId = "";
+  if (restoreTicksLinkPin()) {
+    fillTicksQuoteCardFromSecond(tickClockSecond(ticksLatestItem()?.time));
+    return;
+  }
+  ticksState.hoverSecond = null;
+  ticksState.hoverRange = null;
+  ticksState.hoverTickIndexes = [];
+  ticksState.hoverLinkKey = "";
+  ticksState.hoverDealPreferred = null;
+  syncTapeLinkHighlight();
+  fillTicksQuoteCardFromSecond(tickClockSecond(ticksLatestItem()?.time));
 }
 
 function showTicksHoverCard() {
@@ -8560,73 +9446,63 @@ function showTicksHoverCard() {
 }
 
 function fillTicksQuoteCard(d) {
+  fillTicksQuoteCardFromSecond(
+    ticksState.hoverSecond || tickClockSecond(d?.time) || tickClockSecond(ticksState.hoverDealPreferred?.time)
+  );
+}
+
+function fillTicksQuoteCardFromSecond(second) {
   if (!els.ticksChartHoverCard) return;
-  const deal = ticksState.hoverBigDeal;
-  if (!d && deal) {
-    d = { time: deal.time, price: deal.price, avg_price: null, volume: null };
-  }
-  if (!d) {
+  const clock = tickClockSecond(second);
+  if (!clock) {
+    ticksState.hoverBigDeal = null;
     els.ticksChartHoverCard.classList.add("hidden");
     els.ticksChartHoverCard.setAttribute("aria-hidden", "true");
     els.ticksChartHoverCard.innerHTML = "";
     return;
   }
-  const row = (label, valueHtml, valueCls = "") =>
-    `<span class="chart-hover-item"><span class="k">${escapeHtml(label)}</span><span class="v ${valueCls}">${valueHtml}</span></span>`;
 
+  const quoteClock = quoteClockForEvent(clock);
+  const snapshot = summarizeTicksAtSecond(quoteClock) || lastTickSnapshotAtOrBefore(quoteClock) || summarizeDealAtSecond(clock);
+  const deals = collectBigDealsAtSecond(clock);
+  const primary = pickPrimaryDeal(deals, ticksState.hoverDealPreferred);
+  ticksState.hoverBigDeal = primary;
+  ticksState.hoverTime = quoteClock;
+
+  const price = Number(snapshot?.price);
   let pct = null;
-  const price = Number(d.price);
   if (Number.isFinite(ticksState.preClose) && Number.isFinite(price) && ticksState.preClose) {
     pct = ((price - ticksState.preClose) / ticksState.preClose) * 100;
   }
   const priceCls = pct > 0 ? "change-up" : pct < 0 ? "change-down" : "";
+  const priceText = Number.isFinite(price) ? fmtNum(price) : "—";
   const pctText =
     pct == null || !Number.isFinite(Number(pct))
-      ? null
-      : {
-          text: `${pct > 0 ? "+" : ""}${Number(pct).toFixed(2)}%`,
-          cls: `chart-hover-pct ${priceCls}`,
-        };
-  const avg = Number(d.avg_price);
-  const rows = [
-    Number.isFinite(price) ? row("现价", escapeHtml(fmtNum(d.price)), priceCls) : "",
-    Number.isFinite(avg) ? row("均价", escapeHtml(fmtNum(avg))) : "",
-    pctText ? row("涨跌幅", escapeHtml(pctText.text), pctText.cls) : "",
-    d.volume != null ? row("成交量", escapeHtml(fmtVolLots(d.volume))) : "",
-  ].filter(Boolean);
+      ? "—"
+      : `${pct > 0 ? "+" : ""}${Number(pct).toFixed(2)}%`;
 
-  if (deal) {
-    const side = String(deal.side || "");
-    const sideCls = side === "buy" ? "change-up" : side === "sell" ? "change-down" : "";
-    const type = bigDealEventType(deal);
-    const typeLabel = BIG_DEAL_BAR_TYPES[type]?.label || displayValue(deal.event_name);
-    const lots = Number(deal.volume_lots);
-    const lotsText = Number.isFinite(lots) ? `${Math.round(lots)}手` : "-";
-    rows.push(row("大单", escapeHtml(`${typeLabel} ${fmtWan(deal.amount)}`), sideCls));
-    rows.push(row("大单价", escapeHtml(fmtNum(deal.price)), sideCls));
-    rows.push(row("大单量", escapeHtml(lotsText)));
-  }
-
-  els.ticksChartHoverCard.innerHTML = `<div class="chart-hover-card-rows chart-hover-card-rows--inline"><span class="chart-hover-card-time">${escapeHtml(d.time || deal?.time || "")}</span>${rows.join("")}</div>`;
+  els.ticksChartHoverCard.innerHTML = `<div class="chart-hover-card-rows chart-hover-card-rows--inline chart-ticks-quote">
+    <span class="chart-hover-card-time">${escapeHtml(quoteClock || clock)}</span>
+    <span class="v chart-hover-item--price ${priceCls}">${escapeHtml(priceText)}</span>
+    <span class="v chart-hover-pct ${priceCls}">${escapeHtml(pctText)}</span>
+  </div>`;
   showTicksHoverCard();
 }
 
 function updateTicksHoverLabel(index) {
-  const items = ticksPlotItems();
-  if (index == null || index < 0 || index >= items.length) {
-    if (!ticksState.hoverBigDeal) hideTicksHoverCard();
+  if (index == null) {
+    if (!ticksState.listHover) hideTicksHoverCard();
     return;
   }
-  const d = items[index];
-  ticksState.hoverTime = d.time || null;
-  fillTicksQuoteCard(d);
+  fillTicksQuoteCardFromSecond(ticksState.hoverSecond);
 }
 
 function refreshTicksQuoteCard() {
-  const hover = ticksHoverIndex();
-  if (hover != null) updateTicksHoverLabel(hover);
-  else if (ticksState.hoverBigDeal) fillTicksQuoteCard(ticksLatestItem());
-  else fillTicksQuoteCard(ticksLatestItem());
+  if (ticksState.chartHovering || ticksState.listHover) {
+    fillTicksQuoteCardFromSecond(ticksState.hoverSecond);
+  } else {
+    fillTicksQuoteCardFromSecond(tickClockSecond(ticksLatestItem()?.time));
+  }
 }
 
 function ticksPointerIndex(evt) {
@@ -8641,33 +9517,38 @@ function ticksPointerIndex(evt) {
   const plotRight = layout.price.x + layout.price.w;
   const plotBottom = ticksChartBottomY(layout);
   const sessionRange = ticksEffectiveSessionRange();
-  const items = ticksPlotItems();
-  const volumeBottom = layout.volume.y + layout.volume.h;
-
-  if (layout.bigDeal && y >= layout.bigDeal.y && y <= plotBottom && x >= layout.price.x && x <= plotRight) {
-    const slot = bigDealAtPointer(x, y, layout, sessionRange);
-    ticksState.hoverBigDeal = slot?.row || null;
-    if (slot?.row) {
-      ticksState.hoverTime = slot.row.time || null;
-      const tickIdx = tickIndexAtTime(slot.row.time, items);
-      fillTicksQuoteCard(tickIdx != null && items[tickIdx] ? items[tickIdx] : ticksLatestItem());
-      return tickIdx;
+  const link = evt.type === "pointerup";
+  if (x < layout.price.x || x > plotRight || y < layout.price.y || y > plotBottom) {
+    ticksState.chartHovering = false;
+    if (link) {
+      ticksState.linkPin = null;
+      ticksState.hoverDealPreferred = null;
     }
+    return null;
+  }
+
+  let preferred = null;
+  if (layout.bigDeal && y >= layout.bigDeal.y) {
+    preferred = bigDealAtPointer(x, y, layout, sessionRange)?.row || null;
+  }
+  const second = preferred ? tickClockSecond(preferred.time) : eventClockAtX(x, layout, sessionRange);
+  ticksState.chartHovering = true;
+  if (link) {
+    pinTicksChartLink(second, { preferred, scrollLists: true });
   } else {
-    ticksState.hoverBigDeal = null;
+    ticksState.hoverSecond = tickClockSecond(second) || null;
+    if (ticksState.linkPin) {
+      ticksState.hoverRange = ticksState.linkPin.range;
+      ticksState.hoverTickIndexes = ticksState.linkPin.indexes || [];
+      ticksState.hoverDealPreferred = ticksState.linkPin.preferred || null;
+    } else {
+      ticksState.hoverRange = null;
+      ticksState.hoverTickIndexes = [];
+      ticksState.hoverDealPreferred = preferred;
+    }
+    fillTicksQuoteCardFromSecond(ticksState.hoverSecond);
   }
-
-  if (!items.length) return null;
-  if (x < layout.price.x || x > plotRight || y < layout.price.y || y > volumeBottom) return null;
-
-  let best = 0;
-  for (let i = 0; i < items.length; i += 1) {
-    const mins = parseClockMinutes(items[i].time);
-    const tx = mins == null ? layout.price.x : sessionXAtInRange(mins, layout, sessionRange);
-    if (tx <= x) best = i;
-    else break;
-  }
-  return best;
+  return sessionSecondKey(second);
 }
 
 async function loadPreviousSessionTicks() {
@@ -8711,48 +9592,59 @@ async function bootstrapTicksFromMinuteKline() {
   }
 }
 
-async function loadTicksChart({ silent = false } = {}) {
+async function loadTicksChart({ silent = false, refresh = false } = {}) {
   if (!code || !els.ticksChart) return;
-  if (ticksState.loading) return;
+  const gen = ++ticksState.loadGen;
   ticksState.loading = true;
-  ticksState.phase = cnMarketPhase();
-  ticksState.live = ticksState.phase === "live";
+  const history = isTicksHistoryView();
+  ticksState.phase = history ? "closed" : cnMarketPhase();
+  ticksState.live = !history && ticksState.phase === "live";
   if (!silent) {
-    setTicksChartStatus("正在加载实时…");
+    setTicksChartStatus(history ? "" : "正在加载实时…");
     hideTicksHoverCard();
   }
 
-  if (ticksState.phase === "live" && !ticksState.allItems.length) {
+  if (!history && ticksState.phase === "live" && !ticksState.allItems.length) {
     void bootstrapTicksFromMinuteKline();
   }
 
   try {
-    const qs = new URLSearchParams({ code });
-    if (ticksState.phase === "live") {
+    const qs = new URLSearchParams({ code, day: ticksViewDay() });
+    if (!history && (ticksState.phase === "live" || refresh)) {
       qs.set("refresh", "1");
     }
     const json = await api(`/api/stocks/ticks?${qs.toString()}`);
+    if (gen !== ticksState.loadGen) return;
     const data = json.data || {};
     let rawItems = Array.isArray(data.items) ? data.items : [];
     let preClose = Number(data.pre_price);
     let source = data.source || "";
-    let tradeDate = inferTicksTradeDate(data, rawItems);
+    let tradeDate = inferTicksTradeDate(data, rawItems) || ticksViewDay();
 
-    if (!rawItems.length && ticksState.phase !== "live") {
+    if (!rawItems.length && !history && ticksState.phase !== "live") {
       const fallback = await loadPreviousSessionTicks();
+      if (gen !== ticksState.loadGen) return;
       rawItems = fallback.items;
       if (Number.isFinite(fallback.preClose)) preClose = fallback.preClose;
       source = fallback.source || source;
       tradeDate = fallback.day || tradeDate;
     }
 
-    applyTicksItems(rawItems);
+    applyTicksItems(rawItems, { resetViewport: history });
     ticksState.preClose = Number.isFinite(preClose) ? preClose : null;
     ticksState.source = source;
-    ticksState.tradeDate = tradeDate || inferTicksTradeDate(data, ticksState.allItems);
+    ticksState.cached = Boolean(data.cached);
+    ticksState.tradeDate = tradeDate || inferTicksTradeDate(data, ticksState.allItems) || ticksViewDay();
 
     const count = ticksState.allItems.length;
     if (!count) {
+      if (history) {
+        setTicksChartStatus("");
+        if (els.ticksChartEmpty) els.ticksChartEmpty.classList.add("hidden");
+        fillTicksQuoteCard(null);
+        renderTicksChart();
+        return;
+      }
       if (!silent) setTicksChartStatus("暂无走势数据", { empty: true });
       else setTicksChartStatus(ticksState.phase === "live" ? "实时 · 09:15–15:30 · 等待成交" : "暂无走势数据", {
         empty: ticksState.phase !== "live",
@@ -8766,17 +9658,26 @@ async function loadTicksChart({ silent = false } = {}) {
     refreshTicksQuoteCard();
     renderTicksChart();
   } catch (err) {
+    if (gen !== ticksState.loadGen) return;
     applyTicksItems([], { resetViewport: true });
-    setTicksChartStatus(err.message || "实时加载失败", { empty: true });
+    if (history) {
+      setTicksChartStatus("");
+      if (els.ticksChartEmpty) els.ticksChartEmpty.classList.add("hidden");
+    } else {
+      setTicksChartStatus(err.message || "实时加载失败", { empty: true });
+    }
     fillTicksQuoteCard(null);
     renderTicksChart();
   } finally {
-    ticksState.loading = false;
+    if (gen === ticksState.loadGen) {
+      ticksState.loading = false;
+      refreshTicksTapeList();
+    }
   }
 }
 
 async function pollTicksLive() {
-  if (!code || !els.ticksChart || !ticksState.live) return;
+  if (!code || !els.ticksChart || !ticksState.live || isTicksHistoryView()) return;
   if (ticksState.liveFetching) {
     ticksState.liveFetchPending = true;
     return;
@@ -8794,7 +9695,7 @@ async function pollTicksLive() {
       return;
     }
     const json = await api(`/api/stocks/ticks?${qs.toString()}`);
-    if (gen !== ticksState.liveFetchGen) return;
+    if (gen !== ticksState.liveFetchGen || isTicksHistoryView()) return;
 
     const data = json.data || {};
     let rawItems = Array.isArray(data.items) ? data.items : [];
@@ -8810,6 +9711,7 @@ async function pollTicksLive() {
     applyTicksItems(rawItems);
     if (Number.isFinite(preClose)) ticksState.preClose = preClose;
     if (source) ticksState.source = source;
+    ticksState.cached = Boolean(data.cached);
     ticksState.tradeDate = tradeDate || inferTicksTradeDate(data, ticksState.allItems);
     if (els.ticksChartEmpty) els.ticksChartEmpty.classList.add("hidden");
     refreshTicksQuoteCard();
@@ -8849,6 +9751,10 @@ async function pollProfileLive() {
 
 function onTicksMarketClock() {
   if (document.hidden || !code) return;
+  if (isTicksHistoryView()) {
+    ticksState.live = false;
+    return;
+  }
   const phase = cnMarketPhase();
   const wasLive = ticksState.live;
   ticksState.phase = phase;
@@ -8868,7 +9774,7 @@ function onTicksMarketClock() {
     ticksState.liveFetchPending = false;
     livePollState.profilePending = false;
     if (els.ticksChart) {
-      loadTicksChart({ silent: true });
+      loadTicksChart({ silent: true, refresh: true });
     }
   }
 }
@@ -9124,6 +10030,7 @@ function setupChart() {
 function setupTicksChart() {
   if (!els.ticksChart) return;
 
+  bindTapeChartLink();
   bindChartPaneInteractions({
     canvas: els.ticksChart,
     wrap: els.ticksChartWrap,
@@ -9157,10 +10064,10 @@ function setupTicksChart() {
 /* ---------- 市盈率曲线 ---------- */
 
 const PE_SERIES = {
-  dyn: { key: "pe_dyn", label: "市盈率动" },
-  ttm: { key: "pe_ttm", label: "市盈率TTM" },
-  static: { key: "pe_static", label: "市盈率静" },
-  pb: { key: "pb", label: "市净率" },
+  dyn: { key: "pe_dyn", label: "市盈率动", color: "#f4a261" },
+  ttm: { key: "pe_ttm", label: "市盈率TTM", color: "#2ad4b8" },
+  static: { key: "pe_static", label: "市盈率静", color: "#7aa2f7" },
+  pb: { key: "pb", label: "市净率", color: "#e07a5f" },
 };
 
 /** 未跟行情联动时（如分时 K 线）的默认窗口，接近日 K 默认 90 根。 */
@@ -9174,16 +10081,33 @@ const peState = {
   viewStart: 0,
   viewSize: METRIC_FALLBACK_VIEW_SIZE,
   source: "",
+  visibleSeries: new Set(["dyn", "ttm", "static", "pb"]),
 };
 
 function peSeriesConf() {
   return PE_SERIES[peState.series] || PE_SERIES.ttm;
 }
 
-function peValue(d) {
-  const key = peSeriesConf().key;
-  const n = Number(d?.[key]);
+function visiblePeSeries() {
+  return Object.keys(PE_SERIES)
+    .filter((id) => peState.visibleSeries.has(id))
+    .map((id) => ({ id, ...PE_SERIES[id] }));
+}
+
+function peSeriesValue(d, series) {
+  const n = Number(d?.[series?.key]);
   return Number.isFinite(n) ? n : null;
+}
+
+function peValue(d) {
+  const n = Number(d?.[peSeriesConf().key]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function hasPeSeriesData(items) {
+  const series = visiblePeSeries();
+  if (!series.length) return false;
+  return (items || []).some((d) => series.some((s) => peSeriesValue(d, s) != null));
 }
 
 function quantile(values, q) {
@@ -9549,6 +10473,97 @@ function drawMetricChart(ctx, layout, items, getValue, colors, hoverIndex, { for
   drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { yFormat, skipTimeLabels });
 }
 
+function drawPeOverlayChart(ctx, layout, items, seriesList, colors, hoverIndex, opts = {}) {
+  const n = items.length;
+  if (!n || !seriesList.length) return false;
+  const values = [];
+  for (const d of items) {
+    for (const series of seriesList) {
+      const v = peSeriesValue(d, series);
+      if (v != null) values.push(v);
+    }
+  }
+  if (!values.length) return false;
+
+  const { price } = layout;
+  let minP = Math.min(...values);
+  let maxP = Math.max(...values);
+  const priceScale = buildPriceScale(minP, maxP, {
+    tickCount: priceScaleTickCount(price.h),
+    padRatio: 0.04,
+  });
+  const yAt = (p) =>
+    price.y + ((priceScale.max - p) / (priceScale.max - priceScale.min || 1)) * price.h;
+  const xAt = (i) => price.x + ((i + 0.5) / n) * price.w;
+
+  const yTicks = (priceScale.ticks || []).map(yAt);
+  const xTicks = [0, 0.5, 1].map((t) => price.x + price.w * t);
+  drawGrid(ctx, price, yTicks, xTicks, colors);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(price.x, price.y, price.w, price.h);
+  ctx.clip();
+  for (const series of seriesList) {
+    ctx.beginPath();
+    let started = false;
+    let lastIdx = -1;
+    for (let i = 0; i < n; i += 1) {
+      const v = peSeriesValue(items[i], series);
+      if (v == null) {
+        started = false;
+        continue;
+      }
+      const x = xAt(i);
+      const y = yAt(v);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else ctx.lineTo(x, y);
+      lastIdx = i;
+    }
+    ctx.strokeStyle = series.color;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    if (lastIdx >= 0) {
+      ctx.fillStyle = series.color;
+      ctx.beginPath();
+      ctx.arc(xAt(lastIdx), yAt(peSeriesValue(items[lastIdx], series)), 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+
+  if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
+    const x = xAt(hoverIndex);
+    ctx.save();
+    ctx.strokeStyle = colors.cross;
+    ctx.setLineDash([3, 3]);
+    if (!opts.skipHoverHair) {
+      ctx.beginPath();
+      ctx.moveTo(x, price.y);
+      ctx.lineTo(x, price.y + price.h);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    for (const series of seriesList) {
+      const v = peSeriesValue(items[hoverIndex], series);
+      if (v == null) continue;
+      ctx.fillStyle = series.color;
+      ctx.beginPath();
+      ctx.arc(x, yAt(v), 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  drawAxesLabels(ctx, layout, priceScale, items, opts.mode || "day", colors, {
+    yFormat: opts.yFormat,
+    skipTimeLabels: opts.skipTimeLabels,
+  });
+  return true;
+}
+
 function drawPeChart(ctx, layout, items, colors, hoverIndex) {
   drawMetricChart(ctx, layout, items, peValue, colors, hoverIndex, { formatLabel: fmtNum, mode: "day" });
 }
@@ -9599,7 +10614,7 @@ async function loadPeChart() {
     const data = json.data || {};
     peState.source = data.source || "";
     resetPeViewport(data.items || []);
-    const hasValue = (peState.items || []).some((d) => peValue(d) != null);
+    const hasValue = hasPeSeriesData(peState.items);
     if (!peState.allItems.length || !hasValue) {
       setPeStatus(peEmptyHint(), { empty: true });
       renderPeChart();
@@ -9616,6 +10631,7 @@ async function loadPeChart() {
     renderPeChart();
   } finally {
     peState.loading = false;
+    renderFundamentals();
   }
 }
 
@@ -9674,6 +10690,16 @@ function syncFundflowLegendUi() {
   });
 }
 
+function syncPeLegendUi() {
+  if (!els.peLegendWrap) return;
+  els.peLegendWrap.querySelectorAll(".fundflow-legend-item").forEach((label) => {
+    const series = label.getAttribute("data-series");
+    const input = label.querySelector("input[type=checkbox]");
+    if (!series || !input) return;
+    input.checked = peState.visibleSeries.has(series);
+  });
+}
+
 function setupComboMetric() {
   if (els.comboMetricSelect) {
     els.comboMetricSelect.addEventListener("change", () => {
@@ -9701,6 +10727,27 @@ function setupComboMetric() {
       });
     });
     syncFundflowLegendUi();
+  }
+  if (els.peLegendWrap) {
+    els.peLegendWrap.querySelectorAll(".fundflow-legend-item input[type=checkbox]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const label = input.closest(".fundflow-legend-item");
+        const series = label?.getAttribute("data-series");
+        if (!series || !PE_SERIES[series]) return;
+        if (input.checked) {
+          peState.visibleSeries.add(series);
+        } else if (peState.visibleSeries.size <= 1) {
+          input.checked = true;
+          return;
+        } else {
+          peState.visibleSeries.delete(series);
+        }
+        syncPeLegendUi();
+        renderChart();
+        refreshKlineQuoteCard();
+      });
+    });
+    syncPeLegendUi();
   }
   syncComboLegend();
 }
@@ -10158,6 +11205,7 @@ setupNewsFolding();
 setupMainTabs();
 setupChartsViewport();
 setupMetricTips();
+bindFundamentalsFold();
 setupChart();
 setupTicksChart();
 setupPeChart();

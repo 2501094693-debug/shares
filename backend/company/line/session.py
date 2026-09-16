@@ -6,7 +6,7 @@ lunch：午休。closed：周末及其余时间。
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 CN_TZ = timezone(timedelta(hours=8))
@@ -55,6 +55,56 @@ _SESSION_OPEN_MINUTE = 15
 
 def _at_clock(day: datetime, hour: int, minute: int) -> datetime:
     return day.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+
+def parse_session_day(value: date | datetime | str | None) -> date | None:
+    """把 YYYY-MM-DD / YYYYMMDD / date 收成交易日。"""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        try:
+            return datetime.strptime(text[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if len(digits) >= 8:
+        try:
+            return datetime.strptime(digits[:8], "%Y%m%d").date()
+        except ValueError:
+            return None
+    return None
+
+
+def session_day(now: datetime | None = None):
+    """当前成交所属交易日：开盘前 / 周末回退到上一交易日。"""
+    stamp = cn_now(now)
+    weekday = stamp.weekday()
+    open_at = _at_clock(stamp, _SESSION_OPEN_HOUR, _SESSION_OPEN_MINUTE)
+    if weekday >= 5:
+        friday = stamp - timedelta(days=weekday - 4)
+        return friday.date()
+    if stamp < open_at:
+        days_back = 3 if weekday == 0 else 1
+        return (stamp - timedelta(days=days_back)).date()
+    return stamp.date()
+
+
+def is_cn_session_open(now: datetime | None = None) -> bool:
+    """工作日 09:15 至 15:31（含午休），这段时间覆盖当天分时缓存。"""
+    stamp = cn_now(now)
+    if stamp.weekday() >= 5:
+        return False
+    minutes = stamp.hour * 60 + stamp.minute + stamp.second / 60.0
+    open_m = _SESSION_OPEN_HOUR * 60 + _SESSION_OPEN_MINUTE
+    end_m = _SESSION_CLOSE_HOUR * 60 + _SESSION_CLOSE_MINUTE
+    return open_m <= minutes < end_m
 
 
 def last_session_close(now: datetime | None = None) -> datetime:

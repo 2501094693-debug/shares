@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=big-deal-wheel-20260916" />
+  <link rel="stylesheet" href="/css/style.css?v=ticks-date-row2-20260916" />
   <link rel="stylesheet" href="/css/ai-page.css?v=company-judgment-compact-20260912" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
@@ -114,6 +114,13 @@
 
       <div id="panel-quotes" class="company-panel is-active" data-panel="quotes" role="tabpanel">
         <div class="quotes-layout">
+          <section id="fundamentalsPanel" class="fundamentals-panel metrics-section hidden" aria-label="基本信息">
+            <header class="fundamentals-head">
+              <h4 class="metrics-section-title">基本信息</h4>
+              <button type="button" id="fundamentalsFoldBtn" class="news-fold-btn" aria-expanded="true" title="折叠">▾</button>
+            </header>
+            <div id="fundamentalsBody" class="fundamentals-body"></div>
+          </section>
           <section class="company-hero">
             <div class="company-hero-identity">
               <p id="companyBreadcrumb" class="breadcrumb">-</p>
@@ -129,20 +136,19 @@
           <div class="charts-deck">
           <article class="chart-card chart-card--ticks" aria-label="实时走势">
             <header class="chart-card__head">
-              <div class="chart-card__head-main">
-                <div class="chart-card__title">
-                  <span class="chart-card__mark" aria-hidden="true"></span>
-                  <h3>实时</h3>
-                </div>
-                <div id="ticksChartHoverCard" class="chart-ticks-hover chart-hover-card hidden" aria-hidden="true"></div>
-                <div id="ticksBigDealLegend" class="big-deal-chart-legend" aria-label="大单图例">
-                  <span class="big-deal-chart-legend-item"><i class="big-deal-chart-swatch" data-type="active_buy"></i>主动买</span>
-                  <span class="big-deal-chart-legend-item"><i class="big-deal-chart-swatch" data-type="active_sell"></i>主动卖</span>
-                  <span class="big-deal-chart-legend-item"><i class="big-deal-chart-swatch" data-type="passive_buy"></i>被动买</span>
-                  <span class="big-deal-chart-legend-item"><i class="big-deal-chart-swatch" data-type="passive_sell"></i>被动卖</span>
-                </div>
-                <p id="ticksChartMeta" class="chart-card__meta muted">加载中…</p>
+              <div class="chart-card__title">
+                <span class="chart-card__mark" aria-hidden="true"></span>
+                <h3>实时</h3>
               </div>
+              <div id="ticksBigDealLegend" class="big-deal-chart-legend" aria-label="大单图例">
+                <span class="big-deal-chart-legend-item"><i class="big-deal-chart-swatch" data-type="active_buy"></i>主动买</span>
+                <span class="big-deal-chart-legend-item"><i class="big-deal-chart-swatch" data-type="active_sell"></i>主动卖</span>
+                <span class="big-deal-chart-legend-item"><i class="big-deal-chart-swatch" data-type="passive_buy"></i>被动买</span>
+                <span class="big-deal-chart-legend-item"><i class="big-deal-chart-swatch" data-type="passive_sell"></i>被动卖</span>
+              </div>
+              <p id="ticksChartMeta" class="chart-card__meta muted">加载中…</p>
+              <input id="ticksTapeDay" class="ticks-tape-date" type="date" aria-label="查看日期" />
+              <div id="ticksChartHoverCard" class="chart-ticks-hover chart-hover-card hidden" aria-hidden="true"></div>
             </header>
             <div class="chart-card__stage">
               <div id="ticksChartWrap" class="chart-canvas-wrap">
@@ -200,13 +206,27 @@
                       <option value="fundflow" selected>资金流</option>
                     </select>
                   </label>
-                  <label id="peSeriesWrap" class="chart-select-wrap hidden" aria-label="估值口径">
-                    <select id="peSeriesSelect" class="chart-select">
-                      <option value="dyn">市盈率动</option>
-                      <option value="ttm" selected>市盈率TTM</option>
-                      <option value="static">市盈率静</option>
-                      <option value="pb">市净率</option>
-                    </select>
+                </div>
+                <div id="peLegendWrap" class="fundflow-legend hidden" aria-label="估值口径">
+                  <label class="fundflow-legend-item" data-series="dyn">
+                    <input type="checkbox" checked />
+                    <span class="fundflow-legend-swatch" style="--tier-color: #f4a261"></span>
+                    市盈率动
+                  </label>
+                  <label class="fundflow-legend-item" data-series="ttm">
+                    <input type="checkbox" checked />
+                    <span class="fundflow-legend-swatch" style="--tier-color: #2ad4b8"></span>
+                    市盈率TTM
+                  </label>
+                  <label class="fundflow-legend-item" data-series="static">
+                    <input type="checkbox" checked />
+                    <span class="fundflow-legend-swatch" style="--tier-color: #7aa2f7"></span>
+                    市盈率静
+                  </label>
+                  <label class="fundflow-legend-item" data-series="pb">
+                    <input type="checkbox" checked />
+                    <span class="fundflow-legend-swatch" style="--tier-color: #e07a5f"></span>
+                    市净率
                   </label>
                 </div>
                 <div id="fundflowLegendWrap" class="fundflow-legend hidden" aria-label="资金流分档">
@@ -957,6 +977,6 @@
   <script src="/js/shared/nav.js?v=judgment-after-fund-20260912"></script>
   <script src="/js/shared/ai-modes.js?v=company-analysis-no-ai-page-20260910"></script>
   <script src="/js/shared/company-analysis.js?v=company-analysis-loading-20260912"></script>
-  <script src="/js/company.js?v=big-deal-wheel-20260916"></script>
+  <script src="/js/company.js?v=ticks-empty-loading-20260916"></script>
 </body>
 </html>

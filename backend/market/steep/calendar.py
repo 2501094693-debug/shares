@@ -1,12 +1,12 @@
-"""最近交易日：优先本地日 K，其次上证指数。"""
+"""最近交易日：优先本地日 K，过期或不够则补上证指数。"""
 
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from company.line.eastmoney_kline import fetch_line
-from company.line.session import is_cn_market_live
+from company.line.session import cn_now, is_cn_market_live, last_session_close
 from core.paths import KLINE_CACHE_DIR
 
 # 本地日 K 只在开市日有 bar，用来当交易日历，避免节假日被算进去。
@@ -67,7 +67,7 @@ def _from_index(limit: int) -> list[str]:
 
 def _weekdays(limit: int) -> list[str]:
     dates: list[str] = []
-    day = datetime.now().date()
+    day = cn_now().date()
     while len(dates) < limit:
         if day.weekday() < 5:
             dates.append(day.strftime("%Y%m%d"))
@@ -76,17 +76,32 @@ def _weekdays(limit: int) -> list[str]:
     return dates
 
 
+def _merge_dates(*groups: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for group in groups:
+        for date in group:
+            if date in seen:
+                continue
+            seen.add(date)
+            out.append(date)
+    out.sort()
+    return out
+
+
 def recent_trade_dates(days: int = 5) -> list[str]:
     """最近 ``days`` 个交易日，新 → 旧。只认有日 K 的开市日。"""
     limit = max(int(days), 1)
     dates = _from_disk()
-    if len(dates) < limit:
+    expected = last_session_close().strftime("%Y%m%d")
+    stale = (not dates) or len(dates) < limit or dates[-1] < expected
+    if stale:
         extra = _from_index(max(limit + 32, 500))
-        if len(extra) > len(dates):
-            dates = extra
+        if extra:
+            dates = _merge_dates(dates, extra)
 
     if is_cn_market_live():
-        today = datetime.now().strftime("%Y%m%d")
+        today = cn_now().strftime("%Y%m%d")
         if today not in dates:
             dates.append(today)
 

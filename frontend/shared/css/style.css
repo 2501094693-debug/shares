@@ -323,6 +323,10 @@ html.company-charts-on .quotes-layout {
   height: 100%;
   display: grid;
   grid-template-columns: minmax(280px, min(380px, 34%)) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "fundamentals fundamentals"
+    "hero charts";
   overflow: hidden;
 }
 
@@ -1967,6 +1971,10 @@ html.company-charts-on .company-page.app {
 .quotes-layout {
   display: grid;
   grid-template-columns: minmax(280px, min(380px, 34%)) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "fundamentals fundamentals"
+    "hero charts";
   gap: 10px;
   padding: 10px;
   flex: 1 1 0%;
@@ -1976,7 +1984,22 @@ html.company-charts-on .company-page.app {
   overflow: hidden;
 }
 
+.quotes-layout .fundamentals-panel {
+  grid-area: fundamentals;
+  margin: 0;
+  min-width: 0;
+}
+
+.quotes-layout .fundamentals-panel.hidden {
+  display: none;
+}
+
+.quotes-layout .charts-deck {
+  grid-area: charts;
+}
+
 .quotes-layout .company-hero {
+  grid-area: hero;
   min-width: 0;
   min-height: 0;
   height: 100%;
@@ -2001,10 +2024,6 @@ html.company-charts-on .company-page.app {
   font-size: 1.22rem;
 }
 
-.quotes-layout .company-metrics-panels {
-  gap: 8px;
-}
-
 .quotes-layout .metrics-section {
   padding: 8px 10px 6px;
 }
@@ -2012,6 +2031,70 @@ html.company-charts-on .company-page.app {
 .quotes-layout .metrics-section-title {
   margin-bottom: 6px;
   padding-bottom: 4px;
+}
+
+.fundamentals-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(42, 212, 184, 0.1);
+  cursor: pointer;
+}
+
+.fundamentals-head .metrics-section-title {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fundamentals-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fundamentals-row {
+  min-width: 0;
+}
+
+.fundamentals-row .company-metrics.metrics-inline-row {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.quotes-layout .fundamentals-row .company-metrics.metrics-inline-row {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.fundamentals-row .stat-cell .detail-note {
+  display: block;
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.fundamentals-panel.is-collapsed .fundamentals-body {
+  display: none;
+}
+
+.fundamentals-panel.is-collapsed .fundamentals-head {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.fundamentals-panel .stat-cell.has-tip::after {
+  display: none;
 }
 
 .big-deal-head {
@@ -2034,89 +2117,53 @@ html.company-charts-on .company-page.app {
   min-width: 5.2rem;
 }
 
-.big-deal-wheel {
-  --big-deal-wheel-item: 18px;
-  position: relative;
+.big-deal-range {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
+  min-width: 0;
   color: var(--muted);
   font-size: 0.68rem;
   letter-spacing: 0.04em;
-  user-select: none;
 }
 
-.big-deal-wheel::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  width: 3.6rem;
-  top: 50%;
-  height: var(--big-deal-wheel-item);
-  transform: translateY(-50%);
-  border-top: 1px solid rgba(42, 212, 184, 0.28);
-  border-bottom: 1px solid rgba(42, 212, 184, 0.28);
-  background: rgba(42, 212, 184, 0.06);
-  pointer-events: none;
-  z-index: 1;
-}
-
-.big-deal-wheel-viewport {
-  width: 3.6rem;
-  height: calc(var(--big-deal-wheel-item) * 3);
-  overflow-y: auto;
-  scroll-snap-type: y mandatory;
-  overscroll-behavior: contain;
-  touch-action: pan-y;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
-}
-
-.big-deal-wheel-viewport::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
-}
-
-.big-deal-wheel-viewport:focus {
-  outline: none;
-}
-
-.big-deal-wheel-list {
-  padding: var(--big-deal-wheel-item) 0;
-}
-
-.big-deal-wheel-item {
-  display: block;
-  width: 100%;
-  height: var(--big-deal-wheel-item);
+.big-deal-range-input {
+  width: 4.2rem;
+  min-width: 0;
   margin: 0;
-  padding: 0 2px 0 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
+  padding: 4px 7px;
+  border: 1px solid rgba(42, 212, 184, 0.16);
+  border-radius: calc(var(--radius) + 1px);
+  background: rgba(4, 8, 14, 0.58);
+  color: var(--ink);
   font-family: var(--display);
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
-  line-height: var(--big-deal-wheel-item);
+  line-height: 1.3;
   text-align: right;
-  scroll-snap-align: center;
-  scroll-snap-stop: always;
-  opacity: 0.32;
-  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
-.big-deal-wheel-item.is-active {
-  opacity: 1;
+.big-deal-range-input::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.big-deal-range-input:focus {
+  outline: none;
+  border-color: rgba(42, 212, 184, 0.45);
   color: var(--ink);
-  font-weight: 600;
 }
 
-.big-deal-wheel-unit {
+.big-deal-range-sep {
+  flex: 0 0 auto;
+  color: var(--muted);
+  line-height: 1;
+}
+
+.big-deal-range-unit {
   flex: 0 0 auto;
   line-height: 1;
 }
@@ -2176,26 +2223,107 @@ html.company-charts-on .company-page.app {
   gap: 8px;
 }
 
-.quotes-layout .big-deal-section {
-  flex: 1 1 auto;
-  min-height: 160px;
+.quotes-layout .big-deal-section,
+.quotes-layout .ticks-tape-section {
+  flex: 1 1 0;
+  min-height: 140px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.ticks-tape-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(42, 212, 184, 0.1);
+}
+
+.ticks-tape-head .metrics-section-title {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ticks-tape-date {
+  width: 9.8rem;
+  min-width: 9.8rem;
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border: 1px solid rgba(42, 212, 184, 0.14);
+  border-radius: calc(var(--radius) + 1px);
+  background: rgba(4, 8, 14, 0.58);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 0.72rem;
+  color-scheme: dark;
+}
+
+.ticks-tape-date::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.72;
+}
+
+.ticks-tape-date:focus {
+  outline: none;
+  border-color: rgba(42, 212, 184, 0.45);
+}
+
+.ticks-tape-meta {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.66rem;
+  letter-spacing: 0.02em;
+}
+
+.ticks-tape-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ticks-tape-body > p {
+  margin: 0;
+}
+
+.big-deal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.big-deal-body > p {
+  margin: 0;
 }
 
 .big-deal-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(42, 212, 184, 0.35) transparent;
 }
 
 .big-deal-scroll::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
+  width: 6px;
+  height: 6px;
+}
+
+.big-deal-scroll::-webkit-scrollbar-thumb {
+  background: rgba(42, 212, 184, 0.28);
+  border-radius: 99px;
+}
+
+.big-deal-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .big-deal-table {
@@ -2232,6 +2360,19 @@ html.company-charts-on .company-page.app {
 
 .big-deal-table tbody tr + tr td {
   border-top: 1px solid rgba(42, 212, 184, 0.06);
+}
+
+.big-deal-table tbody tr[data-clock] {
+  cursor: pointer;
+}
+
+.big-deal-table tbody tr.is-linked td {
+  background: rgba(42, 212, 184, 0.16);
+}
+
+.big-deal-table tbody tr.is-linked-primary td {
+  background: rgba(42, 212, 184, 0.26);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .big-deal-tag {
@@ -2585,20 +2726,126 @@ button.chart-legend-item.is-active {
   grid-template-columns: unset;
 }
 
+.chart-card--ticks .chart-card__head {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title legend source source"
+    "hover hover hover date";
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 4px;
+}
+
+.chart-card--ticks .chart-card__title {
+  grid-area: title;
+}
+
+.chart-card--ticks .big-deal-chart-legend {
+  grid-area: legend;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chart-card--ticks .big-deal-chart-legend::-webkit-scrollbar {
+  display: none;
+}
+
+.chart-card--ticks .chart-card__meta {
+  grid-area: source;
+  position: static;
+  flex: none;
+  justify-self: end;
+  align-self: center;
+  margin-top: 0;
+  max-width: none;
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+}
+
+.chart-card--ticks .ticks-tape-date {
+  grid-area: date;
+  margin: 0;
+  justify-self: end;
+  align-self: start;
+}
+
 .chart-card--ticks .chart-ticks-hover {
-  flex: 1 1 auto;
+  grid-area: hover;
+  display: flex;
+  align-items: center;
   min-width: 0;
-  padding: 2px 4px;
+  padding: 2px 0;
   border: 0;
   background: transparent;
   box-shadow: none;
   backdrop-filter: none;
   overflow: hidden;
-  justify-content: flex-start;
 }
 
-.chart-card--ticks .chart-card__meta {
-  flex: 0 1 auto;
+.chart-card--ticks .chart-ticks-tape {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: 0;
+  width: 100%;
+}
+
+.chart-card--ticks .chart-ticks-tape-group {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 0 12px;
+  border-left: 1px solid rgba(42, 212, 184, 0.18);
+  white-space: nowrap;
+}
+
+.chart-card--ticks .chart-ticks-hover .chart-hover-card-time {
+  padding-right: 12px;
+}
+
+.chart-card--ticks .chart-hover-card-time + .chart-ticks-tape-group {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.chart-card--ticks .chart-ticks-tape .v.chart-hover-item--price {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.chart-card--ticks .chart-ticks-quote {
+  gap: 0 14px;
+}
+
+.chart-card--ticks .chart-ticks-quote .chart-hover-item--price {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.chart-card--ticks .chart-ticks-quote .chart-hover-pct {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.chart-card--ticks .chart-ticks-tape .v.is-empty {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.chart-card--ticks .chart-ticks-deal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chart-card--ticks .chart-ticks-tape-more {
+  color: var(--muted);
+  font-size: 0.64rem;
 }
 
 .big-deal-chart-legend {
@@ -2680,6 +2927,7 @@ button.chart-legend-item.is-active {
   -webkit-overflow-scrolling: touch;
 }
 
+.chart-card--ticks .chart-ticks-hover .chart-hover-card-rows--inline,
 .chart-card--kline .chart-kline-hover .chart-hover-card-rows--inline {
   justify-content: flex-start;
 }
@@ -3152,9 +3400,14 @@ button.chart-legend-item.is-active {
 
 .company-hero-title-row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 10px 12px;
+  min-width: 0;
+}
+
+.company-hero-title-row h2 {
+  min-width: 0;
 }
 
 .company-page .company-hero h2 {
@@ -3547,7 +3800,11 @@ button.chart-legend-item.is-active {
   html.company-charts-on .quotes-layout,
   .quotes-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-areas:
+      "fundamentals"
+      "hero"
+      "charts";
     overflow: auto;
   }
 

@@ -3,6 +3,7 @@
 - ``fetch_kline``：腾讯优先、东财兜底。
   腾讯没有季 / 半年 / 年 / 120 分钟，这些周期会直接走东财。
 - ``fetch_ticks``：东财优先、腾讯兜底。
+  盘中（09:15–15:31）每次全量查询覆盖当天文件；盘后 / 周末只读该交易日文件。
 
 K 线磁盘缓存历史根；交易时段只拉最新几根合并；休市走缓存，到期用尾盘校验
 （已定型的 K 对不上则当复权 / 缺口，整段重拉）。
@@ -24,11 +25,11 @@ from typing import Any
 from core.cache import TtlCache
 from core.codes import normalize_code
 from core.fmt import to_float
-from core.paths import KLINE_CACHE_DIR, ensure_cache_dirs
+from core.paths import KLINE_CACHE_DIR, TICKS_CACHE_DIR, ensure_cache_dirs
 from company.line.eastmoney_kline import MINUTE_PERIODS as EM_MINUTE_PERIODS
 from company.line.eastmoney_kline import fetch_line as fetch_eastmoney_line
 from company.line.eastmoney_ticks import fetch_ticks as fetch_eastmoney_ticks
-from company.line.session import is_cn_market_live
+from company.line.session import cn_now, is_cn_market_live, is_cn_session_open, parse_session_day, session_day
 from company.line.tencent_kline import fetch_line as fetch_tencent_line
 from company.line.tencent_ticks import fetch_ticks as fetch_tencent_ticks
 
@@ -43,6 +44,7 @@ KLINE_VERIFY_TTL = 30 * 60
 TICKS_TTL = 1
 
 _KLINE_DISK_VERSION = 1
+_TICKS_DISK_VERSION = 1
 _KLINE_TAIL_DAY = 2
 _KLINE_TAIL_MINUTE_MAX = 80
 _MINUTE_PERIODS = frozenset(EM_MINUTE_PERIODS)
@@ -59,6 +61,7 @@ _kline_live_cache = TtlCache(KLINE_LIVE_TTL)
 _kline_range_cache = TtlCache(KLINE_RANGE_TTL)
 _ticks_cache = TtlCache(TICKS_TTL)
 _kline_disk_lock = threading.Lock()
+_ticks_disk_lock = threading.Lock()
 
 
 def _kline_payload(pack: dict[str, Any], *, source: str) -> dict[str, Any]:
@@ -76,20 +79,24 @@ def _kline_payload(pack: dict[str, Any], *, source: str) -> dict[str, Any]:
     }
 
 
-def _ticks_payload(pack: dict[str, Any], *, source: str) -> dict[str, Any]:
+def _ticks_payload(pack: dict[str, Any], *, source: str, cached: bool = False) -> dict[str, Any]:
     """去掉腾讯 / 东财各自多出来的字段，收成对外逐笔包。最后一条即最新成交。"""
     items = list(pack.get("items") or [])
     last = items[-1] if items else {}
+    day = str(pack.get("day") or pack.get("session_day") or "")
     return {
         "code": pack.get("code") or "",
         "name": pack.get("name") or "",
         "pre_price": pack.get("pre_price"),
         "last_time": last.get("time") or pack.get("last_time") or "",
         "last_price": last.get("price") if last else pack.get("last_price"),
-        "day": pack.get("day") or "",
+        "day": day,
         "source": source or pack.get("source") or "",
         "count": len(items),
         "items": items,
+        "cached": cached,
+        "session_day": str(pack.get("session_day") or day),
+        "cached_at": str(pack.get("cached_at") or ""),
     }
 
 
@@ -495,32 +502,146 @@ def fetch_kline(
     return _slice_payload(result, cap)
 
 
-def fetch_ticks(
-    code: str,
-    *,
-    pos: int | str = 0,
-    force: bool = False,
-) -> dict[str, Any]:
-    """拉取当日成交明细。东财优先，腾讯兜底。
+def _normalize_ticks_pos(pos: int | str | None) -> int:
+    """0=当天全部；负数=最近 N 笔。正数会收成负数。"""
+    if pos is None or pos == "":
+        return 0
+    if isinstance(pos, str):
+        text = pos.strip()
+        if not text:
+            return 0
+        try:
+            value = int(text)
+        except ValueError as exc:
+            raise ValueError("pos 须为整数，0=当天全部，负数=最近 N 笔") from exc
+    else:
+        value = int(pos)
+    if value > 0:
+        value = -value
+    return value
 
-    pos=0 当天全部；pos=-20（或 20）最近 20 笔。
-    """
-    code = normalize_code(code)
-    if not code:
-        raise ValueError("无效股票代码")
 
-    cache_key = f"{code}:{pos}"
-    now = time.time()
-    hit = _cache_get(_ticks_cache, cache_key, force)
-    if hit is not None:
-        return hit
+def _slice_ticks_pos(pack: dict[str, Any], pos: int) -> dict[str, Any]:
+    if pos >= 0:
+        return pack
+    items = list(pack.get("items") or [])
+    n = abs(pos)
+    if n <= 0 or len(items) <= n:
+        return pack
+    sliced = items[-n:]
+    last = sliced[-1] if sliced else {}
+    out = dict(pack)
+    out["items"] = sliced
+    out["count"] = len(sliced)
+    out["last_time"] = last.get("time") or out.get("last_time") or ""
+    out["last_price"] = last.get("price") if last else out.get("last_price")
+    return out
 
+
+def _ticks_disk_path(code: str, day=None):
+    ensure_cache_dirs()
+    parsed = parse_session_day(day)
+    iso = (parsed or session_day()).isoformat()
+    return TICKS_CACHE_DIR / f"{_disk_key_part(code, 'unknown')}_{iso}.json"
+
+
+def _empty_ticks(code: str, *, day: str = "") -> dict[str, Any]:
+    iso = str(day or session_day().isoformat())
+    return {
+        "code": code,
+        "name": "",
+        "pre_price": None,
+        "last_time": "",
+        "last_price": None,
+        "day": iso,
+        "source": "",
+        "count": 0,
+        "items": [],
+        "cached": False,
+        "session_day": iso,
+        "cached_at": "",
+    }
+
+
+def _load_ticks_disk(code: str, day=None) -> dict[str, Any] | None:
+    path = _ticks_disk_path(code, day)
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if int(payload.get("version") or 0) != _TICKS_DISK_VERSION:
+        return None
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return None
+    items = data.get("items")
+    if not isinstance(items, list) or not items:
+        return None
+    return {
+        "code": data.get("code") or code,
+        "name": data.get("name") or "",
+        "pre_price": data.get("pre_price"),
+        "last_time": data.get("last_time") or "",
+        "last_price": data.get("last_price"),
+        "day": str(data.get("day") or payload.get("session_day") or ""),
+        "source": data.get("source") or "",
+        "count": len(items),
+        "items": list(items),
+        "cached": True,
+        "session_day": str(payload.get("session_day") or data.get("day") or ""),
+        "cached_at": str(payload.get("cached_at") or ""),
+    }
+
+
+def _save_ticks_disk(code: str, pack: dict[str, Any]) -> dict[str, Any]:
+    items = list(pack.get("items") or [])
+    if not items:
+        return pack
+    day = session_day()
+    iso = day.isoformat()
+    stamp = cn_now().isoformat()
+    data = {
+        "code": pack.get("code") or code,
+        "name": pack.get("name") or "",
+        "pre_price": pack.get("pre_price"),
+        "last_time": pack.get("last_time") or "",
+        "last_price": pack.get("last_price"),
+        "day": pack.get("day") or iso,
+        "source": pack.get("source") or "",
+        "items": items,
+    }
+    body = {
+        "version": _TICKS_DISK_VERSION,
+        "session_day": iso,
+        "cached_at": stamp,
+        "count": len(items),
+        "data": data,
+    }
+    path = _ticks_disk_path(code)
+    tmp = path.with_suffix(".json.tmp")
+    text = json.dumps(body, ensure_ascii=False)
+    with _ticks_disk_lock:
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(path)
+    out = dict(pack)
+    out["day"] = data["day"]
+    out["session_day"] = iso
+    out["cached_at"] = stamp
+    out["cached"] = False
+    return out
+
+
+def _fetch_remote_ticks(code: str, *, pos: int | str = 0) -> dict[str, Any]:
     pack: dict[str, Any] = {}
     try:
         pack = fetch_eastmoney_ticks(code, pos=pos)
         if pack.get("items"):
             result = _ticks_payload(pack, source="eastmoney")
-            _ticks_cache.put(cache_key, result, cached_at=now)
+            if not result.get("day"):
+                result["day"] = session_day().isoformat()
+                result["session_day"] = result["day"]
             return result
     except ValueError:
         raise
@@ -537,5 +658,59 @@ def fetch_ticks(
     result = _ticks_payload(pack if isinstance(pack, dict) else {}, source=source)
     if not result.get("code"):
         result["code"] = code
-    _ticks_cache.put(cache_key, result, cached_at=now)
+    if not result.get("day"):
+        result["day"] = session_day().isoformat()
+        result["session_day"] = result["day"]
     return result
+
+
+def fetch_ticks(
+    code: str,
+    *,
+    pos: int | str = 0,
+    force: bool = False,
+    day: str = "",
+) -> dict[str, Any]:
+    """拉取成交明细。东财优先，腾讯兜底。
+
+    pos=0 当天全部；pos=-20（或 20）最近 20 笔。
+    不传 day：盘中覆盖当天磁盘缓存，盘后 / 周末直接读该交易日文件。
+    传入历史 day：只读对应缓存，没有则空包。
+    """
+    code = normalize_code(code)
+    if not code:
+        raise ValueError("无效股票代码")
+
+    pos_n = _normalize_ticks_pos(pos)
+    now = time.time()
+    want_day = parse_session_day(day)
+    today = session_day()
+    if want_day is not None and want_day != today:
+        stored = _load_ticks_disk(code, want_day)
+        if stored:
+            return _slice_ticks_pos(stored, pos_n)
+        return _empty_ticks(code, day=want_day.isoformat())
+
+    live = is_cn_session_open()
+    stored = None if force else _load_ticks_disk(code)
+
+    if stored and not live:
+        return _slice_ticks_pos(stored, pos_n)
+
+    cache_key = f"{code}:{pos_n}"
+    hit = _cache_get(_ticks_cache, cache_key, force)
+    if hit is not None:
+        return hit
+
+    result = _fetch_remote_ticks(code, pos=pos_n)
+
+    if pos_n == 0:
+        if result.get("items"):
+            result = _save_ticks_disk(code, result)
+        elif stored:
+            return stored
+    elif not result.get("items") and stored:
+        return _slice_ticks_pos(stored, pos_n)
+
+    _ticks_cache.put(cache_key, result, cached_at=now)
+    return _slice_ticks_pos(result, pos_n) if pos_n < 0 else result

@@ -1,4 +1,0 @@
-﻿['1', 'free', '1', '']
-rows 50 unique codes 39 has603259 False
-['603259', 'ajax', '1', '']
-rows 50 unique codes 39 has603259 False
