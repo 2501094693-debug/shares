@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 QUOTE_TTL = 60  # 秒，进程内完整盘口
 LIVE_QUOTE_TTL = 1  # 休市短缓存；盘中实时每秒拉源站，不走这段 TTL
 SLOW_TTL = 7 * 24 * 60 * 60  # F10 / 自由流通 / 历史高低 / 额外估值
-_QUOTE_DISK_VERSION = 1
+_QUOTE_DISK_VERSION = 3
 
 _cache = TtlCache(QUOTE_TTL)
 _live_cache = TtlCache(LIVE_QUOTE_TTL)

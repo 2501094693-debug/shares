@@ -1,0 +1,38 @@
+﻿{
+  "code": "603259",
+  "name": "药明康德",
+  "period": "big_deal",
+  "source": "tonghuashun",
+  "count": 2,
+  "page": 1,
+  "pages_fetched": 50,
+  "order": "desc",
+  "limit": 20,
+  "items": [
+    {
+      "time": "2026-09-15 10:15:19",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 156.3,
+      "volume": 10300.0,
+      "amount": 1610000.0,
+      "side": "sell",
+      "side_label": "卖盘",
+      "change_pct": -1.61,
+      "change": -2.52
+    },
+    {
+      "time": "2026-09-15 10:15:32",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 156.3,
+      "volume": 8000.0,
+      "amount": 1250500.0,
+      "side": "buy",
+      "side_label": "买盘",
+      "change_pct": -1.61,
+      "change": -2.52
+    }
+  ],
+  "note": "同花顺 ddzz 为全市场流；指定 code 时客户端翻页过滤"
+}

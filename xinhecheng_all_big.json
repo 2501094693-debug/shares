@@ -1,0 +1,787 @@
+﻿{
+  "code": "002001",
+  "name": "新和成",
+  "date": "2026-09-15",
+  "source": "eastmoney_ticks_filtered",
+  "threshold": "成交额>=50万元",
+  "count": 77,
+  "summary": {
+    "buy_amount": 25050500.0,
+    "sell_amount": 24818966.0,
+    "net_amount": 231534.0,
+    "buy_count": 19,
+    "sell_count": 25
+  },
+  "items": [
+    {
+      "time": "2026-09-15 09:19:12",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 18900.0,
+      "amount": 506520.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:19:21",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 19200.0,
+      "amount": 514560.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:19:30",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 19100.0,
+      "amount": 511880.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:20:09",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 19900.0,
+      "amount": 533320.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:20:18",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 21000.0,
+      "amount": 562800.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:20:27",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 22200.0,
+      "amount": 594960.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:20:36",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 23200.0,
+      "amount": 621760.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:20:45",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 23300.0,
+      "amount": 624440.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:20:54",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 24200.0,
+      "amount": 648560.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:21:03",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 24300.0,
+      "amount": 651240.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:21:21",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 24300.0,
+      "amount": 651240.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:21:30",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 24300.0,
+      "amount": 651240.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:21:39",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 24300.0,
+      "amount": 651240.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:22:06",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 24900.0,
+      "amount": 667320.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:22:15",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 24900.0,
+      "amount": 667320.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:22:24",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 24900.0,
+      "amount": 667320.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:22:33",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 25000.0,
+      "amount": 670000.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:22:42",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 25200.0,
+      "amount": 675360.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:22:51",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 25200.0,
+      "amount": 675360.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:00",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 25200.0,
+      "amount": 675360.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:09",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 29000.0,
+      "amount": 777200.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:18",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 29000.0,
+      "amount": 777200.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:27",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.79,
+      "volume": 29500.0,
+      "amount": 790305.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:36",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.79,
+      "volume": 29700.0,
+      "amount": 795663.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:45",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.79,
+      "volume": 30300.0,
+      "amount": 811737.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:54",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.79,
+      "volume": 30400.0,
+      "amount": 814416.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:03",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.75,
+      "volume": 34700.0,
+      "amount": 928225.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:12",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.75,
+      "volume": 34900.0,
+      "amount": 933575.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:21",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.75,
+      "volume": 35400.0,
+      "amount": 946950.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:30",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.7,
+      "volume": 41500.0,
+      "amount": 1108050.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:39",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.7,
+      "volume": 50900.0,
+      "amount": 1359030.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:48",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.7,
+      "volume": 55900.0,
+      "amount": 1492530.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:57",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.7,
+      "volume": 63200.0,
+      "amount": 1687440.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:25:00",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.75,
+      "volume": 73400.0,
+      "amount": 1963450.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:30:00",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.75,
+      "volume": 20300.0,
+      "amount": 543025.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:30:03",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.85,
+      "volume": 37700.0,
+      "amount": 1012245.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:30:06",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.85,
+      "volume": 37200.0,
+      "amount": 998820.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:30:54",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.73,
+      "volume": 27500.0,
+      "amount": 735075.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:31:00",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.79,
+      "volume": 37200.0,
+      "amount": 996588.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:33:09",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.77,
+      "volume": 27800.0,
+      "amount": 744206.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:33:18",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.72,
+      "volume": 31000.0,
+      "amount": 828320.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:33:24",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.69,
+      "volume": 50100.0,
+      "amount": 1337169.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:35:21",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.7,
+      "volume": 32700.0,
+      "amount": 873090.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:36:06",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.74,
+      "volume": 32900.0,
+      "amount": 879746.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:36:30",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.69,
+      "volume": 72200.0,
+      "amount": 1927018.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:36:48",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.69,
+      "volume": 64300.0,
+      "amount": 1716167.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:38:18",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.79,
+      "volume": 21800.0,
+      "amount": 584022.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:40:21",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.83,
+      "volume": 27900.0,
+      "amount": 748557.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:40:54",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.87,
+      "volume": 49200.0,
+      "amount": 1322004.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:41:15",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.84,
+      "volume": 43200.0,
+      "amount": 1159488.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:42:45",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.9,
+      "volume": 22400.0,
+      "amount": 602560.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:43:12",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.91,
+      "volume": 19000.0,
+      "amount": 511290.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:45:21",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.82,
+      "volume": 40500.0,
+      "amount": 1086210.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:49:51",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.78,
+      "volume": 20600.0,
+      "amount": 551668.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:52:00",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.74,
+      "volume": 21100.0,
+      "amount": 564214.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 10:00:18",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.76,
+      "volume": 25200.0,
+      "amount": 674352.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 10:02:33",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.82,
+      "volume": 18700.0,
+      "amount": 501534.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 10:04:21",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 36600.0,
+      "amount": 980880.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 10:08:27",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.77,
+      "volume": 40600.0,
+      "amount": 1086862.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 10:10:57",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.73,
+      "volume": 29200.0,
+      "amount": 780516.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 10:11:03",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.72,
+      "volume": 89900.0,
+      "amount": 2402128.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 10:11:15",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.75,
+      "volume": 51000.0,
+      "amount": 1364250.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 10:11:21",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.8,
+      "volume": 32200.0,
+      "amount": 862960.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 10:14:42",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.85,
+      "volume": 32600.0,
+      "amount": 875310.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 10:15:27",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.86,
+      "volume": 36200.0,
+      "amount": 972332.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 10:16:57",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.89,
+      "volume": 35300.0,
+      "amount": 949217.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 10:17:03",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.89,
+      "volume": 31200.0,
+      "amount": 838968.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 10:17:36",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.9,
+      "volume": 46000.0,
+      "amount": 1237400.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 10:17:54",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.88,
+      "volume": 76900.0,
+      "amount": 2067072.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 10:18:27",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.86,
+      "volume": 90300.0,
+      "amount": 2425458.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 10:23:39",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.83,
+      "volume": 21300.0,
+      "amount": 571479.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 10:26:27",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.91,
+      "volume": 36600.0,
+      "amount": 984906.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 10:36:09",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.84,
+      "volume": 154300.0,
+      "amount": 4141412.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 10:39:00",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.82,
+      "volume": 34500.0,
+      "amount": 925290.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 10:40:15",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.86,
+      "volume": 35200.0,
+      "amount": 945472.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 10:41:21",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.91,
+      "volume": 31100.0,
+      "amount": 836901.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 10:41:27",
+      "code": "002001",
+      "name": "新和成",
+      "price": 26.95,
+      "volume": 65300.0,
+      "amount": 1759835.0,
+      "side": "sell",
+      "side_label": "sell"
+    }
+  ]
+}

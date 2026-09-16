@@ -1,0 +1,13 @@
+﻿python.exe : Traceback (most recent call last):
+所在位置 C:\Users\Administrator\AppData\Local\Temp\ps-script-fba2de96-3506-4b66-a0f4-4f1e36f083c2.ps1:137 字符: 61
++ ... t\backend"; & "c:\Users\Administrator\Desktop\test\.venv\Scripts\pyth ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\Administrator\Desktop\test\backend\scripts\print_sorted_big_ticks.py", line 6, in <module>
+    data = json.loads(path.read_text(encoding="utf-8"))
+  File "D:\Users\Administrator\AppData\Local\Programs\Python\Python313\Lib\json\__init__.py", line 335, in loads
+    raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                          s, 0)
+json.decoder.JSONDecodeError: Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)

@@ -1,0 +1,737 @@
+﻿{
+  "code": "603259",
+  "name": "药明康德",
+  "date": "2026-09-15",
+  "source": "eastmoney_ticks_filtered",
+  "threshold": "成交额>=1000万元",
+  "count": 72,
+  "summary": {
+    "buy_amount": 205923381.0,
+    "sell_amount": 200071572.0,
+    "net_amount": 5851809.0,
+    "buy_count": 11,
+    "sell_count": 13
+  },
+  "items": [
+    {
+      "time": "2026-09-15 09:22:36",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 63400.0,
+      "amount": 10017200.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:22:39",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 63700.0,
+      "amount": 10064600.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:22:42",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 63800.0,
+      "amount": 10080400.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:22:45",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 64900.0,
+      "amount": 10254200.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:22:48",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 65100.0,
+      "amount": 10285800.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:22:51",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 65100.0,
+      "amount": 10285800.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:22:54",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 65100.0,
+      "amount": 10285800.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:22:57",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 65300.0,
+      "amount": 10317400.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:00",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 65400.0,
+      "amount": 10333200.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:03",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 65600.0,
+      "amount": 10364800.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:06",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 70600.0,
+      "amount": 11154800.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:09",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 73300.0,
+      "amount": 11581400.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:12",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 74000.0,
+      "amount": 11692000.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:15",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 76000.0,
+      "amount": 12008000.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:18",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 76000.0,
+      "amount": 12008000.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:21",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 76300.0,
+      "amount": 12055400.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:24",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 76900.0,
+      "amount": 12150200.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:27",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 80000.0,
+      "amount": 12640000.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:30",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 80200.0,
+      "amount": 12671600.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:33",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 83600.0,
+      "amount": 13208800.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:36",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 84500.0,
+      "amount": 13351000.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:39",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 84800.0,
+      "amount": 13398400.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:42",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 84800.0,
+      "amount": 13398400.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:45",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 85100.0,
+      "amount": 13445800.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:48",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 85300.0,
+      "amount": 13477400.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:54",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 85500.0,
+      "amount": 13509000.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:23:57",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.0,
+      "volume": 85500.0,
+      "amount": 13509000.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:00",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.99,
+      "volume": 87400.0,
+      "amount": 13808326.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:03",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.99,
+      "volume": 90100.0,
+      "amount": 14234899.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:06",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.99,
+      "volume": 90400.0,
+      "amount": 14282296.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:09",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.99,
+      "volume": 90400.0,
+      "amount": 14282296.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:12",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.99,
+      "volume": 91700.0,
+      "amount": 14487683.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:15",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.99,
+      "volume": 104300.0,
+      "amount": 16478357.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:18",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.99,
+      "volume": 104600.0,
+      "amount": 16525754.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:21",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.99,
+      "volume": 104700.0,
+      "amount": 16541553.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:24",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.99,
+      "volume": 108600.0,
+      "amount": 17157714.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:27",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.99,
+      "volume": 108600.0,
+      "amount": 17157714.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:30",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.99,
+      "volume": 111900.0,
+      "amount": 17679081.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:33",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.99,
+      "volume": 113000.0,
+      "amount": 17852870.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:36",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 156.99,
+      "volume": 180000.0,
+      "amount": 28258200.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:39",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 156.99,
+      "volume": 182100.0,
+      "amount": 28587879.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:42",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 156.99,
+      "volume": 192000.0,
+      "amount": 30142080.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:45",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 156.99,
+      "volume": 197400.0,
+      "amount": 30989826.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:48",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 156.99,
+      "volume": 200500.0,
+      "amount": 31476495.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:51",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.0,
+      "volume": 223700.0,
+      "amount": 35120900.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:54",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.0,
+      "volume": 264100.0,
+      "amount": 41463700.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:24:57",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.0,
+      "volume": 273300.0,
+      "amount": 42908100.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:25:00",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.1,
+      "volume": 283000.0,
+      "amount": 44459300.0,
+      "side": "other",
+      "side_label": "auction"
+    },
+    {
+      "time": "2026-09-15 09:25:03",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.1,
+      "volume": 283000.0,
+      "amount": 44459300.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:30:12",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.07,
+      "volume": 103700.0,
+      "amount": 16391859.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:30:27",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.87,
+      "volume": 87100.0,
+      "amount": 13837577.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:30:33",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 159.16,
+      "volume": 219300.0,
+      "amount": 34903788.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:30:36",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 159.24,
+      "volume": 63800.0,
+      "amount": 10159512.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:30:42",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 159.58,
+      "volume": 63100.0,
+      "amount": 10069498.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:30:45",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 159.2,
+      "volume": 106100.0,
+      "amount": 16891120.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:30:57",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.9,
+      "volume": 68100.0,
+      "amount": 10821090.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:31:00",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.8,
+      "volume": 122000.0,
+      "amount": 19373600.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:31:09",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.09,
+      "volume": 66200.0,
+      "amount": 10465558.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:31:12",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.09,
+      "volume": 109600.0,
+      "amount": 17326664.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:31:18",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.09,
+      "volume": 88000.0,
+      "amount": 13911920.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:31:33",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.49,
+      "volume": 133800.0,
+      "amount": 21205962.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:33:24",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.89,
+      "volume": 68200.0,
+      "amount": 10836298.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:33:33",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 158.89,
+      "volume": 103000.0,
+      "amount": 16365670.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 09:36:42",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.61,
+      "volume": 67600.0,
+      "amount": 10654436.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:41:33",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.31,
+      "volume": 131000.0,
+      "amount": 20607610.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:46:42",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.5,
+      "volume": 105000.0,
+      "amount": 16537500.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 09:46:45",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.54,
+      "volume": 73200.0,
+      "amount": 11531928.0,
+      "side": "sell",
+      "side_label": "sell"
+    },
+    {
+      "time": "2026-09-15 10:00:33",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 156.85,
+      "volume": 119800.0,
+      "amount": 18790630.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 10:05:15",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 156.11,
+      "volume": 126700.0,
+      "amount": 19779137.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 10:05:39",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 156.0,
+      "volume": 102900.0,
+      "amount": 16052400.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 10:19:24",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.09,
+      "volume": 74600.0,
+      "amount": 11718914.0,
+      "side": "buy",
+      "side_label": "buy"
+    },
+    {
+      "time": "2026-09-15 10:21:03",
+      "code": "603259",
+      "name": "药明康德",
+      "price": 157.06,
+      "volume": 84700.0,
+      "amount": 13302982.0,
+      "side": "sell",
+      "side_label": "sell"
+    }
+  ]
+}

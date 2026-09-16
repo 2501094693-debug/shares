@@ -55,7 +55,7 @@ def fetch_turnover_history(
         raise ValueError("无效股票代码")
 
     cap = max(1, min(int(limit or 2500), 5000))
-    cache_key = f"{code}:{cap}:turnover:v7"
+    cache_key = f"{code}:{cap}:turnover:v8"
     now = time.time()
     if not force:
         hit = _cache.get(cache_key)
@@ -69,11 +69,6 @@ def fetch_turnover_history(
         logger.info("turnover free float skip %s: %s", code, exc)
 
     free_float_shares = to_float(ff.get("free_float_shares"))
-    if not free_float_shares or free_float_shares <= 0:
-        free_float_shares = to_float(ff.get("listed_a_shares") or ff.get("float_shares"))
-        if free_float_shares:
-            logger.info("turnover use listed A shares %s: %s", code, free_float_shares)
-
     if not free_float_shares or free_float_shares <= 0:
         return {
             "code": code,
