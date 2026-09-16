@@ -30,7 +30,12 @@ _HEADERS = {
 }
 _PAGE = 200
 # push2 / 数字节点经常被对端掐线；delay 相对稳。失败节点短冷却，避免并发全打到死节点。
-_HOSTS = ("https://push2delay.eastmoney.com/api/qt/clist/get",)
+_HOSTS = (
+    "https://push2delay.eastmoney.com/api/qt/clist/get",
+    "https://push2.eastmoney.com/api/qt/clist/get",
+    "https://82.push2.eastmoney.com/api/qt/clist/get",
+    "https://71.push2.eastmoney.com/api/qt/clist/get",
+)
 _FAIL_COOLDOWN_SEC = 45.0
 _PAGE_ROUNDS = 3
 _WORKERS = 3

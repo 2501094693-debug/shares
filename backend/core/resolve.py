@@ -27,11 +27,18 @@ _PUSH2_FALLBACK_HOSTS = (
     PUSH2_DELAY_HOST,
     "push2.eastmoney.com",
 )
-# DoH / 系统 DNS 全挂时兜底（东财 delay 节点 A 记录，会轮换但总比直接失败好）。
+# DoH / 系统 DNS 全挂时兜底（A 记录会轮换，但总比直接失败好）。
 _PUSH2_STATIC_IPS = (
-    "117.184.33.53",
     "101.226.30.136",
+    "117.184.33.53",
+    "61.129.129.48",
 )
+_PUSH2_STATIC_BY_HOST: dict[str, tuple[str, ...]] = {
+    PUSH2_DELAY_HOST: _PUSH2_STATIC_IPS,
+    "push2.eastmoney.com": _PUSH2_STATIC_IPS,
+    "push2ex.eastmoney.com": ("61.129.249.5", "43.137.75.211"),
+    "push2his.eastmoney.com": ("61.129.129.199", "101.226.30.136"),
+}
 _doh_lock = threading.Lock()
 _NUMERIC_PUSH2 = re.compile(r"^\d+\.push2\.eastmoney\.com$")
 _PUSH2_EXEMPT = frozenset(
@@ -41,6 +48,28 @@ _PUSH2_EXEMPT = frozenset(
 
 def _is_numeric_push2(host: str) -> bool:
     return bool(_NUMERIC_PUSH2.match(host))
+
+
+def _is_eastmoney_push2_host(host: str) -> bool:
+    """``push2`` / ``push2delay`` / ``push2ex`` / ``71.push2`` 等行情节点。"""
+    host = (host or "").strip().lower().rstrip(".")
+    if not host.endswith(".eastmoney.com"):
+        return False
+    label = host[: -len(".eastmoney.com")]
+    return label == "push2" or label.startswith("push2") or _is_numeric_push2(host)
+
+
+def is_eastmoney_push2_host(host: str) -> bool:
+    return _is_eastmoney_push2_host(host)
+
+
+def _static_ips(host: str) -> tuple[str, ...]:
+    host = (host or "").strip().lower().rstrip(".")
+    if host in _PUSH2_STATIC_BY_HOST:
+        return _PUSH2_STATIC_BY_HOST[host]
+    if _is_eastmoney_push2_host(host):
+        return _PUSH2_STATIC_IPS
+    return ()
 
 
 def is_eastmoney_push2_sharded(host: str) -> bool:
@@ -82,11 +111,13 @@ def resolve_ipv4(host: str) -> list[str]:
         return list(hit[1])
     canon = canonical_push2_host(host)
     if canon != host:
-        ips = _lookup_ips(canon) or list(_PUSH2_STATIC_IPS)
+        ips = _lookup_ips(canon) or list(_static_ips(canon))
     elif _is_numeric_push2(host):
-        ips = _push2_parent_ips(host) or list(_PUSH2_STATIC_IPS)
+        ips = _push2_parent_ips(host) or list(_static_ips(host))
     else:
-        ips = _lookup_ips(host) or _push2_parent_ips(host)
+        ips = _lookup_ips(host) or _push2_parent_ips(host) or list(_static_ips(host))
+    if not ips and _is_eastmoney_push2_host(host):
+        ips = list(_static_ips(host))
     if ips:
         _CACHE[host] = (now + _TTL, ips)
     return ips
@@ -97,20 +128,16 @@ def _lookup_ips(host: str) -> list[str]:
 
 
 def _push2_parent_ips(host: str) -> list[str]:
-    if ".push2" not in host or not host.endswith(".eastmoney.com"):
+    if not _is_eastmoney_push2_host(host):
         return []
-    now = time.monotonic()
     for parent in _PUSH2_FALLBACK_HOSTS:
         if parent == host:
             continue
-        hit = _CACHE.get(parent)
-        if hit and hit[0] > now and hit[1]:
-            return list(hit[1])
+        # 只用实时 DNS，不用其它节点写入的静态 IP 缓存（push2ex ≠ push2delay）。
         ips = _lookup_ips(parent)
         if ips:
-            _CACHE[parent] = (now + _TTL, ips)
             return ips
-    return list(_PUSH2_STATIC_IPS)
+    return list(_static_ips(host))
 
 
 def remember_host(host: str) -> None:

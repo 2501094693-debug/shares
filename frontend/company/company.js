@@ -45,7 +45,7 @@ const EXCHANGE_MARKET_TITLES = {
 
 let metricsStock = {};
 const BIG_DEAL_MIN_KEY = "orbit-big-deal-min-amount";
-const BIG_DEAL_DEFAULT_YUAN = 10_000_000;
+const BIG_DEAL_DEFAULT_YUAN = 1_000_000;
 const BIG_DEAL_PAGE_SIZE = 50;
 const BIG_DEAL_WHEEL_ITEM = 18;
 const BIG_DEAL_WAN_OPTIONS = [30, 50, 80, 100, 150, 200, 300, 500, 800, 1000, 1500, 2000, 3000, 5000, 8000, 10000];
@@ -63,6 +63,24 @@ const bigDealState = {
   pageSize: BIG_DEAL_PAGE_SIZE,
   total: 0,
   pages: 1,
+};
+
+const BIG_DEAL_BAR_TYPES = {
+  active_buy: { label: "主动买", color: "#ff5d6c" },
+  active_sell: { label: "主动卖", color: "#3dd68c" },
+  passive_buy: { label: "被动买", color: "rgba(255, 93, 108, 0.52)" },
+  passive_sell: { label: "被动卖", color: "rgba(61, 214, 140, 0.52)" },
+};
+
+const bigDealChartState = {
+  loading: false,
+  items: [],
+  barSlots: [],
+  yMax: 1,
+  note: "",
+  error: "",
+  cached: false,
+  sessionDay: "",
 };
 
 const PRESS_OUTLETS = [
@@ -743,6 +761,8 @@ const ticksState = {
   phase: "closed",
   tradeDate: "",
   hoverTime: null,
+  hoverBigDeal: null,
+  sessionView: null,
 };
 
 const livePollState = {
@@ -752,6 +772,8 @@ const livePollState = {
 
 const TICKS_LIVE_POS = -40;
 const TICKS_DRAW_MAX = 1800;
+/** 会话轴最小可视跨度（15 秒，单位为 session offset 分钟）。 */
+const TICKS_SESSION_MIN_SPAN = 15 / 60;
 
 const CHART_MODES = {
   "1m": { label: "1分", kind: "kline", period: "1m", limit: 720, viewSize: 240, adjust: "none" },
@@ -1266,6 +1288,7 @@ function applyBigDealThreshold(wan) {
   window.clearTimeout(bigDealWheelReloadTimer);
   bigDealWheelReloadTimer = window.setTimeout(() => {
     void loadBigDeals({ keep: true });
+    void loadBigDealChart({ refresh: true });
   }, 180);
 }
 
@@ -1652,6 +1675,34 @@ async function loadBigDeals({ refresh = false, keep = false } = {}) {
   }
 }
 
+async function loadBigDealChart({ refresh = false } = {}) {
+  if (!code) return;
+  bigDealChartState.loading = !bigDealChartState.items.length;
+  try {
+    const qs = new URLSearchParams({
+      code,
+      scope: "big_deal",
+      source: "tonghuashun",
+      limit: "0",
+      min_amount: String(bigDealMinAmount()),
+    });
+    if (refresh) qs.set("refresh", "1");
+    const json = await api(`/api/stocks/fund-flow?${qs.toString()}`);
+    const data = json.data || {};
+    bigDealChartState.items = Array.isArray(data.items) ? data.items : [];
+    bigDealChartState.note = String(data.note || "");
+    bigDealChartState.cached = Boolean(data.cached);
+    bigDealChartState.sessionDay = String(data.session_day || "");
+    bigDealChartState.error = "";
+  } catch (err) {
+    bigDealChartState.error = err.message || String(err);
+    if (!bigDealChartState.items.length) bigDealChartState.items = [];
+  } finally {
+    bigDealChartState.loading = false;
+    if (isQuotesPanel() && els.ticksChart) renderTicksChart();
+  }
+}
+
 async function loadProfile({ silent = false, refresh = false, liveOnly = false } = {}) {
   if (!code) {
     setError("缺少公司代码");
@@ -1663,6 +1714,7 @@ async function loadProfile({ silent = false, refresh = false, liveOnly = false }
     bigDealState.loading = !bigDealState.items.length;
     renderMetrics(metricsStock);
     void loadBigDeals({ refresh });
+    void loadBigDealChart({ refresh });
   }
 
   try {
@@ -1675,7 +1727,10 @@ async function loadProfile({ silent = false, refresh = false, liveOnly = false }
     const data = json.data || {};
     const stock = data.stock || {};
     applyStock(stock, data.industry || {});
-    if (liveOnly) void loadBigDeals();
+    if (liveOnly) {
+      void loadBigDeals();
+      void loadBigDealChart({ refresh: true });
+    }
     if (!liveOnly) {
       try {
         sessionStorage.removeItem(`stock:${code}`);
@@ -6098,6 +6153,11 @@ function fmtVol(n) {
   return String(Math.round(v));
 }
 
+function fmtVolLots(n) {
+  const text = fmtVol(n);
+  return text === "-" ? text : `${text}手`;
+}
+
 function downsampleTicks(items, maxN) {
   if (!Array.isArray(items) || items.length <= maxN) return items;
   const last = Math.max(2, maxN) - 1;
@@ -6372,7 +6432,11 @@ function propagateLinkedAxis(source) {
   }
 }
 
-function chartLayout(w, h, { pctAxis = false, compact = false, combo = false, fundflow = false } = {}) {
+function chartLayout(
+  w,
+  h,
+  { pctAxis = false, compact = false, combo = false, fundflow = false, ticksCombo = false } = {},
+) {
   const pad = {
     top: 8,
     right: pctAxis ? 52 : 8,
@@ -6381,6 +6445,19 @@ function chartLayout(w, h, { pctAxis = false, compact = false, combo = false, fu
   };
   const innerW = Math.max(10, w - pad.left - pad.right);
   const innerH = Math.max(10, h - pad.top - pad.bottom);
+  if (ticksCombo) {
+    const gap = 8;
+    const volH = Math.max(28, Math.floor(innerH * 0.12));
+    const bdH = Math.max(64, Math.floor(innerH * 0.22));
+    const priceH = Math.max(90, innerH - volH - bdH - gap * 2);
+    let y = pad.top;
+    const price = { x: pad.left, y, w: innerW, h: priceH };
+    y += priceH + gap;
+    const volume = { x: pad.left, y, w: innerW, h: volH };
+    y += volH + gap;
+    const bigDeal = { x: pad.left, y, w: innerW, h: bdH };
+    return { pad, price, volume, bigDeal };
+  }
   if (!combo) {
     const volH = Math.max(36, Math.floor(innerH * 0.16));
     const gap = 10;
@@ -6701,6 +6778,220 @@ function sessionXAt(minutes, layout) {
   return layout.price.x + ratio * layout.price.w;
 }
 
+function sessionXAtInRange(minutes, layout, sessionRange = null) {
+  if (!sessionRange) return sessionXAt(minutes, layout);
+  const off = sessionOffset(minutes);
+  if (off == null) return layout.price.x;
+  const len = Math.max(TICKS_SESSION_MIN_SPAN, sessionRange.end - sessionRange.start);
+  const ratio = (off - sessionRange.start) / len;
+  return layout.price.x + Math.min(1, Math.max(0, ratio)) * layout.price.w;
+}
+
+function sessionOffsetToClock(sessionOff) {
+  if (!Number.isFinite(sessionOff)) return null;
+  let acc = 0;
+  for (const seg of SESSION_SEGMENTS) {
+    const len = seg.end - seg.start;
+    if (acc + len >= sessionOff - 1e-9) {
+      return seg.start + (sessionOff - acc);
+    }
+    acc += len;
+  }
+  return SESSION_SEGMENTS[SESSION_SEGMENTS.length - 1].end;
+}
+
+function formatClockMinutes(minutes) {
+  if (!Number.isFinite(minutes)) return "";
+  const totalSec = Math.max(0, Math.round(minutes * 60));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function snapSessionAxisStep(rawMinutes) {
+  const rawSec = Math.max(TICKS_SESSION_MIN_SPAN * 60, rawMinutes * 60);
+  const secSteps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+  for (const sec of secSteps) {
+    if (sec >= rawSec - 1e-9) return sec / 60;
+  }
+  return rawMinutes;
+}
+
+function buildSessionAxisTicks(sessionRange, plotWidthPx) {
+  const full = sessionDuration();
+  const start = sessionRange?.start ?? 0;
+  const end = sessionRange?.end ?? full;
+  const span = Math.max(TICKS_SESSION_MIN_SPAN, end - start);
+  const maxLabels = Math.max(2, Math.floor(Math.max(120, plotWidthPx) / 54));
+  const step = snapSessionAxisStep(span / maxLabels);
+  const ticks = [];
+  let off = Math.ceil(start / step - 1e-9) * step;
+  for (let guard = 0; off <= end + step * 0.001 && guard < 512; off += step, guard += 1) {
+    const clock = sessionOffsetToClock(off);
+    if (clock == null) continue;
+    ticks.push({
+      minutes: clock,
+      sessionOff: off,
+      label: formatClockMinutes(clock),
+      align: off <= start + step * 0.51 ? "left" : off >= end - step * 0.51 ? "right" : "center",
+    });
+  }
+  if (!ticks.length) {
+    ticks.push({
+      minutes: sessionOffsetToClock(start),
+      sessionOff: start,
+      label: formatClockMinutes(sessionOffsetToClock(start)),
+      align: "left",
+    });
+  }
+  return ticks;
+}
+
+function sessionAxisXTicks(layout, sessionRange) {
+  return buildSessionAxisTicks(sessionRange, layout.price.w).map((tick) =>
+    sessionXAtInRange(tick.minutes, layout, sessionRange),
+  );
+}
+
+function drawSessionAxisTicks(ctx, layout, colors, sessionRange, targetPane) {
+  const pane = targetPane || layout.volume;
+  if (!pane) return;
+  const ticks = buildSessionAxisTicks(sessionRange, layout.price.w);
+  ctx.save();
+  ctx.font = '11px "JetBrains Mono", Consolas, monospace';
+  ctx.fillStyle = colors.muted;
+  ctx.textBaseline = "top";
+  for (const tick of ticks) {
+    ctx.textAlign = tick.align || "center";
+    ctx.fillText(
+      tick.label,
+      sessionXAtInRange(tick.minutes, layout, sessionRange),
+      pane.y + pane.h + 6,
+    );
+  }
+  ctx.restore();
+}
+
+function filterItemsBySessionRange(items, sessionRange) {
+  if (!sessionRange) return items || [];
+  return (items || []).filter((item) => {
+    const off = sessionOffset(parseClockMinutes(item?.time));
+    return off != null && off >= sessionRange.start - 1e-9 && off <= sessionRange.end + 1e-9;
+  });
+}
+
+function ticksEffectiveSessionRange() {
+  if (ticksState.sessionView) {
+    const start = Math.max(0, Number(ticksState.sessionView.start) || 0);
+    const end = Math.min(sessionDuration(), Number(ticksState.sessionView.end) || sessionDuration());
+    if (end - start >= TICKS_SESSION_MIN_SPAN) return { start, end };
+  }
+  return null;
+}
+
+function ticksSessionViewWindow() {
+  const full = sessionDuration();
+  const range = ticksEffectiveSessionRange();
+  const span = range ? Math.max(TICKS_SESSION_MIN_SPAN, range.end - range.start) : full;
+  const maxStart = Math.max(0, full - span);
+  const start = range ? Math.min(Math.max(0, range.start), maxStart) : 0;
+  return {
+    full,
+    span,
+    maxStart,
+    start,
+    end: start + span,
+    zoomed: Boolean(range),
+  };
+}
+
+function ticksPlotItems() {
+  const all = ticksState.allItems || [];
+  const range = ticksEffectiveSessionRange();
+  if (!range) return all;
+  return filterItemsBySessionRange(all, range);
+}
+
+function zoomTicksSessionView(anchorRatio, factor, { render = true } = {}) {
+  const full = sessionDuration();
+  const cur = ticksEffectiveSessionRange() || { start: 0, end: full };
+  const span = Math.max(TICKS_SESSION_MIN_SPAN, cur.end - cur.start);
+  const ratio = Math.min(1, Math.max(0, Number(anchorRatio) || 0.5));
+  const anchor = cur.start + span * ratio;
+  // factor > 1 放大，factor < 1 缩小；统一用 span/factor，勿对 factor 做 max(1.05, …)
+  const f = Math.min(6, Math.max(0.18, Number(factor) || 1));
+  let nextSpan = span / f;
+  nextSpan = Math.max(TICKS_SESSION_MIN_SPAN, Math.min(full, nextSpan));
+  let start = anchor - ratio * nextSpan;
+  let end = start + nextSpan;
+  if (start < 0) {
+    start = 0;
+    end = nextSpan;
+  }
+  if (end > full) {
+    end = full;
+    start = Math.max(0, full - nextSpan);
+  }
+  const atFull = start <= 1e-6 && end >= full - 1e-6;
+  if (
+    !atFull &&
+    Math.abs(start - cur.start) < 1e-6 &&
+    Math.abs(end - cur.end) < 1e-6 &&
+    Math.abs(nextSpan - span) < 1e-6
+  ) {
+    return false;
+  }
+  ticksState.sessionView = atFull ? null : { start, end };
+  syncTicksChartScrollBar();
+  refreshTicksChartWindowStatus();
+  if (render) renderTicksChart();
+  return true;
+}
+
+function panTicksSessionByPixels(dx, canvasWidth) {
+  const win = ticksSessionViewWindow();
+  if (win.maxStart <= 0 && !win.zoomed) return false;
+  const layout = chartLayout(canvasWidth, 300, ticksLayoutOptions({ pctAxis: false }));
+  const span = win.span;
+  const pxPerUnit = layout.price.w / Math.max(TICKS_SESSION_MIN_SPAN, span);
+  if (pxPerUnit <= 0) return false;
+  const delta = -dx / pxPerUnit;
+  if (!Number.isFinite(delta) || Math.abs(delta) < 1e-6) return false;
+  let start = win.start + delta;
+  let end = start + span;
+  if (start < 0) {
+    start = 0;
+    end = span;
+  }
+  if (end > win.full) {
+    end = win.full;
+    start = Math.max(0, win.full - span);
+  }
+  ticksState.sessionView = start <= 1e-6 && end >= win.full - 1e-6 ? null : { start, end };
+  syncTicksChartScrollBar();
+  refreshTicksChartWindowStatus();
+  renderTicksChart();
+  return true;
+}
+
+function setTicksChartSessionStart(nextStart, { render = true, hoverIndex = null } = {}) {
+  const win = ticksSessionViewWindow();
+  const start = Math.min(Math.max(0, Number(nextStart) || 0), win.maxStart);
+  const end = start + win.span;
+  const prev = ticksEffectiveSessionRange() || { start: 0, end: win.full };
+  if (Math.abs(start - prev.start) < 1e-6) {
+    syncTicksChartScrollBar();
+    if (render) renderTicksChart(hoverIndex);
+    return start;
+  }
+  ticksState.sessionView = start <= 1e-6 && end >= win.full - 1e-6 ? null : { start, end };
+  syncTicksChartScrollBar();
+  refreshTicksChartWindowStatus();
+  if (render) renderTicksChart(hoverIndex);
+  return start;
+}
+
 function cnNowParts(date = new Date()) {
   const fmt = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Shanghai",
@@ -6743,17 +7034,271 @@ function cnMarketPhase() {
   return "closed";
 }
 
-function drawSessionTimeLabels(ctx, layout, colors) {
-  const { volume } = layout;
+function drawSessionTimeLabels(ctx, layout, colors, sessionRange = null, targetPane = null) {
+  const pane = targetPane || layout.volume;
+  if (!pane) return;
   ctx.save();
   ctx.font = '11px "JetBrains Mono", Consolas, monospace';
   ctx.fillStyle = colors.muted;
   ctx.textBaseline = "top";
-  for (const item of SESSION_X_LABELS) {
+  const labels = sessionRange
+    ? SESSION_X_LABELS.filter((item) => {
+        const off = sessionOffset(item.minutes);
+        return off != null && off >= sessionRange.start && off <= sessionRange.end;
+      })
+    : SESSION_X_LABELS;
+  for (const item of labels) {
     ctx.textAlign = item.align || "center";
-    ctx.fillText(item.label, sessionXAt(item.minutes, layout), volume.y + volume.h + 6);
+    ctx.fillText(item.label, sessionXAtInRange(item.minutes, layout, sessionRange), pane.y + pane.h + 6);
   }
   ctx.restore();
+}
+
+function ticksChartBottomY(layout) {
+  if (layout?.bigDeal) return layout.bigDeal.y + layout.bigDeal.h;
+  return layout.volume.y + layout.volume.h;
+}
+
+function ticksLayoutOptions(extra = {}) {
+  return {
+    pctAxis: Number.isFinite(ticksState.preClose) && ticksState.preClose,
+    compact: true,
+    ticksCombo: true,
+    ...extra,
+  };
+}
+
+function bigDealEventType(row) {
+  const side = String(row?.side || "").toLowerCase();
+  let agg = String(row?.aggressor || "").toLowerCase();
+  if (!agg) {
+    const label = String(row?.aggressor_label || "");
+    if (label.includes("主")) agg = "active";
+    else if (label.includes("被")) agg = "passive";
+  }
+  if (agg === "active" && side === "buy") return "active_buy";
+  if (agg === "active" && side === "sell") return "active_sell";
+  if (agg === "passive" && side === "buy") return "passive_buy";
+  if (agg === "passive" && side === "sell") return "passive_sell";
+  const name = String(row?.event_name || "");
+  if (name.includes("主动买")) return "active_buy";
+  if (name.includes("主动卖")) return "active_sell";
+  if (name.includes("被动买")) return "passive_buy";
+  if (name.includes("被动卖")) return "passive_sell";
+  return null;
+}
+
+function filterBigDealsInSessionRange(items, sessionRange) {
+  if (!sessionRange) return items || [];
+  return (items || []).filter((row) => {
+    const off = sessionOffset(parseClockMinutes(row?.time));
+    return off != null && off >= sessionRange.start && off <= sessionRange.end;
+  });
+}
+
+function layoutBigDealBarSlots(items, layout, sessionRange) {
+  const pane = layout.bigDeal;
+  if (!pane) return [];
+  const visible = filterBigDealsInSessionRange(items, sessionRange);
+  const entries = [];
+  for (const row of visible) {
+    const type = bigDealEventType(row);
+    if (!type) continue;
+    const amount = Number(row.amount);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    const time = String(row.time || "");
+    const mins = parseClockMinutes(time);
+    const off = sessionOffset(mins);
+    if (off == null) continue;
+    entries.push({
+      row,
+      type,
+      amount,
+      eventId: String(row.event_id || `${time}|${type}|${amount}|${row.volume || 0}`),
+      time,
+      mins,
+      off,
+    });
+  }
+  entries.sort(
+    (a, b) =>
+      a.off - b.off ||
+      String(a.time).localeCompare(String(b.time)) ||
+      String(a.eventId).localeCompare(String(b.eventId)),
+  );
+  if (!entries.length) return [];
+
+  const minGap = 1;
+  let barW = 6;
+  const place = (width) => {
+    const slots = [];
+    let prevRight = pane.x - minGap;
+    for (const entry of entries) {
+      const idealX = sessionXAtInRange(entry.mins, layout, sessionRange);
+      const half = width / 2;
+      let x = Math.max(pane.x + half, idealX);
+      x = Math.max(x, prevRight + minGap + half);
+      x = Math.min(pane.x + pane.w - half, x);
+      prevRight = x + half;
+      slots.push({ ...entry, x, barW: width });
+    }
+    return slots;
+  };
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const slots = place(barW);
+    const last = slots[slots.length - 1];
+    const overflow = last ? last.x + barW / 2 - (pane.x + pane.w) : 0;
+    if (overflow <= 0.5) return slots;
+    barW = Math.max(2, barW - 1);
+  }
+  return place(Math.max(2, barW));
+}
+
+function bigDealSlotIsBuy(type) {
+  return type === "active_buy" || type === "passive_buy";
+}
+
+function bigDealBarRect(slot, pane, maxAmt) {
+  const halfH = pane.h / 2;
+  const yZero = pane.y + halfH;
+  const magnitude = Math.max(1, (slot.amount / Math.max(maxAmt, 1)) * halfH);
+  const barW = slot.barW;
+  const x = slot.x - barW / 2;
+  if (bigDealSlotIsBuy(slot.type)) {
+    return { x, y: yZero - magnitude, w: barW, h: magnitude, yZero };
+  }
+  return { x, y: yZero, w: barW, h: magnitude, yZero };
+}
+
+function bigDealAtPointer(x, y, layout, sessionRange) {
+  const pane = layout.bigDeal;
+  if (!pane || x < pane.x || x > pane.x + pane.w || y < pane.y || y > pane.y + pane.h) return null;
+  const slots = bigDealChartState.barSlots || [];
+  const yMax = Math.max(Number(bigDealChartState.yMax) || 1, 1);
+  let best = null;
+  let bestDist = Infinity;
+  for (const slot of slots) {
+    const rect = bigDealBarRect(slot, pane, yMax);
+    if (x < rect.x - 3 || x > rect.x + rect.w + 3) continue;
+    if (y < rect.y - 3 || y > rect.y + rect.h + 3) continue;
+    const dist = Math.abs(x - slot.x);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = slot;
+    }
+  }
+  return best;
+}
+
+function drawBigDealEventBars(ctx, layout, items, colors, opts = {}) {
+  const pane = layout.bigDeal;
+  if (!pane) return [];
+  const sessionRange = opts.sessionRange || null;
+  const hoverEventId = opts.hoverEventId || null;
+  const slots = layoutBigDealBarSlots(items, layout, sessionRange);
+  bigDealChartState.barSlots = slots;
+
+  const xTicks = sessionAxisXTicks(layout, sessionRange);
+
+  const halfH = pane.h / 2;
+  const yZero = pane.y + halfH;
+  bigDealChartState.yZero = yZero;
+
+  drawPaneLabel(ctx, pane, "大单", colors);
+
+  if (!slots.length) {
+    ctx.save();
+    ctx.font = '11px "JetBrains Mono", Consolas, monospace';
+    ctx.fillStyle = colors.muted;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("暂无大单", pane.x + pane.w / 2, pane.y + pane.h / 2);
+    ctx.restore();
+    drawGrid(ctx, pane, [pane.y + halfH * 0.5, yZero, pane.y + pane.h], xTicks, colors);
+    ctx.save();
+    ctx.strokeStyle = colors.muted || "#8494a8";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(pane.x, yZero);
+    ctx.lineTo(pane.x + pane.w, yZero);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+    bigDealChartState.yMax = 1;
+    return slots;
+  }
+
+  const amounts = slots.map((slot) => slot.amount);
+  const sorted = amounts.slice().sort((a, b) => a - b);
+  const p95 = quantile(sorted, 0.95);
+  const maxAmt = Math.max(p95 ?? sorted[sorted.length - 1], 1);
+  bigDealChartState.yMax = maxAmt;
+
+  const yBuyTop = pane.y;
+  const ySellBottom = pane.y + pane.h;
+  drawGrid(ctx, pane, [yBuyTop + halfH * 0.5, yZero, yZero + halfH * 0.5], xTicks, colors);
+
+  ctx.save();
+  ctx.strokeStyle = colors.muted || "#8494a8";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(pane.x, yZero);
+  ctx.lineTo(pane.x + pane.w, yZero);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  ctx.save();
+  ctx.font = '10px "JetBrains Mono", Consolas, monospace';
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = colors.up;
+  ctx.fillText(fmtWan(maxAmt), pane.x - 4, yBuyTop + 8);
+  ctx.fillStyle = colors.muted;
+  ctx.fillText("0", pane.x - 4, yZero);
+  ctx.fillStyle = colors.down;
+  ctx.fillText(fmtWan(maxAmt), pane.x - 4, ySellBottom - 8);
+  ctx.restore();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(pane.x, pane.y, pane.w, pane.h);
+  ctx.clip();
+  for (const slot of slots) {
+    const rect = bigDealBarRect(slot, pane, maxAmt);
+    const dimmed = hoverEventId && hoverEventId !== slot.eventId;
+    ctx.globalAlpha = dimmed ? 0.35 : 1;
+    ctx.fillStyle = BIG_DEAL_BAR_TYPES[slot.type]?.color || colors.muted;
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    if (hoverEventId === slot.eventId) {
+      ctx.strokeStyle = colors.cross;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  if (hoverEventId) {
+    const hit = slots.find((slot) => slot.eventId === hoverEventId);
+    if (hit) {
+      const x = hit.x;
+      ctx.save();
+      ctx.strokeStyle = colors.cross;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x, layout.price.y);
+      ctx.lineTo(x, pane.y + pane.h);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  }
+
+  return slots;
 }
 
 function drawAxesLabels(ctx, layout, priceScale, items, mode, colors, { preClose = null, yFormat = null, skipTimeLabels = false } = {}) {
@@ -6852,33 +7397,9 @@ function paintChartFrame(ctx, w, h, colors) {
   ctx.fillRect(0, 0, w, h);
 }
 
-function sessionVolumeBuckets(items) {
-  const buckets = [];
-  const index = new Map();
-  for (const d of items) {
-    const mins = parseClockMinutes(d.time);
-    if (mins == null) continue;
-    const key = Math.floor(mins);
-    let bucket = index.get(key);
-    if (!bucket) {
-      bucket = {
-        minutes: key + 0.5,
-        volume: 0,
-        price: Number(d.price),
-        prev: null,
-      };
-      index.set(key, bucket);
-      buckets.push(bucket);
-    }
-    bucket.volume += Number(d.volume) || 0;
-    bucket.prev = Number.isFinite(bucket.price) ? bucket.price : bucket.prev;
-    bucket.price = Number(d.price);
-  }
-  return buckets;
-}
-
 function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverIndex, opts = {}) {
   const sessionAxis = Boolean(opts.sessionAxis);
+  const sessionRange = opts.sessionRange || null;
   const nowMinutes = Number.isFinite(opts.nowMinutes) ? opts.nowMinutes : null;
   const n = items.length;
   if (!n && !sessionAxis) return;
@@ -6891,23 +7412,25 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
     maxP = Math.max(maxP, preClose);
   }
   const { price, volume } = layout;
+  const plotBottom = ticksChartBottomY(layout);
   const priceScale = buildPriceScale(minP, maxP, {
     tickCount: priceScaleTickCount(price.h),
     padRatio: 0.015,
     center: Number.isFinite(preClose) ? preClose : null,
   });
 
+  const sessionSpan = sessionRange ? Math.max(1, sessionRange.end - sessionRange.start) : sessionDuration() || 1;
   const xAt = (i) => {
     if (!sessionAxis) return price.x + ((i + 0.5) / Math.max(1, n)) * price.w;
     const mins = parseClockMinutes(items[i]?.time);
-    return mins == null ? price.x : sessionXAt(mins, layout);
+    return mins == null ? price.x : sessionXAtInRange(mins, layout, sessionRange);
   };
   const yAt = (p) =>
     price.y + ((priceScale.max - p) / (priceScale.max - priceScale.min || 1)) * price.h;
 
   const yTicks = (priceScale.ticks || []).map(yAt);
   const xTicks = sessionAxis
-    ? SESSION_X_LABELS.map((item) => sessionXAt(item.minutes, layout))
+    ? sessionAxisXTicks(layout, sessionRange)
     : [0, 0.5, 1].map((t) => price.x + price.w * t);
   drawGrid(ctx, price, yTicks, xTicks, colors);
   drawGrid(ctx, volume, [volume.y, volume.y + volume.h], xTicks, colors);
@@ -6925,21 +7448,12 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
     ctx.restore();
   }
 
-  if (sessionAxis) {
-    const buckets = sessionVolumeBuckets(items);
-    const maxVol = buckets.reduce((m, b) => Math.max(m, b.volume || 0), 1);
-    const barW = Math.max(1, (price.w / sessionDuration()) * 0.75);
-    for (const bucket of buckets) {
-      const h = (bucket.volume / maxVol) * volume.h;
-      const x = sessionXAt(bucket.minutes, layout) - barW / 2;
-      const up = Number.isFinite(bucket.prev) ? bucket.price >= bucket.prev : true;
-      ctx.fillStyle = up ? colors.upSoft : colors.downSoft;
-      ctx.fillRect(x, volume.y + volume.h - h, barW, h);
-    }
-  } else if (n) {
+  if (n) {
     const vols = items.map((d) => Number(d.volume) || 0);
     const maxVol = Math.max(...vols, 1);
-    const barW = Math.max(1, (price.w / n) * 0.7);
+    const barW = sessionAxis
+      ? Math.max(1, Math.min(4, price.w / sessionSpan))
+      : Math.max(1, (price.w / n) * 0.7);
     for (let i = 0; i < n; i += 1) {
       const v = vols[i];
       const h = (v / maxVol) * volume.h;
@@ -6949,6 +7463,15 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
       const up = Number.isFinite(prev) ? cur >= prev : true;
       ctx.fillStyle = up ? colors.upSoft : colors.downSoft;
       ctx.fillRect(x, volume.y + volume.h - h, barW, h);
+    }
+    if (sessionAxis && maxVol > 0) {
+      ctx.save();
+      ctx.font = '10px "JetBrains Mono", Consolas, monospace';
+      ctx.fillStyle = colors.muted;
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.fillText(fmtVolLots(maxVol), volume.x - 4, volume.y + 8);
+      ctx.restore();
     }
   }
 
@@ -7016,16 +7539,24 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
   }
 
   if (sessionAxis && nowMinutes != null) {
-    const x = sessionXAt(nowMinutes, layout);
+    const nowOff = sessionOffset(nowMinutes);
+    if (
+      sessionRange &&
+      (nowOff == null || nowOff < sessionRange.start || nowOff > sessionRange.end)
+    ) {
+      /* 当前时间不在可视时段内时不画竖线 */
+    } else {
+    const x = sessionXAtInRange(nowMinutes, layout, sessionRange);
     ctx.save();
     ctx.strokeStyle = colors.cross;
     ctx.setLineDash([2, 4]);
     ctx.beginPath();
     ctx.moveTo(x, price.y);
-    ctx.lineTo(x, volume.y + volume.h);
+    ctx.lineTo(x, plotBottom);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
+    }
   }
 
   if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
@@ -7036,7 +7567,7 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
     ctx.setLineDash([3, 3]);
     ctx.beginPath();
     ctx.moveTo(x, price.y);
-    ctx.lineTo(x, volume.y + volume.h);
+    ctx.lineTo(x, plotBottom);
     ctx.stroke();
     if (Number.isFinite(p)) {
       const y = yAt(p);
@@ -7050,6 +7581,18 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
       ctx.arc(x, y, 3.2, 0, Math.PI * 2);
       ctx.fill();
     }
+    if (sessionAxis) {
+      const vol = Number(items[hoverIndex]?.volume) || 0;
+      if (vol > 0) {
+        const maxVol = Math.max(...items.map((d) => Number(d.volume) || 0), 1);
+        const bh = (vol / maxVol) * volume.h;
+        ctx.font = '10px "JetBrains Mono", Consolas, monospace';
+        ctx.fillStyle = colors.muted;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.fillText(fmtVolLots(vol), x, Math.max(volume.y + 10, volume.y + volume.h - bh - 3));
+      }
+    }
     ctx.restore();
   }
 
@@ -7057,7 +7600,7 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
     preClose,
     skipTimeLabels: sessionAxis,
   });
-  if (sessionAxis) drawSessionTimeLabels(ctx, layout, colors);
+  if (sessionAxis && !layout.bigDeal) drawSessionTimeLabels(ctx, layout, colors, sessionRange);
 }
 
 function drawMaLines(ctx, maVisible, yAt, xAt, n) {
@@ -7661,19 +8204,67 @@ function withTickAvg(items) {
   });
 }
 
-function downsampleTicksByTime(items, maxN = TICKS_DRAW_MAX) {
+/** 按屏幕宽度决定绘制上限，避免全局预先丢数据。 */
+function ticksPlotPointCap(plotWidthPx) {
+  return Math.max(160, Math.min(TICKS_DRAW_MAX, Math.floor(plotWidthPx * 2.5)));
+}
+
+/**
+ * 视口级抽稀：每个桶保留最低价、最高价、末价，避免缩小时抹平尖峰。
+ * 比均匀 downsample 更适合价格折线。
+ */
+function decimateTicksPreservingExtrema(items, maxN) {
   if (!Array.isArray(items) || items.length <= maxN) return items;
-  const last = Math.max(2, maxN) - 1;
+  const n = items.length;
+  const bucketCount = Math.max(1, Math.floor(maxN / 3));
   const out = [];
   let prev = -1;
-  for (let i = 0; i < last; i += 1) {
-    const idx = Math.round((i * (items.length - 1)) / last);
-    if (idx === prev) continue;
-    out.push(items[idx]);
-    prev = idx;
+  for (let b = 0; b < bucketCount; b += 1) {
+    const start = Math.floor((b * n) / bucketCount);
+    const end = Math.min(n, Math.floor(((b + 1) * n) / bucketCount));
+    if (start >= end) continue;
+    let minI = start;
+    let maxI = start;
+    let minP = Infinity;
+    let maxP = -Infinity;
+    for (let i = start; i < end; i += 1) {
+      const p = Number(items[i].price);
+      if (!Number.isFinite(p)) continue;
+      if (p < minP) {
+        minP = p;
+        minI = i;
+      }
+      if (p > maxP) {
+        maxP = p;
+        maxI = i;
+      }
+    }
+    const picks = [...new Set([minI, maxI, end - 1])].sort((a, b) => a - b);
+    for (const i of picks) {
+      if (i === prev) continue;
+      out.push(items[i]);
+      prev = i;
+    }
   }
-  if (prev !== items.length - 1) out.push(items[items.length - 1]);
+  if (prev !== n - 1) out.push(items[n - 1]);
   return out;
+}
+
+function decimateTicksForPlot(items, plotWidthPx) {
+  return decimateTicksPreservingExtrema(items, ticksPlotPointCap(plotWidthPx));
+}
+
+function mapTicksHoverToDrawIndex(fullIndex, fullItems, drawItems) {
+  if (fullIndex == null || fullIndex < 0 || !fullItems?.length || !drawItems?.length) return null;
+  if (fullItems === drawItems) return fullIndex;
+  const t = fullItems[fullIndex]?.time;
+  if (t == null) return null;
+  let best = 0;
+  for (let i = 0; i < drawItems.length; i += 1) {
+    if (String(drawItems[i].time) <= String(t)) best = i;
+    else break;
+  }
+  return best;
 }
 
 function tickRowKey(d, { relaxed = false } = {}) {
@@ -7735,12 +8326,32 @@ function mergeTickItems(current, incoming) {
   return incoming;
 }
 
-function applyTicksItems(rawItems) {
-  const decorated = withTickAvg(Array.isArray(rawItems) ? rawItems : []);
+function applyTicksItems(rawItems, { resetViewport = false } = {}) {
+  const raw = Array.isArray(rawItems) ? rawItems : [];
+  const prevTotal = (ticksState.allItems || []).length;
+  const prevSize = Number(ticksState.viewSize) || 0;
+  const prevStart = Number(ticksState.viewStart) || 0;
+  const atLatest =
+    !prevTotal || prevSize <= 0 || prevSize >= prevTotal || prevStart + prevSize >= prevTotal;
+
+  const decorated = withTickAvg(raw);
   ticksState.allItems = decorated;
-  ticksState.items = downsampleTicksByTime(decorated);
-  ticksState.viewSize = ticksState.items.length;
-  ticksState.viewStart = 0;
+  ticksState.items = decorated;
+  const total = ticksState.allItems.length;
+
+  if (!total || resetViewport) {
+    ticksState.viewSize = total;
+    ticksState.viewStart = 0;
+    ticksState.sessionView = null;
+  } else {
+    const minSize = chartMinViewSize(total, { ticks: true });
+    let size = prevSize;
+    if (size <= 0 || size >= prevTotal) size = total;
+    else size = Math.max(minSize, Math.min(total, size));
+    let start = atLatest ? Math.max(0, total - size) : Math.min(prevStart, Math.max(0, total - size));
+    ticksState.viewSize = size;
+    ticksState.viewStart = start;
+  }
   syncTicksChartScrollBar();
 }
 
@@ -7782,74 +8393,94 @@ function minuteBarsToTicks(bars) {
 }
 
 function ticksChartViewWindow() {
-  const all = ticksState.items || [];
+  const all = ticksState.allItems || [];
   const total = all.length;
+  let size = Number(ticksState.viewSize) || 0;
+  if (size <= 0 || size >= total) size = total;
+  const maxStart = Math.max(0, total - size);
+  const start = Math.min(Math.max(0, Number(ticksState.viewStart) || 0), maxStart);
   return {
     all,
     total,
-    size: total,
-    maxStart: 0,
-    start: 0,
-    items: all,
+    size,
+    maxStart,
+    start,
+    items: total ? all.slice(start, start + size) : [],
   };
 }
 
 function refreshTicksLiveStatus() {
-  const src = ticksState.source ? ` · ${ticksState.source}` : "";
-  const date = ticksState.tradeDate ? ` · ${ticksState.tradeDate}` : "";
-  const axis = "09:15–15:30";
-  const clock = cnNowParts().clockStr;
+  refreshTicksChartWindowStatus();
+}
+
+function refreshTicksChartWindowStatus() {
+  const plotCount = ticksPlotItems().length;
+  const total = (ticksState.allItems || []).length;
+  if (!total && !ticksState.tradeDate) return;
+  const sess = ticksSessionViewWindow();
+  let zoomTip = "";
+  if (sess.zoomed) {
+    const a = formatClockMinutes(sessionOffsetToClock(sess.start));
+    const b = formatClockMinutes(sessionOffsetToClock(sess.end));
+    zoomTip = ` · ${a}–${b} · 滚轮放大至秒级 · 拖动平移`;
+  } else if (total) {
+    zoomTip = " · 滚轮可放大至秒级 · 拖动平移";
+  }
+  if (sess.zoomed && plotCount) {
+    zoomTip += ` · ${plotCount} 点`;
+  }
   if (ticksState.phase === "live") {
-    setTicksChartStatus(`实时 · ${clock} · 每秒刷新${src}`);
+    const src = ticksState.source ? ` · ${ticksState.source}` : "";
+    const clock = cnNowParts().clockStr;
+    setTicksChartStatus(`实时 · ${clock} · 每秒刷新${zoomTip}${src}`);
     return;
   }
+  const src = ticksState.source ? ` · ${ticksState.source}` : "";
+  const date = ticksState.tradeDate ? ` · ${ticksState.tradeDate}` : "";
+  const axis = "09:15:00–15:30:00";
   if (ticksState.phase === "lunch") {
-    setTicksChartStatus(`午间休市 · ${axis}${date}${src}`);
+    setTicksChartStatus(`午间休市 · ${axis}${date}${zoomTip}${src}`);
     return;
   }
   const today = cnNowParts().dateStr;
   if (ticksState.tradeDate && ticksState.tradeDate === today) {
-    setTicksChartStatus(`已收盘${date} · ${axis}${src}`);
+    setTicksChartStatus(`已收盘${date} · ${axis}${zoomTip}${src}`);
     return;
   }
-  setTicksChartStatus(`上一交易日${date} · ${axis}${src}`);
-}
-
-function refreshTicksChartWindowStatus() {
-  if (ticksState.phase === "live") {
-    refreshTicksLiveStatus();
-    return;
-  }
-  const count = (ticksState.items || []).length;
-  if (!count && !ticksState.tradeDate) return;
-  refreshTicksLiveStatus();
+  setTicksChartStatus(`上一交易日${date} · ${axis}${zoomTip}${src}`);
 }
 
 function syncTicksChartScrollBar() {
   const bar = els.ticksChartScrollBar;
   const wrap = els.ticksChartAxisScroll;
-  if (wrap) wrap.classList.add("is-disabled");
   if (!bar) return;
-  bar.disabled = true;
+  const win = ticksSessionViewWindow();
+  const canScroll = win.maxStart > 1e-6;
+  if (wrap) wrap.classList.toggle("is-disabled", !canScroll);
+  bar.disabled = !canScroll;
   bar.min = "0";
-  bar.max = "0";
-  bar.value = "0";
+  bar.max = String(Math.max(0, win.maxStart));
+  bar.step = String(Math.max(TICKS_SESSION_MIN_SPAN / 10, 0.01));
+  bar.value = String(win.start);
+  const ratio = win.full > 0 ? Math.min(1, win.span / win.full) : 1;
+  const thumbPx = Math.max(28, Math.round(48 + ratio * 72));
+  bar.style.setProperty("--thumb-w", `${thumbPx}px`);
 }
 
-function setTicksChartViewStart() {
-  return 0;
+function setTicksChartViewStart(nextStart, { render = true, hoverIndex = null } = {}) {
+  return setTicksChartSessionStart(nextStart, { render, hoverIndex });
 }
 
-function zoomTicksChartViewport() {
-  return false;
+function zoomTicksChartViewport(anchorRatio, factor, { render = true } = {}) {
+  return zoomTicksSessionView(anchorRatio, factor, { render });
 }
 
-function panTicksChartByPixels() {
-  return false;
+function panTicksChartByPixels(dx, canvasWidth) {
+  return panTicksSessionByPixels(dx, canvasWidth);
 }
 
 function ticksHoverIndex() {
-  const items = ticksState.items || [];
+  const items = ticksPlotItems();
   const t = ticksState.hoverTime;
   if (!t || !items.length) return null;
   let best = null;
@@ -7867,7 +8498,7 @@ function renderTicksChart(hoverIndex = undefined) {
 
   const dpr = window.devicePixelRatio || 1;
   const cssW = Math.max(240, wrap.clientWidth || 320);
-  const cssH = Math.max(200, wrap.clientHeight || 280);
+  const cssH = Math.max(240, wrap.clientHeight || 300);
   canvas.width = Math.floor(cssW * dpr);
   canvas.height = Math.floor(cssH * dpr);
   const ctx = canvas.getContext("2d");
@@ -7875,14 +8506,38 @@ function renderTicksChart(hoverIndex = undefined) {
 
   const colors = chartColors();
   paintChartFrame(ctx, cssW, cssH, colors);
-  const items = ticksState.items || [];
-  const idx = hoverIndex === undefined ? ticksHoverIndex() : hoverIndex;
+  const sessionRange = ticksEffectiveSessionRange();
+  const plotItems = ticksPlotItems();
   const showPctAxis = Number.isFinite(ticksState.preClose) && ticksState.preClose;
-  const layout = chartLayout(cssW, cssH, { pctAxis: showPctAxis, compact: true });
-  drawRealtimeChart(ctx, layout, items, ticksState.preClose, "ticks", colors, idx, {
+  const layout = chartLayout(cssW, cssH, ticksLayoutOptions({ pctAxis: showPctAxis }));
+  const drawItems = decimateTicksForPlot(plotItems, layout.price.w);
+  const fullHover = hoverIndex === undefined ? ticksHoverIndex() : hoverIndex;
+  const idx = mapTicksHoverToDrawIndex(fullHover, plotItems, drawItems);
+  const hoverEventId = ticksState.hoverBigDeal
+    ? String(ticksState.hoverBigDeal.event_id || "")
+    : null;
+  drawRealtimeChart(ctx, layout, drawItems, ticksState.preClose, "ticks", colors, idx, {
     sessionAxis: true,
+    sessionRange,
     nowMinutes: ticksState.phase === "live" ? cnNowParts().minutes : null,
   });
+  drawBigDealEventBars(ctx, layout, bigDealChartState.items, colors, {
+    sessionRange,
+    hoverEventId: hoverEventId || undefined,
+  });
+  drawSessionAxisTicks(ctx, layout, colors, sessionRange, layout.bigDeal);
+}
+
+function tickIndexAtTime(time, items) {
+  const target = String(time || "");
+  if (!target || !items.length) return null;
+  let best = 0;
+  for (let i = 0; i < items.length; i += 1) {
+    if (String(items[i].time) === target) return i;
+    if (String(items[i].time) <= target) best = i;
+    else break;
+  }
+  return best;
 }
 
 function ticksLatestItem() {
@@ -7894,6 +8549,7 @@ function ticksLatestItem() {
 
 function hideTicksHoverCard() {
   ticksState.hoverTime = null;
+  ticksState.hoverBigDeal = null;
   fillTicksQuoteCard(ticksLatestItem());
 }
 
@@ -7905,6 +8561,10 @@ function showTicksHoverCard() {
 
 function fillTicksQuoteCard(d) {
   if (!els.ticksChartHoverCard) return;
+  const deal = ticksState.hoverBigDeal;
+  if (!d && deal) {
+    d = { time: deal.time, price: deal.price, avg_price: null, volume: null };
+  }
   if (!d) {
     els.ticksChartHoverCard.classList.add("hidden");
     els.ticksChartHoverCard.setAttribute("aria-hidden", "true");
@@ -7929,20 +8589,32 @@ function fillTicksQuoteCard(d) {
         };
   const avg = Number(d.avg_price);
   const rows = [
-    row("现价", escapeHtml(fmtNum(d.price)), priceCls),
+    Number.isFinite(price) ? row("现价", escapeHtml(fmtNum(d.price)), priceCls) : "",
     Number.isFinite(avg) ? row("均价", escapeHtml(fmtNum(avg))) : "",
     pctText ? row("涨跌幅", escapeHtml(pctText.text), pctText.cls) : "",
-    row("成交量", escapeHtml(fmtVol(d.volume))),
+    d.volume != null ? row("成交量", escapeHtml(fmtVolLots(d.volume))) : "",
   ].filter(Boolean);
 
-  els.ticksChartHoverCard.innerHTML = `<div class="chart-hover-card-rows chart-hover-card-rows--inline"><span class="chart-hover-card-time">${escapeHtml(d.time || "")}</span>${rows.join("")}</div>`;
+  if (deal) {
+    const side = String(deal.side || "");
+    const sideCls = side === "buy" ? "change-up" : side === "sell" ? "change-down" : "";
+    const type = bigDealEventType(deal);
+    const typeLabel = BIG_DEAL_BAR_TYPES[type]?.label || displayValue(deal.event_name);
+    const lots = Number(deal.volume_lots);
+    const lotsText = Number.isFinite(lots) ? `${Math.round(lots)}手` : "-";
+    rows.push(row("大单", escapeHtml(`${typeLabel} ${fmtWan(deal.amount)}`), sideCls));
+    rows.push(row("大单价", escapeHtml(fmtNum(deal.price)), sideCls));
+    rows.push(row("大单量", escapeHtml(lotsText)));
+  }
+
+  els.ticksChartHoverCard.innerHTML = `<div class="chart-hover-card-rows chart-hover-card-rows--inline"><span class="chart-hover-card-time">${escapeHtml(d.time || deal?.time || "")}</span>${rows.join("")}</div>`;
   showTicksHoverCard();
 }
 
 function updateTicksHoverLabel(index) {
-  const items = ticksState.items || [];
+  const items = ticksPlotItems();
   if (index == null || index < 0 || index >= items.length) {
-    hideTicksHoverCard();
+    if (!ticksState.hoverBigDeal) hideTicksHoverCard();
     return;
   }
   const d = items[index];
@@ -7953,23 +8625,45 @@ function updateTicksHoverLabel(index) {
 function refreshTicksQuoteCard() {
   const hover = ticksHoverIndex();
   if (hover != null) updateTicksHoverLabel(hover);
+  else if (ticksState.hoverBigDeal) fillTicksQuoteCard(ticksLatestItem());
   else fillTicksQuoteCard(ticksLatestItem());
 }
 
 function ticksPointerIndex(evt) {
   const canvas = els.ticksChart;
   const wrap = els.ticksChartWrap;
-  const items = ticksState.items || [];
-  if (!canvas || !wrap || !items.length) return null;
+  if (!canvas || !wrap) return null;
   const rect = canvas.getBoundingClientRect();
   const x = evt.clientX - rect.left;
+  const y = evt.clientY - rect.top;
   const showPctAxis = Number.isFinite(ticksState.preClose) && ticksState.preClose;
-  const layout = chartLayout(rect.width, rect.height, { pctAxis: showPctAxis, compact: true });
-  if (x < layout.price.x || x > layout.price.x + layout.price.w) return null;
+  const layout = chartLayout(rect.width, rect.height, ticksLayoutOptions({ pctAxis: showPctAxis }));
+  const plotRight = layout.price.x + layout.price.w;
+  const plotBottom = ticksChartBottomY(layout);
+  const sessionRange = ticksEffectiveSessionRange();
+  const items = ticksPlotItems();
+  const volumeBottom = layout.volume.y + layout.volume.h;
+
+  if (layout.bigDeal && y >= layout.bigDeal.y && y <= plotBottom && x >= layout.price.x && x <= plotRight) {
+    const slot = bigDealAtPointer(x, y, layout, sessionRange);
+    ticksState.hoverBigDeal = slot?.row || null;
+    if (slot?.row) {
+      ticksState.hoverTime = slot.row.time || null;
+      const tickIdx = tickIndexAtTime(slot.row.time, items);
+      fillTicksQuoteCard(tickIdx != null && items[tickIdx] ? items[tickIdx] : ticksLatestItem());
+      return tickIdx;
+    }
+  } else {
+    ticksState.hoverBigDeal = null;
+  }
+
+  if (!items.length) return null;
+  if (x < layout.price.x || x > plotRight || y < layout.price.y || y > volumeBottom) return null;
+
   let best = 0;
   for (let i = 0; i < items.length; i += 1) {
     const mins = parseClockMinutes(items[i].time);
-    const tx = mins == null ? layout.price.x : sessionXAt(mins, layout);
+    const tx = mins == null ? layout.price.x : sessionXAtInRange(mins, layout, sessionRange);
     if (tx <= x) best = i;
     else break;
   }
@@ -8057,7 +8751,7 @@ async function loadTicksChart({ silent = false } = {}) {
     ticksState.source = source;
     ticksState.tradeDate = tradeDate || inferTicksTradeDate(data, ticksState.allItems);
 
-    const count = ticksState.items.length;
+    const count = ticksState.allItems.length;
     if (!count) {
       if (!silent) setTicksChartStatus("暂无走势数据", { empty: true });
       else setTicksChartStatus(ticksState.phase === "live" ? "实时 · 09:15–15:30 · 等待成交" : "暂无走势数据", {
@@ -8072,7 +8766,7 @@ async function loadTicksChart({ silent = false } = {}) {
     refreshTicksQuoteCard();
     renderTicksChart();
   } catch (err) {
-    applyTicksItems([]);
+    applyTicksItems([], { resetViewport: true });
     setTicksChartStatus(err.message || "实时加载失败", { empty: true });
     fillTicksQuoteCard(null);
     renderTicksChart();
@@ -8194,6 +8888,7 @@ function bindChartPaneInteractions({
   syncScrollBar,
   layoutPctAxis = () => false,
   layoutCompact = false,
+  layoutTicksCombo = () => false,
   enablePanZoom = true,
 }) {
   if (!canvas) return;
@@ -8285,7 +8980,7 @@ function bindChartPaneInteractions({
     (evt) => {
       if (!enablePanZoom) return;
       const win = viewWindow();
-      if (!win.total) return;
+      if (!(win.total || win.full)) return;
       evt.preventDefault();
       hideHover();
       hoverIdx = null;
@@ -8294,6 +8989,7 @@ function bindChartPaneInteractions({
       const layout = chartLayout(rect.width, rect.height, {
         pctAxis: layoutPctAxis(),
         compact: layoutCompact,
+        ticksCombo: layoutTicksCombo(),
       });
       const x = evt.clientX - rect.left;
       let anchorRatio = 0.5;
@@ -8302,15 +8998,17 @@ function bindChartPaneInteractions({
       }
 
       if (Math.abs(evt.deltaX) > Math.abs(evt.deltaY) * 1.15) {
-        const { maxStart } = viewWindow();
-        if (maxStart <= 0) return;
-        const step = Math.max(1, Math.round(Math.abs(evt.deltaX) / 40));
-        setViewStart(win.start + (evt.deltaX > 0 ? step : -step), { render: true });
+        const fresh = viewWindow();
+        if (fresh.maxStart <= 0) return;
+        const step = fresh.full
+          ? Math.max(TICKS_SESSION_MIN_SPAN, (fresh.span || sessionDuration()) * 0.06)
+          : Math.max(1, Math.round(Math.abs(evt.deltaX) / 40));
+        setViewStart(fresh.start + (evt.deltaX > 0 ? step : -step), { render: true });
         return;
       }
 
-      const steps = Math.max(1, Math.min(5, Math.round(Math.abs(evt.deltaY) / 72) || 1));
-      const base = evt.deltaY > 0 ? 1.14 : 1 / 1.14;
+      const steps = Math.max(1, Math.min(6, Math.round(Math.abs(evt.deltaY) / 56) || 1));
+      const base = evt.deltaY > 0 ? 1.22 : 1 / 1.22;
       zoomViewport(anchorRatio, base ** steps, { render: true });
     },
     { passive: false }
@@ -8435,13 +9133,14 @@ function setupTicksChart() {
     render: renderTicksChart,
     pointerIndexAt: ticksPointerIndex,
     panByPixels: panTicksChartByPixels,
-    viewWindow: ticksChartViewWindow,
+    viewWindow: ticksSessionViewWindow,
     setViewStart: setTicksChartViewStart,
     zoomViewport: zoomTicksChartViewport,
     syncScrollBar: syncTicksChartScrollBar,
     layoutPctAxis: () => Number.isFinite(ticksState.preClose) && ticksState.preClose,
     layoutCompact: true,
-    enablePanZoom: false,
+    layoutTicksCombo: () => true,
+    enablePanZoom: true,
   });
 
   document.addEventListener("visibilitychange", () => {
@@ -9371,8 +10070,8 @@ function setupTurnoverChart() {
         setTurnoverViewStart(turnoverState.viewStart + (evt.deltaX > 0 ? step : -step), { render: true });
         return;
       }
-      const steps = Math.max(1, Math.min(5, Math.round(Math.abs(evt.deltaY) / 72) || 1));
-      const base = evt.deltaY > 0 ? 1.14 : 1 / 1.14;
+      const steps = Math.max(1, Math.min(6, Math.round(Math.abs(evt.deltaY) / 56) || 1));
+      const base = evt.deltaY > 0 ? 1.22 : 1 / 1.22;
       zoomTurnoverViewport(anchorRatio, base ** steps, { render: true });
     },
     { passive: false }

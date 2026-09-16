@@ -28,9 +28,9 @@ def stocks_fund_flow(
     order: str = Query("desc", description="排序：desc|asc，仅 scope=big_deal 时有效"),
     source: str = Query("eastmoney", description="eastmoney 东方财富 | tonghuashun 同花顺 HQ 大单"),
     min_amount: float = Query(
-        10_000_000,
+        1_000_000,
         ge=0,
-        description="大单金额门槛（元），仅 scope=big_deal 时有效，默认 1000 万",
+        description="大单金额门槛（元），仅 scope=big_deal 时有效，默认 100 万",
     ),
     refresh: str = Query("0"),
 ):

@@ -28,6 +28,17 @@ _FLOW_TTL = 120
 _TREE_TTL = 90
 
 
+def _sealed_snapshot_broken(payload: dict[str, Any]) -> bool:
+    """封存快照若资金流/涨跌停因 DNS 全挂，应允许重建。"""
+    if int(payload.get("stock_flow_count") or 0) > 0:
+        return False
+    for msg in payload.get("errors") or []:
+        text = str(msg)
+        if "无法解析" in text and "eastmoney.com" in text:
+            return True
+    return False
+
+
 class MarketService:
     def __init__(self) -> None:
         self._quotes = TtlCache(_QUOTE_TTL)
@@ -167,9 +178,13 @@ class MarketService:
         ``period`` 参数保留兼容，树内同时含今日 / 5 日 / 10 日资金。
         """
         _ = normalize_period(period)
-        sealed = load_sealed_snapshot(snapshot_day())
-        if sealed is not None:
-            return _lite_tree(sealed) if lite else sealed
+        day = snapshot_day()
+        if not force:
+            sealed = load_sealed_snapshot(day)
+            if sealed is not None and not _sealed_snapshot_broken(sealed):
+                return _lite_tree(sealed) if lite else sealed
+            if sealed is not None and _sealed_snapshot_broken(sealed):
+                force = True
 
         cache_key = "t:all"
         if not force:
@@ -180,9 +195,12 @@ class MarketService:
                 return _lite_tree(hit) if lite else hit
 
         with self._tree_lock:
-            sealed = load_sealed_snapshot(snapshot_day())
-            if sealed is not None:
-                return _lite_tree(sealed) if lite else sealed
+            if not force:
+                sealed = load_sealed_snapshot(day)
+                if sealed is not None and not _sealed_snapshot_broken(sealed):
+                    return _lite_tree(sealed) if lite else sealed
+                if sealed is not None and _sealed_snapshot_broken(sealed):
+                    force = True
             if not force:
                 hit = self._tree.get(cache_key)
                 if hit is not None:
@@ -190,7 +208,7 @@ class MarketService:
                         hit = self._refresh_index_quotes(hit)
                     return _lite_tree(hit) if lite else hit
             payload = self._build_tree(cache_key, force=force)
-        save_snapshot(payload)
+        save_snapshot(payload, force=force)
         return _lite_tree(payload) if lite else payload
 
     def _build_tree(self, cache_key: str, force: bool = False) -> dict[str, Any]:

@@ -117,7 +117,7 @@ def get_session_orders(code: str, *, force: bool = False) -> dict[str, Any]:
             "cached_at": str(cached.get("cached_at") or ""),
         }
 
-    note = "同花顺 HQ 个股大单（主/被）"
+    note = "同花顺 HQ 个股大单（主/被，游客登录）"
     try:
         items = fetch_hq_big_orders(norm)
     except Exception as exc:  # noqa: BLE001

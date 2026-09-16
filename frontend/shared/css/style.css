@@ -2601,6 +2601,49 @@ button.chart-legend-item.is-active {
   flex: 0 1 auto;
 }
 
+.big-deal-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.66rem;
+  color: var(--muted);
+}
+
+.big-deal-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.big-deal-chart-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  font-style: normal;
+}
+
+.big-deal-chart-swatch[data-type="active_buy"] {
+  background: #ff5d6c;
+}
+
+.big-deal-chart-swatch[data-type="active_sell"] {
+  background: #3dd68c;
+}
+
+.big-deal-chart-swatch[data-type="passive_buy"] {
+  background: rgba(255, 93, 108, 0.52);
+}
+
+.big-deal-chart-swatch[data-type="passive_sell"] {
+  background: rgba(61, 214, 140, 0.52);
+}
+
 .chart-card--kline .chart-kline-hover,
 .chart-card--pe .chart-card__controls .chart-pe-hover,
 .chart-card--turnover .chart-card__controls .chart-turnover-hover {
@@ -3535,9 +3578,9 @@ button.chart-legend-item.is-active {
   }
 
   .chart-section {
-    height: min(44vh, 400px);
-    min-height: 320px;
-    max-height: 400px;
+    height: min(48vh, 440px);
+    min-height: 360px;
+    max-height: 440px;
   }
 
   .chart-axis-scroll {

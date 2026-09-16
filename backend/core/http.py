@@ -19,7 +19,12 @@ import urllib3
 from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
 
-from core.resolve import canonical_push2_host, remember_host, resolve_ipv4
+from core.resolve import (
+    canonical_push2_host,
+    is_eastmoney_push2_host,
+    remember_host,
+    resolve_ipv4,
+)
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -45,7 +50,7 @@ def _is_dns_error(exc: BaseException) -> bool:
         or "nameresolution" in text
         or "11001" in text
         or "无法解析" in text
-        or ".push2.eastmoney.com" in text
+        or ("eastmoney.com" in text and "push2" in text)
     ):
         return True
     cause = getattr(exc, "__cause__", None)
@@ -126,12 +131,24 @@ def _get(
     retries: int = 1,
     verify: bool = True,
 ) -> requests.Response:
-    """GET；超时重试；DNS 11001 改走 DoH 解析后的 IP。"""
+    """GET；超时重试；东财 push2 优先 IP 直连，DNS 11001 时再走 DoH。"""
     if not verify:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     url, host = _push2_request(url)
     last_error: Exception | None = None
     attempts = max(1, int(retries) + 1)
+
+    # Windows 上 push2* 系统 DNS 偶发 11001；先 IP 直连，避免等失败再兜底。
+    if is_eastmoney_push2_host(host):
+        try:
+            resp = _get_via_ip(
+                url, params=params, headers=headers, timeout=timeout
+            )
+            remember_host(host)
+            return resp
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+
     for attempt in range(attempts):
         try:
             sess = _session(verify=verify)

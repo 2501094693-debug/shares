@@ -1,14 +1,12 @@
 """同花顺 Hexin HQ：个股大单（主动/被动）。
 
-手机「大资金动向」走行情 TCP（hevo / zipversion=3）。本模块通过 HQ 原生库
-``big_order_flow`` 按股票查询，不再扫全市场 HTTP。
+通过 HQ 原生库 ``big_order_flow`` 按股票查询；连接使用 thsdk 游客行情账号池。
 """
 
 from __future__ import annotations
 
 import atexit
 import ctypes as c
-import hashlib
 import json
 import logging
 import os
@@ -40,9 +38,6 @@ _DIR_MAP = {
     2: ("passive", "buy", "被", "特大被动买"),
     -2: ("passive", "sell", "被", "特大被动卖"),
 }
-_MAC_SEED = b"thsdk-account-mac-v1\0"
-
-
 def hq_security(code: str) -> str:
     """HQ 证券代码，如 ``USZA001309`` / ``USHA603259``。"""
     norm = normalize_code(code)
@@ -69,13 +64,6 @@ def _dll_path() -> Path:
     return native / "hq.dll"
 
 
-def _mac_for(username: str) -> str:
-    digest = hashlib.sha256(_MAC_SEED + username.encode("utf-8")).digest()
-    octets = bytearray(digest[:6])
-    octets[0] = (octets[0] & 0xFC) | 0x02
-    return ":".join(f"{value:02x}" for value in octets)
-
-
 def _guest_pool() -> list[tuple[str, str, str]]:
     try:
         from thsdk._temporary_accounts import _TEMPORARY_ACCOUNT_ITEMS, _TEMPORARY_ACCOUNT_PREFIX
@@ -88,14 +76,10 @@ def _guest_pool() -> list[tuple[str, str, str]]:
 
 
 def _credential_candidates() -> list[tuple[str, str, str]]:
-    username = os.getenv("THS_USERNAME")
-    password = os.getenv("THS_PASSWORD")
-    if username and password:
-        mac = os.getenv("THS_MAC") or _mac_for(username)
-        return [(username, password, mac)]
+    """游客行情账号（thsdk 临时账号池），随机打乱后依次尝试连接。"""
     guests = _guest_pool()
     if not guests:
-        raise RuntimeError("未配置 THS_USERNAME/THS_PASSWORD，且无法获取临时行情账号")
+        raise RuntimeError("无法获取同花顺游客行情账号，请安装 thsdk")
     random.shuffle(guests)
     return guests
 
