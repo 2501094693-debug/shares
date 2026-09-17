@@ -257,9 +257,68 @@ window.AI_MODES = {
       return `${company} · 综合深度研判`;
     },
   },
+
+  bazhang: {
+    id: "bazhang",
+    label: "八看解读",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "张新民「八看」财报解读",
+    subtitle: "战略 · 经营资产 · 核心利润 · 财务状况质量 · 规则引擎预计算",
+    startBtn: "生成报告",
+    historyHead: "历史报告",
+    reportTitle: "八看财报解读",
+    reportMetaDefault: "选择历史报告或生成新的",
+    historyMeta: "历史报告",
+    emptyReports: "暂无历史报告",
+    resumeFail: "恢复八看解读任务失败",
+    apiRoot: "/api/ai/bazhang-analysis",
+    jobStoreKey: "orbit.bazhang.activeJob",
+    reportNameRe: /八看财报解读|八看解读/,
+    agentDefs: [
+      { id: "bz_init", name: "解析公司", subtitle: "识别代码与行业" },
+      { id: "bz_fetch", name: "采集数据", subtitle: "财报 + 规则引擎预计算" },
+      { id: "bz_strategy", name: "一看：战略", subtitle: "资产配置 · 战略类型" },
+      { id: "bz_operating", name: "二看：经营资产", subtitle: "两头吃 · 周转效率" },
+      { id: "bz_profit", name: "三看：效益质量", subtitle: "核心利润 · 利润成色" },
+      { id: "bz_value", name: "四看：价值", subtitle: "ROE · ROIC · 价值创造" },
+      { id: "bz_cost", name: "五看：成本", subtitle: "费用结构 · 成本机制" },
+      { id: "bz_quality", name: "六看：财务状况", subtitle: "资产质量 · 负债结构" },
+      { id: "bz_risk", name: "七看：风险", subtitle: "三脱节 · 偿债 · 商誉" },
+      { id: "bz_outlook", name: "八看：前景", subtitle: "扩张/收缩 · 可持续性" },
+      { id: "bz_synthesis", name: "综合诊断", subtitle: "战略-质量-现金流自洽性" },
+      { id: "bz_assemble", name: "拼装报告", subtitle: "整合各章节" },
+      { id: "bz_save", name: "保存报告", subtitle: "写入 Markdown" },
+    ],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">◈</div>
+        <h3>从报表看企业</h3>
+        <p>基于张新民「八看」框架，Python 规则引擎预计算资产分类、核心利润、两头吃指数与三脱节检测，LLM 逐章解读财务状况质量。</p>
+        <ul class="ai-empty-tips">
+          <li>经营性 vs 投资性资产分类</li>
+          <li>核心利润 + 经营现金流验证</li>
+          <li>两头吃竞争力 · 三脱节风险</li>
+          <li>八看逐章 + 综合诊断</li>
+        </ul>
+      </div>`,
+    resultTitle(result) {
+      const st = result.strategy_type ? ` · ${result.strategy_type}` : "";
+      return `${result.stock_name || ""} 八看财报解读${st}`.trim();
+    },
+    resultMeta(result) {
+      return [
+        result.stock_code ? `代码 ${result.stock_code}` : "",
+        result.strategy_type ? `战略 ${result.strategy_type}` : "",
+        result.report_path ? "已保存" : "",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 八看财报解读`;
+    },
+  },
 };
 
-window.AI_MODE_ORDER = ["comprehensive", "business", "earnings", "competition", "risk"];
+window.AI_MODE_ORDER = ["comprehensive", "business", "earnings", "bazhang", "competition", "risk"];
 
 window.AI_MODE_ALIASES = {
   business: "business",
@@ -270,4 +329,7 @@ window.AI_MODE_ALIASES = {
   risk: "risk",
   comprehensive: "comprehensive",
   deep: "comprehensive",
+  bazhang: "bazhang",
+  zhang: "bazhang",
+  "八看": "bazhang",
 };

@@ -41,6 +41,19 @@ AGENT_LABELS: dict[str, str] = {
     "ca_outlook": "前景研判",
     "ca_assemble": "拼装报告",
     "ca_save": "保存报告",
+    "bz_init": "解析公司",
+    "bz_fetch": "采集数据",
+    "bz_strategy": "一看：战略",
+    "bz_operating": "二看：经营资产",
+    "bz_profit": "三看：效益质量",
+    "bz_value": "四看：价值",
+    "bz_cost": "五看：成本机制",
+    "bz_quality": "六看：财务状况",
+    "bz_risk": "七看：风险",
+    "bz_outlook": "八看：前景",
+    "bz_synthesis": "综合诊断",
+    "bz_assemble": "拼装报告",
+    "bz_save": "保存报告",
 }
 
 PHASE_LABELS: dict[str, str] = {
@@ -77,6 +90,21 @@ COMPREHENSIVE_AGENTS = [
     "ca_outlook",
     "ca_assemble",
     "ca_save",
+]
+BAZHANG_AGENTS = [
+    "bz_init",
+    "bz_fetch",
+    "bz_strategy",
+    "bz_operating",
+    "bz_profit",
+    "bz_value",
+    "bz_cost",
+    "bz_quality",
+    "bz_risk",
+    "bz_outlook",
+    "bz_synthesis",
+    "bz_assemble",
+    "bz_save",
 ]
 
 
@@ -130,6 +158,10 @@ def init_risk_reviewer_agents() -> dict[str, dict[str, str]]:
 
 def init_comprehensive_analyst_agents() -> dict[str, dict[str, str]]:
     return init_agents_state(COMPREHENSIVE_AGENTS)
+
+
+def init_bazhang_analyst_agents() -> dict[str, dict[str, str]]:
+    return init_agents_state(BAZHANG_AGENTS)
 
 
 def report(

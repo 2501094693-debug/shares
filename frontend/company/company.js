@@ -606,7 +606,7 @@ const xqEmotionState = {
 let newsGroup = normalizeNewsGroup(params.get("news") || "");
 let newsBootstrapped = { official: false, financials: false, other: false };
 let emotionBootstrapped = { eastmoney: false, tonghuashun: false, xueqiu: false };
-const ANALYSIS_PANELS = new Set(["comprehensive", "business", "earnings", "competition", "risk"]);
+const ANALYSIS_PANELS = new Set(["comprehensive", "business", "earnings", "bazhang", "competition", "risk"]);
 const tabParamRaw = (params.get("tab") || "").trim().toLowerCase();
 let emotionSource = normalizeEmotionSource(params.get("emotion") || "");
 if (["ths-emotion", "ths", "circle"].includes(tabParamRaw)) {
@@ -695,7 +695,9 @@ function normalizeMainPanel(panelId) {
 
 function normalizeJudgmentSubTab(view) {
   const raw = String(view || "").trim().toLowerCase();
-  if (ANALYSIS_PANELS.has(raw)) return raw;
+  const aliases = window.AI_MODE_ALIASES || {};
+  const mapped = aliases[raw] || raw;
+  if (ANALYSIS_PANELS.has(mapped)) return mapped;
   return "comprehensive";
 }
 
