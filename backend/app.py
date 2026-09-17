@@ -433,9 +433,11 @@ app.mount(
 if __name__ == "__main__":
     # 调试器下关闭 reload，避免 Program Files 路径空格导致二次启动失败
     use_reload = not _running_under_debugger()
+    reload_dirs = [str(_BACKEND_DIR), str(_ROOT_DIR / "agent")] if use_reload else None
     uvicorn.run(
         "app:app",
         host="127.0.0.1",
         port=5000,
         reload=use_reload,
+        reload_dirs=reload_dirs,
     )
