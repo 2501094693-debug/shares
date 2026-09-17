@@ -1,4 +1,4 @@
-/** 智能分析模块 — 四种模式配置 */
+/** 智能分析模块配置 */
 window.AI_MODES = {
   business: {
     id: "business",
@@ -50,42 +50,45 @@ window.AI_MODES = {
     },
   },
 
-  earnings: {
-    id: "earnings",
-    label: "财报简述",
+  essence: {
+    id: "essence",
+    label: "生意本质",
     pageTitle: "ORBIT · 智能分析",
-    heading: "财报简述",
-    subtitle: "近一年定期报告 · 每段附原始数据 · 巴菲特视角评估安全边际",
-    startBtn: "生成简述",
+    heading: "生意本质",
+    subtitle: "官方公告认主营 → 讲清业务并举例 → 关键因素为什么关键 · 每章起草后由质疑官反复确认",
+    startBtn: "开始确认",
     historyHead: "历史报告",
-    reportTitle: "财报简述",
+    reportTitle: "生意本质",
     reportMetaDefault: "选择历史报告或生成新的",
     historyMeta: "历史报告",
     emptyReports: "暂无历史报告",
-    resumeFail: "恢复财报简述任务失败",
-    apiRoot: "/api/ai/earnings-brief",
-    jobStoreKey: "orbit.earnings.activeJob",
-    reportNameRe: /财报解读|财报简述/,
+    resumeFail: "恢复生意本质任务失败",
+    apiRoot: "/api/ai/essence-analysis",
+    jobStoreKey: "orbit.essence.activeJob",
+    reportNameRe: /生意本质/,
     agentDefs: [
-      { id: "er_init", name: "解析公司", subtitle: "识别代码与名称" },
-      { id: "er_fetch", name: "采集财报", subtitle: "东财F10报表 / 估值 / 巨潮" },
-      { id: "er_explain", name: "生成简述", subtitle: "每段附原始数据 · 巴菲特视角" },
-      { id: "er_save", name: "保存报告", subtitle: "写入 Markdown" },
+      { id: "es_resolve", name: "解析公司", subtitle: "识别代码与名称" },
+      { id: "es_official", name: "官方公告", subtitle: "交易所 / 巨潮 / 七网 / PDF" },
+      { id: "es_businesses", name: "主营确认", subtitle: "起草 → 质疑 → 重写" },
+      { id: "es_web", name: "联网补充", subtitle: "机制与例子" },
+      { id: "es_explain", name: "讲清业务", subtitle: "起草 → 质疑 → 重写" },
+      { id: "es_factors", name: "关键因素", subtitle: "起草 → 质疑 → 重写" },
+      { id: "es_save", name: "保存报告", subtitle: "写入 Markdown" },
     ],
     emptyStateHtml: `
       <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">▤</div>
-        <h3>先看数字，再谈判断</h3>
-        <p>拉取近一年年报/半年报/季报原始科目，每段解释都附带财报数据，最后从巴菲特视角评估安全边际。</p>
+        <div class="ai-empty-icon" aria-hidden="true">◎</div>
+        <h3>先搞清这家公司做什么</h3>
+        <p>主营业务只认交易所、巨潮、七网官方公告。列出官方承认的业务后，用白话解释并举例，再找出真正能改变这门生意的关键因素。每一章由起草官写成稿，质疑官独立复核；不通过就退回重写，缺证据就补检索。</p>
         <ul class="ai-empty-tips">
-          <li>近3-5年营收、净利润、经营利润</li>
-          <li>ROE / ROA / 毛利率 / 经营利润率</li>
-          <li>经营现金流、自由现金流、资本开支</li>
-          <li>资产负债、估值与内在价值</li>
+          <li>官方清单 → 人话解释 + 例子 → 关键因素为什么关键</li>
+          <li>不拉财报数字，不做巴菲特视角解读</li>
+          <li>每章最多三轮质疑，轮次用尽按最后一稿收录并标注</li>
+          <li>判断生意，不写买卖建议</li>
         </ul>
       </div>`,
     resultTitle(result) {
-      return `${result.stock_name || ""} 财报简述`.trim();
+      return `${result.stock_name || ""} 生意本质`.trim();
     },
     resultMeta(result) {
       return [
@@ -94,7 +97,62 @@ window.AI_MODES = {
       ].filter(Boolean).join(" · ");
     },
     runningTitle(company) {
-      return `${company} · 财报简述`;
+      return `${company} · 生意本质`;
+    },
+  },
+
+  duan: {
+    id: "duan",
+    label: "段永平看业务",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "段永平看业务",
+    subtitle: "先看生意模式，刮到谢字就停 · 企业文化 · 好价钱 · 必要条件过滤",
+    startBtn: "开始看业务",
+    historyHead: "历史报告",
+    reportTitle: "段永平看业务",
+    reportMetaDefault: "选择历史报告或生成新的",
+    historyMeta: "历史报告",
+    emptyReports: "暂无历史报告",
+    resumeFail: "恢复段永平看业务任务失败",
+    apiRoot: "/api/ai/duan-analysis",
+    jobStoreKey: "orbit.duan.activeJob",
+    reportNameRe: /段永平看业务/,
+    agentDefs: [
+      { id: "dy_init", name: "解析公司", subtitle: "识别代码与名称" },
+      { id: "dy_fetch", name: "采集数据", subtitle: "年报数字 + 用户口碑补充" },
+      { id: "dy_business", name: "一、生意模式", subtitle: "差异化 · 毛利率 · 净现金" },
+      { id: "dy_culture", name: "二、企业文化", subtitle: "本分 · 用户导向 · 可跳过" },
+      { id: "dy_price", name: "三、好价钱", subtitle: "毛估估 · 前两关不过则跳过" },
+      { id: "dy_synthesis", name: "四、能不能看懂", subtitle: "离开 / 等待 / 毛估估" },
+      { id: "dy_assemble", name: "拼装报告", subtitle: "整合各章节" },
+      { id: "dy_save", name: "保存报告", subtitle: "写入 Markdown" },
+    ],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">◎</div>
+        <h3>先刮彩票，谢字就停</h3>
+        <p>按段永平的流程看生意：生意模式、企业文化是必要条件，不是加权打分。模式不行或看不懂，企业文化与价钱直接跳过。</p>
+        <ul class="ai-empty-tips">
+          <li>差异化 = 用户需要而别人给不了</li>
+          <li>把自己当消费者：5% 折扣换不换</li>
+          <li>长期毛利率 · 净现金流 · 杠杆只是旁证</li>
+          <li>不给买卖建议，看不懂就是终点</li>
+        </ul>
+      </div>`,
+    resultTitle(result) {
+      const att = result.final_attitude ? ` · ${result.final_attitude}` : "";
+      return `${result.stock_name || ""} 段永平看业务${att}`.trim();
+    },
+    resultMeta(result) {
+      return [
+        result.stock_code ? `代码 ${result.stock_code}` : "",
+        result.numeric_hint || "",
+        result.final_attitude || "",
+        result.report_path ? "已保存" : "",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 段永平看业务`;
     },
   },
 
@@ -295,6 +353,7 @@ window.AI_MODES = {
         <h3>从报表看企业</h3>
         <p>基于张新民「八看」框架，Python 规则引擎预计算资产分类、核心利润、两头吃指数与三脱节检测，LLM 逐章解读财务状况质量。</p>
         <ul class="ai-empty-tips">
+          <li>年报、半年报、季报全量定期报告</li>
           <li>经营性 vs 投资性资产分类</li>
           <li>核心利润 + 经营现金流验证</li>
           <li>两头吃竞争力 · 三脱节风险</li>
@@ -316,15 +375,127 @@ window.AI_MODES = {
       return `${company} · 八看财报解读`;
     },
   },
+
+  buffett: {
+    id: "buffett",
+    label: "巴菲特读表",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "巴菲特读表",
+    subtitle: "所有者盈余 · 有形回报 · 资本配置 · 规则引擎预计算",
+    startBtn: "生成报告",
+    historyHead: "历史报告",
+    reportTitle: "巴菲特读表",
+    reportMetaDefault: "选择历史报告或生成新的",
+    historyMeta: "历史报告",
+    emptyReports: "暂无历史报告",
+    resumeFail: "恢复巴菲特读表任务失败",
+    apiRoot: "/api/ai/buffett-analysis",
+    jobStoreKey: "orbit.buffett.activeJob",
+    reportNameRe: /巴菲特读表/,
+    agentDefs: [
+      { id: "bf_init", name: "解析公司", subtitle: "识别代码与行业" },
+      { id: "bf_fetch", name: "采集数据", subtitle: "财报 + 所有者盈余预计算" },
+      { id: "bf_understand", name: "一、生意能否看懂", subtitle: "能力圈 · 怎么赚钱" },
+      { id: "bf_owner", name: "二、所有者盈余", subtitle: "上沿 / 下沿 / 现金核对" },
+      { id: "bf_capital", name: "三、资本饥饿", subtitle: "有形回报 · 四种生意" },
+      { id: "bf_honesty", name: "四、会计与配置", subtitle: "商誉 · 留存 · 发股" },
+      { id: "bf_synthesis", name: "五、综合判决", subtitle: "六问 · 安全边际" },
+      { id: "bf_assemble", name: "拼装报告", subtitle: "整合各章节" },
+      { id: "bf_save", name: "保存报告", subtitle: "写入 Markdown" },
+    ],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">▣</div>
+        <h3>先算能取出的现金</h3>
+        <p>按巴菲特 1986 年所有者盈余公式，Python 先给出上沿（折旧）与下沿（资本开支）区间，再逐章解读生意能否看懂、资本饥饿、会计诚实与资本配置。</p>
+        <ul class="ai-empty-tips">
+          <li>所有者盈余区间，不把 (c) 装成精确值</li>
+          <li>有形 ROE · capex/D&amp;A · 四种生意分类</li>
+          <li>留存 1 美元测试的可计算近似</li>
+          <li>综合判决引用已有估值，不做独立三情景模型</li>
+        </ul>
+      </div>`,
+    resultTitle(result) {
+      const bt = result.business_type ? ` · ${result.business_type}` : "";
+      return `${result.stock_name || ""} 巴菲特读表${bt}`.trim();
+    },
+    resultMeta(result) {
+      return [
+        result.stock_code ? `代码 ${result.stock_code}` : "",
+        result.business_type ? `类型 ${result.business_type}` : "",
+        result.report_path ? "已保存" : "",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 巴菲特读表`;
+    },
+  },
+
+  "buffett-rules": {
+    id: "buffett-rules",
+    kind: "engine",
+    label: "巴菲特规则引擎",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "巴菲特规则引擎",
+    subtitle: "强制刷新东财最新全量定期报告 · 所有者盈余区间 · 不经过大模型",
+    startBtn: "重新计算",
+    historyHead: "规则结果",
+    reportTitle: "巴菲特规则引擎",
+    reportMetaDefault: "强制刷新最新全量定期报告后按固定公式计算，不调用大模型",
+    historyMeta: "规则结果",
+    emptyReports: "暂无结果",
+    resumeFail: "巴菲特规则引擎计算失败",
+    apiRoot: "/api/ai/buffett-rules",
+    jobStoreKey: "orbit.buffettRules.pack",
+    reportNameRe: /$^/,
+    agentDefs: [],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">∑</div>
+        <h3>先算，再解释</h3>
+        <p>巴菲特规则引擎强制刷新东方财富 F10：利润表、资产负债表、现金流量表、主要指标、业绩报表，覆盖最新一期及历史定期报告，再按巴菲特公式给出上沿/下沿、有形 ROE 和生意类型。</p>
+        <ul class="ai-empty-tips">
+          <li>强制刷新，不吃一小时缓存</li>
+          <li>有形 ROE · capex/D&amp;A · 四种生意</li>
+          <li>留存 1 美元测试的可计算近似</li>
+          <li>折旧附注缺失时下沿标「未披露」</li>
+        </ul>
+      </div>`,
+    resultTitle(result) {
+      const bt = result.business_type ? ` · ${result.business_type}` : "";
+      return `${result.stock_name || ""} 巴菲特规则引擎${bt}`.trim();
+    },
+    resultMeta(result) {
+      return [
+        result.stock_code ? `代码 ${result.stock_code}` : "",
+        result.latest_period || "",
+        result.period_kind || "",
+        result.coverage || "",
+        result.data_available ? "已计算" : "无定期报告",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 巴菲特规则引擎`;
+    },
+  },
 };
 
-window.AI_MODE_ORDER = ["comprehensive", "business", "earnings", "bazhang", "competition", "risk"];
+window.AI_MODE_ORDER = ["comprehensive", "business", "essence", "duan", "bazhang", "buffett", "buffett-rules", "competition", "risk"];
 
 window.AI_MODE_ALIASES = {
   business: "business",
   brief: "business",
   ai: "business",
-  earnings: "earnings",
+  essence: "essence",
+  "生意本质": "essence",
+  "主营业务": "essence",
+  duan: "duan",
+  dyp: "duan",
+  "段永平": "duan",
+  "段永平看业务": "duan",
+  "大道": "duan",
+  earnings: "bazhang",
+  "财报简述": "bazhang",
   competition: "competition",
   risk: "risk",
   comprehensive: "comprehensive",
@@ -332,4 +503,16 @@ window.AI_MODE_ALIASES = {
   bazhang: "bazhang",
   zhang: "bazhang",
   "八看": "bazhang",
+  "张新民": "bazhang",
+  "张新明": "bazhang",
+  buffett: "buffett",
+  owner: "buffett",
+  "巴菲特": "buffett",
+  "巴菲特读表": "buffett",
+  "巴菲特视角": "buffett",
+  "buffett-rules": "buffett-rules",
+  rules: "buffett-rules",
+  engine: "buffett-rules",
+  "规则引擎": "buffett-rules",
+  "巴菲特规则引擎": "buffett-rules",
 };

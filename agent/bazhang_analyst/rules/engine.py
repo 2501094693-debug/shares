@@ -37,6 +37,10 @@ from agent.comprehensive_analyst.rules._common import (
 )
 
 
+PERIOD_LIMIT = 8
+RECENT_LIMIT = 12
+
+
 def _sum_fields(row: dict[str, Any], fields: list[str]) -> float:
     total = 0.0
     found = False
@@ -46,6 +50,74 @@ def _sum_fields(row: dict[str, Any], fields: list[str]) -> float:
             total += val
             found = True
     return total if found else 0.0
+
+
+def _with_formulas(table: str, formulas: list[tuple[str, str]]) -> str:
+    """在预计算表下附二次加工口径，供报告展示与模型引用。"""
+    if not table or not formulas:
+        return table
+    return (
+        table
+        + "\n\n**计算公式**\n\n"
+        + md_table(["指标", "计算公式"], [[name, formula] for name, formula in formulas])
+    )
+
+
+def period_kind(row: dict[str, Any]) -> str:
+    label = str(row.get("PERIOD_LABEL") or "")
+    if "三季" in label:
+        return "三季报"
+    if "半年" in label or "中报" in label:
+        return "半年报"
+    if "一季" in label:
+        return "一季报"
+    if "年报" in label:
+        return "年报"
+    day = str(row.get("REPORT_DATE") or row.get("REPORTDATE") or "")[:10]
+    if day.endswith("-12-31"):
+        return "年报"
+    if day.endswith("-09-30"):
+        return "三季报"
+    if day.endswith("-06-30"):
+        return "半年报"
+    if day.endswith("-03-31"):
+        return "一季报"
+    return "定期报告"
+
+
+def select_periodic_rows(
+    *,
+    annual: list[dict[str, Any]] | None = None,
+    recent: list[dict[str, Any]] | None = None,
+    merged: list[dict[str, Any]] | None = None,
+    limit: int = PERIOD_LIMIT,
+) -> list[dict[str, Any]]:
+    """取最新一期定期报告，并抽出同一报告类型的历史期（三季报对三季报）。"""
+    pool = list(merged or recent or annual or [])
+    if not pool:
+        return []
+    kind = period_kind(pool[0])
+    same = [row for row in pool if period_kind(row) == kind]
+    if same:
+        return same[:limit]
+    return pool[:limit]
+
+
+def _gross_margin(
+    row: dict[str, Any],
+    revenue: float | None = None,
+    cogs: float | None = None,
+) -> float | None:
+    disclosed = to_float(pick(row, "XSMLL"))
+    if disclosed is not None:
+        return disclosed
+    if revenue is None:
+        revenue = _revenue(row)
+    if cogs is None:
+        cogs = to_float(pick(row, *COGS_FIELDS))
+    if revenue and cogs is not None:
+        return (revenue - cogs) / revenue * 100
+    return None
 
 
 def _revenue(row: dict[str, Any]) -> float | None:
@@ -126,7 +198,7 @@ def _core_profit(row: dict[str, Any]) -> dict[str, Any]:
         "deduct_profit": deduct,
         "non_core_profit": non_core,
         "deduct_ratio": deduct / net * 100 if deduct is not None and net else None,
-        "gross_margin": to_float(pick(row, "XSMLL")),
+        "gross_margin": _gross_margin(row, revenue, cogs),
         "net_margin": to_float(pick(row, "XSJLL")),
         "roe": to_float(pick(row, "ROEJQ", "WEIGHTAVG_ROE")),
         "roic": to_float(pick(row, "ROIC")),
@@ -314,7 +386,7 @@ def _risk_flags(
 
 def _asset_structure_table(annual: list[dict[str, Any]]) -> str:
     rows: list[list[str]] = []
-    for row in annual[:5]:
+    for row in annual[:PERIOD_LIMIT]:
         a = _classify_assets(row)
         total = _total_assets(row) or 1
         rows.append(
@@ -330,15 +402,23 @@ def _asset_structure_table(annual: list[dict[str, Any]]) -> str:
                 fmt_pct(a["two_gold"] / total * 100 if a["two_gold"] else None),
             ]
         )
-    return md_table(
-        ["报告期", "经营性资产", "占比", "投资性资产", "占比", "固定资产", "商誉", "两金合计", "两金占比"],
-        rows,
+    return _with_formulas(
+        md_table(
+            ["报告期", "经营性资产", "占比", "投资性资产", "占比", "固定资产", "商誉", "两金合计", "两金占比"],
+            rows,
+        ),
+        [
+            ("经营性资产", "货币资金、应收、预付、存货、固定资产、在建工程、无形资产等经营占用项合计"),
+            ("投资性资产", "长期股权投资、商誉、金融资产、投资性房地产等合计"),
+            ("两金合计", "应收账款 + 存货"),
+            ("两金占比", "两金合计 ÷ 总资产"),
+        ],
     )
 
 
 def _liability_structure_table(annual: list[dict[str, Any]]) -> str:
     rows: list[list[str]] = []
-    for row in annual[:5]:
+    for row in annual[:PERIOD_LIMIT]:
         l = _classify_liabilities(row)
         rows.append(
             [
@@ -352,15 +432,22 @@ def _liability_structure_table(annual: list[dict[str, Any]]) -> str:
                 fmt_yi(l["short_loan"]),
             ]
         )
-    return md_table(
-        ["报告期", "金融性负债", "占比", "经营性负债", "占比", "应付账款", "预收款项", "短期借款"],
-        rows,
+    return _with_formulas(
+        md_table(
+            ["报告期", "金融性负债", "占比", "经营性负债", "占比", "应付账款", "预收款项", "短期借款"],
+            rows,
+        ),
+        [
+            ("金融性负债", "短期借款 + 长期借款 + 应付债券 + 应付短期债券 + 租赁负债 + 一年内到期非流动负债"),
+            ("经营性负债", "应付账款 + 应付票据 + 预收/合同负债 + 应付职工薪酬 + 应交税费 + 其他应付款"),
+            ("金融/经营占比", "对应负债 ÷ 负债合计"),
+        ],
     )
 
 
 def _core_profit_table(annual: list[dict[str, Any]]) -> str:
     rows: list[list[str]] = []
-    for row in annual[:5]:
+    for row in annual[:PERIOD_LIMIT]:
         p = _core_profit(row)
         rows.append(
             [
@@ -368,21 +455,31 @@ def _core_profit_table(annual: list[dict[str, Any]]) -> str:
                 fmt_yi(p["revenue"]),
                 fmt_yi(p["core_profit"]),
                 fmt_pct(p["core_margin"]),
+                fmt_pct(p["gross_margin"]),
                 fmt_yi(p["net_profit"]),
                 fmt_yi(p["deduct_profit"]),
                 fmt_pct(p["deduct_ratio"]),
                 fmt_yi(p["non_core_profit"]),
             ]
         )
-    return md_table(
-        ["报告期", "营业收入", "核心利润", "核心利润率", "归母净利润", "扣非净利润", "扣非占比", "非核心损益"],
-        rows,
+    return _with_formulas(
+        md_table(
+            ["报告期", "营业收入", "核心利润", "核心利润率", "毛利率", "归母净利润", "扣非净利润", "扣非占比", "非核心损益"],
+            rows,
+        ),
+        [
+            ("核心利润", "营业收入 − 营业成本 − 税金及附加 − 销售/管理/研发/财务费用"),
+            ("核心利润率", "核心利润 ÷ 营业收入"),
+            ("毛利率", "优先取利润表主要指标；未披露时按 (营业收入 − 营业成本) ÷ 营业收入"),
+            ("扣非占比", "扣非净利润 ÷ 归母净利润"),
+            ("非核心损益", "归母净利润 − 核心利润"),
+        ],
     )
 
 
 def _cash_quality_table(annual: list[dict[str, Any]]) -> str:
     rows: list[list[str]] = []
-    for i, row in enumerate(annual[:5]):
+    for i, row in enumerate(annual[:PERIOD_LIMIT]):
         prev = annual[i + 1] if i + 1 < len(annual) else None
         c = _cash_quality(row, prev)
         rows.append(
@@ -396,15 +493,23 @@ def _cash_quality_table(annual: list[dict[str, Any]]) -> str:
                 c["cashflow_mode"],
             ]
         )
-    return md_table(
-        ["报告期", "经营现金流", "自由现金流", "OCF/核心利润", "OCF/净利润", "销售收现比", "现金流模式"],
-        rows,
+    return _with_formulas(
+        md_table(
+            ["报告期", "经营现金流", "自由现金流", "OCF/核心利润", "OCF/净利润", "销售收现比", "现金流模式"],
+            rows,
+        ),
+        [
+            ("自由现金流", "优先取 FCFF；缺省时 经营现金流 − 购建固定资产等资本开支"),
+            ("OCF/核心利润", "经营现金流 ÷ 核心利润"),
+            ("OCF/净利润", "经营现金流 ÷ 归母净利润"),
+            ("销售收现比", "销售商品提供劳务收到的现金 ÷ 营业收入"),
+        ],
     )
 
 
 def _competitiveness_table(annual: list[dict[str, Any]]) -> str:
     rows: list[list[str]] = []
-    for row in annual[:5]:
+    for row in annual[:PERIOD_LIMIT]:
         c = _competitiveness(row)
         rows.append(
             [
@@ -416,15 +521,23 @@ def _competitiveness_table(annual: list[dict[str, Any]]) -> str:
                 fmt_pct(_core_profit(row)["gross_margin"]),
             ]
         )
-    return md_table(
-        ["报告期", "两头吃指数", "存货周转天数", "应收周转天数", "固定资产周转", "毛利率"],
-        rows,
+    return _with_formulas(
+        md_table(
+            ["报告期", "两头吃指数", "存货周转天数", "应收周转天数", "固定资产周转", "毛利率"],
+            rows,
+        ),
+        [
+            ("两头吃指数", "(应付账款 + 预收款项/合同负债) ÷ (应收账款 + 预付款项)；>1 表示对上下游占款能力强"),
+            ("存货周转天数", "365 × 存货 ÷ 营业成本"),
+            ("应收周转天数", "365 × 应收账款 ÷ 营业收入"),
+            ("固定资产周转", "营业收入 ÷ 固定资产"),
+        ],
     )
 
 
 def _cost_structure_table(annual: list[dict[str, Any]]) -> str:
     rows: list[list[str]] = []
-    for row in annual[:5]:
+    for row in annual[:PERIOD_LIMIT]:
         rev = _revenue(row)
         if not rev:
             continue
@@ -441,28 +554,95 @@ def _cost_structure_table(annual: list[dict[str, Any]]) -> str:
                 fmt_pct(_core_profit(row)["gross_margin"]),
             ]
         )
-    return md_table(
-        ["报告期", "营业成本率", "销售费用率", "管理费用率", "研发费用率", "财务费用率", "毛利率"],
-        rows,
+    return _with_formulas(
+        md_table(
+            ["报告期", "营业成本率", "销售费用率", "管理费用率", "研发费用率", "财务费用率", "毛利率"],
+            rows,
+        ),
+        [
+            ("营业成本率", "营业成本 ÷ 营业收入"),
+            ("销售/管理/研发/财务费用率", "对应期间费用 ÷ 营业收入"),
+            ("毛利率", "优先取利润表主要指标；未披露时按 1 − 营业成本率"),
+        ],
     )
+
+
+def _dupont_parts(row: dict[str, Any], profit: dict[str, Any]) -> dict[str, Any]:
+    assets = _total_assets(row)
+    equity = to_float(pick(row, *TOTAL_EQUITY_FIELDS))
+    revenue = profit.get("revenue")
+    net = profit.get("net_profit")
+    roa = to_float(pick(row, "ZZCJLL"))
+    if roa is None and net is not None and assets:
+        roa = net / assets * 100
+    turnover = (revenue / assets) if revenue and assets else None
+    multiplier = (assets / equity) if assets and equity else None
+    return {
+        "roa": roa,
+        "asset_turnover": turnover,
+        "equity_multiplier": multiplier,
+        "equity": equity,
+    }
 
 
 def _value_table(annual: list[dict[str, Any]]) -> str:
     rows: list[list[str]] = []
-    for row in annual[:5]:
+    for row in annual[:PERIOD_LIMIT]:
         p = _core_profit(row)
-        equity = to_float(pick(row, *TOTAL_EQUITY_FIELDS))
+        d = _dupont_parts(row, p)
         rows.append(
             [
                 period_label(row),
                 fmt_pct(p["roe"]),
+                fmt_pct(d["roa"]),
                 fmt_pct(p["roic"]),
                 fmt_pct(p["net_margin"]),
+                fmt_x(d["asset_turnover"]),
+                fmt_x(d["equity_multiplier"]),
                 fmt_yi(p["net_profit"]),
-                fmt_yi(equity),
+                fmt_yi(d["equity"]),
             ]
         )
-    return md_table(["报告期", "ROE", "ROIC", "净利率", "归母净利润", "净资产"], rows)
+    return _with_formulas(
+        md_table(
+            ["报告期", "ROE", "ROA", "ROIC", "净利率", "资产周转", "权益乘数", "归母净利润", "净资产"],
+            rows,
+        ),
+        [
+            ("ROA", "优先取主要指标总资产净利率；未披露时 归母净利润 ÷ 总资产"),
+            ("资产周转", "营业收入 ÷ 总资产"),
+            ("权益乘数", "总资产 ÷ 净资产"),
+        ],
+    )
+
+
+def _snapshot_table(rows: list[dict[str, Any]]) -> str:
+    body: list[list[str]] = []
+    for row in rows[:RECENT_LIMIT]:
+        p = _core_profit(row)
+        c = _competitiveness(row)
+        body.append(
+            [
+                period_label(row),
+                period_kind(row),
+                fmt_yi(p["revenue"]),
+                fmt_yi(p["core_profit"]),
+                fmt_pct(p["core_margin"]),
+                fmt_yi(_ocf(row)),
+                fmt_x(c["two_ends_index"]),
+                fmt_pct(p["roe"]),
+            ]
+        )
+    return _with_formulas(
+        md_table(
+            ["报告期", "类型", "营业收入", "核心利润", "核心利润率", "经营现金流", "两头吃", "ROE"],
+            body,
+        ),
+        [
+            ("覆盖", "按报告日落最新的定期报告，年报/半年报/一季报/三季报都列入"),
+            ("口径", "利润表/现金流量表为累计数；不同类型报告期不可直接横比"),
+        ],
+    )
 
 
 def _diagnosis_table(metrics: dict[str, Any], flags: list[str]) -> str:
@@ -490,15 +670,22 @@ def _diagnosis_table(metrics: dict[str, Any], flags: list[str]) -> str:
         ["竞争力", _grade(metrics.get("competitiveness", {}).get("two_ends_index"), 1.2, 0.8), f"两头吃 {fmt_x(metrics.get('competitiveness', {}).get('two_ends_index'))}"],
         ["价值创造", _grade(profit.get("roe"), 15, 8), f"ROE {fmt_pct(profit.get('roe'))}"],
     ]
+    if metrics.get("latest_period"):
+        rows.insert(0, ["最新定期报告", metrics["latest_period"], metrics.get("period_kind") or "定期报告"])
+    if metrics.get("coverage"):
+        rows.insert(1, ["数据覆盖", metrics["coverage"], "年报/半年报/季报均纳入，同比用同口径"])
     return md_table(["维度", "评价", "关键证据"], rows)
 
 
 def run_zhang_analysis(
-    annual: list[dict[str, Any]],
+    annual: list[dict[str, Any]] | None = None,
     recent: list[dict[str, Any]] | None = None,
+    *,
+    merged: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """运行张新民「八看」全套规则引擎，返回指标、表格与警示。"""
-    if not annual:
+    """运行张新民「八看」全套规则引擎：默认用最新定期报告，并按同一报告类型回溯。"""
+    selected = select_periodic_rows(annual=annual, recent=recent, merged=merged)
+    if not selected:
         return {
             "metrics": {},
             "flags": [],
@@ -507,9 +694,14 @@ def run_zhang_analysis(
             "strategy_type": "未知",
         }
 
-    latest = annual[0]
-    prev = annual[1] if len(annual) > 1 else None
+    kind = period_kind(selected[0])
+    ytd = kind != "年报"
+    pool = list(merged or recent or annual or selected)
+    annual_rows = [row for row in pool if period_kind(row) == "年报"][:PERIOD_LIMIT]
+    mixed_rows = pool[:RECENT_LIMIT]
 
+    latest = selected[0]
+    prev = selected[1] if len(selected) > 1 else None
     assets = _classify_assets(latest)
     liab = _classify_liabilities(latest)
     profit = _core_profit(latest)
@@ -517,9 +709,30 @@ def run_zhang_analysis(
     comp = _competitiveness(latest)
     strategy = _strategy_type(latest, prev)
     flags = _risk_flags(assets, liab, profit, cash, strategy)
+    coverage = (
+        f"同口径{len(selected)}期{kind}"
+        + (f" · 年报{len(annual_rows)}期" if annual_rows else "")
+        + f" · 定期报告共{len(pool)}期"
+    )
+    if ytd:
+        flags.insert(
+            0,
+            f"最新定期报告为{kind}，利润表/现金流量表是累计数，不可与年报直接横比；周转天数按累计数×365估算，会偏高",
+        )
+        if annual_rows:
+            flags.insert(
+                1,
+                f"多年结构对照另附表年报序列，最近年报为{period_label(annual_rows[0])}",
+            )
 
     metrics: dict[str, Any] = {
         "latest_period": period_label(latest),
+        "period_kind": kind,
+        "ytd": ytd,
+        "coverage": coverage,
+        "period_count": len(selected),
+        "annual_count": len(annual_rows),
+        "merged_count": len(pool),
         "assets": assets,
         "liabilities": liab,
         "profit": profit,
@@ -529,24 +742,31 @@ def run_zhang_analysis(
     }
 
     tables = {
-        "asset_structure": _asset_structure_table(annual),
-        "liability_structure": _liability_structure_table(annual),
-        "core_profit": _core_profit_table(annual),
-        "cash_quality": _cash_quality_table(annual),
-        "competitiveness": _competitiveness_table(annual),
-        "cost_structure": _cost_structure_table(annual),
-        "value": _value_table(annual),
+        "asset_structure": _asset_structure_table(selected),
+        "liability_structure": _liability_structure_table(selected),
+        "core_profit": _core_profit_table(selected),
+        "cash_quality": _cash_quality_table(selected),
+        "competitiveness": _competitiveness_table(selected),
+        "cost_structure": _cost_structure_table(selected),
+        "value": _value_table(selected),
+        "recent_all": _snapshot_table(mixed_rows),
         "diagnosis": _diagnosis_table(metrics, flags),
     }
+    if ytd and annual_rows:
+        tables["annual_core"] = _core_profit_table(annual_rows)
+        tables["annual_value"] = _value_table(annual_rows)
 
+    ytd_note = f"，{kind}累计口径" if ytd else ""
     text_parts = [
         f"### 战略类型：{strategy['strategy_type']}",
+        f"- 最新定期报告：{period_label(latest)}（{kind}{ytd_note}）",
+        f"- 数据覆盖：{coverage}",
         f"- 经营性资产占比：{fmt_pct(strategy.get('operating_asset_ratio'))}",
         f"- 投资性资产占比：{fmt_pct(strategy.get('investing_asset_ratio'))}",
         f"- 重资产指数（固定资产/总资产）：{fmt_pct(strategy.get('heavy_asset_ratio'))}",
         "",
-        "### 核心利润（最近年报）",
-        f"- 核心利润：{fmt_yi(profit.get('core_profit'))}，核心利润率 {fmt_pct(profit.get('core_margin'))}",
+        f"### 核心利润（{period_label(latest)}）",
+        f"- 核心利润：{fmt_yi(profit.get('core_profit'))}，核心利润率 {fmt_pct(profit.get('core_margin'))}，毛利率 {fmt_pct(profit.get('gross_margin'))}",
         f"- 归母净利润：{fmt_yi(profit.get('net_profit'))}，扣非占比 {fmt_pct(profit.get('deduct_ratio'))}",
         "",
         "### 利润含金量",
@@ -556,7 +776,7 @@ def run_zhang_analysis(
         f"- 现金流模式：{cash.get('cashflow_mode')}",
         "",
         "### 竞争力",
-        f"- 两头吃指数：{fmt_x(comp.get('two_ends_index'))}（>1 表示对上下游占款能力强）",
+        f"- 两头吃指数：{fmt_x(comp.get('two_ends_index'))}＝(应付+预收)÷(应收+预付)（>1 表示对上下游占款能力强）",
         f"- 存货周转天数：{fmt_num(comp.get('inventory_turnover_days'), 0)}天",
         f"- 应收周转天数：{fmt_num(comp.get('receivable_turnover_days'), 0)}天",
         "",
@@ -573,5 +793,5 @@ def run_zhang_analysis(
         "tables": tables,
         "text": "\n".join(text_parts),
         "strategy_type": strategy["strategy_type"],
-        "recent_periods": [period_label(r) for r in (recent or annual[:4])],
+        "recent_periods": [period_label(r) for r in mixed_rows[:8]],
     }

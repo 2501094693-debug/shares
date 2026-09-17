@@ -2111,6 +2111,10 @@ html.company-charts-on .company-page.app {
   margin: 0;
   padding: 0;
   border: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .big-deal-head .chart-select {
@@ -2122,15 +2126,21 @@ html.company-charts-on .company-page.app {
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
-  min-width: 0;
+  flex-shrink: 0;
+  min-width: auto;
   color: var(--muted);
   font-size: 0.68rem;
   letter-spacing: 0.04em;
+  pointer-events: auto;
+  position: relative;
+  z-index: 2;
 }
 
 .big-deal-range-input {
-  width: 4.2rem;
-  min-width: 0;
+  box-sizing: border-box;
+  width: 5.4rem;
+  min-width: 5.4rem;
+  flex: 0 0 auto;
   margin: 0;
   padding: 4px 7px;
   border: 1px solid rgba(42, 212, 184, 0.16);
@@ -2144,6 +2154,9 @@ html.company-charts-on .company-page.app {
   text-align: right;
   appearance: none;
   -webkit-appearance: none;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .big-deal-range-input::placeholder {
@@ -3364,6 +3377,22 @@ button.chart-legend-item.is-active {
 
 .company-panel[data-panel="judgment"] .judgment-source-bar {
   flex: 0 0 auto;
+}
+
+.company-panel[data-panel="judgment"] .judgment-sub-bar {
+  padding: 3px;
+}
+
+.company-panel[data-panel="judgment"] .judgment-sub-bar[hidden],
+.company-panel[data-panel="judgment"]:not([data-judgment-family="earnings"]) .judgment-sub-bar {
+  display: none !important;
+}
+
+.company-panel[data-panel="judgment"] .judgment-sub-bar .emotion-source-btn {
+  font-size: 0.8rem;
+  padding: 8px 10px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .company-panel[data-panel="judgment"] .judgment-view {
@@ -7680,6 +7709,10 @@ body.app-shell.otc-fund-page-root .otc-fund-page.market-page {
   .company-analysis-page .ai-board.is-running {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .company-analysis-page .ai-board.is-engine {
+    grid-template-columns: 1fr;
   }
 
   .company-analysis-page .ai-board.is-running .ai-pane-history {

@@ -178,6 +178,88 @@ body.app-shell.ai-page-root .ai-page {
   display: none;
 }
 
+.ai-board.is-engine {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ai-board.is-engine .ai-pane-history,
+.ai-board.is-engine .ai-pane-monitor {
+  display: none;
+}
+
+.engine-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(42, 212, 184, 0.06);
+}
+
+.engine-hero p {
+  margin: 0;
+}
+
+.engine-type {
+  font-size: 1.05rem;
+}
+
+.engine-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.engine-kpi {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(7, 11, 18, 0.35);
+}
+
+.engine-kpi span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.engine-kpi strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.95rem;
+}
+
+.engine-flags {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid rgba(232, 176, 80, 0.28);
+  border-radius: 6px;
+  background: rgba(232, 176, 80, 0.06);
+}
+
+.engine-flags h3 {
+  margin: 0 0 8px;
+  font-size: 0.88rem;
+}
+
+.engine-flags ul {
+  margin: 0;
+  padding-left: 1.1em;
+}
+
+.engine-section {
+  margin: 0 0 18px;
+}
+
+.engine-section h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+
 /* 分析中：仅展示流水线与实时日志 */
 .ai-board.is-running {
   grid-template-columns: 1fr;
@@ -585,6 +667,10 @@ button.ai-brief-mode.is-active {
   background: var(--down);
 }
 
+.ai-pipeline-step[data-status="skipped"] .ai-pipeline-dot {
+  background: rgba(132, 148, 168, 0.7);
+}
+
 .ai-pipeline-step[data-status="failed"] .ai-pipeline-dot {
   background: var(--warn);
 }
@@ -614,6 +700,10 @@ button.ai-brief-mode.is-active {
 
 .ai-pipeline-step[data-status="done"] .ai-pipeline-badge {
   color: var(--down);
+}
+
+.ai-pipeline-step[data-status="skipped"] .ai-pipeline-badge {
+  color: var(--muted);
 }
 
 .ai-pipeline-step[data-status="failed"] .ai-pipeline-badge {
@@ -747,6 +837,10 @@ button.ai-brief-mode.is-active {
     grid-template-rows: minmax(0, 1fr);
   }
 
+  .ai-board.is-engine {
+    grid-template-columns: 1fr;
+  }
+
   .ai-board.is-idle .ai-pane-monitor,
   .ai-board.is-result .ai-pane-monitor {
     display: none;
@@ -795,6 +889,14 @@ button.ai-brief-mode.is-active {
   .ai-board {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .ai-board.is-engine {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .ai-board.is-engine .ai-pane-history {
+    display: none;
   }
 
   .ai-board.is-running {

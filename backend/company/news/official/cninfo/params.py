@@ -128,9 +128,9 @@ def resolve_org(code_or_name: str) -> dict[str, str] | None:
     picked: dict[str, str] | None = None
 
     if code:
-        picked = infer_org_from_code(code)
+        picked = load_org_map().get(code)
         if picked is None:
-            picked = load_org_map().get(code)
+            picked = infer_org_from_code(code)
 
     if picked is None and not code:
         picked = lookup_org_by_name(raw)

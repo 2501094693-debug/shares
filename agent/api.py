@@ -1,4 +1,4 @@
-"""AI 相关 HTTP 路由：业务简述、财报解读、行业竞争分析、风险与管理层评估、综合深度研判、八看财报解读。"""
+"""AI 相关 HTTP 路由：业务简述、生意本质、段永平看业务、行业竞争分析、风险与管理层评估、综合深度研判、八看财报解读、巴菲特读表、规则引擎。"""
 
 from __future__ import annotations
 
@@ -18,13 +18,6 @@ from agent.risk_service import (
     read_risk_report,
     start_risk_review,
 )
-from agent.earnings_service import (
-    get_earnings_job,
-    list_earnings_jobs,
-    list_earnings_reports,
-    read_earnings_report,
-    start_earnings_review,
-)
 from agent.comprehensive_service import (
     get_comprehensive_job,
     list_comprehensive_jobs,
@@ -39,6 +32,28 @@ from agent.bazhang_service import (
     read_bazhang_report,
     start_bazhang_analysis,
 )
+from agent.buffett_service import (
+    get_buffett_job,
+    list_buffett_jobs,
+    list_buffett_reports,
+    read_buffett_report,
+    start_buffett_analysis,
+)
+from agent.duan_service import (
+    get_duan_job,
+    list_duan_jobs,
+    list_duan_reports,
+    read_duan_report,
+    start_duan_analysis,
+)
+from agent.essence_service import (
+    get_essence_job,
+    list_essence_jobs,
+    list_essence_reports,
+    read_essence_report,
+    start_essence_analysis,
+)
+from agent.buffett_rules_service import run_buffett_rules
 from agent.service import get_brief_job, list_brief_jobs, list_reports, read_report, start_business_brief
 from core.api import err, ok
 
@@ -94,62 +109,6 @@ def ai_get_report(filename: str):
         return err(str(exc), 404)
     except Exception as exc:  # noqa: BLE001
         return err(str(exc), 500)
-
-
-@router.post("/api/ai/earnings-brief")
-@router.post("/api/ai/earnings-review")
-def ai_start_earnings_review(
-    company: str = Query("", description="公司名称或代码"),
-):
-    company = company.strip()
-    if not company:
-        return err("缺少参数 company", 400)
-    try:
-        job = start_earnings_review(company)
-        return ok(job)
-    except ValueError as exc:
-        return err(str(exc), 400)
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/ai/earnings-brief/jobs")
-@router.get("/api/ai/earnings-review/jobs")
-def ai_list_earnings_jobs():
-    try:
-        return ok(list_earnings_jobs())
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/ai/earnings-brief/reports")
-@router.get("/api/ai/earnings-review/reports")
-def ai_list_earnings_reports():
-    try:
-        return ok(list_earnings_reports())
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/ai/earnings-brief/reports/{filename}")
-@router.get("/api/ai/earnings-review/reports/{filename}")
-def ai_get_earnings_report(filename: str):
-    try:
-        content = read_earnings_report(filename)
-        return ok({"filename": filename, "content": content})
-    except FileNotFoundError as exc:
-        return err(str(exc), 404)
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/ai/earnings-brief/{job_id}")
-@router.get("/api/ai/earnings-review/{job_id}")
-def ai_get_earnings_review(job_id: str, full: str = Query("0", description="1=返回完整简述正文")):
-    job = get_earnings_job(job_id.strip(), include_full_result=full == "1")
-    if not job:
-        return err("任务不存在", 404)
-    return ok(job)
 
 
 @router.post("/api/ai/competition-analysis")
@@ -354,3 +313,181 @@ def ai_get_bazhang_analysis(job_id: str, full: str = Query("0", description="1=�
     if not job:
         return err("任务不存在", 404)
     return ok(job)
+
+
+@router.post("/api/ai/buffett-analysis")
+@router.post("/api/ai/earnings-brief")
+@router.post("/api/ai/earnings-review")
+def ai_start_buffett_analysis(
+    company: str = Query("", description="公司名称或代码"),
+):
+    company = company.strip()
+    if not company:
+        return err("缺少参数 company", 400)
+    try:
+        job = start_buffett_analysis(company)
+        return ok(job)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/ai/buffett-analysis/jobs")
+@router.get("/api/ai/earnings-brief/jobs")
+@router.get("/api/ai/earnings-review/jobs")
+def ai_list_buffett_jobs():
+    try:
+        return ok(list_buffett_jobs())
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/ai/buffett-analysis/reports")
+@router.get("/api/ai/earnings-brief/reports")
+@router.get("/api/ai/earnings-review/reports")
+def ai_list_buffett_reports():
+    try:
+        return ok(list_buffett_reports())
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/ai/buffett-analysis/reports/{filename}")
+@router.get("/api/ai/earnings-brief/reports/{filename}")
+@router.get("/api/ai/earnings-review/reports/{filename}")
+def ai_get_buffett_report(filename: str):
+    try:
+        content = read_buffett_report(filename)
+        return ok({"filename": filename, "content": content})
+    except FileNotFoundError as exc:
+        return err(str(exc), 404)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/ai/buffett-analysis/{job_id}")
+@router.get("/api/ai/earnings-brief/{job_id}")
+@router.get("/api/ai/earnings-review/{job_id}")
+def ai_get_buffett_analysis(job_id: str, full: str = Query("0", description="1=返回完整报告正文")):
+    job = get_buffett_job(job_id.strip(), include_full_result=full == "1")
+    if not job:
+        return err("任务不存在", 404)
+    return ok(job)
+
+
+@router.post("/api/ai/duan-analysis")
+def ai_start_duan_analysis(
+    company: str = Query("", description="公司名称或代码"),
+):
+    company = company.strip()
+    if not company:
+        return err("缺少参数 company", 400)
+    try:
+        job = start_duan_analysis(company)
+        return ok(job)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/ai/duan-analysis/jobs")
+def ai_list_duan_jobs():
+    try:
+        return ok(list_duan_jobs())
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/ai/duan-analysis/reports")
+def ai_list_duan_reports():
+    try:
+        return ok(list_duan_reports())
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/ai/duan-analysis/reports/{filename}")
+def ai_get_duan_report(filename: str):
+    try:
+        content = read_duan_report(filename)
+        return ok({"filename": filename, "content": content})
+    except FileNotFoundError as exc:
+        return err(str(exc), 404)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/ai/duan-analysis/{job_id}")
+def ai_get_duan_analysis(job_id: str, full: str = Query("0", description="1=返回完整报告正文")):
+    job = get_duan_job(job_id.strip(), include_full_result=full == "1")
+    if not job:
+        return err("任务不存在", 404)
+    return ok(job)
+
+
+@router.post("/api/ai/essence-analysis")
+def ai_start_essence_analysis(
+    company: str = Query("", description="公司名称或代码"),
+):
+    company = company.strip()
+    if not company:
+        return err("缺少参数 company", 400)
+    try:
+        job = start_essence_analysis(company)
+        return ok(job)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/ai/essence-analysis/jobs")
+def ai_list_essence_jobs():
+    try:
+        return ok(list_essence_jobs())
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/ai/essence-analysis/reports")
+def ai_list_essence_reports():
+    try:
+        return ok(list_essence_reports())
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/ai/essence-analysis/reports/{filename}")
+def ai_get_essence_report(filename: str):
+    try:
+        content = read_essence_report(filename)
+        return ok({"filename": filename, "content": content})
+    except FileNotFoundError as exc:
+        return err(str(exc), 404)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/ai/essence-analysis/{job_id}")
+def ai_get_essence_analysis(job_id: str, full: str = Query("0", description="1=返回完整报告正文")):
+    job = get_essence_job(job_id.strip(), include_full_result=full == "1")
+    if not job:
+        return err("任务不存在", 404)
+    return ok(job)
+
+
+@router.get("/api/ai/buffett-rules")
+def ai_buffett_rules(
+    company: str = Query("", description="公司名称或代码"),
+):
+    company = company.strip()
+    if not company:
+        return err("缺少参数 company", 400)
+    try:
+        return ok(run_buffett_rules(company))
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)

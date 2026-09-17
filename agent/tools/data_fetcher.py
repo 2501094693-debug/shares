@@ -268,17 +268,6 @@ def _format_periodic_catalog(
     return header + "\n\n".join(blocks)
 
 
-def _fetch_periodic_reports(
-    code: str,
-    name: str,
-    *,
-    days: int | None = None,
-    limit_per_kind: int = 6,
-) -> str:
-    by_kind = _collect_periodic_items(code, name, days=days, limit_per_kind=limit_per_kind)
-    return _format_periodic_catalog(by_kind, name, code, days=days)
-
-
 def _collect_business_notices(
     code: str,
     name: str,
@@ -543,85 +532,6 @@ def _fetch_profile_pack(code: str, name: str) -> tuple[dict[str, Any], dict[str,
     industry = pack.get("industry") or {}
     text = f"### 公司画像与盘口\n{format_profile_table(stock, industry)}"
     return stock, industry, text
-
-
-def fetch_earnings_reviewer_data(
-    company: str,
-    stock: dict[str, str] | None = None,
-    *,
-    progress_node: str = "er_fetch",
-) -> dict[str, Any]:
-    """采集指定公司近一年财报解读资料：报表原始科目 + 估值 + 定期报告公告。"""
-    from agent.tools.financials import (
-        build_valuation_helpers,
-        fetch_financial_pack,
-        fetch_valuation_pack,
-    )
-    from agent.tools.progress import report
-
-    resolved = stock or resolve_company(company)
-    code = resolved["code"]
-    name = resolved["name"]
-    node = progress_node
-    sections: dict[str, str] = {}
-    sources: list[str] = []
-    errors: list[str] = []
-
-    report(node, f"采集 {name} 近一年财报与估值数据", phase="fetch_data", status="running")
-
-    report(node, "正在拉取公司画像与盘口估值…", phase="fetch_section")
-    profile_stock, industry, profile_text = _fetch_profile_pack(code, name)
-    if "未能" not in profile_text:
-        sections["公司画像与盘口"] = profile_text
-        sources.extend(["东方财富盘口", "申万行业"])
-
-    report(node, "正在拉取利润表 / 资产负债表 / 现金流量表…", phase="fetch_section")
-    fin = fetch_financial_pack(code, name)
-    errors.extend(fin.get("errors") or [])
-    if fin.get("text") and "未能获取" not in fin["text"]:
-        sections["财务报表原始数据"] = fin["text"]
-        sources.extend(fin.get("sources") or [])
-
-    report(node, "正在拉取历史估值与同业对比…", phase="fetch_section")
-    val = fetch_valuation_pack(code, name, profile_stock, industry)
-    if val.get("text"):
-        sections["估值与同业"] = val["text"]
-        sources.extend(val.get("sources") or [])
-    helpers = build_valuation_helpers(
-        profile_stock,
-        fin.get("annual") or [],
-        val.get("pe_items") or [],
-    )
-    sections["安全边际预计算"] = helpers
-
-    report(node, "正在拉取近一年定期报告公告（交易所 + 巨潮）…", phase="fetch_section")
-    sections["定期报告公告"] = _fetch_periodic_reports(code, name)
-    sources.extend(OFFICIAL_SOURCE_LABELS)
-
-    window_note = (
-        f"> **任务**：解读 {name}（{code}）最近一年财报。"
-        f"趋势用近 3-5 年年报对照；估值用当前盘口、历史分位与同业。"
-        f"每段解释必须引用下方原始数据，禁止用训练知识填数。\n\n"
-    )
-    text_parts = [window_note]
-    for title, body in sections.items():
-        text_parts.append(f"## {title}\n{body}")
-    text = "\n\n".join(text_parts) if sections else (
-        "（未能获取任何结构化数据，请诚实标注数据缺口，禁止编造财务数字）"
-    )
-
-    report(node, f"采集完成：{len(sections)} 类数据", phase="fetch_data_done", status="running")
-
-    return {
-        "code": code,
-        "name": name,
-        "market": resolved.get("market", ""),
-        "sections": sections,
-        "text": text,
-        "sources_used": sources,
-        "errors": errors,
-        "data_available": bool(sections),
-    }
 
 
 def _collect_competition_notices(

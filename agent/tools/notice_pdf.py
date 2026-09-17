@@ -118,18 +118,36 @@ def is_skip_title(title: str, *, extra: tuple[str, ...] = ()) -> bool:
 
 
 def pick_latest_full_report(items: list[dict[str, Any]]) -> dict[str, Any] | None:
+    picked = pick_full_reports(items, limit=1)
+    return picked[0] if picked else None
+
+
+def pick_full_reports(items: list[dict[str, Any]], *, limit: int = 5) -> list[dict[str, Any]]:
+    """按时间顺序（输入已新到旧则保持）挑多期完整定期报告，跳过摘要/英文。"""
+    out: list[dict[str, Any]] = []
+    taken_urls: set[str] = set()
+    taken_titles: set[str] = set()
     ranked = prefer_cninfo_items(items)
     for item in ranked:
-        if not item.get("url"):
+        title = (item.get("title") or "").strip()
+        url = item.get("url") or ""
+        if not url or url in taken_urls or title in taken_titles:
             continue
-        if is_skip_title(item.get("title") or ""):
+        if is_skip_title(title):
             continue
-        return item
+        out.append(item)
+        taken_urls.add(url)
+        taken_titles.add(title)
+        if len(out) >= limit:
+            break
+    if out:
+        return out
     for item in ranked:
         title = item.get("title") or ""
-        if item.get("url") and "取消" not in title and "英文" not in title:
-            return item
-    return None
+        url = item.get("url") or ""
+        if url and "取消" not in title and "英文" not in title:
+            return [item]
+    return []
 
 
 def pick_notice_pdfs(
@@ -429,16 +447,18 @@ def ingest_notice_pdfs(
     *,
     code: str,
     progress: ProgressCb | None = None,
+    total_chars: int | None = None,
 ) -> str:
     """下载并抽取一批公告 PDF，返回可直接写入 prompt 的正文。"""
     if not items:
         return ""
 
+    cap = PDF_TOTAL_CHARS if total_chars is None else max(int(total_chars), 1)
     blocks: list[str] = []
     used = 0
     ok = 0
     for item in items:
-        if used >= PDF_TOTAL_CHARS:
+        if used >= cap:
             break
         title = (item.get("title") or "无标题").strip()
         url = item.get("url") or ""
@@ -452,7 +472,7 @@ def ingest_notice_pdfs(
         try:
             path = ensure_pdf(url, code)
             raw = extract_pdf_text(path)
-            budget = min(_char_budget(title), PDF_TOTAL_CHARS - used)
+            budget = min(_char_budget(title), cap - used)
             body = slice_business_text(raw, budget=budget)
             ok += 1
             used += len(body)

@@ -728,7 +728,7 @@ _SEGMENT_REPORTS = (
 )
 
 
-def fetch_segment_data(code: str, *, limit: int = 24) -> dict[str, Any]:
+def fetch_segment_data(code: str, *, limit: int = 24, period_limit: int = 5) -> dict[str, Any]:
     """东财 F10 主营业务/分部收入数据。"""
     try:
         from company.news.financialreport._common import em_get, period_label as fr_period_label
@@ -756,7 +756,8 @@ def fetch_segment_data(code: str, *, limit: int = 24) -> dict[str, Any]:
             by_period.setdefault(day, []).append(row)
 
     blocks: list[str] = []
-    for day in sorted(by_period, reverse=True)[:5]:
+    keep = max(int(period_limit or 5), 1)
+    for day in sorted(by_period, reverse=True)[:keep]:
         items = by_period[day]
         label = fr_period_label(day, str(items[0].get("REPORT_DATE_NAME") or ""))
         body: list[list[str]] = []
@@ -812,4 +813,71 @@ def fetch_comprehensive_financial_pack(code: str, name: str, *, limit: int = 40)
         "cash_rows": cash_rows,
         "lico_rows": lico_rows,
         "cross_validate": _cross_validate(merged, income_rows, lico_rows),
+    }
+
+
+def fetch_statement_frames(code: str, *, limit: int = 60, force: bool = False) -> dict[str, Any]:
+    """拉东财 F10 全量定期报告（三大表 + 主要指标 + 业绩报表），可选绕过 TTL。"""
+    api = _fr_backend()
+    pack = api["get_financial_report"](code, scope="all", limit=limit, force=force)
+    merged = pack.get("merged") or []
+    is_ann = api["is_annual"]
+    annual = [row for row in merged if is_ann(str(row.get("REPORT_DATE") or ""))]
+    recent = merged[:12]
+    errors: list[str] = []
+    if not merged:
+        errors.append("未能获取财务报表数据")
+    return {
+        "merged": merged,
+        "annual": annual,
+        "recent": recent,
+        "statements": pack.get("statements") or {},
+        "count": len(merged),
+        "errors": errors,
+        "forced": bool(force),
+        "source": pack.get("source") or "",
+    }
+
+
+def format_periodic_financial_text(
+    *,
+    annual: list[dict[str, Any]],
+    recent: list[dict[str, Any]],
+    merged: list[dict[str, Any]],
+    statements: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """把全量定期报告格式化成解读上下文（年报/半年报/季报都列出）。"""
+    pool = list(merged or recent or annual or [])
+    if not pool:
+        return {
+            "sections": {},
+            "text": "（未能获取财务报表原始数据）",
+            "sources": [],
+        }
+    today = date.today().isoformat()
+    income_rows = list((statements or {}).get("income") or [])
+    lico_rows = list((statements or {}).get("lico") or [])
+    sections: dict[str, str] = {
+        "近三年定期报告利润表（原始科目）": _income_raw_table(pool[:12]),
+        "近三年定期报告现金流量表（原始科目）": _cash_raw_table(pool[:12]),
+        "近三年定期报告资产负债表（原始科目）": _balance_table(pool[:12]),
+        "盈利能力指标（定期报告）": _profitability_table(pool[:12]),
+        "现金流（定期报告）": _cashflow_table(pool[:12]),
+        "近3-5年年报趋势（原始数据）": _trend_table(annual[:8]),
+        "数据交叉验证": _cross_validate(pool, income_rows, lico_rows),
+    }
+    note = (
+        f"> 数据截止 {today}。覆盖**年报、半年报、一季报、三季报**。"
+        f"金额单位已折算；利润表/现金流量表为**报告期累计数**"
+        f"（中报=上半年，三季报=前三季度，年报=全年），不是单季度，不同类型不可直接横比。\n"
+        f"> 来源：东方财富 F10 主要指标 / 利润表 / 资产负债表 / 现金流量表 / 业绩报表。\n"
+    )
+    parts = [note]
+    for title, body in sections.items():
+        if body:
+            parts.append(f"### {title}\n{body}")
+    return {
+        "sections": sections,
+        "text": "\n\n".join(parts),
+        "sources": ["东方财富 F10 财务报表", "东方财富业绩报表"],
     }

@@ -307,6 +307,7 @@ const els = {
   companyTabStack: document.getElementById("companyTabStack"),
   panelJudgment: document.getElementById("panel-judgment"),
   judgmentSourceBar: document.getElementById("judgmentSourceBar"),
+  earningsSourceBar: document.getElementById("earningsSourceBar"),
   exchangeForm: document.getElementById("exchangeForm"),
   exchangeTabs: document.getElementById("exchangeTabs"),
   exchangeTitle: document.getElementById("exchangeTitle"),
@@ -606,7 +607,10 @@ const xqEmotionState = {
 let newsGroup = normalizeNewsGroup(params.get("news") || "");
 let newsBootstrapped = { official: false, financials: false, other: false };
 let emotionBootstrapped = { eastmoney: false, tonghuashun: false, xueqiu: false };
-const ANALYSIS_PANELS = new Set(["comprehensive", "business", "earnings", "bazhang", "competition", "risk"]);
+const ANALYSIS_PANELS = new Set(["comprehensive", "business", "essence", "duan", "bazhang", "buffett", "buffett-rules", "competition", "risk"]);
+const EARNINGS_VIEWS = new Set(["bazhang", "buffett", "buffett-rules"]);
+const EARNINGS_FAMILY = new Set(["earnings", "财报简述", ...EARNINGS_VIEWS]);
+let lastEarningsView = "bazhang";
 const tabParamRaw = (params.get("tab") || "").trim().toLowerCase();
 let emotionSource = normalizeEmotionSource(params.get("emotion") || "");
 if (["ths-emotion", "ths", "circle"].includes(tabParamRaw)) {
@@ -654,7 +658,11 @@ function activeEmotionState(source = emotionSource) {
 }
 
 function isAnalysisPanel(panelId = "") {
-  return ANALYSIS_PANELS.has(panelId);
+  const raw = String(panelId || "").trim().toLowerCase();
+  if (EARNINGS_FAMILY.has(raw)) return true;
+  const aliases = window.AI_MODE_ALIASES || {};
+  const mapped = aliases[raw] || raw;
+  return ANALYSIS_PANELS.has(mapped);
 }
 
 function notifyAnalysisIdentity(stock = {}, { ready = false } = {}) {
@@ -695,9 +703,15 @@ function normalizeMainPanel(panelId) {
 
 function normalizeJudgmentSubTab(view) {
   const raw = String(view || "").trim().toLowerCase();
+  if (raw === "earnings" || raw === "财报简述") {
+    return EARNINGS_VIEWS.has(lastEarningsView) ? lastEarningsView : "bazhang";
+  }
   const aliases = window.AI_MODE_ALIASES || {};
   const mapped = aliases[raw] || raw;
-  if (ANALYSIS_PANELS.has(mapped)) return mapped;
+  if (ANALYSIS_PANELS.has(mapped)) {
+    if (EARNINGS_VIEWS.has(mapped)) lastEarningsView = mapped;
+    return mapped;
+  }
   return "comprehensive";
 }
 
@@ -1214,8 +1228,11 @@ function formatWanInput(yuan) {
 }
 
 function parseWanInputValue(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return null;
+  const raw = String(value || "")
+    .trim()
+    .replace(/,/g, "")
+    .replace(/万/g, "");
+  if (!raw || raw === ".") return null;
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) return null;
   return n;
@@ -1346,15 +1363,23 @@ function bindBigDealRange() {
   const isRangeInput = (el) => el && (el.id === "bigDealMinWan" || el.id === "bigDealMaxWan");
   root.addEventListener("input", (event) => {
     if (!isRangeInput(event.target)) return;
+    event.stopPropagation();
     window.clearTimeout(bigDealRangeReloadTimer);
-    bigDealRangeReloadTimer = window.setTimeout(() => commitBigDealRange({ swap: false }), 320);
+    bigDealRangeReloadTimer = window.setTimeout(() => commitBigDealRange({ swap: false }), 480);
   });
   root.addEventListener("change", (event) => {
     if (!isRangeInput(event.target)) return;
+    event.stopPropagation();
     commitBigDealRange({ swap: true });
   });
+  root.addEventListener("blur", (event) => {
+    if (!isRangeInput(event.target)) return;
+    commitBigDealRange({ swap: true });
+  }, true);
   root.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" || !isRangeInput(event.target)) return;
+    if (!isRangeInput(event.target)) return;
+    event.stopPropagation();
+    if (event.key !== "Enter") return;
     event.preventDefault();
     commitBigDealRange({ swap: true });
   });
@@ -1388,6 +1413,7 @@ function isTicksHistoryView() {
 function syncTicksDayInput() {
   const el = document.getElementById("ticksTapeDay");
   if (!el) return;
+  if (document.activeElement === el) return;
   el.value = ticksViewDay();
   el.max = cnNowParts().dateStr;
 }
@@ -1455,15 +1481,35 @@ async function applyTicksViewDay(iso) {
   if (ticksState.live) void pollTicksLive();
 }
 
-function restoreTapeScroll(scroller, prevTop, prevHeight) {
-  if (!scroller) return;
+const tapeScrollRaf = new WeakMap();
+
+function tapeIsPinnedToLatest(scroller) {
+  if (!scroller) return true;
   const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-  if (!prevHeight) {
-    scroller.scrollTop = maxTop;
-    return;
-  }
-  const prevMax = Math.max(0, prevHeight - scroller.clientHeight);
-  scroller.scrollTop = prevTop >= prevMax - 32 ? maxTop : prevTop;
+  if (maxTop <= 4) return true;
+  return scroller.scrollTop >= maxTop - 48;
+}
+
+function restoreTapeScroll(scroller, prevTop, prevHeight, followLatest = false) {
+  if (!scroller) return;
+  const pin = followLatest || !prevHeight;
+  const apply = () => {
+    if (!scroller.isConnected) return;
+    const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    scroller.scrollTop = pin ? maxTop : Math.min(prevTop, maxTop);
+  };
+  apply();
+  const prev = tapeScrollRaf.get(scroller);
+  if (prev != null) window.cancelAnimationFrame(prev);
+  const id = window.requestAnimationFrame(() => {
+    apply();
+    const id2 = window.requestAnimationFrame(() => {
+      apply();
+      tapeScrollRaf.delete(scroller);
+    });
+    tapeScrollRaf.set(scroller, id2);
+  });
+  tapeScrollRaf.set(scroller, id);
 }
 
 function tapeTimeKey(row) {
@@ -1788,11 +1834,28 @@ function refreshBigDealList() {
     if (els.metricsPanels || els.metricsGrid) renderMetrics(metricsStock);
     return;
   }
+  const items = sortTapeByTimeAsc(bigDealState.items);
+  const newest = items[items.length - 1];
+  const paintKey = [
+    bigDealState.loading ? "1" : "0",
+    items.length,
+    newest?.time || "",
+    newest?.amount ?? "",
+    newest?.event_id || "",
+    bigDealRangeLabel(),
+    bigDealState.error || "",
+  ].join(":");
   const scroller = body.querySelector(".big-deal-scroll");
+  if (paintKey === body.dataset.paintKey && scroller) {
+    if (tapeIsPinnedToLatest(scroller)) restoreTapeScroll(scroller, scroller.scrollTop, scroller.scrollHeight, true);
+    return;
+  }
+  const followLatest = tapeIsPinnedToLatest(scroller);
   const prevTop = scroller?.scrollTop || 0;
   const prevHeight = scroller?.scrollHeight || 0;
+  body.dataset.paintKey = paintKey;
   body.innerHTML = renderBigDealListHtml();
-  restoreTapeScroll(body.querySelector(".big-deal-scroll"), prevTop, prevHeight);
+  restoreTapeScroll(body.querySelector(".big-deal-scroll"), prevTop, prevHeight, followLatest);
   if (ticksState.linkPin && !ticksState.listHover) restoreTicksLinkPin();
   else syncTapeLinkHighlight();
 }
@@ -1902,10 +1965,11 @@ function refreshTicksTapeList() {
       </div>`;
   }
   const scroller = body.querySelector(".ticks-tape-scroll");
+  const followLatest = tapeIsPinnedToLatest(scroller);
   const prevTop = scroller?.scrollTop || 0;
   const prevHeight = scroller?.scrollHeight || 0;
   body.innerHTML = html;
-  restoreTapeScroll(body.querySelector(".ticks-tape-scroll"), prevTop, prevHeight);
+  restoreTapeScroll(body.querySelector(".ticks-tape-scroll"), prevTop, prevHeight, followLatest);
   if (ticksState.linkPin && !ticksState.listHover) restoreTicksLinkPin();
   else syncTapeLinkHighlight();
 }
@@ -2045,6 +2109,15 @@ function renderMetrics(stock = metricsStock) {
   if (!panels) return;
   metricsStock = stock && typeof stock === "object" ? stock : metricsStock;
   renderFundamentals(metricsStock);
+
+  const mounted = document.getElementById("bigDealBody") && document.getElementById("ticksTapeBody");
+  if (mounted) {
+    bindBigDealRange();
+    bindTapeChartLink();
+    bindTicksDayPicker();
+    syncTicksDayInput();
+    return;
+  }
 
   const html = [renderTicksTapeSection(), renderBigDealSection()].filter(Boolean).join("");
   panels.innerHTML = html || `<p class="muted">暂无指标数据</p>`;
@@ -2288,8 +2361,9 @@ async function loadProfile({ silent = false, refresh = false, liveOnly = false }
     const stock = data.stock || {};
     applyStock(stock, data.industry || {});
     if (liveOnly && !isTicksHistoryView()) {
-      void loadBigDeals();
-      void loadBigDealChart({ refresh: true });
+      const live = cnMarketPhase() === "live";
+      void loadBigDeals({ refresh: live });
+      void loadBigDealChart({ refresh: live });
     }
     if (!liveOnly) {
       try {
@@ -2442,11 +2516,21 @@ function setOthersSubTab(nextView, { reload = true } = {}) {
 
 function syncJudgmentSubTabUi() {
   const view = judgmentSubTab;
+  const family = EARNINGS_VIEWS.has(view) ? "earnings" : view;
   if (els.panelJudgment) {
     els.panelJudgment.dataset.judgmentView = view;
+    els.panelJudgment.dataset.judgmentFamily = family;
   }
   if (els.judgmentSourceBar) {
     els.judgmentSourceBar.querySelectorAll("[data-source]").forEach((btn) => {
+      const active = btn.getAttribute("data-source") === family;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+  }
+  if (els.earningsSourceBar) {
+    els.earningsSourceBar.hidden = family !== "earnings";
+    els.earningsSourceBar.querySelectorAll("[data-source]").forEach((btn) => {
       const active = btn.getAttribute("data-source") === view;
       btn.classList.toggle("is-active", active);
       btn.setAttribute("aria-selected", active ? "true" : "false");
@@ -6499,13 +6583,27 @@ function setupOthersSubTabs() {
 }
 
 function setupJudgmentSubTabs() {
-  if (!els.judgmentSourceBar || els.judgmentSourceBar.dataset.bound === "1") return;
-  els.judgmentSourceBar.dataset.bound = "1";
-  els.judgmentSourceBar.addEventListener("click", (event) => {
-    const btn = event.target.closest("[data-source]");
-    if (!btn || !els.judgmentSourceBar.contains(btn)) return;
-    setJudgmentSubTab(btn.getAttribute("data-source") || "comprehensive");
-  });
+  if (els.judgmentSourceBar && els.judgmentSourceBar.dataset.bound !== "1") {
+    els.judgmentSourceBar.dataset.bound = "1";
+    els.judgmentSourceBar.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-source]");
+      if (!btn || !els.judgmentSourceBar.contains(btn)) return;
+      const source = btn.getAttribute("data-source") || "comprehensive";
+      if (source === "earnings") {
+        setJudgmentSubTab(lastEarningsView || "bazhang");
+        return;
+      }
+      setJudgmentSubTab(source);
+    });
+  }
+  if (els.earningsSourceBar && els.earningsSourceBar.dataset.bound !== "1") {
+    els.earningsSourceBar.dataset.bound = "1";
+    els.earningsSourceBar.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-source]");
+      if (!btn || !els.earningsSourceBar.contains(btn)) return;
+      setJudgmentSubTab(btn.getAttribute("data-source") || lastEarningsView || "bazhang");
+    });
+  }
   syncJudgmentSubTabUi();
 }
 

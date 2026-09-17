@@ -58,6 +58,13 @@ RISK_SEARCH_QUERIES: tuple[str, ...] = (
     "新业务 亏损 扩张 风险 不确定性",
 )
 
+DUAN_SEARCH_QUERIES: tuple[str, ...] = (
+    "用户口碑 产品体验 为什么买 会不会换",
+    "差异化 定价权 护城河 价格战",
+    "企业文化 本分 用户导向 管理层",
+    "竞争对手 可替代性 毛利率 商业模式",
+)
+
 
 def is_web_search_available() -> bool:
     return web_search_status()[0]
@@ -325,6 +332,39 @@ def search_for_risk(
         )
         if text and not text.startswith("（"):
             blocks.append(f"### 检索：{query_suffix}\n{text}")
+            if engine and engine not in engines:
+                engines.append(engine)
+
+    if not blocks:
+        return "", engines
+    return "\n\n".join(blocks), engines
+
+
+def search_for_duan(
+    company: str,
+    *,
+    stock_code: str = "",
+    max_results_per_query: int | None = None,
+    progress_cb: Callable[[str], None] | None = None,
+) -> tuple[str, list[str]]:
+    """段永平看业务专用检索：用户体验、差异化、企业文化。"""
+    engines: list[str] = []
+    blocks: list[str] = []
+    per_query = max_results_per_query or max(
+        4, WEB_SEARCH_MAX_RESULTS // max(len(DUAN_SEARCH_QUERIES), 1)
+    )
+
+    for q in DUAN_SEARCH_QUERIES:
+        if progress_cb:
+            progress_cb(q)
+        text, engine = search_company_info(
+            company,
+            q,
+            stock_code=stock_code,
+            max_results=per_query,
+        )
+        if text and not text.startswith("（"):
+            blocks.append(f"### 检索：{q}\n{text}")
             if engine and engine not in engines:
                 engines.append(engine)
 

@@ -7,14 +7,14 @@ from typing import Any
 
 from agent.bazhang_analyst.rules import run_zhang_analysis
 from agent.tools.data_fetcher import (
-    OFFICIAL_SOURCE_LABELS,
     _fetch_profile_pack,
     resolve_company,
 )
 from agent.tools.financials import (
-    fetch_comprehensive_financial_pack,
     fetch_segment_data,
+    fetch_statement_frames,
     fetch_valuation_pack,
+    format_periodic_financial_text,
 )
 from agent.tools.progress import report
 
@@ -33,7 +33,7 @@ def fetch_bazhang_data(
     name = resolved["name"]
     node = progress_node
     sections: dict[str, str] = {}
-    sources: list[str] = list(OFFICIAL_SOURCE_LABELS)
+    sources: list[str] = []
     errors: list[str] = []
 
     report(node, f"采集 {name} 八看分析数据", phase="fetch_data", status="running")
@@ -44,22 +44,29 @@ def fetch_bazhang_data(
         sections["公司画像与盘口"] = profile_text
         sources.extend(["东方财富盘口", "申万行业"])
 
-    report(node, "正在拉取财务报表（三大表 + 主要指标）…", phase="fetch_section")
-    fin = fetch_comprehensive_financial_pack(code, name, limit=40)
+    report(node, "正在拉取最新全量定期报告（年报/半年报/季报）…", phase="fetch_section")
+    fin = fetch_statement_frames(code, limit=60, force=True)
     errors.extend(fin.get("errors") or [])
     annual = fin.get("annual") or []
     recent = fin.get("recent") or []
     merged = fin.get("merged") or []
-    if fin.get("text"):
-        sections["财务报表原始数据"] = fin["text"]
-        sources.extend(fin.get("sources") or [])
+    formatted = format_periodic_financial_text(
+        annual=annual,
+        recent=recent,
+        merged=merged,
+        statements=fin.get("statements") or {},
+    )
+    if formatted.get("text"):
+        sections["财务报表原始数据"] = formatted["text"]
+        sources.extend(formatted.get("sources") or [])
 
     if not annual and not merged:
         errors.append("未能获取财务报表数据")
 
     report(node, "正在运行张新民「八看」规则引擎…", phase="fetch_section")
-    zhang = run_zhang_analysis(annual or merged, recent)
+    zhang = run_zhang_analysis(annual, recent, merged=merged)
     sections["八看规则引擎预计算"] = zhang["text"]
+    sources.append("规则引擎预计算")
     for title, table in (zhang.get("tables") or {}).items():
         sections[f"八看_{title}"] = table
 
@@ -74,9 +81,6 @@ def fetch_bazhang_data(
     if val.get("text"):
         sections["估值与同业"] = val["text"]
         sources.extend(val.get("sources") or [])
-
-    if fin.get("cross_validate"):
-        sections["三表交叉验证"] = fin["cross_validate"]
 
     text_parts = []
     for title, body in sections.items():
@@ -93,7 +97,7 @@ def fetch_bazhang_data(
         "zhang": zhang,
         "sections": sections,
         "text": "\n\n".join(text_parts),
-        "sources_used": sources,
+        "sources_used": list(dict.fromkeys(item.strip() for item in sources if item and str(item).strip())),
         "errors": errors,
         "data_available": bool(annual or merged),
     }

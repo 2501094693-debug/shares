@@ -1,11 +1,13 @@
 (() => {
   const MODES = window.AI_MODES || {};
-  const MODE_ORDER = window.AI_MODE_ORDER || ["comprehensive", "business", "earnings", "competition", "risk"];
+  const MODE_ORDER = window.AI_MODE_ORDER || ["comprehensive", "business", "essence", "duan", "bazhang", "buffett", "buffett-rules", "competition", "risk"];
+  const EARNINGS_VIEWS = new Set(["bazhang", "buffett", "buffett-rules"]);
 
   const STATUS_LABELS = {
     pending: "等待",
     running: "进行中",
     done: "完成",
+    skipped: "跳过",
     failed: "失败",
   };
 
@@ -24,6 +26,7 @@
       ready: false,
       job: null,
       reports: [],
+      enginePack: null,
     };
   }
 
@@ -42,6 +45,14 @@
 
   function getConfig(mode = state.mode) {
     return MODES[mode] || MODES.business;
+  }
+
+  function isEngineMode(mode = state.mode) {
+    return getConfig(mode).kind === "engine";
+  }
+
+  function judgmentFamily(mode = state.mode) {
+    return EARNINGS_VIEWS.has(mode) ? "earnings" : mode;
   }
 
   function getModeState(mode = state.mode) {
@@ -198,9 +209,11 @@
     const board = $("aiBoard");
     if (!board) return;
     const next = `is-${mode}`;
-    if (board.classList.contains(next)) return;
+    const engine = isEngineMode();
+    if (board.classList.contains(next) && board.classList.contains("is-engine") === engine) return;
     board.classList.remove("is-idle", "is-running", "is-result");
     board.classList.add(next);
+    board.classList.toggle("is-engine", engine);
   }
 
   function showError(message) {
@@ -235,15 +248,18 @@
     const cfg = getConfig();
     const el = $("pipelineProgress");
     if (!el) return;
-    const done = cfg.agentDefs.filter((d) => agents?.[d.id]?.status === "done").length;
-    el.textContent = `${done} / ${cfg.agentDefs.length}`;
+    const done = (cfg.agentDefs || []).filter((d) => {
+      const s = agents?.[d.id]?.status;
+      return s === "done" || s === "skipped";
+    }).length;
+    el.textContent = `${done} / ${(cfg.agentDefs || []).length}`;
   }
 
   function renderAgentBoard(agents) {
     const cfg = getConfig();
     const board = $("agentBoard");
     if (!board) return;
-    board.innerHTML = cfg.agentDefs.map((def) => {
+    board.innerHTML = (cfg.agentDefs || []).map((def) => {
       const info = agents?.[def.id] || { status: "pending", message: "等待中", phase_label: "" };
       const status = info.status || "pending";
       const phase = info.phase_label
@@ -369,12 +385,28 @@
     if ($("analysisCompanyLabel")) $("analysisCompanyLabel").textContent = label;
     if ($("startBtn")) $("startBtn").textContent = cfg.startBtn;
     if ($("historyHead")) $("historyHead").textContent = cfg.historyHead;
-    if ($("pipelineProgress")) $("pipelineProgress").textContent = `0 / ${cfg.agentDefs.length}`;
+    const agentCount = cfg.agentDefs?.length || 0;
+    if ($("pipelineProgress")) $("pipelineProgress").textContent = `0 / ${agentCount}`;
+    const family = judgmentFamily(mode);
+    const visible = analysisVisible();
+    const panel = $("panel-judgment");
+    if (panel) {
+      panel.dataset.judgmentView = mode;
+      panel.dataset.judgmentFamily = family;
+    }
     document.querySelectorAll("#judgmentSourceBar [data-source]").forEach((tab) => {
-      const active = tab.getAttribute("data-source") === mode;
-      tab.classList.toggle("is-active", active && analysisVisible());
-      tab.setAttribute("aria-selected", active && analysisVisible() ? "true" : "false");
+      const active = tab.getAttribute("data-source") === family;
+      tab.classList.toggle("is-active", active && visible);
+      tab.setAttribute("aria-selected", active && visible ? "true" : "false");
     });
+    const sub = $("earningsSourceBar");
+    if (sub) sub.hidden = family !== "earnings";
+    document.querySelectorAll("#earningsSourceBar [data-source]").forEach((tab) => {
+      const active = tab.getAttribute("data-source") === mode;
+      tab.classList.toggle("is-active", active && visible);
+      tab.setAttribute("aria-selected", active && visible ? "true" : "false");
+    });
+    $("aiBoard")?.classList.toggle("is-engine", cfg.kind === "engine");
   }
 
   function showReportLoading(message, title = "正在加载") {
@@ -452,9 +484,130 @@
     }
   }
 
+  function fmtEngineNum(value, kind = "yi") {
+    if (value == null || value === "") return "—";
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    if (kind === "pct") return `${n.toFixed(1)}%`;
+    if (kind === "x") return `${n.toFixed(2)}×`;
+    const sign = n < 0 ? "-" : "";
+    const abs = Math.abs(n);
+    if (abs >= 1e8) return `${sign}${(abs / 1e8).toFixed(2)}亿`;
+    if (abs >= 1e4) return `${sign}${(abs / 1e4).toFixed(2)}万`;
+    return `${sign}${abs.toFixed(2)}`;
+  }
+
+  function engineHtml(pack) {
+    const latest = pack?.metrics?.latest || {};
+    const flags = Array.isArray(pack?.flags) ? pack.flags : [];
+    const tables = pack?.tables || {};
+    const kpis = [
+      ["生意类型", pack.business_type || "未知", "text"],
+      ["(a) 归母净利", fmtEngineNum(latest.a), "yi"],
+      ["(b) 折旧摊销", latest.da_disclosed ? fmtEngineNum(latest.b) : "未披露", "yi"],
+      ["资本开支", fmtEngineNum(latest.capex), "yi"],
+      ["所有者盈余上沿", fmtEngineNum(latest.oe_upper), "yi"],
+      ["所有者盈余下沿", latest.da_disclosed ? fmtEngineNum(latest.oe_lower) : "未披露", "yi"],
+      ["有形 ROE", fmtEngineNum(latest.tangible_roe || latest.roe, "pct"), "pct"],
+      ["capex/D&A", latest.da_disclosed ? fmtEngineNum(latest.capex_da, "x") : "未披露", "x"],
+    ];
+    const kpiHtml = kpis.map(([label, value]) => (
+      `<div class="engine-kpi"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`
+    )).join("");
+    const flagsHtml = flags.length
+      ? `<div class="engine-flags"><h3>风险警示</h3><ul>${flags.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></div>`
+      : "";
+    const order = [
+      ["diagnosis", "综合诊断"],
+      ["owner_earnings", "所有者盈余（最新口径）"],
+      ["annual_owner", "年报所有者盈余"],
+      ["recent_all", "近几期定期报告"],
+      ["capital", "资本与回报"],
+      ["allocation", "资本配置"],
+    ];
+    const tableHtml = order.map(([key, title]) => {
+      const body = tables[key];
+      if (!body) return "";
+      return `<section class="engine-section"><h3>${esc(title)}</h3>${renderMarkdown(body)}</section>`;
+    }).join("");
+    const errorHtml = (pack.errors || []).length
+      ? `<p class="muted">数据缺口：${esc((pack.errors || []).join("；"))}</p>`
+      : "";
+    return `
+      <div class="engine-hero">
+        <p class="engine-type">生意类型：<strong>${esc(pack.business_type || "未知")}</strong></p>
+        <p class="muted">${esc([pack.latest_period, pack.period_kind, pack.ytd ? "累计口径" : ""].filter(Boolean).join(" · ") || "最新定期报告")}</p>
+        ${pack.coverage ? `<p class="muted">${esc(pack.coverage)}</p>` : ""}
+        ${pack.business_reason ? `<p class="muted">${esc(pack.business_reason)}</p>` : ""}
+      </div>
+      <div class="engine-kpis">${kpiHtml}</div>
+      ${flagsHtml}
+      ${tableHtml}
+      ${errorHtml}
+    `;
+  }
+
+  function renderEnginePack(pack) {
+    const cfg = getConfig();
+    const ms = getModeState();
+    if (!pack) return;
+    setBoardMode("result");
+    setLive("live");
+    setRunningStatus(false);
+    showError("");
+    if ($("jobMeta")) $("jobMeta").textContent = "";
+    if ($("reportTitle")) $("reportTitle").textContent = cfg.resultTitle?.(pack) || cfg.reportTitle;
+    if ($("reportMeta")) $("reportMeta").textContent = cfg.resultMeta?.(pack) || "";
+    if ($("reportView")) $("reportView").innerHTML = engineHtml(pack);
+    ms.enginePack = pack;
+    ms.ready = true;
+    focusReportPane();
+  }
+
+  async function loadEngine(mode = state.mode, { force = false } = {}) {
+    const cfg = getConfig(mode);
+    const ms = getModeState(mode);
+    applyChrome(mode);
+    if (!force && ms.enginePack && state.mode === mode) {
+      renderEnginePack(ms.enginePack);
+      return;
+    }
+    const company = companyQuery();
+    if (!company) {
+      paintIdle();
+      showError("缺少公司代码");
+      return;
+    }
+    showError("");
+    setLive("busy");
+    setBoardMode("result");
+    if (mode === state.mode) $("startBtn")?.classList.add("hidden");
+    showReportLoading("正在强制刷新东财最新全量定期报告并计算…", `${cfg.label}计算中`);
+    if ($("reportTitle")) $("reportTitle").textContent = cfg.runningTitle?.(company) || cfg.reportTitle;
+    try {
+      const qs = new URLSearchParams({ company });
+      const { data } = await api(`${cfg.apiRoot}?${qs}`, { timeoutMs: 90000 });
+      if (state.mode !== mode) return;
+      renderEnginePack(data);
+    } catch (err) {
+      if (state.mode !== mode) return;
+      ms.ready = false;
+      setLive("idle");
+      setBoardMode("idle");
+      setRunningStatus(false);
+      showEmptyState();
+      showError(err.message || cfg.resumeFail);
+    }
+  }
+
   async function loadReports() {
     const cfg = getConfig();
     const ms = getModeState();
+    if (cfg.kind === "engine") {
+      ms.reports = [];
+      paintReportList(cfg, ms);
+      return ms.reports;
+    }
     const { data } = await api(reportsListUrl(cfg));
     ms.reports = (data || []).filter((r) => cfg.reportNameRe.test(r.filename) && reportMatches(r.filename));
     paintReportList(cfg, ms);
@@ -648,6 +801,10 @@
   }
 
   async function startTask() {
+    if (isEngineMode()) {
+      await loadEngine(state.mode, { force: true });
+      return;
+    }
     const cfg = getConfig();
     const ms = getModeState();
     const company = companyQuery();
@@ -719,6 +876,13 @@
 
   async function ensureForMode(mode, { force = false } = {}) {
     const cfg = getConfig(mode);
+    if (cfg.kind === "engine") {
+      applyChrome(mode);
+      if (!force) await waitForIdentity();
+      if (state.mode !== mode && !force) return;
+      await loadEngine(mode, { force });
+      return;
+    }
     const ms = getModeState(mode);
     const token = ++ms.seq;
     const stillCurrent = () => token === ms.seq && (force || state.mode === mode);
@@ -816,6 +980,8 @@
   }
 
   async function onPanel(mode) {
+    const aliases = window.AI_MODE_ALIASES || {};
+    mode = aliases[mode] || mode;
     if (!MODES[mode]) return;
     if (mode !== state.mode) stopPollForMode(state.mode);
     state.mode = mode;

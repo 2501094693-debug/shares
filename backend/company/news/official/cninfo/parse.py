@@ -217,6 +217,8 @@ def parse_pack(raw: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
     }
     if params.get("has_plate"):
         out["plate"] = params.get("plate") or ""
+    if raw.get("error") and not items:
+        out["error"] = raw["error"]
     return out
 
 

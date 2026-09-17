@@ -1,4 +1,4 @@
-"""线程内进度上报：供业务简述 / 财报解读 LangGraph 节点与 data_fetcher 写入当前任务状态。"""
+"""线程内进度上报：供业务简述 / 巴菲特读表等 LangGraph 节点与 data_fetcher 写入当前任务状态。"""
 
 from __future__ import annotations
 
@@ -15,10 +15,6 @@ AGENT_LABELS: dict[str, str] = {
     "be_search": "联网补充",
     "be_explain": "生成简述",
     "be_save": "保存报告",
-    "er_init": "解析公司",
-    "er_fetch": "采集财报",
-    "er_explain": "生成解读",
-    "er_save": "保存报告",
     "ic_init": "解析公司",
     "ic_fetch": "采集资料",
     "ic_search": "联网补充",
@@ -54,6 +50,30 @@ AGENT_LABELS: dict[str, str] = {
     "bz_synthesis": "综合诊断",
     "bz_assemble": "拼装报告",
     "bz_save": "保存报告",
+    "bf_init": "解析公司",
+    "bf_fetch": "采集数据",
+    "bf_understand": "一、生意能否看懂",
+    "bf_owner": "二、所有者盈余",
+    "bf_capital": "三、资本饥饿",
+    "bf_honesty": "四、会计与配置",
+    "bf_synthesis": "五、综合判决",
+    "bf_assemble": "拼装报告",
+    "bf_save": "保存报告",
+    "dy_init": "解析公司",
+    "dy_fetch": "采集数据",
+    "dy_business": "一、生意模式",
+    "dy_culture": "二、企业文化",
+    "dy_price": "三、好价钱",
+    "dy_synthesis": "四、能不能看懂",
+    "dy_assemble": "拼装报告",
+    "dy_save": "保存报告",
+    "es_resolve": "解析公司",
+    "es_official": "官方公告",
+    "es_businesses": "主营确认",
+    "es_web": "联网补充",
+    "es_explain": "讲清业务",
+    "es_factors": "关键因素",
+    "es_save": "保存报告",
 }
 
 PHASE_LABELS: dict[str, str] = {
@@ -68,13 +88,16 @@ PHASE_LABELS: dict[str, str] = {
     "web_search_skip": "跳过联网",
     "llm": "LLM 生成",
     "llm_done": "生成完成",
+    "critique": "质疑复核",
+    "confirm": "确认通过",
+    "extra_search": "补证据",
     "save_file": "写入文件",
+    "skip": "跳过",
     "done": "已完成",
     "failed": "失败",
 }
 
 ALL_AGENTS = ["be_init", "be_fetch", "be_search", "be_explain", "be_save"]
-EARNINGS_AGENTS = ["er_init", "er_fetch", "er_explain", "er_save"]
 COMPETITION_AGENTS = ["ic_init", "ic_fetch", "ic_search", "ic_analyze", "ic_save"]
 RISK_REVIEWER_AGENTS = ["rr_init", "rr_fetch", "rr_search", "rr_analyze", "rr_save"]
 COMPREHENSIVE_AGENTS = [
@@ -105,6 +128,36 @@ BAZHANG_AGENTS = [
     "bz_synthesis",
     "bz_assemble",
     "bz_save",
+]
+BUFFETT_AGENTS = [
+    "bf_init",
+    "bf_fetch",
+    "bf_understand",
+    "bf_owner",
+    "bf_capital",
+    "bf_honesty",
+    "bf_synthesis",
+    "bf_assemble",
+    "bf_save",
+]
+DUAN_AGENTS = [
+    "dy_init",
+    "dy_fetch",
+    "dy_business",
+    "dy_culture",
+    "dy_price",
+    "dy_synthesis",
+    "dy_assemble",
+    "dy_save",
+]
+ESSENCE_AGENTS = [
+    "es_resolve",
+    "es_official",
+    "es_businesses",
+    "es_web",
+    "es_explain",
+    "es_factors",
+    "es_save",
 ]
 
 
@@ -144,10 +197,6 @@ def init_business_explainer_agents() -> dict[str, dict[str, str]]:
     return init_agents_state(ALL_AGENTS)
 
 
-def init_earnings_reviewer_agents() -> dict[str, dict[str, str]]:
-    return init_agents_state(EARNINGS_AGENTS)
-
-
 def init_industry_competition_agents() -> dict[str, dict[str, str]]:
     return init_agents_state(COMPETITION_AGENTS)
 
@@ -162,6 +211,18 @@ def init_comprehensive_analyst_agents() -> dict[str, dict[str, str]]:
 
 def init_bazhang_analyst_agents() -> dict[str, dict[str, str]]:
     return init_agents_state(BAZHANG_AGENTS)
+
+
+def init_buffett_analyst_agents() -> dict[str, dict[str, str]]:
+    return init_agents_state(BUFFETT_AGENTS)
+
+
+def init_duan_analyst_agents() -> dict[str, dict[str, str]]:
+    return init_agents_state(DUAN_AGENTS)
+
+
+def init_essence_analyst_agents() -> dict[str, dict[str, str]]:
+    return init_agents_state(ESSENCE_AGENTS)
 
 
 def report(

@@ -32,6 +32,17 @@ _UA = (
     "Chrome/122.0.0.0 Safari/537.36"
 )
 _RETRY_EXC = (requests.Timeout, requests.ConnectionError)
+_IMPERSONATE_DROP = {"user-agent", "sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform"}
+
+
+def _impersonate_headers(headers: dict[str, str] | None) -> dict[str, str]:
+    """curl_cffi impersonate 自带匹配的 UA；再塞一个过期 UA 会被巨潮拦成 403。"""
+    out: dict[str, str] = {}
+    for key, value in (headers or {}).items():
+        if str(key).lower() in _IMPERSONATE_DROP:
+            continue
+        out[key] = value
+    return out
 
 
 def _session(*, verify: bool = True) -> requests.Session:
@@ -236,15 +247,16 @@ def browser_get(
     except ImportError:  # pragma: no cover
         curl_requests = None
 
-    hdrs = {"User-Agent": _UA, **(headers or {})}
     if curl_requests is not None:
+        # 不要覆盖 User-Agent：和 TLS 指纹不一致时，巨潮 WAF 直接 403。
         return curl_requests.get(
             url,
             params=params,
-            headers=hdrs,
+            headers=_impersonate_headers(headers),
             timeout=timeout,
             impersonate="chrome",
         )
+    hdrs = {"User-Agent": _UA, **(headers or {})}
     sess = _session()
     return sess.get(url, params=params, headers=hdrs, timeout=timeout)
 
@@ -268,17 +280,18 @@ def browser_post(
     except ImportError:  # pragma: no cover
         curl_requests = None
 
-    hdrs = {"User-Agent": _UA, **(headers or {})}
     if curl_requests is not None:
+        # 不要覆盖 User-Agent：和 TLS 指纹不一致时，巨潮 WAF 直接 403。
         return curl_requests.post(
             url,
             params=params,
             data=data,
             json=json_body,
-            headers=hdrs,
+            headers=_impersonate_headers(headers),
             timeout=timeout,
             impersonate="chrome",
         )
+    hdrs = {"User-Agent": _UA, **(headers or {})}
     sess = _session()
     return sess.post(
         url,

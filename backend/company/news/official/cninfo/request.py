@@ -54,7 +54,8 @@ def infer_org_from_code(code: str) -> dict[str, str] | None:
 
     已验证规则：
     - 沪市 60/90：gssh0{6位代码}，如 600990 → gssh0600990
-    - 深市 00 开头：gssz{7位补零}，如 000001 → gssz0000001
+    - 深市 000 开头：gssz{7位补零}，如 000001 → gssz0000001
+    002/300 等中小板、创业板 orgId 不规则（海康是 9900012688），不要猜。
     """
     stock = normalize_code(code)
     if not stock or len(stock) != 6:
@@ -63,7 +64,7 @@ def infer_org_from_code(code: str) -> dict[str, str] | None:
     org_id = ""
     if market == "sse" and stock.startswith(("60", "90")):
         org_id = f"gssh0{stock}"
-    elif market == "szse" and stock.startswith("00"):
+    elif market == "szse" and stock.startswith("000"):
         org_id = f"gssz{stock.zfill(7)}"
     if not org_id:
         return None
@@ -251,6 +252,8 @@ def fetch_pages(params: dict[str, Any]) -> dict[str, Any]:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("hisAnnouncement 失败 page=%s: %s", page, exc)
+            if not pages:
+                return {"pages": [], "total": 0, "error": f"巨潮公告接口失败：{exc}"}
             break
         rows = payload.get("announcements") or []
         total = int(payload.get("totalAnnouncement") or payload.get("totalRecordNum") or 0)
