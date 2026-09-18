@@ -56,7 +56,7 @@
   };
 
   const industry = {
-    days: 245,
+    days: 20,
     top: 0,
     status: "idle",
     dayRows: [],
