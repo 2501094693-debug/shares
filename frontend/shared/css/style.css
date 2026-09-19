@@ -3360,6 +3360,7 @@ button.chart-legend-item.is-active {
 }
 
 .company-panel[data-panel="others"][data-others-view="lhb"] .others-view[data-others-view="lhb"],
+.company-panel[data-panel="others"][data-others-view="holders"] .others-view[data-others-view="holders"],
 .company-panel[data-panel="others"][data-others-view="fund-holders"] .others-view[data-others-view="fund-holders"] {
   display: flex !important;
 }
@@ -7286,6 +7287,20 @@ body.app-shell.otc-fund-page-root .otc-fund-page.market-page {
 .fund-holders-table td:nth-child(2) {
   width: 6.5rem;
   font-family: var(--mono);
+}
+
+.holders-table td:nth-child(2) {
+  width: auto;
+  max-width: 28rem;
+  font-family: inherit;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.holders-table th:nth-child(6),
+.holders-table td:nth-child(6) {
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .financials-chrome,

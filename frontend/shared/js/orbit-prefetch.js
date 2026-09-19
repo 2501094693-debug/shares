@@ -271,6 +271,7 @@
       enqueue(`/api/stocks/financial-report?code=${enc}&scope=all&limit=24`, 1);
     } else if (panel === "others") {
       enqueue(`/api/list/stock?code=${enc}`, 1);
+      enqueue(`/api/stocks/holders?code=${enc}`, 1);
       enqueue(`/api/stocks/fund-holders?code=${enc}`, 1);
     }
   }

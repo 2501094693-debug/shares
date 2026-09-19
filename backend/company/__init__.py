@@ -1,6 +1,6 @@
 """单只股票的详情：盘口、K 线、画像、资讯、社区情绪。
 
-- ``statistics``  盘口编排、历史序列、派生指标、资金流向、持仓截面、龙虎榜（``quote`` · ``series`` · ``metrics`` · ``fundflow`` · ``holdings`` · ``list``）
+- ``statistics``  盘口编排、历史序列、派生指标、资金流向、持仓截面、前十大股东、龙虎榜（``quote`` · ``series`` · ``metrics`` · ``fundflow`` · ``holdings`` · ``owner`` · ``list``）
 - ``line``        K 线与逐笔成交
 - ``news``        采集源 + 详情页/画像集成（``cninfo`` · ``exchange`` · ``press`` · ``eastmoney`` · ``tonghuashun`` · ``xueqiu`` · ``feed`` · ``profile``）
 - ``emotion``     社区情绪（``eastmoney`` 股吧 / ``xueqiu`` 雪球 / ``tonghuashun`` 手机讨论）

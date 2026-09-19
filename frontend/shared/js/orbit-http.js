@@ -11,6 +11,7 @@
     { prefix: "/api/stocks/ticks", ttl: 8_000 },
     { prefix: "/api/stocks/fund-flow", ttl: 60_000 },
     { prefix: "/api/stocks/financial-report", ttl: 600_000 },
+    { prefix: "/api/stocks/holders", ttl: 600_000 },
     { prefix: "/api/stocks/fund-holders", ttl: 600_000 },
     { prefix: "/api/stocks/emotion", ttl: 60_000 },
     { prefix: "/api/list/stock", ttl: 600_000 },

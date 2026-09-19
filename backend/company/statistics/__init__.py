@@ -1,6 +1,7 @@
-"""个股统计：盘口、资金流向、持仓截面、龙虎榜。"""
+"""个股统计：盘口、资金流向、持仓截面、前十大股东、龙虎榜。"""
 
 from company.statistics.holdings.fund_holders import fetch_fund_holders
+from company.statistics.owner.holders import fetch_top_holders
 from company.statistics.quote.derived.period_returns import (
     PERIODS as RETURN_PERIODS,
     calc_period_returns,
@@ -23,5 +24,6 @@ __all__ = [
     "fetch_pe_history",
     "fetch_period_returns",
     "fetch_stock_quote",
+    "fetch_top_holders",
     "fetch_turnover_history",
 ]

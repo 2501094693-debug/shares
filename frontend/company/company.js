@@ -407,6 +407,13 @@ const els = {
   companyListDetailBody: document.getElementById("companyListDetailBody"),
   panelOthers: document.getElementById("panel-others"),
   othersSourceBar: document.getElementById("othersSourceBar"),
+  refreshHoldersBtn: document.getElementById("refreshHoldersBtn"),
+  holdersTitle: document.getElementById("holdersTitle"),
+  holdersMeta: document.getElementById("holdersMeta"),
+  holdersHint: document.getElementById("holdersHint"),
+  holdersDate: document.getElementById("holdersDate"),
+  holdersBody: document.getElementById("holdersBody"),
+  holdersBodyRows: document.getElementById("holdersBodyRows"),
   refreshFundHoldersBtn: document.getElementById("refreshFundHoldersBtn"),
   fundHoldersTitle: document.getElementById("fundHoldersTitle"),
   fundHoldersMeta: document.getElementById("fundHoldersMeta"),
@@ -441,6 +448,17 @@ const companyListState = {
   name: "",
   selected: "",
   sort: "date",
+  updatedAt: "",
+  error: "",
+};
+let holdersBootstrapped = false;
+const holdersState = {
+  loading: false,
+  items: [],
+  count: 0,
+  reportDate: "",
+  reportDates: [],
+  totalSharesFmt: "",
   updatedAt: "",
   error: "",
 };
@@ -621,6 +639,8 @@ if (["ths-emotion", "ths", "circle"].includes(tabParamRaw)) {
 let othersSubTab = normalizeOthersSubTab(params.get("others") || "");
 if (["list", "lhb", "longhu"].includes(tabParamRaw)) {
   othersSubTab = "lhb";
+} else if (["holders", "owner", "shareholders", "top10", "sdgd"].includes(tabParamRaw)) {
+  othersSubTab = "holders";
 } else if (["fund-holders", "funds", "fund"].includes(tabParamRaw)) {
   othersSubTab = "fund-holders";
 }
@@ -691,6 +711,11 @@ function normalizeMainPanel(panelId) {
     panelId === "list" ||
     panelId === "lhb" ||
     panelId === "longhu" ||
+    panelId === "holders" ||
+    panelId === "owner" ||
+    panelId === "shareholders" ||
+    panelId === "top10" ||
+    panelId === "sdgd" ||
     panelId === "fund-holders" ||
     panelId === "funds" ||
     panelId === "fund"
@@ -717,6 +742,9 @@ function normalizeJudgmentSubTab(view) {
 
 function normalizeOthersSubTab(view) {
   const raw = String(view || "").trim().toLowerCase();
+  if (raw === "holders" || raw === "owner" || raw === "shareholders" || raw === "top10" || raw === "sdgd") {
+    return "holders";
+  }
   if (raw === "fund-holders" || raw === "funds" || raw === "fund") return "fund-holders";
   return "lhb";
 }
@@ -2471,6 +2499,9 @@ function syncOthersRefreshButtons() {
   if (els.refreshListBtn) {
     els.refreshListBtn.hidden = !onOthers || othersSubTab !== "lhb";
   }
+  if (els.refreshHoldersBtn) {
+    els.refreshHoldersBtn.hidden = !onOthers || othersSubTab !== "holders";
+  }
   if (els.refreshFundHoldersBtn) {
     els.refreshFundHoldersBtn.hidden = !onOthers || othersSubTab !== "fund-holders";
   }
@@ -2496,6 +2527,11 @@ function bootstrapOthersSubTab(view = othersSubTab) {
     if (!companyListBootstrapped) {
       companyListBootstrapped = true;
       loadCompanyList({ refresh: false });
+    }
+  } else if (view === "holders") {
+    if (!holdersBootstrapped) {
+      holdersBootstrapped = true;
+      loadHolders({ refresh: false });
     }
   } else if (view === "fund-holders") {
     if (!fundHoldersBootstrapped) {
@@ -3184,14 +3220,17 @@ function paintFundHolders() {
 
 async function loadFundHolders({ refresh = false } = {}) {
   if (!code || fundHoldersState.loading) return;
+  const reportDate = (els.fundHoldersDate?.value || "").trim();
   fundHoldersState.loading = true;
   fundHoldersState.error = "";
   paintFundHolders();
   if (els.refreshFundHoldersBtn) els.refreshFundHoldersBtn.disabled = true;
-  if (els.fundHoldersDate) els.fundHoldersDate.disabled = true;
+  if (els.fundHoldersDate) {
+    els.fundHoldersDate.disabled = true;
+    els.fundHoldersDate.value = reportDate;
+  }
   try {
     const qs = new URLSearchParams({ code });
-    const reportDate = (els.fundHoldersDate?.value || "").trim();
     if (reportDate) qs.set("date", reportDate);
     if (refresh) qs.set("refresh", "1");
     const json = await api(`/api/stocks/fund-holders?${qs.toString()}`);
@@ -3209,7 +3248,10 @@ async function loadFundHolders({ refresh = false } = {}) {
   } finally {
     fundHoldersState.loading = false;
     if (els.refreshFundHoldersBtn) els.refreshFundHoldersBtn.disabled = false;
-    if (els.fundHoldersDate) els.fundHoldersDate.disabled = false;
+    if (els.fundHoldersDate) {
+      els.fundHoldersDate.disabled = false;
+      els.fundHoldersDate.value = reportDate;
+    }
     paintFundHolders();
   }
 }
@@ -3220,6 +3262,158 @@ function setupFundHoldersBox() {
     els.fundHoldersDate.dataset.bound = "1";
     els.fundHoldersDate.addEventListener("change", () => {
       loadFundHolders({ refresh: false });
+    });
+  }
+}
+
+function holderChangeClass(item) {
+  const n = Number(item?.change);
+  if (Number.isFinite(n) && n !== 0) return n > 0 ? "change-up" : "change-down";
+  const text = `${item?.status || ""} ${item?.change_fmt || ""}`;
+  if (/增持|新进/.test(text)) return "change-up";
+  if (/减持|减仓|退出/.test(text)) return "change-down";
+  return "";
+}
+
+function mergeHolderReportDates(incoming) {
+  const dates = [];
+  const seen = new Set();
+  for (const date of [...(incoming || []), ...(holdersState.reportDates || [])]) {
+    const day = String(date || "").trim();
+    if (!day || seen.has(day)) continue;
+    seen.add(day);
+    dates.push(day);
+  }
+  dates.sort((a, b) => b.localeCompare(a));
+  return dates;
+}
+
+function syncHoldersDateOptions() {
+  if (!els.holdersDate) return;
+  const select = els.holdersDate;
+  const current = select.value || "";
+  const dates = mergeHolderReportDates([holdersState.reportDate]);
+  holdersState.reportDates = dates;
+  const nextValues = ["", ...dates];
+  const prevValues = [...select.options].map((opt) => opt.value);
+  const same =
+    prevValues.length === nextValues.length &&
+    prevValues.every((value, idx) => value === nextValues[idx]);
+  if (!same) {
+    select.innerHTML = [
+      '<option value="">最新</option>',
+      ...dates.map((date) => `<option value="${escapeHtml(date)}">${escapeHtml(date)}</option>`),
+    ].join("");
+  }
+  if (current && dates.includes(current)) select.value = current;
+  else if (!current) select.value = "";
+}
+
+function paintHolders() {
+  const st = holdersState;
+  if (els.holdersMeta) {
+    const bits = [];
+    if (st.reportDate) bits.push(`报告期 ${st.reportDate}`);
+    if (st.count) bits.push(`${st.count} 人`);
+    if (st.totalSharesFmt) bits.push(`总股本 ${st.totalSharesFmt}`);
+    if (st.updatedAt) bits.push(`更新 ${st.updatedAt}`);
+    els.holdersMeta.textContent = st.loading
+      ? "正在加载前十大股东…"
+      : bits.join(" · ");
+  }
+  if (els.holdersHint) {
+    els.holdersHint.textContent = st.loading
+      ? "正在从东财拉取前十大股东…"
+      : st.error
+        ? st.error
+        : "按持股数量排名；数据来自定期报告披露的前十大股东。";
+  }
+  if (!els.holdersBodyRows) return;
+  if (st.loading) {
+    els.holdersBodyRows.innerHTML = `<tr class="is-empty"><td colspan="7">正在加载…</td></tr>`;
+    return;
+  }
+  if (st.error) {
+    els.holdersBodyRows.innerHTML = `<tr class="is-empty"><td colspan="7">${escapeHtml(st.error)}</td></tr>`;
+    return;
+  }
+  if (!st.items.length) {
+    els.holdersBodyRows.innerHTML = `<tr class="is-empty"><td colspan="7">暂无十大股东数据</td></tr>`;
+    return;
+  }
+  els.holdersBodyRows.innerHTML = st.items
+    .map((item) => {
+      const rank = escapeHtml(item.rank || "");
+      const name = escapeHtml(item.name || "-");
+      const shares = escapeHtml(displayValue(item.shares_fmt));
+      const ratio = escapeHtml(displayValue(item.ratio_fmt));
+      const change = escapeHtml(displayValue(item.change_fmt));
+      const kind = escapeHtml(displayValue(item.shares_type || item.holder_type));
+      const marketValue = escapeHtml(displayValue(item.market_value_fmt));
+      const changeCls = holderChangeClass(item);
+      return `<tr class="is-row">
+        <td>${rank}</td>
+        <td>${name}</td>
+        <td class="num">${shares}</td>
+        <td class="num">${ratio}</td>
+        <td class="num ${changeCls}">${change}</td>
+        <td>${kind}</td>
+        <td class="num">${marketValue}</td>
+      </tr>`;
+    })
+    .join("");
+}
+
+async function loadHolders({ refresh = false } = {}) {
+  if (!code || holdersState.loading) return;
+  const reportDate = (els.holdersDate?.value || "").trim();
+  holdersState.loading = true;
+  holdersState.error = "";
+  paintHolders();
+  if (els.refreshHoldersBtn) els.refreshHoldersBtn.disabled = true;
+  if (els.holdersDate) {
+    els.holdersDate.disabled = true;
+    els.holdersDate.value = reportDate;
+  }
+  try {
+    const qs = new URLSearchParams({ code });
+    if (reportDate) qs.set("date", reportDate);
+    if (refresh) qs.set("refresh", "1");
+    const json = await api(`/api/stocks/holders?${qs.toString()}`);
+    const data = json.data || {};
+    holdersState.items = Array.isArray(data.items) ? data.items : [];
+    holdersState.count = Number(data.count) || holdersState.items.length;
+    holdersState.reportDate = data.report_date || reportDate || "";
+    holdersState.reportDates = mergeHolderReportDates(data.report_dates);
+    holdersState.totalSharesFmt = data.total_shares_fmt || "";
+    holdersState.updatedAt = data.updated_at || new Date().toLocaleString("zh-CN", { hour12: false });
+    syncHoldersDateOptions();
+    if (els.holdersBody) els.holdersBody.scrollTop = 0;
+  } catch (err) {
+    holdersState.items = [];
+    holdersState.count = 0;
+    holdersState.error = err.message || String(err);
+  } finally {
+    holdersState.loading = false;
+    if (els.refreshHoldersBtn) els.refreshHoldersBtn.disabled = false;
+    if (els.holdersDate) {
+      els.holdersDate.disabled = false;
+      if (reportDate && (holdersState.reportDates || []).includes(reportDate)) {
+        els.holdersDate.value = reportDate;
+      } else if (!reportDate) {
+        els.holdersDate.value = "";
+      }
+    }
+    paintHolders();
+  }
+}
+
+function setupHoldersBox() {
+  syncHoldersDateOptions();
+  if (els.holdersDate && els.holdersDate.dataset.bound !== "1") {
+    els.holdersDate.dataset.bound = "1";
+    els.holdersDate.addEventListener("change", () => {
+      loadHolders({ refresh: false });
     });
   }
 }
@@ -11255,6 +11449,11 @@ if (els.refreshListBtn) {
     loadCompanyList({ refresh: true })
   );
 }
+if (els.refreshHoldersBtn) {
+  els.refreshHoldersBtn.addEventListener("click", () =>
+    loadHolders({ refresh: true })
+  );
+}
 if (els.refreshFundHoldersBtn) {
   els.refreshFundHoldersBtn.addEventListener("click", () =>
     loadFundHolders({ refresh: true })
@@ -11296,6 +11495,7 @@ setupPressBox();
 setupPlatformBoxes();
 setupCninfoBox();
 setupEmotionBox();
+setupHoldersBox();
 setupFundHoldersBox();
 setupFinancialsBox();
 setupCompanyListBox();

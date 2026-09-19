@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=chain-tab-20260919" />
+  <link rel="stylesheet" href="/css/style.css?v=holders-date-20260919" />
   <link rel="stylesheet" href="/css/ai-page.css?v=chain-tab-20260919" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
@@ -28,6 +28,7 @@
         <button id="refreshEmotionBtn" class="btn ghost" type="button" hidden>刷新情绪</button>
         <button id="refreshFinancialsBtn" class="btn ghost" type="button" hidden>刷新财报</button>
         <button id="refreshListBtn" class="btn ghost" type="button" hidden>刷新龙虎榜</button>
+        <button id="refreshHoldersBtn" class="btn ghost" type="button" hidden>刷新十大股东</button>
         <button id="refreshFundHoldersBtn" class="btn ghost" type="button" hidden>刷新基金持股</button>
       </div>
     </header>
@@ -890,6 +891,7 @@
         <div class="others-layout">
           <nav id="othersSourceBar" class="emotion-source-bar others-source-bar" aria-label="其他分类">
             <button type="button" class="emotion-source-btn is-active" data-source="lhb" aria-selected="true">龙虎榜</button>
+            <button type="button" class="emotion-source-btn" data-source="holders" aria-selected="false">前十大股东</button>
             <button type="button" class="emotion-source-btn" data-source="fund-holders" aria-selected="false">基金持股</button>
           </nav>
           <div class="others-view" data-others-view="lhb">
@@ -935,6 +937,41 @@
               </section>
             </div>
           </div>
+          <div class="others-view" data-others-view="holders">
+            <section class="company-section fund-holders-hub holders-hub" aria-label="前十大股东">
+              <header class="section-head fund-holders-head">
+                <div>
+                  <h3 id="holdersTitle">前十大股东</h3>
+                  <p id="holdersMeta" class="muted news-hub-meta"></p>
+                </div>
+                <label class="cninfo-field fund-holders-date-field">
+                  <span>报告期</span>
+                  <select id="holdersDate" class="chart-select cninfo-select" aria-label="报告期">
+                    <option value="">最新</option>
+                  </select>
+                </label>
+              </header>
+              <p id="holdersHint" class="muted news-scroll-hint cninfo-hint"></p>
+              <div id="holdersBody" class="fund-holders-body" tabindex="0">
+                <table class="market-table fund-holders-table holders-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">#</th>
+                      <th scope="col">股东名称</th>
+                      <th scope="col" class="num">持股</th>
+                      <th scope="col" class="num">占总股本</th>
+                      <th scope="col" class="num">变动</th>
+                      <th scope="col">类型</th>
+                      <th scope="col" class="num">持股市值</th>
+                    </tr>
+                  </thead>
+                  <tbody id="holdersBodyRows">
+                    <tr class="is-empty"><td colspan="7">切换到本页后加载</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
           <div class="others-view" data-others-view="fund-holders">
             <section class="company-section fund-holders-hub" aria-label="基金持股">
               <header class="section-head fund-holders-head">
@@ -977,11 +1014,11 @@
   </div>
   </div>
 
-  <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
-  <script src="/js/shared/orbit-prefetch.js?v=nav-20260919"></script>
+  <script src="/js/shared/orbit-http.js?v=holders-date-20260919"></script>
+  <script src="/js/shared/orbit-prefetch.js?v=holders-date-20260919"></script>
   <script src="/js/shared/nav.js?v=nav-20260919"></script>
   <script src="/js/shared/ai-modes.js?v=chain-tab-20260919"></script>
   <script src="/js/shared/company-analysis.js?v=chain-tab-20260919"></script>
-  <script src="/js/company.js?v=chain-tab-20260919"></script>
+  <script src="/js/company.js?v=holders-date-20260919"></script>
 </body>
 </html>
