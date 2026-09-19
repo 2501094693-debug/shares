@@ -607,7 +607,7 @@ const xqEmotionState = {
 let newsGroup = normalizeNewsGroup(params.get("news") || "");
 let newsBootstrapped = { official: false, financials: false, other: false };
 let emotionBootstrapped = { eastmoney: false, tonghuashun: false, xueqiu: false };
-const ANALYSIS_PANELS = new Set(["comprehensive", "business", "essence", "duan", "bazhang", "buffett", "buffett-rules", "competition", "risk"]);
+const ANALYSIS_PANELS = new Set(["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk"]);
 const EARNINGS_VIEWS = new Set(["bazhang", "buffett", "buffett-rules"]);
 const EARNINGS_FAMILY = new Set(["earnings", "财报简述", ...EARNINGS_VIEWS]);
 let lastEarningsView = "bazhang";
@@ -712,7 +712,7 @@ function normalizeJudgmentSubTab(view) {
     if (EARNINGS_VIEWS.has(mapped)) lastEarningsView = mapped;
     return mapped;
   }
-  return "comprehensive";
+  return "business";
 }
 
 function normalizeOthersSubTab(view) {
@@ -6588,7 +6588,7 @@ function setupJudgmentSubTabs() {
     els.judgmentSourceBar.addEventListener("click", (event) => {
       const btn = event.target.closest("[data-source]");
       if (!btn || !els.judgmentSourceBar.contains(btn)) return;
-      const source = btn.getAttribute("data-source") || "comprehensive";
+      const source = btn.getAttribute("data-source") || "business";
       if (source === "earnings") {
         setJudgmentSubTab(lastEarningsView || "bazhang");
         return;

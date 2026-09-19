@@ -5,7 +5,6 @@
     { key: "steep", href: "/steep", title: "涨跌停 · 多日名单", ico: "↕", label: "涨跌停" },
     { key: "fund", href: "/fund", title: "基金 · ETF / LOF / 开放式", ico: "◉", label: "基金" },
     { key: "analysis", href: "/analysis", title: "研判 · 行业 / 个股行情 / 涨跌停", ico: "▥", label: "研判" },
-    { key: "gmap", href: "/gmap", title: "谷歌地图 · 全球检索", ico: "⌖", label: "谷歌" },
     { key: "industry", href: "/industry", title: "行业树 · 地图与分类", ico: "◈", label: "行业树" },
   ];
 
@@ -20,7 +19,6 @@
     if (path.startsWith("/steep")) return "steep";
     if (path.startsWith("/industry")) return "industry";
     if (path.startsWith("/otc-fund") || path.startsWith("/fund")) return "fund";
-    if (path.startsWith("/gmap")) return "gmap";
     if (path.startsWith("/company")) return "company";
     return "";
   }

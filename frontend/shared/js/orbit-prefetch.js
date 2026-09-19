@@ -31,10 +31,6 @@
       urls: ["/api/funds/tree", "/api/otc-funds/tree"],
       docs: [],
     },
-    gmap: {
-      urls: ["/api/industries"],
-      docs: ["/industry", "/js/industry/app.js"],
-    },
     company: { urls: [], docs: [] },
   };
 
@@ -47,7 +43,6 @@
     fund: ["/api/funds/tree", "/api/otc-funds/tree"],
     analysis: [],
     screen: [],
-    gmap: ["/api/industries"],
   };
 
   let booted = false;

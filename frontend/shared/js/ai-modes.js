@@ -50,112 +50,6 @@ window.AI_MODES = {
     },
   },
 
-  essence: {
-    id: "essence",
-    label: "生意本质",
-    pageTitle: "ORBIT · 智能分析",
-    heading: "生意本质",
-    subtitle: "官方公告认主营 → 讲清业务并举例 → 关键因素为什么关键 · 每章起草后由质疑官反复确认",
-    startBtn: "开始确认",
-    historyHead: "历史报告",
-    reportTitle: "生意本质",
-    reportMetaDefault: "选择历史报告或生成新的",
-    historyMeta: "历史报告",
-    emptyReports: "暂无历史报告",
-    resumeFail: "恢复生意本质任务失败",
-    apiRoot: "/api/ai/essence-analysis",
-    jobStoreKey: "orbit.essence.activeJob",
-    reportNameRe: /生意本质/,
-    agentDefs: [
-      { id: "es_resolve", name: "解析公司", subtitle: "识别代码与名称" },
-      { id: "es_official", name: "官方公告", subtitle: "交易所 / 巨潮 / 七网 / PDF" },
-      { id: "es_businesses", name: "主营确认", subtitle: "起草 → 质疑 → 重写" },
-      { id: "es_web", name: "联网补充", subtitle: "机制与例子" },
-      { id: "es_explain", name: "讲清业务", subtitle: "起草 → 质疑 → 重写" },
-      { id: "es_factors", name: "关键因素", subtitle: "起草 → 质疑 → 重写" },
-      { id: "es_save", name: "保存报告", subtitle: "写入 Markdown" },
-    ],
-    emptyStateHtml: `
-      <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">◎</div>
-        <h3>先搞清这家公司做什么</h3>
-        <p>主营业务只认交易所、巨潮、七网官方公告。列出官方承认的业务后，用白话解释并举例，再找出真正能改变这门生意的关键因素。每一章由起草官写成稿，质疑官独立复核；不通过就退回重写，缺证据就补检索。</p>
-        <ul class="ai-empty-tips">
-          <li>官方清单 → 人话解释 + 例子 → 关键因素为什么关键</li>
-          <li>不拉财报数字，不做巴菲特视角解读</li>
-          <li>每章最多三轮质疑，轮次用尽按最后一稿收录并标注</li>
-          <li>判断生意，不写买卖建议</li>
-        </ul>
-      </div>`,
-    resultTitle(result) {
-      return `${result.stock_name || ""} 生意本质`.trim();
-    },
-    resultMeta(result) {
-      return [
-        result.stock_code ? `代码 ${result.stock_code}` : "",
-        result.report_path ? "已保存" : "",
-      ].filter(Boolean).join(" · ");
-    },
-    runningTitle(company) {
-      return `${company} · 生意本质`;
-    },
-  },
-
-  duan: {
-    id: "duan",
-    label: "段永平看业务",
-    pageTitle: "ORBIT · 智能分析",
-    heading: "段永平看业务",
-    subtitle: "先看生意模式，刮到谢字就停 · 企业文化 · 好价钱 · 必要条件过滤",
-    startBtn: "开始看业务",
-    historyHead: "历史报告",
-    reportTitle: "段永平看业务",
-    reportMetaDefault: "选择历史报告或生成新的",
-    historyMeta: "历史报告",
-    emptyReports: "暂无历史报告",
-    resumeFail: "恢复段永平看业务任务失败",
-    apiRoot: "/api/ai/duan-analysis",
-    jobStoreKey: "orbit.duan.activeJob",
-    reportNameRe: /段永平看业务/,
-    agentDefs: [
-      { id: "dy_init", name: "解析公司", subtitle: "识别代码与名称" },
-      { id: "dy_fetch", name: "采集数据", subtitle: "年报数字 + 用户口碑补充" },
-      { id: "dy_business", name: "一、生意模式", subtitle: "差异化 · 毛利率 · 净现金" },
-      { id: "dy_culture", name: "二、企业文化", subtitle: "本分 · 用户导向 · 可跳过" },
-      { id: "dy_price", name: "三、好价钱", subtitle: "毛估估 · 前两关不过则跳过" },
-      { id: "dy_synthesis", name: "四、能不能看懂", subtitle: "离开 / 等待 / 毛估估" },
-      { id: "dy_assemble", name: "拼装报告", subtitle: "整合各章节" },
-      { id: "dy_save", name: "保存报告", subtitle: "写入 Markdown" },
-    ],
-    emptyStateHtml: `
-      <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">◎</div>
-        <h3>先刮彩票，谢字就停</h3>
-        <p>按段永平的流程看生意：生意模式、企业文化是必要条件，不是加权打分。模式不行或看不懂，企业文化与价钱直接跳过。</p>
-        <ul class="ai-empty-tips">
-          <li>差异化 = 用户需要而别人给不了</li>
-          <li>把自己当消费者：5% 折扣换不换</li>
-          <li>长期毛利率 · 净现金流 · 杠杆只是旁证</li>
-          <li>不给买卖建议，看不懂就是终点</li>
-        </ul>
-      </div>`,
-    resultTitle(result) {
-      const att = result.final_attitude ? ` · ${result.final_attitude}` : "";
-      return `${result.stock_name || ""} 段永平看业务${att}`.trim();
-    },
-    resultMeta(result) {
-      return [
-        result.stock_code ? `代码 ${result.stock_code}` : "",
-        result.numeric_hint || "",
-        result.final_attitude || "",
-        result.report_path ? "已保存" : "",
-      ].filter(Boolean).join(" · ");
-    },
-    runningTitle(company) {
-      return `${company} · 段永平看业务`;
-    },
-  },
-
   competition: {
     id: "competition",
     label: "行业竞争",
@@ -207,6 +101,58 @@ window.AI_MODES = {
     },
   },
 
+  chain: {
+    id: "chain",
+    label: "产业分析",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "产业分析",
+    subtitle: "主线：交易所 / 巨潮 / 七网 / 公告 PDF · 先画地图再定向检索上下游",
+    startBtn: "生成分析",
+    historyHead: "历史报告",
+    reportTitle: "产业分析",
+    reportMetaDefault: "选择历史报告或生成新的",
+    historyMeta: "历史报告",
+    emptyReports: "暂无历史报告",
+    resumeFail: "恢复产业分析任务失败",
+    apiRoot: "/api/ai/chain-analysis",
+    jobStoreKey: "orbit.chain.activeJob",
+    reportNameRe: /产业(?:链)?分析/,
+    agentDefs: [
+      { id: "ch_init", name: "解析公司", subtitle: "识别代码、名称与行业" },
+      { id: "ch_fetch", name: "采集资料", subtitle: "交易所 / 巨潮 / 七网 / 同层" },
+      { id: "ch_map", name: "绘制产业链地图", subtitle: "上中下游结构 · 具名玩家" },
+      { id: "ch_search", name: "定向检索上下游", subtitle: "按地图检索供应商 / 客户 / 卡脖子" },
+      { id: "ch_analyze", name: "生成分析", subtitle: "位置 · 议价 · 利润池" },
+      { id: "ch_save", name: "保存报告", subtitle: "写入 Markdown" },
+    ],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">⧉</div>
+        <h3>先画链条，再看位置</h3>
+        <p>以交易所、巨潮、七网披露为主线，先从年报抽出上中下游结构，再按结构定向检索供应商、客户与卡脖子环节，判断这家公司卡在哪一层、议价权在谁手里。</p>
+        <ul class="ai-empty-tips">
+          <li>产业链全景与本公司位置</li>
+          <li>前五供应商 / 前五客户（有披露必须点名）</li>
+          <li>卡脖子环节与利润池</li>
+          <li>价值分配：谁吃上下游</li>
+        </ul>
+      </div>`,
+    resultTitle(result) {
+      const industry = result.industry_name ? ` · ${result.industry_name}` : "";
+      return `${result.stock_name || ""} 产业分析${industry}`.trim();
+    },
+    resultMeta(result) {
+      return [
+        result.stock_code ? `代码 ${result.stock_code}` : "",
+        result.industry_name ? `行业 ${result.industry_name}` : "",
+        result.report_path ? "已保存" : "",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 产业分析`;
+    },
+  },
+
   risk: {
     id: "risk",
     label: "风险评估",
@@ -255,64 +201,6 @@ window.AI_MODES = {
     },
     runningTitle(company) {
       return `${company} · 风险与管理层评估`;
-    },
-  },
-
-  comprehensive: {
-    id: "comprehensive",
-    label: "综合研判",
-    pageTitle: "ORBIT · 智能分析",
-    heading: "综合深度研判",
-    subtitle: "年报/半年报/季报 · 三表独立分析 · 三情景估值 · 市场前景",
-    startBtn: "生成报告",
-    historyHead: "历史报告",
-    reportTitle: "综合深度分析",
-    reportMetaDefault: "选择历史报告或生成新的",
-    historyMeta: "历史报告",
-    emptyReports: "暂无历史报告",
-    resumeFail: "恢复综合研判任务失败",
-    apiRoot: "/api/ai/comprehensive-analysis",
-    jobStoreKey: "orbit.comprehensive.activeJob",
-    reportNameRe: /综合深度分析|综合研判/,
-    agentDefs: [
-      { id: "ca_init", name: "解析公司", subtitle: "识别代码与行业" },
-      { id: "ca_fetch", name: "采集数据", subtitle: "财报 / 估值 / 公告 PDF" },
-      { id: "ca_business", name: "业务分析", subtitle: "构成 · 关键驱动因素" },
-      { id: "ca_balance", name: "资产负债表", subtitle: "资产质量 · 偿债能力" },
-      { id: "ca_income", name: "利润表", subtitle: "盈利质量 · 费用结构" },
-      { id: "ca_cashflow", name: "现金流量表", subtitle: "FCF · 现金流类型" },
-      { id: "ca_synthesis", name: "三表汇总", subtitle: "交叉验证 · 财务画像" },
-      { id: "ca_valuation", name: "估值分析", subtitle: "乐观/中性/悲观三情景" },
-      { id: "ca_search", name: "市场信息", subtitle: "新闻 / 研报 / 政策" },
-      { id: "ca_outlook", name: "前景研判", subtitle: "短中长期展望" },
-      { id: "ca_assemble", name: "拼装报告", subtitle: "整合各章节" },
-      { id: "ca_save", name: "保存报告", subtitle: "写入 Markdown" },
-    ],
-    emptyStateHtml: `
-      <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">◎</div>
-        <h3>全链路深度研判</h3>
-        <p>从定期报告与三大报表出发，独立分析资产负债、利润与现金流，结合历史 PE/PB/PS 做三情景估值，并联网补充市场信息研判未来前景。</p>
-        <ul class="ai-empty-tips">
-          <li>近5年年报 + 近4季季报</li>
-          <li>三表独立分析 → 汇总交叉验证</li>
-          <li>乐观 / 中性 / 悲观估值情景</li>
-          <li>关键驱动因素 × 市场信号 → 前景</li>
-        </ul>
-      </div>`,
-    resultTitle(result) {
-      const industry = result.industry_name ? ` · ${result.industry_name}` : "";
-      return `${result.stock_name || ""} 综合深度分析${industry}`.trim();
-    },
-    resultMeta(result) {
-      return [
-        result.stock_code ? `代码 ${result.stock_code}` : "",
-        result.industry_name ? `行业 ${result.industry_name}` : "",
-        result.report_path ? "已保存" : "",
-      ].filter(Boolean).join(" · ");
-    },
-    runningTitle(company) {
-      return `${company} · 综合深度研判`;
     },
   },
 
@@ -480,26 +368,20 @@ window.AI_MODES = {
   },
 };
 
-window.AI_MODE_ORDER = ["comprehensive", "business", "essence", "duan", "bazhang", "buffett", "buffett-rules", "competition", "risk"];
+window.AI_MODE_ORDER = ["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk"];
 
 window.AI_MODE_ALIASES = {
   business: "business",
   brief: "business",
   ai: "business",
-  essence: "essence",
-  "生意本质": "essence",
-  "主营业务": "essence",
-  duan: "duan",
-  dyp: "duan",
-  "段永平": "duan",
-  "段永平看业务": "duan",
-  "大道": "duan",
   earnings: "bazhang",
   "财报简述": "bazhang",
   competition: "competition",
+  chain: "chain",
+  "产业链": "chain",
+  "产业分析": "chain",
+  "产业": "chain",
   risk: "risk",
-  comprehensive: "comprehensive",
-  deep: "comprehensive",
   bazhang: "bazhang",
   zhang: "bazhang",
   "八看": "bazhang",

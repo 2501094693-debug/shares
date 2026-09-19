@@ -33,7 +33,7 @@ from agent.buffett_analyst.rules._fields import (
     TOTAL_SHARE_FIELDS,
     TOTAL_ASSETS_FIELDS,
 )
-from agent.comprehensive_analyst.rules._common import (
+from agent.rules._common import (
     fmt_pct,
     fmt_x,
     fmt_yi,

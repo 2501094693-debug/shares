@@ -5,8 +5,7 @@
 - ``company``：单只股票的盘口、K 线、资讯、龙虎榜历史上榜
 - ``market``：申万行业涨跌、资金流向、个股涨跌榜、行业轮动、基金（场内 ETF/LOF + 场外开放式）
 - ``world``：全球主要股指、央行利率、国债收益率、原油期货
-- ``gmap``：Google Maps 全球检索与定位
-- ``analysis``：研判（涨跌停分析 / 个股分析 / 行业行情分析）
+- ``analysis``：研判（涨跌停分析 / 个股分析 / 行业行情分析 / 趋势分析）
 """
 
 from __future__ import annotations
@@ -294,24 +293,6 @@ def js_world():
     )
 
 
-@app.get("/gmap")
-@app.get("/gmap.html")
-def gmap_page():
-    return FileResponse(
-        FRONTEND / "gmap" / "index.html",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
-
-
-@app.get("/js/gmap.js")
-def js_gmap():
-    return FileResponse(
-        FRONTEND / "gmap" / "app.js",
-        media_type="application/javascript",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
-
-
 @app.get("/screen")
 @app.get("/screen.html")
 def screen_page():
@@ -410,7 +391,9 @@ def js_company():
 @app.get("/competition.html")
 @app.get("/risk")
 @app.get("/risk.html")
-def ai_page_removed():
+@app.get("/gmap")
+@app.get("/gmap.html")
+def removed_pages():
     return RedirectResponse(url="/", status_code=302)
 
 

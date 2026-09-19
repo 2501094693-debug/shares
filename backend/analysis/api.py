@@ -8,6 +8,10 @@ from analysis.decline.config import DEFAULT_LOOKBACK_DAYS
 from analysis.decline.service import service
 from analysis.grind.config import DEFAULT_LOOKBACK_DAYS as GRIND_LOOKBACK_DAYS
 from analysis.grind.service import service as grind_service
+from analysis.livermore.config import ACTIONS as LIVERMORE_ACTIONS
+from analysis.livermore.config import DEFAULT_LOOKBACK_DAYS as LIVERMORE_LOOKBACK_DAYS
+from analysis.livermore.engine import analyze_stock
+from analysis.livermore.service import service as livermore_service
 from analysis.rotation.config import DEFAULT_LOOKBACK_DAYS as ROTATION_LOOKBACK_DAYS
 from analysis.rotation.config import MAX_LOOKBACK_DAYS, MIN_LOOKBACK_DAYS
 from analysis.rotation.service import service as rotation_service
@@ -88,5 +92,53 @@ def get_rotation_screen(
     try:
         payload = rotation_service.run_or_poll(days=days, top=0, force=refresh == "1")
         return ok(payload)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/screen/livermore")
+def get_livermore_screen(
+    days: int = Query(LIVERMORE_LOOKBACK_DAYS, description="回看窗口（交易日，仅作缓存键）"),
+    top: int = Query(50, description="前 N 名，0=全部"),
+    kind: str = Query("all", description="all / probe / pyramid / hold / wait / exit / cash"),
+    code: str = Query("", description="只分析一只股票"),
+    refresh: str = Query("0", description="1=强制重新分析"),
+    workers: int = Query(8, ge=1, le=16, description="并发线程数"),
+):
+    """利弗莫尔趋势：大盘闸门 + 领头行业 + 关键点，输出试探/等待/空仓等动作。"""
+    if days < 10 or days > 180:
+        return err("days 须在 10–180 之间", 400)
+    if top < 0 or top > 500:
+        return err("top 须在 0–500 之间", 400)
+    kind_l = (kind or "all").strip().lower()
+    allowed = {"all", *LIVERMORE_ACTIONS}
+    if kind_l not in allowed:
+        return err("kind 须为 all / probe / pyramid / hold / wait / exit / cash", 400)
+    try:
+        payload = livermore_service.run_or_poll(
+            days=days,
+            top=top,
+            kind=kind_l,
+            code=normalize_code(code),
+            force=refresh == "1",
+            workers=workers,
+        )
+        return ok(payload)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/screen/livermore/stock")
+def get_livermore_stock(
+    code: str = Query("", description="股票代码，如 000338"),
+):
+    """单股诊断，走不复权关键点。"""
+    code_n = normalize_code(code)
+    if not code_n:
+        return err("缺少参数 code", 400)
+    try:
+        return ok(analyze_stock(code_n, fetch_raw=True))
+    except ValueError as exc:
+        return err(str(exc), 400)
     except Exception as exc:  # noqa: BLE001
         return err(str(exc), 500)

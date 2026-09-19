@@ -18,6 +18,11 @@
       sub: "按交易日复盘申万三级行业轮动：上涨/待涨/领涨均按所选交易日切片；行情与主力净流入（当日/5日/10日）回溯至该日。点击行业进入行情树",
       from: "analysis",
     },
+    trend: {
+      title: "ORBIT · 研判",
+      sub: "利弗莫尔规则：大盘六栏 → 领头行业 → 关键点与量能 → 试探/等待/空仓。点击股票打开详情",
+      from: "analysis",
+    },
   };
 
   const limit = {
@@ -69,6 +74,26 @@
     note: "",
     updatedAt: "",
     errors: [],
+    pollTimer: 0,
+    fetching: false,
+    started: false,
+    error: "",
+    message: "",
+  };
+
+  const trend = {
+    kind: "all",
+    days: 60,
+    top: 50,
+    code: "",
+    status: "idle",
+    items: [],
+    updatedAt: "",
+    candidateCount: 0,
+    resultCount: 0,
+    analyzedCount: 0,
+    gateLabel: "",
+    note: "",
     pollTimer: 0,
     fetching: false,
     started: false,
@@ -146,12 +171,14 @@
     if (["limit", "screen", "decline", "zt"].includes(value)) return "limit";
     if (["stock", "grind", "analysis", "gx"].includes(value)) return "stock";
     if (["industry", "rotation", "rot", "l3", "hy"].includes(value)) return "industry";
+    if (["trend", "livermore", "lv", "qs"].includes(value)) return "trend";
     return "";
   }
 
   function current() {
     if (view === "stock") return stock;
     if (view === "industry") return industry;
+    if (view === "trend") return trend;
     return limit;
   }
 
@@ -226,16 +253,17 @@
     const url = new URL(location.href);
     url.searchParams.set("view", view);
     if (view === "stock" && stock.code) url.searchParams.set("code", stock.code);
+    else if (view === "trend" && trend.code) url.searchParams.set("code", trend.code);
     else url.searchParams.delete("code");
     history.replaceState({}, "", url);
   }
 
   function applyChrome() {
-    const meta = VIEW_META[view];
+    const meta = VIEW_META[view] || VIEW_META.industry;
     document.title = meta.title;
     $("pageSub").textContent = meta.sub;
     document.body.dataset.screenMode = view;
-    document.body.classList.toggle("analysis-page-root", view === "stock");
+    document.body.classList.toggle("analysis-page-root", view === "stock" || view === "trend");
     persistView();
     syncUrl();
     renderSeg();
@@ -262,6 +290,8 @@
     markSeg("stockDaysSeg", "days", stock.days);
     markSeg("stockTopSeg", "top", stock.top);
     markSeg("kindSeg", "kind", stock.kind);
+    markSeg("trendKindSeg", "kind", trend.kind);
+    markSeg("trendTopSeg", "top", trend.top);
     markSeg("industryDaysSeg", "days", industry.days);
   }
 
@@ -339,6 +369,18 @@
       <span>窗口 <b>${stock.days}</b> 交易日</span>
     `;
     $("marketMeta").textContent = stock.updatedAt || "";
+  }
+
+  function renderTrendSummary() {
+    const counts = trend.counts || {};
+    $("summaryBar").innerHTML = `
+      <span>已分析 <b>${trend.analyzedCount || 0}</b> / ${trend.candidateCount || 0}</span>
+      <span>展示 <b>${(trend.items || []).length}</b></span>
+      <span>大盘 <b>${esc(trend.gateLabel || "—")}</b></span>
+      <span>试探 <b>${counts.probe || 0}</b></span>
+      <span>等待 <b>${counts.wait || 0}</b></span>
+    `;
+    $("marketMeta").textContent = trend.updatedAt || "";
   }
 
   function windowLabel(days) {
@@ -608,6 +650,29 @@
     `;
   }
 
+  function trendKindTitle() {
+    const map = {
+      all: "趋势动作",
+      probe: "试探",
+      pyramid: "加码",
+      hold: "持有",
+      wait: "等待",
+      exit: "离场",
+      cash: "空仓",
+    };
+    return map[trend.kind] || "趋势动作";
+  }
+
+  function renderTrendHead() {
+    const scope = trend.code ? `代码 ${trend.code}` : "全市场规则扫描";
+    $("dayHead").innerHTML = `
+      <div>
+        <h2>${esc(trendKindTitle())}</h2>
+        <p>${esc(scope)} · 大盘 ${esc(trend.gateLabel || "—")} · 已分析 <b>${trend.analyzedCount || 0}</b> · 展示 <b>${(trend.items || []).length}</b></p>
+      </div>
+    `;
+  }
+
   function tagTone(bucket, tag) {
     const key = String(bucket || tag || "");
     if (key === "首次" || key === "新轮到" || key === "近5日跟上" || key === "may_rotate" || key === "may_turn") return "up";
@@ -779,6 +844,12 @@
     </article>`;
   }
 
+  function actionTone(action) {
+    if (action === "probe" || action === "pyramid" || action === "hold") return "up";
+    if (action === "exit" || action === "cash") return "down";
+    return "flat";
+  }
+
   function grindCardHtml(row) {
     const detected = row.detected || {};
     const dec = detected.decline || {};
@@ -813,6 +884,44 @@
         ${scoreChip("横盘时长", scores.consolidation_duration)}
         ${scoreChip("横盘质量", scores.consolidation_quality)}
         ${scoreChip("持续", scores.persistence)}
+        ${err}
+      </footer>
+    </article>`;
+  }
+
+  function trendCardHtml(row) {
+    const industry = [row.l1_name, row.l2_name, row.l3_name].filter(Boolean).join(" / ");
+    const err = row.error ? `<span class="screen-card-error">${esc(row.error)}</span>` : "";
+    const href = fromHref(row.code || "");
+    const pivots = row.pivotal || [];
+    const pivotText = pivots
+      .slice(0, 2)
+      .map((p) => `${p.kind || ""} ${p.status || ""}`.trim())
+      .filter(Boolean)
+      .join(" · ");
+    const reasons = (row.reason || []).slice(0, 3).join(" · ");
+    const rs = row.rs || {};
+    const follow = row.follow || {};
+    return `<article class="screen-card is-stock" data-code="${esc(row.code || "")}" data-key="${esc(row.code || "")}" tabindex="0">
+      <a class="screen-card-head" href="${esc(href)}" title="打开公司详情">
+        <span class="screen-rank">${row.rank || ""}</span>
+        <div class="screen-card-name">
+          <strong>${esc(row.name || "")}</strong>
+          <span>${esc(row.code || "")}</span>
+          ${industry ? `<em>${esc(industry)}</em>` : ""}
+        </div>
+        <div class="screen-card-score">
+          <b data-tone="${actionTone(row.action)}">${esc(row.action_label || row.action || "—")}</b>
+          <span>${esc(row.column_label || "—")}</span>
+        </div>
+      </a>
+      ${klineBlock(row.code || "")}
+      <footer class="screen-card-meta">
+        <span>相对大盘 <b data-tone="${tone(rs.vs_index_20d)}">${fmtPct(rs.vs_index_20d)}</b></span>
+        <span>组内 <b>${rs.rank ?? "—"}</b> / ${rs.sample ?? "—"}</span>
+        <span>跟随 <b>${esc(follow.status || "—")}</b></span>
+        ${pivotText ? `<span>${esc(pivotText)}</span>` : ""}
+        ${reasons ? `<span>${esc(reasons)}</span>` : ""}
         ${err}
       </footer>
     </article>`;
@@ -884,6 +993,18 @@
     if (badge) badge.textContent = row.kind_label || "—";
   }
 
+  function patchTrendCard(el, row) {
+    const rank = el.querySelector(".screen-rank");
+    if (rank) rank.textContent = String(row.rank || "");
+    const score = el.querySelector(".screen-card-score b");
+    if (score) {
+      score.textContent = row.action_label || row.action || "—";
+      score.setAttribute("data-tone", actionTone(row.action));
+    }
+    const badge = el.querySelector(".screen-card-score span");
+    if (badge) badge.textContent = row.column_label || "—";
+  }
+
   function emptyHint(st, noneText) {
     if (!st.started || st.status === "running") return "正在分析，结果会逐只出现…";
     return noneText;
@@ -912,6 +1033,18 @@
     );
   }
 
+  function renderTrendCards() {
+    const viewKey = `${trend.kind}:${trend.code || "-"}`;
+    renderCards(
+      trend.items || [],
+      (row) => String(row.code || ""),
+      trendCardHtml,
+      patchTrendCard,
+      emptyHint(trend, "暂无结果"),
+      viewKey,
+    );
+  }
+
   function renderAll() {
     renderSeg();
     if (view === "limit") {
@@ -927,6 +1060,13 @@
       renderRotDays();
       renderIndustryHead(selectedIndustryDay());
       renderIndustry();
+      return;
+    }
+    if (view === "trend") {
+      renderTrendSummary();
+      renderTrendHead();
+      renderTrendCards();
+      window.OrbitPrefetch?.intent({ stocks: trend.items });
       return;
     }
     renderStockSummary();
@@ -954,6 +1094,18 @@
     stock.resultCount = data.result_count || 0;
     stock.analyzedCount = data.analyzed_count || data.result_count || 0;
     if (view === "stock") renderAll();
+  }
+
+  function applyTrendData(data) {
+    trend.items = data.items || [];
+    trend.updatedAt = data.updated_at || "";
+    trend.candidateCount = data.candidate_count || 0;
+    trend.resultCount = data.result_count || 0;
+    trend.analyzedCount = data.analyzed_count || data.result_count || 0;
+    trend.gateLabel = (data.gate && (data.gate.column_label || data.gate.column)) || "";
+    trend.counts = data.action_counts || {};
+    trend.note = data.note || "";
+    if (view === "trend") renderAll();
   }
 
   function applyIndustryData(data) {
@@ -1130,6 +1282,55 @@
     }
   }
 
+  async function loadTrend(force) {
+    if (trend.fetching && !force) return;
+    trend.fetching = true;
+    trend.started = true;
+    trend.error = "";
+    if (view === "trend") showError("");
+    if (force) {
+      trend.items = [];
+      trend.resultCount = 0;
+      trend.analyzedCount = 0;
+      if (view === "trend") renderAll();
+      trend.message = trend.code ? `正在分析 ${trend.code}…` : "正在准备股票池…";
+      if (view === "trend") {
+        showLoading(true, trend.message);
+        setLive("busy");
+      }
+    }
+
+    const qs = new URLSearchParams({
+      days: String(trend.days),
+      top: String(trend.top),
+      kind: trend.kind,
+      refresh: force ? "1" : "0",
+    });
+    if (trend.code) qs.set("code", trend.code);
+
+    try {
+      const res = await fetch(`/api/screen/livermore?${qs}`);
+      const json = await res.json();
+      if (!json.ok) {
+        throw new Error(json.error || "请求失败");
+      }
+      applyPayload(trend, json.data || {}, applyTrendData);
+      if (trend.status === "running") schedulePoll(trend, loadTrend);
+      else stopPoll(trend);
+    } catch (err) {
+      trend.error = err.message || String(err);
+      trend.status = "error";
+      if (view === "trend") {
+        showLoading(false);
+        showError(trend.error);
+        setLive("idle");
+      }
+      stopPoll(trend);
+    } finally {
+      trend.fetching = false;
+    }
+  }
+
   async function loadIndustry(force) {
     if (industry.fetching && !force) return;
     industry.fetching = true;
@@ -1182,6 +1383,7 @@
   function load(force) {
     if (view === "limit") return loadLimit(force);
     if (view === "industry") return loadIndustry(force);
+    if (view === "trend") return loadTrend(force);
     return loadStock(force);
   }
 
@@ -1192,6 +1394,14 @@
 
   function submitCode(force) {
     const next = readCode();
+    if (view === "trend") {
+      if (next === trend.code && !force) return;
+      stopPoll(trend);
+      trend.code = next;
+      syncUrl();
+      loadTrend(true);
+      return;
+    }
     if (next === stock.code && !force) return;
     stopPoll(stock);
     stock.code = next;
@@ -1206,7 +1416,7 @@
   }
 
   function switchView(next) {
-    if (next !== "limit" && next !== "stock" && next !== "industry") return;
+    if (next !== "limit" && next !== "stock" && next !== "industry" && next !== "trend") return;
     if (next === view) return;
     stopPoll(current());
     view = next;
@@ -1315,17 +1525,18 @@
 
     $("refreshBtn").addEventListener("click", () => {
       if (view === "stock") stock.code = readCode();
+      if (view === "trend") trend.code = readCode();
       load(true);
     });
 
     $("codeInput").addEventListener("keydown", (ev) => {
       if (ev.key !== "Enter") return;
       ev.preventDefault();
-      if (view !== "stock") return;
+      if (view !== "stock" && view !== "trend") return;
       submitCode(true);
     });
     $("codeInput").addEventListener("change", () => {
-      if (view !== "stock") return;
+      if (view !== "stock" && view !== "trend") return;
       submitCode(false);
     });
 
@@ -1377,6 +1588,26 @@
       stock.top = top;
       renderSeg();
       if (view === "stock") loadStock(false);
+    });
+
+    $("trendKindSeg")?.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-kind]");
+      if (!btn) return;
+      const kind = btn.dataset.kind;
+      if (kind === trend.kind) return;
+      trend.kind = kind;
+      renderSeg();
+      if (view === "trend") loadTrend(false);
+    });
+
+    $("trendTopSeg")?.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-top]");
+      if (!btn) return;
+      const top = Number(btn.dataset.top);
+      if (top === trend.top) return;
+      trend.top = top;
+      renderSeg();
+      if (view === "trend") loadTrend(false);
     });
 
     $("industryDaysSeg").addEventListener("click", (ev) => {
@@ -1450,6 +1681,7 @@
   const startCode = String(params.get("code") || "").replace(/\D/g, "").slice(-6);
   if (startCode.length === 6) {
     stock.code = startCode;
+    trend.code = startCode;
     $("codeInput").value = startCode;
   }
 

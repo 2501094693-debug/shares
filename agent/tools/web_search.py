@@ -40,13 +40,12 @@ COMPETITION_SEARCH_QUERIES: tuple[str, ...] = (
     "细分赛道 竞争策略 龙头 挑战者",
 )
 
-COMPREHENSIVE_SEARCH_QUERIES: tuple[str, ...] = (
-    "最新年报 半年报 业绩 展望 战略规划",
-    "行业政策 监管 最新 影响",
-    "市场份额 竞争格局 订单 产能",
-    "机构研报 目标价 盈利预测",
-    "新产品 技术突破 海外拓展",
-    "风险 诉讼 监管处罚 最新",
+CHAIN_SEARCH_QUERIES: tuple[str, ...] = (
+    "产业链 上下游 价值链 图谱",
+    "主要供应商 原材料 采购 集中度",
+    "主要客户 下游 销售 渠道",
+    "卡脖子 国产替代 供需 瓶颈",
+    "利润分配 议价能力 毛利率 环节",
 )
 
 RISK_SEARCH_QUERIES: tuple[str, ...] = (
@@ -56,13 +55,6 @@ RISK_SEARCH_QUERIES: tuple[str, ...] = (
     "行业监管政策 反垄断 环保 数据安全 最新",
     "诉讼 仲裁 担保 违规 整改",
     "新业务 亏损 扩张 风险 不确定性",
-)
-
-DUAN_SEARCH_QUERIES: tuple[str, ...] = (
-    "用户口碑 产品体验 为什么买 会不会换",
-    "差异化 定价权 护城河 价格战",
-    "企业文化 本分 用户导向 管理层",
-    "竞争对手 可替代性 毛利率 商业模式",
 )
 
 
@@ -268,26 +260,39 @@ def search_for_competition(
     return "\n\n".join(blocks), engines
 
 
-def search_for_comprehensive(
+def search_for_chain(
     company: str,
     *,
     industry_name: str = "",
     stock_code: str = "",
+    extra_queries: list[str] | None = None,
     max_results_per_query: int | None = None,
     progress_cb: Callable[[str], None] | None = None,
 ) -> tuple[str, list[str]]:
-    """综合研判专用检索：行业政策、机构预期、竞争动态、风险事件。"""
+    """产业链分析专用检索：上下游、供应商/客户、卡脖子、价值分配。"""
     engines: list[str] = []
     blocks: list[str] = []
-    per_query = max_results_per_query or max(
-        4, WEB_SEARCH_MAX_RESULTS // max(len(COMPREHENSIVE_SEARCH_QUERIES), 1)
-    )
+    queries: list[str] = list(CHAIN_SEARCH_QUERIES)
+    seen = set(queries)
+    for item in extra_queries or []:
+        q = " ".join(str(item).split())
+        if len(q) < 4 or q in seen:
+            continue
+        seen.add(q)
+        queries.append(q)
+        if len(queries) >= len(CHAIN_SEARCH_QUERIES) + 6:
+            break
 
+    per_query = max_results_per_query or max(
+        4, WEB_SEARCH_MAX_RESULTS // max(len(queries), 1)
+    )
     industry_part = f"{industry_name} " if industry_name else ""
-    for q in COMPREHENSIVE_SEARCH_QUERIES:
+
+    for q in queries:
         if progress_cb:
             progress_cb(q)
-        query_suffix = f"{industry_part}{q}".strip()
+        is_fixed = q in CHAIN_SEARCH_QUERIES
+        query_suffix = f"{industry_part}{q}".strip() if is_fixed else q
         text, engine = search_company_info(
             company,
             query_suffix,
@@ -332,39 +337,6 @@ def search_for_risk(
         )
         if text and not text.startswith("（"):
             blocks.append(f"### 检索：{query_suffix}\n{text}")
-            if engine and engine not in engines:
-                engines.append(engine)
-
-    if not blocks:
-        return "", engines
-    return "\n\n".join(blocks), engines
-
-
-def search_for_duan(
-    company: str,
-    *,
-    stock_code: str = "",
-    max_results_per_query: int | None = None,
-    progress_cb: Callable[[str], None] | None = None,
-) -> tuple[str, list[str]]:
-    """段永平看业务专用检索：用户体验、差异化、企业文化。"""
-    engines: list[str] = []
-    blocks: list[str] = []
-    per_query = max_results_per_query or max(
-        4, WEB_SEARCH_MAX_RESULTS // max(len(DUAN_SEARCH_QUERIES), 1)
-    )
-
-    for q in DUAN_SEARCH_QUERIES:
-        if progress_cb:
-            progress_cb(q)
-        text, engine = search_company_info(
-            company,
-            q,
-            stock_code=stock_code,
-            max_results=per_query,
-        )
-        if text and not text.startswith("（"):
-            blocks.append(f"### 检索：{q}\n{text}")
             if engine and engine not in engines:
                 engines.append(engine)
 

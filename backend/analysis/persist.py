@@ -15,6 +15,7 @@ CACHE_VERSION = 1
 KIND_DECLINE = "decline"
 KIND_GRIND = "grind"
 KIND_ROTATION = "rotation"
+KIND_LIVERMORE = "livermore"
 
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 

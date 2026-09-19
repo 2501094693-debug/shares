@@ -24,7 +24,7 @@ from agent.bazhang_analyst.rules._fields import (
     TOTAL_EQUITY_FIELDS,
     TOTAL_LIAB_FIELDS,
 )
-from agent.comprehensive_analyst.rules._common import (
+from agent.rules._common import (
     fmt_num,
     fmt_pct,
     fmt_x,

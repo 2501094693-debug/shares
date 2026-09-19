@@ -144,6 +144,12 @@ _COMPETITION_NOTICE_KEYWORDS = (
     "同行", "投产", "扩产", "替代", "国产", "出口", "进口",
 )
 
+_CHAIN_NOTICE_KEYWORDS = (
+    "供应链", "供应商", "原材料", "采购", "客户", "销售", "产能", "扩产",
+    "投产", "上下游", "产业链", "配套", "关联交易", "订单", "中标", "合同",
+    "年报", "半年报", "季报", "主营业务", "分部", "国产替代", "卡脖子",
+)
+
 _RISK_NOTICE_KEYWORDS = (
     "风险", "监管", "处罚", "立案", "警示", "违规", "诉讼", "仲裁", "担保",
     "质押", "减持", "增持", "股权激励", "关联交易", "股权", "股东", "回购",
@@ -171,6 +177,18 @@ def _filter_competition_notices(items: list[dict[str, Any]], limit: int = 40) ->
     for item in items:
         title = (item.get("title") or "").lower()
         if any(kw in title for kw in _COMPETITION_NOTICE_KEYWORDS):
+            matched.append(item)
+        else:
+            other.append(item)
+    return (matched + other)[:limit]
+
+
+def _filter_chain_notices(items: list[dict[str, Any]], limit: int = 40) -> list[dict[str, Any]]:
+    matched: list[dict[str, Any]] = []
+    other: list[dict[str, Any]] = []
+    for item in items:
+        title = (item.get("title") or "").lower()
+        if any(kw in title for kw in _CHAIN_NOTICE_KEYWORDS):
             matched.append(item)
         else:
             other.append(item)
@@ -573,6 +591,93 @@ def _fetch_peer_competition_table(code: str, name: str) -> str:
         logger.warning("同业对照导入失败: %s", exc)
         return f"（未能导入同业对照：{exc}）"
     return _peer_table(code, name)
+
+
+def _collect_chain_notices(
+    code: str,
+    name: str,
+    *,
+    days: int | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    window = days if days is not None else DATA_LOOKBACK_DAYS
+    api = _import_backend()
+    cninfo_pack = _safe_call(
+        "巨潮公告",
+        api["query_cninfo"],
+        code,
+        days=window,
+        max_pages=6,
+        limit=80,
+    )
+    exchange_pack = _safe_call(
+        "交易所公告",
+        api["query_exchange"],
+        code,
+        days=window,
+        max_pages=6,
+        limit=80,
+    )
+    return _filter_chain_notices(
+        _merge_notice_items(cninfo_pack, exchange_pack),
+        limit=limit,
+    )
+
+
+def _mcap_sort_key(stock: dict[str, Any]) -> float:
+    raw = str(stock.get("market_cap") or "").replace("亿", "").replace(",", "").strip()
+    try:
+        return float(raw) if raw else 0.0
+    except ValueError:
+        return 0.0
+
+
+def _fetch_same_layer_peers(code: str, name: str) -> str:
+    """申万三级同层公司名单（名称/代码/市值），不含估值倍数。"""
+    try:
+        from industry.service import service as industry
+    except Exception as exc:  # noqa: BLE001
+        return f"（未能加载同层公司名单：{exc}）"
+
+    try:
+        industry.stocks.ensure_populated()
+        hit = industry.stocks.get_by_code(code)
+        if not hit:
+            return "（索引中未找到该公司，无法列出同层公司）"
+        l3_code = str(hit.get("l3_code") or "").strip()
+        l3_name = str(hit.get("l3_name") or "")
+        if not l3_code:
+            return "（缺少申万三级行业代码，无法列出同层公司）"
+        pack = industry.get_constituents(l3_code, force_refresh=False, update_index=False)
+        stocks = [s for s in (pack.get("stocks") or []) if isinstance(s, dict)]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("同层公司名单失败 %s: %s", code, exc)
+        return f"（同层公司名单失败：{exc}）"
+
+    api = _import_backend()
+    self_code = api["normalize_code"](code)
+    peers: list[dict[str, Any]] = []
+    for stock in stocks:
+        scode = api["normalize_code"](str(stock.get("code") or ""))
+        if not scode or scode == self_code:
+            continue
+        peers.append(stock)
+    peers.sort(key=_mcap_sort_key, reverse=True)
+
+    lines = [
+        f"申万三级行业：{l3_name or l3_code}（成分股 {len(stocks)} 家，下表为市值靠前的同层公司。"
+        "仅供对照**本环节**玩家，不是整条产业链边界。）",
+        "",
+        "| 公司 | 代码 | 市值 | 标记 |",
+        "|---|---|---|---|",
+        f"| {name} | {code} | {hit.get('market_cap') or '—'} | 本公司 |",
+    ]
+    for stock in peers[:10]:
+        lines.append(
+            f"| {stock.get('name') or ''} | {stock.get('code') or ''} | "
+            f"{stock.get('market_cap') or '—'} | 同层 |"
+        )
+    return "\n".join(lines)
 
 
 def fetch_industry_competition_data(
@@ -994,6 +1099,187 @@ def fetch_web_risk_supplement(
 
     header = (
         f"> **补充范围**：{name}（{code}）最新监管动态、管理层言论与行业政策；"
+        "数字与事实若与交易所/巨潮冲突，以官方披露为准。\n\n"
+    )
+    return {
+        "text": (header + text) if text else "",
+        "engines": engines,
+        "used": used,
+        "sources_used": sources,
+    }
+
+
+def fetch_chain_analyst_data(
+    company: str,
+    stock: dict[str, str] | None = None,
+    *,
+    progress_node: str = "ch_fetch",
+) -> dict[str, Any]:
+    """采集指定公司产业链分析资料：官方披露 + 轻量同层名单。"""
+    from agent.tools.progress import report
+
+    resolved = stock or resolve_company(company)
+    code = resolved["code"]
+    name = resolved["name"]
+    node = progress_node
+    sections: dict[str, str] = {}
+    sources: list[str] = []
+    errors: list[str] = []
+    industry_name = ""
+    industry_code = ""
+
+    report(node, f"采集 {name} 近 {DATA_LOOKBACK_DAYS} 天产业链资料", phase="fetch_data", status="running")
+    sources.extend(OFFICIAL_SOURCE_LABELS)
+
+    report(node, "正在拉取公司画像与申万行业归属…", phase="fetch_section")
+    profile_stock, industry, profile_text = _fetch_profile_pack(code, name)
+    if industry:
+        industry_name = str(industry.get("name") or industry.get("l3_name") or "").strip()
+        industry_code = str(industry.get("code") or industry.get("l3_code") or "").strip()
+    if "未能" not in profile_text:
+        sections["公司画像与行业归属"] = profile_text
+        sources.append("申万行业归属")
+
+    report(node, "正在拉取同层公司名单（申万三级，不含估值）…", phase="fetch_section")
+    peer_text = _fetch_same_layer_peers(code, name)
+    if peer_text and "未能" not in peer_text and "无法" not in peer_text and "失败" not in peer_text:
+        sections["同层公司名单"] = peer_text
+        sources.append("申万三级同层名单")
+
+    report(node, "正在拉取定期报告公告（交易所 + 巨潮）…", phase="fetch_section")
+    periodic_by_kind = _collect_periodic_items(code, name)
+    sections["定期报告"] = _format_periodic_catalog(periodic_by_kind, name, code)
+
+    report(node, "正在拉取产业链相关公告（交易所 + 巨潮）…", phase="fetch_section")
+    notice_items = _collect_chain_notices(code, name)
+    notices_text = (
+        f"### 产业链相关公告目录（{name} {code}，近 {DATA_LOOKBACK_DAYS} 天，{len(notice_items)} 条）\n"
+        + _fmt_items(notice_items, limit=50)
+    )
+    if notice_items:
+        sections["产业链相关公告"] = notices_text
+
+    from agent.tools.notice_pdf import ingest_notice_pdfs, pick_latest_full_report, pick_notice_pdfs
+
+    pdf_targets: list[dict[str, Any]] = []
+    for items in periodic_by_kind.values():
+        picked = pick_latest_full_report(items)
+        if picked:
+            pdf_targets.append(picked)
+    pdf_targets.extend(pick_notice_pdfs(notice_items, already=pdf_targets, limit=6))
+
+    if pdf_targets:
+        report(
+            node,
+            f"正在下载并抽取 {len(pdf_targets)} 份公告 PDF 正文…",
+            phase="fetch_pdf",
+        )
+        pdf_text = ingest_notice_pdfs(
+            pdf_targets,
+            code=code,
+            progress=lambda msg: report(node, msg, phase="fetch_pdf"),
+        )
+        if pdf_text:
+            sections["公告 PDF 正文"] = pdf_text
+            sources.append("公告 PDF 正文（巨潮/交易所）")
+
+    report(node, "正在拉取七网相关报道…", phase="fetch_section")
+    press_text = _fetch_press_coverage(code, name)
+    if "（无相关报道）" not in press_text and "（未能获取" not in press_text:
+        sections["七网报道"] = press_text
+
+    industry_label = industry_name or "所属行业"
+    window_note = (
+        f"> **主线范围**：{name}（{code}）· {industry_label} · 近 {DATA_LOOKBACK_DAYS} 天 · "
+        f"信息来源：交易所、巨潮资讯、公告 PDF 正文、七家指定披露媒体、申万同层名单\n\n"
+    )
+    text_parts = [window_note]
+    for title, body in sections.items():
+        text_parts.append(f"## {title}\n{body}")
+    text = "\n\n".join(text_parts) if sections else (
+        "（未能获取任何结构化数据，请基于已知信息分析并标注数据缺口）"
+    )
+
+    report(node, f"采集完成：{len(sections)} 类数据", phase="fetch_data_done", status="running")
+
+    return {
+        "code": code,
+        "name": name,
+        "market": resolved.get("market", ""),
+        "industry_name": industry_name,
+        "industry_code": industry_code,
+        "sections": sections,
+        "text": text,
+        "sources_used": sources,
+        "errors": errors,
+        "data_available": bool(sections),
+    }
+
+
+def fetch_web_chain_supplement(
+    company: str,
+    stock: dict[str, str] | None = None,
+    *,
+    industry_name: str = "",
+    extra_queries: list[str] | None = None,
+    progress_node: str = "ch_search",
+) -> dict[str, Any]:
+    """联网搜索补充：产业链结构、上下游玩家、卡脖子与价值分配。"""
+    from agent.tools.progress import report
+    from agent.tools.web_search import search_for_chain, web_search_status
+
+    resolved = stock or resolve_company(company)
+    code = resolved["code"]
+    name = resolved["name"]
+    available, engine_hint = web_search_status()
+    if not available:
+        report(progress_node, engine_hint, phase="web_search_skip", status="done")
+        return {
+            "text": "",
+            "engines": [],
+            "used": False,
+            "sources_used": [],
+        }
+
+    report(
+        progress_node,
+        f"联网补充检索（{engine_hint}）…",
+        phase="web_search",
+        status="running",
+    )
+
+    def _on_query(query: str) -> None:
+        report(progress_node, f"检索：{query}", phase="web_search")
+
+    text, engines = search_for_chain(
+        name,
+        industry_name=industry_name,
+        stock_code=code,
+        extra_queries=extra_queries,
+        progress_cb=_on_query,
+    )
+    used = bool(text)
+    if used:
+        engine_label = "+".join(engines) if engines else engine_hint
+        sources = [f"联网搜索（{engine_label}）"]
+        report(
+            progress_node,
+            f"联网补充完成（{engine_label}）",
+            phase="web_search_done",
+            status="running",
+        )
+    else:
+        report(
+            progress_node,
+            "联网搜索未返回有效结果，将仅依据官方披露撰写",
+            phase="web_search_done",
+            status="running",
+            level="warn",
+        )
+        sources = []
+
+    header = (
+        f"> **补充范围**：{industry_name or name} 产业链上下游、原材料/客户与卡脖子公开数据；"
         "数字与事实若与交易所/巨潮冲突，以官方披露为准。\n\n"
     )
     return {

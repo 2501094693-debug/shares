@@ -1,6 +1,6 @@
 (() => {
   const MODES = window.AI_MODES || {};
-  const MODE_ORDER = window.AI_MODE_ORDER || ["comprehensive", "business", "essence", "duan", "bazhang", "buffett", "buffett-rules", "competition", "risk"];
+  const MODE_ORDER = window.AI_MODE_ORDER || ["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk"];
   const EARNINGS_VIEWS = new Set(["bazhang", "buffett", "buffett-rules"]);
 
   const STATUS_LABELS = {
@@ -32,7 +32,7 @@
 
   const params = new URLSearchParams(window.location.search);
   const state = {
-    mode: "comprehensive",
+    mode: "business",
     identity: {
       code: (params.get("code") || "").trim(),
       name: (params.get("name") || "").trim(),

@@ -780,42 +780,6 @@ def fetch_segment_data(code: str, *, limit: int = 24, period_limit: int = 5) -> 
     return {"rows": segment_rows, "text": text, "sources": ["东方财富 F10 主营业务"]}
 
 
-def fetch_comprehensive_financial_pack(code: str, name: str, *, limit: int = 40) -> dict[str, Any]:
-    """拉取综合研判所需的扩展财务报表包（更多报告期 + 分表原始数据）。"""
-    pack = _fr_backend()["get_financial_report"](code, scope="all", limit=limit)
-    statements = pack.get("statements") or {}
-    main_rows = statements.get("main") or []
-    income_rows = statements.get("income") or []
-    balance_rows = statements.get("balance") or []
-    cash_rows = statements.get("cashflow") or []
-    lico_rows = statements.get("lico") or []
-    merged = pack.get("merged") or []
-    annual = pack.get("annual") or []
-    recent = pack.get("recent") or []
-
-    fin = fetch_financial_pack(code, name)
-    sections = dict(fin.get("sections") or {})
-    sections["资产负债表原始科目"] = _balance_table(annual[:8] or recent)
-    sections["利润表原始科目"] = _income_raw_table(recent[:8] or annual[:8])
-    sections["现金流量表原始科目"] = _cash_raw_table(recent[:8] or annual[:8])
-
-    return {
-        "sections": sections,
-        "text": fin.get("text") or "",
-        "sources": fin.get("sources") or [],
-        "errors": fin.get("errors") or [],
-        "annual": annual,
-        "recent": recent,
-        "merged": merged,
-        "main_rows": main_rows,
-        "income_rows": income_rows,
-        "balance_rows": balance_rows,
-        "cash_rows": cash_rows,
-        "lico_rows": lico_rows,
-        "cross_validate": _cross_validate(merged, income_rows, lico_rows),
-    }
-
-
 def fetch_statement_frames(code: str, *, limit: int = 60, force: bool = False) -> dict[str, Any]:
     """拉东财 F10 全量定期报告（三大表 + 主要指标 + 业绩报表），可选绕过 TTL。"""
     api = _fr_backend()
