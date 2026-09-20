@@ -1068,6 +1068,36 @@ html.company-charts-on body.app-shell .app.company-page {
   background: rgba(42, 212, 184, 0.04);
 }
 
+.ths-vote-card h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.ths-vote-option {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 6px 0;
+  padding: 6px 8px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ths-vote-option i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(232, 72, 72, 0.28);
+}
+
+.ths-vote-option span,
+.ths-vote-option b {
+  position: relative;
+}
+
 .emotion-post-title {
   appearance: none;
   border: 0;

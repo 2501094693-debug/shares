@@ -21,6 +21,8 @@ from urllib3.poolmanager import PoolManager
 
 from core.resolve import (
     canonical_push2_host,
+    drop_ip,
+    forget_host,
     is_eastmoney_push2_host,
     remember_host,
     resolve_ipv4,
@@ -129,7 +131,9 @@ def _get_via_ip(
             resp.raise_for_status()
             return resp
         except Exception as exc:  # noqa: BLE001
+            drop_ip(host, ip)
             last_error = exc
+    forget_host(host)
     raise last_error or requests.ConnectionError(f"无法连接 {host}")
 
 

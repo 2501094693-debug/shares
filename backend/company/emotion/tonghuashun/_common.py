@@ -1,7 +1,8 @@
 """同花顺圈子共用：模拟手机客户端拉个股讨论。
 
 同花顺没有文档化的公开社区 API。只走 WAP / App 同源接口：
-``forum/v2/index``（板块与热度）+ ``hot_feed``（推荐流，含评论预览）。
+``forum/v2/index``（板块、热度、投票）、``forum/post/v2/recent``（最新发布 / 最新回复）、
+``hot_feed``（热门推荐，含评论预览）。
 """
 
 from __future__ import annotations
@@ -36,13 +37,15 @@ CIRCLE_HOST = "https://t.10jqka.com.cn"
 LGT_HOST = "https://c.10jqka.com.cn"
 FORUM_INDEX_API = f"{LGT_HOST}/lgt/cache/open/api/forum/v2/index"
 HOT_FEED_API = f"{LGT_HOST}/lgt/post/open/api/forum/content/v1/hot_feed"
-RECENT_API = f"{LGT_HOST}/lgt/post/open/api/forum/content/v1/recent"
+# 社区「最新发布 / 最新回复」。content/v1/recent 已空，App 实际走这条。
+RECENT_API = f"{LGT_HOST}/lgt/post/open/api/forum/post/v2/recent"
 HEXIN_UA = (
     "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36 "
     "Hexin_Gphone/11.20.40 (Phone; Android 13; zh)"
 )
 MOBILE_PAGE_SIZE = 8
+RECENT_PAGE_SIZE = 15
 
 CHANNEL_POSTS = "ths_post"
 CHANNEL_REPLY = "ths_reply"
@@ -173,8 +176,10 @@ def comments_from_feed(
     url: str = "",
 ) -> list[dict[str, Any]]:
     """手机推荐流自带的评论预览。"""
-    block = row.get("comment") if isinstance(row.get("comment"), dict) else {}
-    comments = block.get("comments") if isinstance(block, dict) else None
+    comments = row.get("comments") if isinstance(row.get("comments"), list) else None
+    if comments is None:
+        block = row.get("comment") if isinstance(row.get("comment"), dict) else {}
+        comments = block.get("comments") if isinstance(block, dict) else None
     if not isinstance(comments, list):
         return []
     info = row.get("info") if isinstance(row.get("info"), dict) else {}
@@ -186,8 +191,12 @@ def comments_from_feed(
         text = strip_hx(safe_str(raw.get("content")))
         if not text:
             continue
-        author = safe_str(raw.get("nickname") or raw.get("name"))
-        uid = safe_str(raw.get("uid") or raw.get("id"))
+        from_user = raw.get("from_user") if isinstance(raw.get("from_user"), dict) else {}
+        author = safe_str(raw.get("nickname") or from_user.get("nickname") or raw.get("name"))
+        uid = safe_str(raw.get("uid") or from_user.get("uid") or raw.get("cid") or raw.get("id"))
+        user_tag = safe_str(raw.get("tag"))
+        if not user_tag and to_int(from_user.get("is_v")):
+            user_tag = "v"
         items.append(
             {
                 "code": code,
@@ -208,6 +217,7 @@ def comments_from_feed(
                 "like_count": 0,
                 "comment_count": 0,
                 "is_child": False,
+                "user_tag": user_tag,
             }
         )
     return items
@@ -225,6 +235,7 @@ def normalize_feed_item(
         return None
     info = row.get("info") if isinstance(row.get("info"), dict) else {}
     author_b = row.get("author") if isinstance(row.get("author"), dict) else {}
+    user = row.get("user") if isinstance(row.get("user"), dict) else {}
     title_b = row.get("title") if isinstance(row.get("title"), dict) else {}
     abstract = row.get("abstract") if isinstance(row.get("abstract"), dict) else {}
     stat = row.get("stat") if isinstance(row.get("stat"), dict) else {}
@@ -233,8 +244,13 @@ def normalize_feed_item(
     content = strip_hx(safe_str(abstract.get("content") if abstract else row.get("content")))
     if not post_id and not title and not content:
         return None
-    author = safe_str(author_b.get("name") or row.get("author"))
-    url = safe_str(info.get("jump_url") or info.get("client_url")) or mobile_page_url(code)
+    author = safe_str(author_b.get("name") or user.get("nickname") or row.get("author"))
+    url = safe_str(
+        info.get("jump_url") or info.get("client_url") or row.get("jump_url") or row.get("pc_jump_url")
+    ) or mobile_page_url(code)
+    identity_tag = safe_str(author_b.get("identity_tag"))
+    if not identity_tag and to_int(user.get("is_v")):
+        identity_tag = "v"
     return {
         "code": code,
         "name": name,
@@ -244,15 +260,24 @@ def normalize_feed_item(
         "summary": content[:200],
         "content": content,
         "published_at": fmt_dt(info.get("ctime") or row.get("ctime") or row.get("published_at")),
+        "replied_at": fmt_dt(
+            info.get("rtime")
+            or info.get("mtime")
+            or info.get("reply_time")
+            or info.get("utime")
+            or row.get("rtime")
+            or row.get("mtime")
+        ),
         "url": url,
         "source": SOURCE,
         "channel": CHANNEL_POSTS,
         "kind": kind,
         "author": author,
-        "author_id": safe_str(author_b.get("id") or row.get("userid")),
+        "author_id": safe_str(author_b.get("id") or user.get("uid") or row.get("uid") or row.get("userid")),
         "media_name": author,
-        "like_count": to_int(stat.get("like_num") or row.get("like_count")),
-        "comment_count": to_int(stat.get("comment_num") or row.get("comment_count")),
-        "forward_count": to_int(stat.get("forward_num") or row.get("forward_count")),
+        "identity_tag": identity_tag,
+        "like_count": to_int(stat.get("like_num") or stat.get("like") or row.get("like_count")),
+        "comment_count": to_int(stat.get("comment_num") or stat.get("reply") or row.get("comment_count")),
+        "forward_count": to_int(stat.get("forward_num") or stat.get("forward") or row.get("forward_count")),
         "post_type": safe_str(info.get("type")),
     }

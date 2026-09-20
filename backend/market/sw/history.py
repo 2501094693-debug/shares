@@ -68,8 +68,16 @@ def is_seal_time(day: date, now=None) -> bool:
     return stamp >= close
 
 
-def _today() -> date:
-    return cn_now().date()
+def _fetch_failed(payload: dict[str, Any] | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    for msg in payload.get("errors") or []:
+        text = str(msg)
+        if not (text.startswith("资金流:") or text.startswith("涨跌停池:")):
+            continue
+        if any(token in text for token in ("61.129.129.48", "10065", "无法连接", "无法解析", "Max retries")):
+            return True
+    return False
 
 
 def _disk_path(day: date):
@@ -217,7 +225,10 @@ class HistoryStore:
         with self._lock:
             hit = self._sealed.get(key)
         if hit is not None:
-            return hit
+            if not _fetch_failed(hit):
+                return hit
+            with self._lock:
+                self._sealed.pop(key, None)
         mem = self._live.get(key)
         if mem is not None:
             return mem

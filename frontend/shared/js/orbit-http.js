@@ -1,5 +1,5 @@
 (() => {
-  const CACHE_NAME = "orbit-prefetch-v1";
+  const CACHE_NAME = "orbit-prefetch-v2";
   const STRIP = new Set(["refresh", "live"]);
   const TTL_RULES = [
     { prefix: "/api/market/tree", ttl: 90_000 },
@@ -81,6 +81,8 @@
       const ttl = Number(packed.ttlMs || 0);
       if (!packed.body || !Number.isFinite(age) || age < 0) return null;
       if (!options.allowStale && age > ttl) return null;
+      const errs = packed.body?.data?.errors || packed.body?.errors || [];
+      if (errs.some((item) => String(item).includes("61.129.129.48"))) return null;
       return packed.body;
     } catch {
       return null;

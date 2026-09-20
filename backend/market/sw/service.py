@@ -29,12 +29,19 @@ _TREE_TTL = 90
 
 
 def _sealed_snapshot_broken(payload: dict[str, Any]) -> bool:
-    """封存快照若资金流/涨跌停因 DNS 全挂，应允许重建。"""
-    if int(payload.get("stock_flow_count") or 0) > 0:
-        return False
+    """封存快照若资金流/涨跌停因连不上东财而失败，允许重建。"""
+    flow_count = int(payload.get("stock_flow_count") or 0)
     for msg in payload.get("errors") or []:
         text = str(msg)
-        if "无法解析" in text and "eastmoney.com" in text:
+        failed = any(
+            token in text
+            for token in ("无法解析", "无法连接", "10065", "Max retries", "NewConnectionError")
+        )
+        if not failed:
+            continue
+        if text.startswith("资金流:") and flow_count <= 0:
+            return True
+        if text.startswith("涨跌停池:"):
             return True
     return False
 

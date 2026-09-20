@@ -1,6 +1,7 @@
 """同花顺个股社区：模拟手机客户端拉讨论流（含评论预览）。
 
     GET https://c.10jqka.com.cn/lgt/cache/open/api/forum/v2/index
+    GET https://c.10jqka.com.cn/lgt/post/open/api/forum/post/v2/recent
     GET https://c.10jqka.com.cn/lgt/post/open/api/forum/content/v1/hot_feed
 """
 
@@ -18,6 +19,7 @@ from company.emotion.tonghuashun._common import (
     HOT_FEED_API,
     MOBILE_PAGE_SIZE,
     RECENT_API,
+    RECENT_PAGE_SIZE,
     REQUEST_PAUSE_SEC,
     SOURCE,
     comments_from_feed,
@@ -53,12 +55,15 @@ KINDS: dict[str, str] = {
 SORTS: dict[str, str] = {
     "hot": "hot",
     "推荐": "hot",
+    "热门": "hot",
     "recommend": "hot",
     "time": "time",
     "最新": "time",
+    "最新发布": "time",
     "发帖": "time",
     "publish": "time",
     "reply": "reply",
+    "最新回复": "reply",
     "回复": "reply",
 }
 
@@ -101,14 +106,18 @@ def _query_mobile_page(
     last_score: Any = None,
     last_publish_time: Any = None,
     market_id: str = "",
+    recent_pid: Any = None,
 ) -> dict[str, Any]:
     mid = safe_str(market_id) or ths_market(code) or "17"
-    if sort in {"time", "reply"} and last_score in {None, ""} and not last_publish_time:
-        recent = _query_recent(code, sort=sort, market_id=mid)
-        feed = recent.get("feed") if isinstance(recent.get("feed"), list) else []
-        if feed:
-            recent["_via"] = "recent"
-            return recent
+    if sort in {"time", "reply"}:
+        recent = _query_recent(
+            code,
+            sort=sort,
+            market_id=mid,
+            pid=recent_pid,
+        )
+        recent["_via"] = "recent"
+        return recent
     params: dict[str, Any] = {
         "code": code,
         "page": 1,
@@ -124,15 +133,23 @@ def _query_mobile_page(
     return data
 
 
-def _query_recent(code: str, *, sort: str, market_id: str) -> dict[str, Any]:
+def _query_recent(
+    code: str,
+    *,
+    sort: str,
+    market_id: str,
+    pid: Any = None,
+) -> dict[str, Any]:
+    api_sort = "reply" if sort == "reply" else "publish"
+    # page=1 只回 8 条且忽略 pid。page>=2、time=0、pid=上一页最后一条，才是下一页。
     params: dict[str, Any] = {
         "code": code,
-        "page": 1,
-        "pageSize": MOBILE_PAGE_SIZE,
-        "pid": 0,
+        "page": 2,
+        "page_size": RECENT_PAGE_SIZE,
+        "pid": 0 if pid in {None, ""} else pid,
         "time": 0,
-        "sort": "reply" if sort == "reply" else "publish",
-        "marketId": market_id,
+        "sort": api_sort,
+        "market_id": market_id,
     }
     try:
         return mobile_data(RECENT_API, params=params, code=code)
@@ -188,6 +205,7 @@ def fetch_posts(
     seen: set[str] = set()
     last_score: Any = None
     last_publish_time: Any = None
+    recent_pid: Any = 0
     via = ""
     has_more = True
     limit = max(1, min(int(max_pages), MAX_PAGES))
@@ -201,6 +219,7 @@ def fetch_posts(
                 last_score=last_score,
                 last_publish_time=last_publish_time,
                 market_id=market_id,
+                recent_pid=recent_pid,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("同花顺论股堂失败 %s page=%s: %s", code, page, exc)
@@ -247,10 +266,22 @@ def fetch_posts(
         if not page_items:
             break
         if via == "recent":
+            oldest_on_page = None
             for item in page_items:
+                day = parse_day(item.get("published_at"))
+                if day and (oldest_on_page is None or day < oldest_on_page):
+                    oldest_on_page = day
                 if in_range(item, start_d, end_d):
                     items.append(item)
-            break
+            sent_pid = recent_pid
+            recent_pid = _recent_cursor(feed)
+            if start_d and oldest_on_page and oldest_on_page < start_d:
+                break
+            if recent_pid in {None, "", 0, "0"} or str(recent_pid) == str(sent_pid):
+                break
+            if page < limit:
+                time.sleep(REQUEST_PAUSE_SEC)
+            continue
         oldest_on_page = None
         for item in page_items:
             day = parse_day(item.get("published_at"))
@@ -267,11 +298,12 @@ def fetch_posts(
         if page < limit:
             time.sleep(REQUEST_PAUSE_SEC)
 
-    items = dedupe(items)
+    items = _order_posts(dedupe(items), api_sort, via)
     if with_replies:
         items = _attach_replies(items, raw_feeds=raw_feeds, max_posts=max_reply_posts)
 
     rank = forum.get("stock_rank") if isinstance(forum.get("stock_rank"), dict) else {}
+    vote = _vote_from_forum(forum) if api_sort in {"time", "reply"} else None
     return {
         "code": code,
         "name": name,
@@ -292,7 +324,59 @@ def fetch_posts(
         "rank": to_int(rank.get("rank")),
         "rank_amount": to_int(rank.get("rank_amount")),
         "rank_change": to_int(rank.get("rank_change")),
+        "vote": vote,
     }
+
+
+def _recent_cursor(feed: list[Any]) -> Any:
+    """下一页用上一页最后一条的 pid。带上发帖时间时接口会返回空。"""
+    if not feed or not isinstance(feed[-1], dict):
+        return 0
+    last = feed[-1]
+    info = last.get("info") if isinstance(last.get("info"), dict) else {}
+    return last.get("pid") or last.get("id") or info.get("id") or 0
+
+
+def _vote_from_forum(forum: dict[str, Any]) -> dict[str, Any] | None:
+    """讨论页顶部的投票条，插在最新列表第一条后面。"""
+    components = forum.get("components") if isinstance(forum.get("components"), dict) else {}
+    tabs = components.get("tab_configs") if isinstance(components.get("tab_configs"), list) else []
+    for tab in tabs:
+        blocks = tab.get("components") if isinstance(tab, dict) else None
+        if not isinstance(blocks, list):
+            continue
+        for block in blocks:
+            if not isinstance(block, dict) or safe_str(block.get("type")).upper() != "VOTE":
+                continue
+            data = block.get("data") if isinstance(block.get("data"), dict) else {}
+            detail = data.get("vote_detail") if isinstance(data.get("vote_detail"), dict) else {}
+            title = safe_str(detail.get("title"))
+            options = detail.get("option_list") if isinstance(detail.get("option_list"), list) else []
+            if not title:
+                continue
+            return {
+                "title": title,
+                "total": to_int(detail.get("total_count")),
+                "options": [
+                    {"text": safe_str(opt.get("content")), "count": to_int(opt.get("vote_count"))}
+                    for opt in options
+                    if isinstance(opt, dict) and safe_str(opt.get("content"))
+                ],
+            }
+    return None
+
+
+def _order_posts(items: list[dict[str, Any]], sort: str, via: str) -> list[dict[str, Any]]:
+    """热门保持推荐流顺序。最新发布、最新回复在推荐流回退时按时间重排。"""
+    if sort == "hot" or via == "recent":
+        return items
+
+    def stamp(row: dict[str, Any]) -> str:
+        if sort == "reply":
+            return safe_str(row.get("replied_at") or row.get("published_at"))
+        return safe_str(row.get("published_at"))
+
+    return sorted(items, key=stamp, reverse=True)
 
 
 def _attach_replies(
@@ -305,6 +389,7 @@ def _attach_replies(
     for row in raw_feeds:
         info = row.get("info") if isinstance(row, dict) else None
         pid = safe_str((info or {}).get("id") if isinstance(info, dict) else "")
+        pid = pid or safe_str(row.get("pid") or row.get("id") if isinstance(row, dict) else "")
         if pid:
             by_pid[pid] = row
     budget = max(0, int(max_posts))

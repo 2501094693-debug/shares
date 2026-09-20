@@ -27,19 +27,19 @@ _PUSH2_FALLBACK_HOSTS = (
     PUSH2_DELAY_HOST,
     "push2.eastmoney.com",
 )
-# DoH / 系统 DNS 全挂时兜底（A 记录会轮换，但总比直接失败好）。
+# DoH / 系统 DNS 全挂时兜底。只在当次请求使用，不写入缓存。
 _PUSH2_STATIC_IPS = (
     "101.226.30.136",
-    "117.184.33.53",
-    "61.129.129.48",
+    "103.220.167.67",
+    "61.129.129.196",
 )
 _PUSH2_STATIC_BY_HOST: dict[str, tuple[str, ...]] = {
-    PUSH2_DELAY_HOST: _PUSH2_STATIC_IPS,
-    "push2.eastmoney.com": _PUSH2_STATIC_IPS,
-    "push2ex.eastmoney.com": ("61.129.249.5", "43.137.75.211"),
-    "push2his.eastmoney.com": ("61.129.129.199", "101.226.30.136"),
+    PUSH2_DELAY_HOST: ("101.226.30.136", "103.220.167.67"),
+    "push2.eastmoney.com": ("61.129.129.196", "101.226.30.136"),
+    "push2ex.eastmoney.com": ("140.207.67.212",),
+    "push2his.eastmoney.com": ("140.207.67.156",),
 }
-_doh_lock = threading.Lock()
+_DEAD_IPS = frozenset({"61.129.129.48"})
 _NUMERIC_PUSH2 = re.compile(r"^\d+\.push2\.eastmoney\.com$")
 _PUSH2_EXEMPT = frozenset(
     {PUSH2_DELAY_HOST, "push2his.eastmoney.com", "push2ex.eastmoney.com"}
@@ -73,11 +73,11 @@ def _static_ips(host: str) -> tuple[str, ...]:
 
 
 def is_eastmoney_push2_sharded(host: str) -> bool:
-    """``push2`` / ``79.push2`` 等分片节点；``push2his`` / ``push2ex`` / ``delay`` 不算。"""
+    """``79.push2`` 等数字分片；主域 ``push2`` 保留，避免和 delay 绑死同一 IP。"""
     host = (host or "").strip().lower().rstrip(".")
     if not host.endswith(".eastmoney.com") or host in _PUSH2_EXEMPT:
         return False
-    return host == "push2.eastmoney.com" or _is_numeric_push2(host)
+    return _is_numeric_push2(host)
 
 
 def canonical_push2_host(host: str) -> str:
@@ -98,8 +98,30 @@ def _is_ipv4(text: str) -> bool:
         return False
 
 
+def drop_ip(host: str, ip: str) -> None:
+    """连接失败的地址从缓存剔除，避免 5 分钟内反复打到死节点。"""
+    host = (host or "").strip().lower().rstrip(".")
+    ip = (ip or "").strip()
+    if not host or not ip:
+        return
+    hit = _CACHE.get(host)
+    if not hit:
+        return
+    kept = [item for item in hit[1] if item != ip]
+    if kept:
+        _CACHE[host] = (hit[0], kept)
+    else:
+        _CACHE.pop(host, None)
+
+
+def forget_host(host: str) -> None:
+    host = (host or "").strip().lower().rstrip(".")
+    if host:
+        _CACHE.pop(host, None)
+
+
 def resolve_ipv4(host: str) -> list[str]:
-    """返回 IPv4 列表：内存缓存 → 系统 DNS → 阿里 DoH。"""
+    """返回 IPv4 列表：内存缓存 → 系统 DNS → DoH。静态 IP 只作当次兜底，不缓存。"""
     host = (host or "").strip().lower().rstrip(".")
     if not host:
         return []
@@ -110,17 +132,27 @@ def resolve_ipv4(host: str) -> list[str]:
     if hit and hit[0] > now and hit[1]:
         return list(hit[1])
     canon = canonical_push2_host(host)
-    if canon != host:
-        ips = _lookup_ips(canon) or list(_static_ips(canon))
-    elif _is_numeric_push2(host):
-        ips = _push2_parent_ips(host) or list(_static_ips(host))
-    else:
-        ips = _lookup_ips(host) or _push2_parent_ips(host) or list(_static_ips(host))
-    if not ips and _is_eastmoney_push2_host(host):
-        ips = list(_static_ips(host))
+    lookup_host = canon if canon != host else host
+    ips = _usable(_lookup_ips(lookup_host))
+    if not ips and lookup_host != host:
+        ips = _usable(_lookup_ips(host))
+    if not ips:
+        ips = _usable(_push2_parent_ips(lookup_host))
     if ips:
         _CACHE[host] = (now + _TTL, ips)
-    return ips
+        if lookup_host != host:
+            _CACHE[lookup_host] = (now + _TTL, ips)
+        return ips
+    return _usable(list(_static_ips(lookup_host) or _static_ips(host)))
+
+
+def _usable(ips: list[str]) -> list[str]:
+    out: list[str] = []
+    for ip in ips:
+        if ip in _DEAD_IPS or ip in out:
+            continue
+        out.append(ip)
+    return out
 
 
 def _lookup_ips(host: str) -> list[str]:
@@ -137,7 +169,7 @@ def _push2_parent_ips(host: str) -> list[str]:
         ips = _lookup_ips(parent)
         if ips:
             return ips
-    return list(_static_ips(host))
+    return []
 
 
 def remember_host(host: str) -> None:
@@ -148,7 +180,7 @@ def remember_host(host: str) -> None:
     hit = _CACHE.get(host)
     if hit and hit[0] > time.monotonic() and hit[1]:
         return
-    ips = _system_dns(host)
+    ips = _usable(_system_dns(host))
     if ips:
         _CACHE[host] = (time.monotonic() + _TTL, ips)
 

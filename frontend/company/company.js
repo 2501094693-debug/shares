@@ -366,6 +366,7 @@ const els = {
   emotionPostsKind: document.getElementById("emotionPostsKind"),
   emotionPostsSort: document.getElementById("emotionPostsSort"),
   emotionPostsSortThs: document.getElementById("emotionPostsSortThs"),
+  emotionPostsUserThs: document.getElementById("emotionPostsUserThs"),
   emotionPostsDays: document.getElementById("emotionPostsDays"),
   emotionPostsPages: document.getElementById("emotionPostsPages"),
   emotionPostsReplies: document.getElementById("emotionPostsReplies"),
@@ -379,6 +380,7 @@ const els = {
   emotionSearchKeyword: document.getElementById("emotionSearchKeyword"),
   emotionSearchSort: document.getElementById("emotionSearchSort"),
   emotionSearchSortThs: document.getElementById("emotionSearchSortThs"),
+  emotionSearchUserThs: document.getElementById("emotionSearchUserThs"),
   emotionSearchDays: document.getElementById("emotionSearchDays"),
   emotionSearchPages: document.getElementById("emotionSearchPages"),
   emotionSearchQueryBtn: document.getElementById("emotionSearchQueryBtn"),
@@ -572,7 +574,7 @@ const thsEmotionState = {
     items: [],
     count: 0,
     total: 0,
-    sort: "hot",
+    sort: "time",
     maxPages: 3,
     withReplies: false,
     error: "",
@@ -2748,6 +2750,7 @@ function renderEmotionReplyList(items) {
           <div class="news-item-meta">
             <time>${escapeHtml(item.published_at || "-")}</time>
             <span>${escapeHtml(item.author || item.media_name || "-")}</span>
+            ${item.user_tag && String(item.user_tag).toLowerCase() !== "ordinary" ? `<span>${escapeHtml(thsIdentityLabel(item.user_tag) || "认证")}</span>` : ""}
             ${item.like_count ? `<span>赞 ${escapeHtml(item.like_count)}</span>` : ""}
           </div>
           <p>${escapeHtml(item.content || item.summary || item.title || "")}</p>
@@ -4513,6 +4516,14 @@ function setupEmotionBox() {
   });
 
   els.emotionDetailClose?.addEventListener("click", closeEmotionDetail);
+  const repaintThsUserFilter = () => {
+    if (!isThsEmotion()) return;
+    paintThsEmotionPosts();
+    paintThsEmotionSearch();
+    if (thsEmotionState.detail.postId) paintThsEmotionDetail();
+  };
+  els.emotionPostsUserThs?.addEventListener("change", repaintThsUserFilter);
+  els.emotionSearchUserThs?.addEventListener("change", repaintThsUserFilter);
   els.emotionSourceBar?.addEventListener("click", (event) => {
     const btn = event.target.closest("[data-source]");
     if (!btn || !els.emotionSourceBar.contains(btn)) return;
@@ -4530,7 +4541,7 @@ function thsEmotionApiQuery(extra = {}) {
 }
 
 function thsEmotionSortLabel(sort) {
-  const map = { hot: "推荐", time: "最新", reply: "回复" };
+  const map = { hot: "热门", time: "最新发布", reply: "最新回复" };
   return map[sort] || sort || "";
 }
 
@@ -4600,11 +4611,90 @@ function renderThsEmotionRankList(data) {
     .join("");
 }
 
-function renderThsEmotionPostList(items, emptyText) {
+function thsUserFilter(which = "posts") {
+  const el = which === "search" ? els.emotionSearchUserThs : els.emotionPostsUserThs;
+  const value = String(el?.value || "all").trim();
+  return value === "user" || value === "v" ? value : "all";
+}
+
+function thsDetailUserFilter() {
+  const pid = String(thsEmotionState.detail.postId || "").trim();
+  if (!pid) return thsUserFilter("posts");
+  const inPosts = thsEmotionState.posts.items.some(
+    (row) => String(row.post_id || row.article_id || "").trim() === pid,
+  );
+  const inSearch = thsEmotionState.search.items.some(
+    (row) => String(row.post_id || row.article_id || "").trim() === pid,
+  );
+  if (inSearch && !inPosts) return thsUserFilter("search");
+  return thsUserFilter("posts");
+}
+
+function thsUserFilterLabel(mode) {
+  if (mode === "user") return "普通用户";
+  if (mode === "v") return "认证号";
+  return "";
+}
+
+function thsIdentityLabel(tag) {
+  const key = String(tag || "").trim().toLowerCase();
+  if (!key) return "";
+  const map = { bluev: "蓝V", yellowv: "黄V", orangev: "橙V" };
+  return map[key] || "认证";
+}
+
+function isThsVerifiedAuthor(item) {
+  return Boolean(String(item?.identity_tag || "").trim());
+}
+
+function filterThsReplies(replies, mode) {
+  const list = Array.isArray(replies) ? replies : [];
+  if (mode !== "user") return list;
+  return list.filter((row) => {
+    const tag = String(row?.user_tag || "").trim().toLowerCase();
+    return !tag || tag === "ordinary";
+  });
+}
+
+function filterThsEmotionItems(items, mode) {
+  const list = Array.isArray(items) ? items : [];
+  if (mode === "all") return list;
+  return list
+    .filter((item) => (mode === "v" ? isThsVerifiedAuthor(item) : !isThsVerifiedAuthor(item)))
+    .map((item) => {
+      const replies = filterThsReplies(item.replies, mode);
+      if (replies === item.replies) return item;
+      return { ...item, replies };
+    });
+}
+
+function renderThsVoteCard(vote) {
+  if (!vote || !vote.title) return "";
+  const total = Number(vote.total) || 0;
+  const options = (Array.isArray(vote.options) ? vote.options : []).map((opt) => {
+    const count = Number(opt.count) || 0;
+    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+    return `
+      <div class="ths-vote-option">
+        <span>${escapeHtml(opt.text || "")}</span>
+        <b>${count}</b>
+        <i style="width:${pct}%"></i>
+      </div>`;
+  }).join("");
+  return `
+    <article class="news-item ths-vote-card">
+      <div class="news-item-meta"><span>投票</span><span>${total} 人参与</span></div>
+      <h3>${escapeHtml(vote.title)}</h3>
+      ${options}
+    </article>`;
+}
+
+function renderThsEmotionPostList(items, emptyText, vote) {
+  const voteHtml = renderThsVoteCard(vote);
   if (!items.length) {
-    return `<p class="muted">${escapeHtml(emptyText)}</p>`;
+    return voteHtml || `<p class="muted">${escapeHtml(emptyText)}</p>`;
   }
-  return items
+  const cards = items
     .map((item) => {
       const postId = String(item.post_id || item.article_id || "").trim();
       const title = escapeHtml(item.title || "无标题");
@@ -4612,6 +4702,7 @@ function renderThsEmotionPostList(items, emptyText) {
       const bits = [
         item.published_at || "",
         item.author || item.media_name || "",
+        thsIdentityLabel(item.identity_tag),
         item.comment_count ? `评 ${item.comment_count}` : "",
         item.like_count ? `赞 ${item.like_count}` : "",
         item.forward_count ? `转 ${item.forward_count}` : "",
@@ -4631,8 +4722,9 @@ function renderThsEmotionPostList(items, emptyText) {
           <p>${summary}</p>
         </article>
       `;
-    })
-    .join("");
+    });
+  if (voteHtml) cards.splice(Math.min(1, cards.length), 0, voteHtml);
+  return cards.join("");
 }
 
 function findThsEmotionPost(postId) {
@@ -4699,9 +4791,13 @@ function paintThsEmotionRank() {
 
 function paintThsEmotionPosts() {
   const st = thsEmotionState.posts;
+  const mode = thsUserFilter("posts");
+  const shown = filterThsEmotionItems(st.items, mode);
+  const hidden = Math.max(0, st.items.length - shown.length);
   if (els.emotionPostsMeta) {
     const bits = [
       thsEmotionSortLabel(st.sort),
+      thsUserFilterLabel(mode),
       `${st.maxPages} 页`,
       st.total && st.total !== st.count ? `${st.count}/${st.total}` : `${st.count || st.items.length}`,
       st.updatedAt || "-",
@@ -4715,6 +4811,14 @@ function paintThsEmotionPosts() {
       els.emotionPostsHint.textContent = st.error;
     } else if (!st.items.length) {
       els.emotionPostsHint.textContent = "暂无讨论帖，可换排序或增加页数";
+    } else if (!shown.length) {
+      els.emotionPostsHint.textContent = mode === "v"
+        ? "当前结果里没有认证号"
+        : "当前结果里没有普通用户帖，认证号已隐藏";
+    } else if (hidden > 0) {
+      els.emotionPostsHint.textContent = mode === "v"
+        ? `只显示认证号，已隐藏 ${hidden} 条`
+        : `已隐藏 ${hidden} 条认证号`;
     } else if (st.total > st.count) {
       els.emotionPostsHint.textContent = `已显示 ${st.count} / 共 ${st.total} 条`;
     } else {
@@ -4732,15 +4836,21 @@ function paintThsEmotionPosts() {
     els.emotionPostsList.innerHTML = `<p class="news-error">${escapeHtml(st.error)}</p>`;
     return;
   }
-  els.emotionPostsList.innerHTML = renderThsEmotionPostList(st.items, "暂无匹配的讨论帖");
+  const emptyText = mode === "v" ? "暂无认证号讨论" : mode === "user" ? "暂无普通用户讨论" : "暂无匹配的讨论帖";
+  const vote = st.sort === "hot" ? null : st.vote;
+  els.emotionPostsList.innerHTML = renderThsEmotionPostList(shown, emptyText, vote);
 }
 
 function paintThsEmotionSearch() {
   const st = thsEmotionState.search;
+  const mode = thsUserFilter("search");
+  const shown = filterThsEmotionItems(st.items, mode);
+  const hidden = Math.max(0, st.items.length - shown.length);
   if (els.emotionSearchMeta) {
     const bits = [
       st.keyword ? `「${st.keyword}」` : "讨论搜索",
       thsEmotionSortLabel(st.sort),
+      thsUserFilterLabel(mode),
       `${st.maxPages} 页`,
       st.total && st.total !== st.count ? `${st.count}/${st.total}` : `${st.count || st.items.length}`,
       st.updatedAt || "-",
@@ -4756,6 +4866,14 @@ function paintThsEmotionSearch() {
       els.emotionSearchHint.textContent = "关键词可解析为股票后拉取该股讨论";
     } else if (!st.items.length) {
       els.emotionSearchHint.textContent = "暂无匹配结果，可换关键词";
+    } else if (!shown.length) {
+      els.emotionSearchHint.textContent = mode === "v"
+        ? "当前结果里没有认证号"
+        : "当前结果里没有普通用户帖，认证号已隐藏";
+    } else if (hidden > 0) {
+      els.emotionSearchHint.textContent = mode === "v"
+        ? `只显示认证号，已隐藏 ${hidden} 条`
+        : `已隐藏 ${hidden} 条认证号`;
     } else {
       els.emotionSearchHint.textContent = `关键词「${st.keyword}」`;
     }
@@ -4773,12 +4891,13 @@ function paintThsEmotionSearch() {
     els.emotionSearchList.innerHTML = `<p class="muted">输入关键词搜索讨论帖</p>`;
     return;
   }
-  els.emotionSearchList.innerHTML = renderThsEmotionPostList(st.items, "暂无匹配的讨论帖");
+  const emptyText = mode === "v" ? "暂无认证号讨论" : mode === "user" ? "暂无普通用户讨论" : "暂无匹配的讨论帖";
+  els.emotionSearchList.innerHTML = renderThsEmotionPostList(shown, emptyText);
 }
 
 function thsEmotionPostsQueryParams() {
   return {
-    sort: (els.emotionPostsSortThs?.value || "hot").trim(),
+    sort: (els.emotionPostsSortThs?.value || "time").trim(),
     maxPages: thsEmotionPagesParam(els.emotionPostsPages?.value, 3),
     withReplies: Boolean(els.emotionPostsReplies?.checked),
   };
@@ -4814,6 +4933,7 @@ function applyThsEmotionPack(pack = {}) {
   thsEmotionState.posts.count = Number(posts.count) || thsEmotionState.posts.items.length;
   thsEmotionState.posts.total = Number(posts.total) || thsEmotionState.posts.count;
   thsEmotionState.posts.error = posts.error || "";
+  thsEmotionState.posts.vote = posts.vote && typeof posts.vote === "object" ? posts.vote : null;
   thsEmotionState.posts.updatedAt = updatedAt;
   if (posts.sort) thsEmotionState.posts.sort = posts.sort;
 }
@@ -4892,12 +5012,14 @@ async function loadThsEmotionPosts() {
     thsEmotionState.posts.count = Number(data.count) || thsEmotionState.posts.items.length;
     thsEmotionState.posts.total = Number(data.total) || thsEmotionState.posts.count;
     thsEmotionState.posts.error = data.error || "";
+    thsEmotionState.posts.vote = data.vote && typeof data.vote === "object" ? data.vote : null;
     thsEmotionState.posts.updatedAt = new Date().toLocaleString("zh-CN", { hour12: false });
     if (els.emotionPostsBody) els.emotionPostsBody.scrollTop = 0;
   } catch (err) {
     thsEmotionState.posts.items = [];
     thsEmotionState.posts.count = 0;
     thsEmotionState.posts.total = 0;
+    thsEmotionState.posts.vote = null;
     thsEmotionState.posts.error = err.message || String(err);
   } finally {
     thsEmotionState.posts.loading = false;
@@ -4981,6 +5103,7 @@ async function loadThsEmotionAll() {
     thsEmotionState.scores.data = null;
     thsEmotionState.rank.data = null;
     thsEmotionState.posts.items = [];
+    thsEmotionState.posts.vote = null;
     thsEmotionState.scores.error = message;
     thsEmotionState.rank.error = message;
     thsEmotionState.posts.error = message;
@@ -5005,6 +5128,7 @@ function paintThsEmotionDetail() {
     const bits = [
       pack.published_at || "",
       pack.author || pack.media_name || "",
+      thsIdentityLabel(pack.identity_tag),
       pack.comment_count ? `评 ${pack.comment_count}` : "",
       pack.like_count ? `赞 ${pack.like_count}` : "",
       pack.forward_count ? `转 ${pack.forward_count}` : "",
@@ -5032,7 +5156,8 @@ function paintThsEmotionDetail() {
         : `<p class="muted">暂无正文</p>`;
     }
   }
-  const replies = Array.isArray(pack.replies) ? pack.replies : [];
+  const replyMode = thsDetailUserFilter();
+  const replies = filterThsReplies(pack.replies, replyMode);
   if (els.emotionDetailReplies) {
     els.emotionDetailReplies.hidden = !replies.length;
   }
