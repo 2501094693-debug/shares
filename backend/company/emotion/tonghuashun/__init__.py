@@ -73,7 +73,7 @@ def fetch_company(
     days: int | None = 3,
     max_pages: int = 3,
     with_replies: bool = False,
-    max_reply_posts: int = 5,
+    max_reply_posts: int = 0,
 ) -> dict[str, Any]:
     """个股一次拉齐：手机讨论流 + 讨论热度。"""
     posts = fetch_posts(

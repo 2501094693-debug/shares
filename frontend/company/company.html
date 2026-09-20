@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=holders-date-20260919" />
+  <link rel="stylesheet" href="/css/style.css?v=ths-emotion-ui-20260920h" />
   <link rel="stylesheet" href="/css/ai-page.css?v=chain-tab-20260919" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
@@ -657,6 +657,7 @@
                 <div id="emotionScoresContent" class="emotion-scores-content">
                   <p class="muted">正在加载…</p>
                 </div>
+                <div id="emotionThsVote" class="ths-vote-slot emotion-ths-only" hidden></div>
               </div>
             </section>
             <section class="company-section cninfo-hub emotion-hub" data-emotion="rank" aria-label="人气排名">
@@ -726,7 +727,7 @@
                       <option value="90">近 90 天</option>
                     </select>
                   </label>
-                  <label class="cninfo-field emotion-ths-only">
+                  <label class="cninfo-field emotion-ths-only emotion-ths-pages-field">
                     <span>页数</span>
                     <select id="emotionPostsPages" class="chart-select cninfo-select" aria-label="翻页数">
                       <option value="1">1 页</option>
@@ -883,25 +884,25 @@
                 </div>
               </div>
             </section>
+            <aside id="emotionDetail" class="emotion-detail hidden" aria-label="帖子详情" aria-hidden="true">
+              <header class="emotion-detail-head">
+                <h3 id="emotionDetailTitle">帖子详情</h3>
+                <div class="emotion-detail-actions">
+                  <a id="emotionDetailLink" class="btn ghost" href="#" target="_blank" rel="noopener noreferrer" hidden>原文</a>
+                  <button id="emotionDetailClose" class="btn ghost" type="button">关闭</button>
+                </div>
+              </header>
+              <p id="emotionDetailMeta" class="muted emotion-detail-meta"></p>
+              <div id="emotionDetailContent" class="emotion-detail-content">
+                <p class="muted">选择帖子查看正文</p>
+              </div>
+              <section id="emotionDetailReplies" class="emotion-detail-replies" hidden>
+                <h4 id="emotionDetailRepliesTitle">评论</h4>
+                <div id="emotionDetailRepliesList" class="news-list"></div>
+              </section>
+            </aside>
           </div>
         </div>
-        <aside id="emotionDetail" class="emotion-detail hidden" aria-label="帖子详情" aria-hidden="true">
-          <header class="emotion-detail-head">
-            <h3 id="emotionDetailTitle">帖子详情</h3>
-            <div class="emotion-detail-actions">
-              <a id="emotionDetailLink" class="btn ghost" href="#" target="_blank" rel="noopener noreferrer" hidden>原文</a>
-              <button id="emotionDetailClose" class="btn ghost" type="button">关闭</button>
-            </div>
-          </header>
-          <p id="emotionDetailMeta" class="muted emotion-detail-meta"></p>
-          <div id="emotionDetailContent" class="emotion-detail-content">
-            <p class="muted">选择帖子查看正文</p>
-          </div>
-          <section id="emotionDetailReplies" class="emotion-detail-replies" hidden>
-            <h4 id="emotionDetailRepliesTitle">评论</h4>
-            <div id="emotionDetailRepliesList" class="news-list"></div>
-          </section>
-        </aside>
       </div>
 
       <div id="panel-others" class="company-panel" data-panel="others" data-others-view="lhb" role="tabpanel" hidden>
@@ -1036,6 +1037,6 @@
   <script src="/js/shared/nav.js?v=nav-20260919"></script>
   <script src="/js/shared/ai-modes.js?v=chain-tab-20260919"></script>
   <script src="/js/shared/company-analysis.js?v=chain-tab-20260919"></script>
-  <script src="/js/company.js?v=holders-date-20260919"></script>
+  <script src="/js/company.js?v=ths-emotion-ui-20260920h"></script>
 </body>
 </html>

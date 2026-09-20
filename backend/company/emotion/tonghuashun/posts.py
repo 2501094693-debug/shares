@@ -300,7 +300,7 @@ def fetch_posts(
 
     items = _order_posts(dedupe(items), api_sort, via)
     if with_replies:
-        items = _attach_replies(items, raw_feeds=raw_feeds, max_posts=max_reply_posts)
+        items = _attach_replies(items, raw_feeds=raw_feeds, max_posts=max(max_reply_posts, len(items)))
 
     rank = forum.get("stock_rank") if isinstance(forum.get("stock_rank"), dict) else {}
     vote = _vote_from_forum(forum) if api_sort in {"time", "reply"} else None
@@ -392,7 +392,9 @@ def _attach_replies(
         pid = pid or safe_str(row.get("pid") or row.get("id") if isinstance(row, dict) else "")
         if pid:
             by_pid[pid] = row
-    budget = max(0, int(max_posts))
+    budget = int(max_posts)
+    if budget <= 0:
+        budget = len(items)
     attached = 0
     for item in items:
         if attached >= budget:
