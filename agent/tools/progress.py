@@ -53,6 +53,16 @@ AGENT_LABELS: dict[str, str] = {
     "ch_search": "定向检索上下游",
     "ch_analyze": "生成分析",
     "ch_save": "保存报告",
+    "rs_init": "解析公司",
+    "rs_fetch_em": "采集东财股吧",
+    "rs_fetch_ths": "采集同花顺讨论",
+    "rs_fetch_xq": "采集雪球讨论",
+    "rs_merge": "合并语料",
+    "rs_filter": "识别散户",
+    "rs_classify": "标注立场与行动",
+    "rs_agg": "按用户计数",
+    "rs_synth": "生成解读",
+    "rs_save": "保存报告",
 }
 
 PHASE_LABELS: dict[str, str] = {
@@ -104,6 +114,18 @@ BUFFETT_AGENTS = [
     "bf_save",
 ]
 CHAIN_AGENTS = ["ch_init", "ch_fetch", "ch_map", "ch_search", "ch_analyze", "ch_save"]
+RETAIL_AGENTS = [
+    "rs_init",
+    "rs_fetch_em",
+    "rs_fetch_ths",
+    "rs_fetch_xq",
+    "rs_merge",
+    "rs_filter",
+    "rs_classify",
+    "rs_agg",
+    "rs_synth",
+    "rs_save",
+]
 
 
 def normalize_node(node: str) -> str:
@@ -160,6 +182,10 @@ def init_buffett_analyst_agents() -> dict[str, dict[str, str]]:
 
 def init_chain_analyst_agents() -> dict[str, dict[str, str]]:
     return init_agents_state(CHAIN_AGENTS)
+
+
+def init_retail_sentiment_agents() -> dict[str, dict[str, str]]:
+    return init_agents_state(RETAIL_AGENTS)
 
 
 def report(

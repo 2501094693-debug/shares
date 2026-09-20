@@ -599,13 +599,15 @@ const xqEmotionState = {
   rank: { loading: false, data: null, items: [], count: 0, total: 0, market: "cn", error: "", updatedAt: "" },
   posts: {
     loading: false,
+    loadingMore: false,
     items: [],
     count: 0,
     total: 0,
     kind: "user",
     sort: "time",
     days: EMOTION_DEFAULT_DAYS,
-    maxPages: 3,
+    maxPages: 1,
+    hasMore: true,
     market: "cn",
     withReplies: false,
     error: "",
@@ -628,7 +630,7 @@ const xqEmotionState = {
 let newsGroup = normalizeNewsGroup(params.get("news") || "");
 let newsBootstrapped = { official: false, financials: false, other: false };
 let emotionBootstrapped = { eastmoney: false, tonghuashun: false, xueqiu: false };
-const ANALYSIS_PANELS = new Set(["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk"]);
+const ANALYSIS_PANELS = new Set(["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk", "sentiment"]);
 const EARNINGS_VIEWS = new Set(["bazhang", "buffett", "buffett-rules"]);
 const EARNINGS_FAMILY = new Set(["earnings", "财报简述", ...EARNINGS_VIEWS]);
 let lastEarningsView = "bazhang";
@@ -672,6 +674,10 @@ function isThsEmotion(source = emotionSource) {
 
 function isXqEmotion(source = emotionSource) {
   return source === "xueqiu";
+}
+
+function isEmEmotion(source = emotionSource) {
+  return normalizeEmotionSource(source) === "eastmoney";
 }
 
 function activeEmotionState(source = emotionSource) {
@@ -2684,9 +2690,12 @@ function syncEmotionSourceUi() {
   if (isThsEmotion(source)) {
     setEmotionDetailOpen(Boolean(thsEmotionState.detail.postId));
     paintThsEmotionDetail();
+  } else if (isXqEmotion(source)) {
+    setEmotionDetailOpen(Boolean(xqEmotionState.detail?.postId));
+    paintXqEmotionDetail();
   } else {
-    const st = isXqEmotion(source) ? xqEmotionState.detail : emotionState.detail;
-    setEmotionDetailOpen(Boolean(st?.postId));
+    setEmotionDetailOpen(Boolean(emotionState.detail?.postId));
+    paintEmotionDetail();
   }
   syncEmotionHubLayout();
 }
@@ -2806,27 +2815,35 @@ function renderEmotionScores(data) {
 
 function renderEmotionRankList(data) {
   const items = Array.isArray(data?.items) ? data.items : [];
+  const currentRank = data?.rank;
+  const hero = currentRank
+    ? `<div class="em-rank-now">
+         <span>当前人气</span>
+         <strong>${escapeHtml(String(currentRank))}</strong>
+         <em>名</em>
+       </div>`
+    : "";
   if (!items.length) {
-    return `<p class="muted">${escapeHtml(data?.error || "暂无人气排名数据")}</p>`;
+    return `${hero}<p class="muted">${escapeHtml(data?.error || "暂无人气排名数据")}</p>`;
   }
-  return items
+  const rows = [...items]
+    .reverse()
     .map((item) => {
-      const title = escapeHtml(item.title || `排名 ${item.rank || "-"}`);
+      const rnk = item.rank != null && item.rank !== "" ? String(item.rank) : "-";
+      const day = String(item.published_at || "").slice(0, 10);
       const url = String(item.url || "").trim();
-      const titleHtml = url
-        ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${title}</a>`
-        : `<span>${title}</span>`;
+      const place = url
+        ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(rnk)}</a>`
+        : escapeHtml(rnk);
       return `
-        <article class="news-item">
-          <div class="news-item-meta">
-            <time>${escapeHtml(item.published_at || "-")}</time>
-            <span>人气</span>
-          </div>
-          <h3>${titleHtml}</h3>
+        <article class="em-rank-row">
+          <time>${escapeHtml(day || "-")}</time>
+          <span class="em-rank-place">${place}</span>
         </article>
       `;
     })
     .join("");
+  return `${hero}<div class="em-rank-rows">${rows}</div>`;
 }
 
 function paintEmotionScores() {
@@ -2923,6 +2940,7 @@ function paintEmotionPosts() {
     return;
   }
   els.emotionPostsList.innerHTML = renderEmotionPostList(st.items, "暂无匹配的股吧帖子");
+  syncEmPostSelection();
 }
 
 function paintEmotionSearch() {
@@ -4352,12 +4370,33 @@ function setupCompanyListBox() {
   }
 }
 
+function syncEmPostSelection() {
+  const pid = String(emotionState.detail.postId || "").trim();
+  els.emotionPostsList?.querySelectorAll(".emotion-post-item[data-post-id]").forEach((el) => {
+    el.classList.toggle("is-active", Boolean(pid) && el.getAttribute("data-post-id") === pid);
+  });
+}
+
 function paintEmotionDetail() {
   if (isXqEmotion()) return paintXqEmotionDetail();
   if (isThsEmotion()) return paintThsEmotionDetail();
   const st = emotionState.detail;
   const pack = st.pack || {};
   if (!els.emotionDetail) return;
+  const empty = !st.postId && !st.loading;
+  els.emotionDetail.classList.toggle("is-empty", empty);
+  if (empty) {
+    if (els.emotionDetailTitle) els.emotionDetailTitle.textContent = "帖子详情";
+    if (els.emotionDetailMeta) els.emotionDetailMeta.textContent = "点击股吧帖子查看正文和评论";
+    if (els.emotionDetailLink) els.emotionDetailLink.hidden = true;
+    if (els.emotionDetailContent) {
+      els.emotionDetailContent.innerHTML = `<p class="muted">从中间点开一条帖子，这里会显示全文和评论。</p>`;
+    }
+    if (els.emotionDetailReplies) els.emotionDetailReplies.hidden = true;
+    if (els.emotionDetailRepliesList) els.emotionDetailRepliesList.innerHTML = "";
+    syncEmPostSelection();
+    return;
+  }
   if (els.emotionDetailTitle) {
     els.emotionDetailTitle.textContent = pack.title || "帖子详情";
   }
@@ -4407,16 +4446,19 @@ function paintEmotionDetail() {
       els.emotionDetailRepliesList.innerHTML = renderEmotionReplyList(replies);
     }
   }
+  syncEmPostSelection();
 }
 
 function setEmotionDetailOpen(open) {
   if (!els.emotionDetail) return;
-  if (isThsEmotion()) {
+  if (isThsEmotion() || isEmEmotion() || isXqEmotion()) {
     els.emotionDetail.classList.remove("hidden");
     els.emotionDetail.classList.toggle("is-empty", !open);
     els.emotionDetail.setAttribute("aria-hidden", "false");
     document.body.classList.remove("emotion-detail-open");
-    syncThsPostSelection();
+    if (isThsEmotion()) syncThsPostSelection();
+    else if (isEmEmotion()) syncEmPostSelection();
+    else syncXqPostSelection();
     return;
   }
   els.emotionDetail.classList.remove("is-empty");
@@ -4464,6 +4506,7 @@ function closeEmotionDetail() {
   emotionState.detail.pack = null;
   emotionState.detail.error = "";
   setEmotionDetailOpen(false);
+  paintEmotionDetail();
 }
 
 function emotionOpenEls() {
@@ -4487,6 +4530,43 @@ function syncEmotionHubLayout() {
   if (!n) {
     open.style.gridTemplateRows = "";
     open.style.gridTemplateColumns = "";
+    return;
+  }
+  if (isEmEmotion() && n === 2) {
+    const stacked = window.matchMedia("(max-width: 1100px)").matches;
+    const rank = hubs.find((hub) => hub.getAttribute("data-emotion") === "rank") || hubs[0];
+    const posts = hubs.find((hub) => hub.getAttribute("data-emotion") === "posts") || hubs[1];
+    if (stacked) {
+      open.style.gridTemplateColumns = "minmax(0, 1fr)";
+      open.style.gridTemplateRows = "minmax(220px, 0.42fr) minmax(280px, 1fr) minmax(280px, 1fr)";
+      if (rank) {
+        rank.style.gridColumn = "1";
+        rank.style.gridRow = "1";
+      }
+      if (posts) {
+        posts.style.gridColumn = "1";
+        posts.style.gridRow = "2";
+      }
+      if (els.emotionDetail) {
+        els.emotionDetail.style.gridColumn = "1";
+        els.emotionDetail.style.gridRow = "3";
+      }
+    } else {
+      open.style.gridTemplateColumns = "minmax(220px, 280px) minmax(0, 1.2fr) minmax(320px, 1fr)";
+      open.style.gridTemplateRows = "minmax(0, 1fr)";
+      if (rank) {
+        rank.style.gridColumn = "1";
+        rank.style.gridRow = "1";
+      }
+      if (posts) {
+        posts.style.gridColumn = "2";
+        posts.style.gridRow = "1";
+      }
+      if (els.emotionDetail) {
+        els.emotionDetail.style.gridColumn = "3";
+        els.emotionDetail.style.gridRow = "1";
+      }
+    }
     return;
   }
   if (isThsEmotion() && n === 2) {
@@ -4522,6 +4602,43 @@ function syncEmotionHubLayout() {
       if (els.emotionDetail) {
         els.emotionDetail.style.gridColumn = "2";
         els.emotionDetail.style.gridRow = "2";
+      }
+    }
+    return;
+  }
+  if (isXqEmotion() && n === 2) {
+    const stacked = window.matchMedia("(max-width: 1100px)").matches;
+    const scores = hubs.find((hub) => hub.getAttribute("data-emotion") === "scores") || hubs[0];
+    const posts = hubs.find((hub) => hub.getAttribute("data-emotion") === "posts") || hubs[1];
+    if (stacked) {
+      open.style.gridTemplateColumns = "minmax(0, 1fr)";
+      open.style.gridTemplateRows = "minmax(220px, 0.42fr) minmax(280px, 1fr) minmax(280px, 1fr)";
+      if (scores) {
+        scores.style.gridColumn = "1";
+        scores.style.gridRow = "1";
+      }
+      if (posts) {
+        posts.style.gridColumn = "1";
+        posts.style.gridRow = "2";
+      }
+      if (els.emotionDetail) {
+        els.emotionDetail.style.gridColumn = "1";
+        els.emotionDetail.style.gridRow = "3";
+      }
+    } else {
+      open.style.gridTemplateColumns = "minmax(240px, 300px) minmax(0, 1.15fr) minmax(340px, 1fr)";
+      open.style.gridTemplateRows = "minmax(0, 1fr)";
+      if (scores) {
+        scores.style.gridColumn = "1";
+        scores.style.gridRow = "1";
+      }
+      if (posts) {
+        posts.style.gridColumn = "2";
+        posts.style.gridRow = "1";
+      }
+      if (els.emotionDetail) {
+        els.emotionDetail.style.gridColumn = "3";
+        els.emotionDetail.style.gridRow = "1";
       }
     }
     return;
@@ -4567,6 +4684,7 @@ function setupEmotionBox() {
     "scroll",
     () => {
       if (isThsEmotion()) maybeLoadThsEmotionMore();
+      if (isXqEmotion()) maybeLoadXqEmotionMore();
     },
     { passive: true }
   );
@@ -5098,67 +5216,55 @@ function xqEmotionPagesParam(value, fallback = 3) {
 function renderXqEmotionScores(data) {
   if (!data) return `<p class="muted">暂无社区快照</p>`;
   const item = Array.isArray(data.items) && data.items.length ? data.items[0] : data;
-  const metrics = [
-    ["关注人数", item.follower_count != null ? displayValue(item.follower_count) : ""],
-    ["现价", item.price],
-    ["涨跌幅", item.change_pct != null ? `${item.change_pct}%` : ""],
-    ["换手率", item.turnover_rate != null ? `${item.turnover_rate}%` : ""],
-    ["市值", item.market_capital],
-    ["成交量", item.volume],
-  ].filter(([, value]) => value != null && value !== "" && value !== "-");
+  const followers = item.follower_count != null ? item.follower_count : data.follower_count;
+  const followerText = followers != null && followers !== "" ? displayValue(followers) : "";
   const hotUsers = Array.isArray(data.hot_users) ? data.hot_users : [];
-  const popstocks = Array.isArray(data.popstocks) ? data.popstocks : [];
-  let html = "";
-  if (metrics.length) {
+  const pageUrl = String(item.url || data.page || "").trim();
+  const stockName = escapeHtml(data.name || item.name || stockDisplayName || code || "");
+  let html = `<div class="xq-snap">`;
+  if (followerText) {
     html += `
-      <div class="emotion-scores-grid">
-        ${metrics
-          .map(
-            ([label, value]) => `
-              <div class="emotion-score-metric">
-                <span class="emotion-score-label">${escapeHtml(label)}</span>
-                <strong class="emotion-score-value">${escapeHtml(displayValue(value))}</strong>
-              </div>
-            `
-          )
-          .join("")}
+      <div class="xq-snap-hero">
+        <span class="xq-snap-kicker">关注人数</span>
+        <strong class="xq-snap-count">${escapeHtml(followerText)}</strong>
+        <p class="xq-snap-name">${stockName}</p>
+        ${
+          pageUrl
+            ? `<a class="xq-snap-link" href="${escapeHtml(pageUrl)}" target="_blank" rel="noopener noreferrer">打开雪球</a>`
+            : ""
+        }
       </div>`;
   }
   if (hotUsers.length) {
-    html += `<div class="emotion-xq-subsection"><h4 class="emotion-xq-subtitle">热门讨论用户</h4><ul class="emotion-xq-mini-list">`;
+    html += `<div class="xq-snap-users"><h4 class="xq-snap-subtitle">热门讨论用户</h4><ul class="xq-snap-user-list">`;
     html += hotUsers
-      .slice(0, 6)
       .map((user) => {
         const name = escapeHtml(user.author || user.media_name || user.title || "-");
         const url = String(user.url || "").trim();
-        const fans = user.followers_count ? ` · 粉丝 ${displayValue(user.followers_count)}` : "";
+        const fans = user.followers_count != null && user.followers_count !== ""
+          ? `粉丝 ${displayValue(user.followers_count)}`
+          : "";
+        const intro = escapeHtml(truncateText(user.summary || user.content || "", 72));
+        const verified = user.verified
+          ? `<span class="xq-snap-verified" title="认证">V</span>`
+          : "";
+        const inner = `
+          <span class="xq-snap-user-head">
+            <span class="xq-snap-user-name">${name}${verified}</span>
+            ${fans ? `<span class="xq-snap-user-fans">${escapeHtml(fans)}</span>` : ""}
+          </span>
+          ${intro ? `<p class="xq-snap-user-intro">${intro}</p>` : ""}`;
         return url
-          ? `<li><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${name}${escapeHtml(fans)}</a></li>`
-          : `<li>${name}${escapeHtml(fans)}</li>`;
+          ? `<li><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${inner}</a></li>`
+          : `<li>${inner}</li>`;
       })
       .join("");
     html += `</ul></div>`;
   }
-  if (popstocks.length) {
-    html += `<div class="emotion-xq-subsection"><h4 class="emotion-xq-subtitle">粉丝同时关注</h4><ul class="emotion-xq-mini-list">`;
-    html += popstocks
-      .slice(0, 6)
-      .map((stock) => {
-        const title = escapeHtml(stock.title || stock.name || stock.code || "-");
-        const url = String(stock.url || "").trim();
-        const change =
-          stock.change_pct != null ? ` · ${Number(stock.change_pct) > 0 ? "+" : ""}${stock.change_pct}%` : "";
-        return url
-          ? `<li><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${title}${escapeHtml(change)}</a></li>`
-          : `<li>${title}${escapeHtml(change)}</li>`;
-      })
-      .join("");
-    html += `</ul></div>`;
-  }
-  if (!html) {
+  html += `</div>`;
+  if (!followerText && !hotUsers.length) {
     return `<p class="muted">${escapeHtml(data.title || data.error || "暂无社区快照")}</p>`;
   }
-  html += `<p class="muted emotion-score-foot">${escapeHtml(item.published_at || data.trade_date || data.title || "")}</p>`;
   return html;
 }
 
@@ -5233,7 +5339,7 @@ function xqEmotionPostsQueryParams() {
     kind: (document.getElementById("emotionPostsKindXq")?.value || "user").trim(),
     sort: (document.getElementById("emotionPostsSortXq")?.value || "time").trim(),
     days: emotionDaysParam(document.getElementById("emotionPostsDaysXq")?.value),
-    maxPages: xqEmotionPagesParam(document.getElementById("emotionPostsPagesXq")?.value, 3),
+    maxPages: xqEmotionState.posts.maxPages || 1,
     market: (document.getElementById("emotionPostsMarketXq")?.value || "cn").trim(),
     withReplies: Boolean(els.emotionPostsReplies?.checked),
   };
@@ -5272,6 +5378,7 @@ function applyXqEmotionPack(pack = {}) {
   xqEmotionState.posts.total = Number(posts.total) || xqEmotionState.posts.count;
   xqEmotionState.posts.error = posts.error || "";
   xqEmotionState.posts.updatedAt = updatedAt;
+  xqEmotionState.posts.hasMore = xqEmotionState.posts.items.length > 0 && xqEmotionState.posts.maxPages < 20;
   if (posts.kind) xqEmotionState.posts.kind = posts.kind;
   if (posts.sort) xqEmotionState.posts.sort = posts.sort;
 }
@@ -5279,13 +5386,11 @@ function applyXqEmotionPack(pack = {}) {
 function paintXqEmotionScores() {
   const st = xqEmotionState.scores;
   if (els.emotionScoresMeta) {
-    const bits = ["社区快照", st.data?.name || stockDisplayName || code, st.updatedAt || "-"].filter(Boolean);
-    els.emotionScoresMeta.textContent = st.loading ? "正在加载社区快照…" : bits.join(" · ");
+    const bits = [st.data?.name || stockDisplayName || code, st.updatedAt || "-"].filter(Boolean);
+    els.emotionScoresMeta.textContent = st.loading ? "正在加载…" : bits.join(" · ");
   }
   if (els.emotionScoresHint) {
-    els.emotionScoresHint.textContent = st.loading
-      ? "正在从雪球拉取社区快照…"
-      : st.error || (st.data ? st.data.title || "" : "暂无社区快照");
+    els.emotionScoresHint.textContent = st.loading ? "正在从雪球拉取社区快照…" : st.error || "";
   }
   if (!els.emotionScoresContent) return;
   if (st.loading && !st.data) {
@@ -5336,25 +5441,25 @@ function paintXqEmotionPosts() {
       xqEmotionKindLabel(st.kind),
       xqEmotionSortLabel(st.sort),
       emotionDaysLabel(st.days),
-      `${st.maxPages} 页`,
-      st.total && st.total !== st.count ? `${st.count}/${st.total}` : `${st.count || st.items.length}`,
+      `${st.count || st.items.length} 条`,
+      st.hasMore ? "滚动加载" : st.items.length ? "已全部加载" : "",
       st.updatedAt || "-",
     ].filter(Boolean);
-    els.emotionPostsMeta.textContent = st.loading ? "正在查询讨论帖…" : bits.join(" · ");
+    els.emotionPostsMeta.textContent = st.loading && !st.items.length ? "正在查询讨论帖…" : bits.join(" · ");
   }
   if (els.emotionPostsHint) {
-    if (st.loading) {
+    if (st.loading && !st.items.length) {
       els.emotionPostsHint.textContent = "正在从雪球拉取讨论帖…";
-    } else if (st.error) {
+    } else if (st.error && !st.items.length) {
       els.emotionPostsHint.textContent = st.error;
     } else if (!st.items.length) {
       els.emotionPostsHint.textContent = "暂无讨论帖，可换来源、排序或拉长区间";
-    } else if (st.total > st.count) {
-      els.emotionPostsHint.textContent = `已显示 ${st.count} / 共 ${st.total} 条`;
+    } else if (st.loadingMore) {
+      els.emotionPostsHint.textContent = "正在加载更多讨论帖…";
+    } else if (st.hasMore) {
+      els.emotionPostsHint.textContent = "向下滚动自动加载更多；点击标题查看正文与评论";
     } else {
-      els.emotionPostsHint.textContent = st.withReplies
-        ? "已附带部分帖子评论"
-        : "点击标题查看正文与评论";
+      els.emotionPostsHint.textContent = `已加载 ${st.count || st.items.length} 条，点击标题查看正文与评论`;
     }
   }
   if (!els.emotionPostsList) return;
@@ -5366,7 +5471,15 @@ function paintXqEmotionPosts() {
     els.emotionPostsList.innerHTML = `<p class="news-error">${escapeHtml(st.error)}</p>`;
     return;
   }
-  els.emotionPostsList.innerHTML = renderXqEmotionPostList(st.items, "暂无匹配的雪球讨论帖");
+  const foot = st.loadingMore
+    ? `<p class="muted xq-load-more">正在加载更多…</p>`
+    : st.hasMore
+      ? `<p class="muted xq-load-more">滚动加载更多</p>`
+      : st.items.length
+        ? `<p class="muted xq-load-more">已加载全部</p>`
+        : "";
+  els.emotionPostsList.innerHTML = `${renderXqEmotionPostList(st.items, "暂无匹配的雪球讨论帖")}${foot}`;
+  syncXqPostSelection();
 }
 
 function paintXqEmotionSearch() {
@@ -5463,19 +5576,34 @@ async function loadXqEmotionRank() {
   }
 }
 
-async function loadXqEmotionPosts() {
-  if (!code || xqEmotionState.posts.loading) return;
+async function loadXqEmotionPosts({ more = false } = {}) {
+  if (!code) return;
+  const st = xqEmotionState.posts;
+  if (more) {
+    if (st.loading || st.loadingMore || !st.hasMore) return;
+  } else if (st.loading) {
+    return;
+  }
+  if (!more) {
+    st.maxPages = 1;
+    st.hasMore = true;
+  } else {
+    st.maxPages = Math.min(20, (Number(st.maxPages) || 1) + 1);
+  }
   const query = xqEmotionPostsQueryParams();
-  xqEmotionState.posts.loading = true;
-  xqEmotionState.posts.error = "";
-  xqEmotionState.posts.kind = query.kind;
-  xqEmotionState.posts.sort = query.sort;
-  xqEmotionState.posts.days = query.days;
-  xqEmotionState.posts.maxPages = query.maxPages;
-  xqEmotionState.posts.market = query.market;
-  xqEmotionState.posts.withReplies = query.withReplies;
-  if (els.emotionPostsQueryBtn) els.emotionPostsQueryBtn.disabled = true;
+  query.maxPages = st.maxPages;
+  if (more) st.loadingMore = true;
+  else st.loading = true;
+  st.error = "";
+  st.kind = query.kind;
+  st.sort = query.sort;
+  st.days = query.days;
+  st.market = query.market;
+  st.withReplies = query.withReplies;
+  if (!more && els.emotionPostsQueryBtn) els.emotionPostsQueryBtn.disabled = true;
   paintXqEmotionPosts();
+  const prevCount = more ? st.items.length : 0;
+  const prevTop = els.emotionPostsBody?.scrollTop || 0;
   const qs = emotionApiQuery({
     channel: "posts",
     kind: query.kind,
@@ -5488,22 +5616,41 @@ async function loadXqEmotionPosts() {
   try {
     const json = await api(`/api/stocks/emotion?${qs.toString()}`);
     const data = json.data || {};
-    xqEmotionState.posts.items = Array.isArray(data.items) ? data.items : [];
-    xqEmotionState.posts.count = Number(data.count) || xqEmotionState.posts.items.length;
-    xqEmotionState.posts.total = Number(data.total) || xqEmotionState.posts.count;
-    xqEmotionState.posts.error = data.error || "";
-    xqEmotionState.posts.updatedAt = new Date().toLocaleString("zh-CN", { hour12: false });
-    if (els.emotionPostsBody) els.emotionPostsBody.scrollTop = 0;
+    const items = Array.isArray(data.items) ? data.items : [];
+    st.items = items;
+    st.count = Number(data.count) || items.length;
+    st.total = Number(data.total) || st.count;
+    st.error = data.error || "";
+    st.updatedAt = new Date().toLocaleString("zh-CN", { hour12: false });
+    st.hasMore = items.length > prevCount && st.maxPages < 20;
+    if (els.emotionPostsBody) els.emotionPostsBody.scrollTop = more ? prevTop : 0;
   } catch (err) {
-    xqEmotionState.posts.items = [];
-    xqEmotionState.posts.count = 0;
-    xqEmotionState.posts.total = 0;
-    xqEmotionState.posts.error = err.message || String(err);
+    if (!more) {
+      st.items = [];
+      st.count = 0;
+      st.total = 0;
+    }
+    st.hasMore = false;
+    st.error = err.message || String(err);
   } finally {
-    xqEmotionState.posts.loading = false;
+    st.loading = false;
+    st.loadingMore = false;
     if (els.emotionPostsQueryBtn) els.emotionPostsQueryBtn.disabled = false;
     paintXqEmotionPosts();
+    if (more && els.emotionPostsBody) els.emotionPostsBody.scrollTop = prevTop;
+    window.requestAnimationFrame(() => maybeLoadXqEmotionMore());
   }
+}
+
+function maybeLoadXqEmotionMore() {
+  if (!isXqEmotion()) return;
+  const st = xqEmotionState.posts;
+  const body = els.emotionPostsBody;
+  if (!body || st.loading || st.loadingMore || !st.hasMore || !st.items.length) return;
+  if (!body.clientHeight) return;
+  const remain = body.scrollHeight - body.scrollTop - body.clientHeight;
+  if (remain > 160) return;
+  loadXqEmotionPosts({ more: true });
 }
 
 async function loadXqEmotionSearch() {
@@ -5552,6 +5699,8 @@ async function loadXqEmotionSearch() {
 
 async function loadXqEmotionAll() {
   if (!code) return;
+  xqEmotionState.posts.maxPages = 1;
+  xqEmotionState.posts.hasMore = true;
   const query = xqEmotionPostsQueryParams();
   xqEmotionState.scores.loading = true;
   xqEmotionState.rank.loading = true;
@@ -5599,13 +5748,35 @@ async function loadXqEmotionAll() {
     paintXqEmotionScores();
     paintXqEmotionRank();
     paintXqEmotionPosts();
+    window.requestAnimationFrame(() => maybeLoadXqEmotionMore());
   }
+}
+
+function syncXqPostSelection() {
+  const pid = String(xqEmotionState.detail.postId || "").trim();
+  els.emotionPostsList?.querySelectorAll(".xq-emotion-post-item[data-post-id]").forEach((el) => {
+    el.classList.toggle("is-active", Boolean(pid) && el.getAttribute("data-post-id") === pid);
+  });
 }
 
 function paintXqEmotionDetail() {
   const st = xqEmotionState.detail;
   const pack = st.pack || {};
   if (!els.emotionDetail) return;
+  const empty = !st.postId && !st.loading;
+  els.emotionDetail.classList.toggle("is-empty", empty);
+  if (empty) {
+    if (els.emotionDetailTitle) els.emotionDetailTitle.textContent = "帖子详情";
+    if (els.emotionDetailMeta) els.emotionDetailMeta.textContent = "点击讨论帖查看正文和评论";
+    if (els.emotionDetailLink) els.emotionDetailLink.hidden = true;
+    if (els.emotionDetailContent) {
+      els.emotionDetailContent.innerHTML = `<p class="muted">从中间点开一条讨论帖，这里会显示全文和评论。</p>`;
+    }
+    if (els.emotionDetailReplies) els.emotionDetailReplies.hidden = true;
+    if (els.emotionDetailRepliesList) els.emotionDetailRepliesList.innerHTML = "";
+    syncXqPostSelection();
+    return;
+  }
   if (els.emotionDetailTitle) {
     els.emotionDetailTitle.textContent = pack.title || "帖子详情";
   }
@@ -5656,6 +5827,7 @@ function paintXqEmotionDetail() {
       els.emotionDetailRepliesList.innerHTML = renderEmotionReplyList(replies);
     }
   }
+  syncXqPostSelection();
 }
 
 async function openXqEmotionDetail(postId) {

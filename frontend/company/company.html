@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=ths-emotion-ui-20260920h" />
-  <link rel="stylesheet" href="/css/ai-page.css?v=chain-tab-20260919" />
+  <link rel="stylesheet" href="/css/style.css?v=xq-emotion-scroll-20260920b" />
+  <link rel="stylesheet" href="/css/ai-page.css?v=sentiment-20260920" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
@@ -52,6 +52,7 @@
             <button type="button" class="emotion-source-btn" data-source="competition" aria-selected="false">行业竞争</button>
             <button type="button" class="emotion-source-btn" data-source="chain" aria-selected="false">产业分析</button>
             <button type="button" class="emotion-source-btn" data-source="risk" aria-selected="false">风险评估</button>
+            <button type="button" class="emotion-source-btn" data-source="sentiment" aria-selected="false">情绪分析</button>
           </nav>
           <nav id="earningsSourceBar" class="emotion-source-bar judgment-source-bar judgment-sub-bar" aria-label="财报简述视角" hidden>
             <button type="button" class="emotion-source-btn is-active" data-source="bazhang" aria-selected="true">张新民视角</button>
@@ -762,7 +763,7 @@
                       <option value="90">近 90 天</option>
                     </select>
                   </label>
-                  <label class="cninfo-field emotion-xq-only">
+                  <label class="cninfo-field emotion-xq-only emotion-xq-pages-field">
                     <span>页数</span>
                     <select id="emotionPostsPagesXq" class="chart-select cninfo-select" aria-label="翻页数">
                       <option value="1">1 页</option>
@@ -771,7 +772,7 @@
                       <option value="10">10 页</option>
                     </select>
                   </label>
-                  <label class="cninfo-field emotion-xq-only">
+                  <label class="cninfo-field emotion-xq-only emotion-xq-market-field">
                     <span>热股市场</span>
                     <select id="emotionPostsMarketXq" class="chart-select cninfo-select" aria-label="热股市场">
                       <option value="cn" selected>沪深</option>
@@ -1035,8 +1036,8 @@
   <script src="/js/shared/orbit-http.js?v=holders-date-20260919"></script>
   <script src="/js/shared/orbit-prefetch.js?v=holders-date-20260919"></script>
   <script src="/js/shared/nav.js?v=nav-20260919"></script>
-  <script src="/js/shared/ai-modes.js?v=chain-tab-20260919"></script>
-  <script src="/js/shared/company-analysis.js?v=chain-tab-20260919"></script>
-  <script src="/js/company.js?v=ths-emotion-ui-20260920h"></script>
+  <script src="/js/shared/ai-modes.js?v=sentiment-20260920b"></script>
+  <script src="/js/shared/company-analysis.js?v=sentiment-20260920b"></script>
+  <script src="/js/company.js?v=sentiment-20260920b"></script>
 </body>
 </html>

@@ -366,9 +366,76 @@ window.AI_MODES = {
       return `${company} · 巴菲特规则引擎`;
     },
   },
+
+  sentiment: {
+    id: "sentiment",
+    label: "情绪分析",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "发声散户情绪",
+    subtitle: "东财股吧 / 同花顺讨论 / 雪球 · 按用户去重 · 看多看空与买卖观望",
+    startBtn: "生成分析",
+    historyHead: "历史报告",
+    reportTitle: "发声散户情绪",
+    reportMetaDefault: "选择历史报告或生成新的",
+    historyMeta: "历史报告",
+    emptyReports: "暂无历史报告",
+    resumeFail: "恢复情绪分析任务失败",
+    apiRoot: "/api/ai/retail-sentiment",
+    jobStoreKey: "orbit.retailSentiment.activeJob",
+    reportNameRe: /发声散户情绪/,
+    agentDefs: [
+      { id: "rs_init", name: "解析公司", subtitle: "识别代码与名称" },
+      { id: "rs_fetch_em", name: "采集东财股吧", subtitle: "帖子 + 千股千评" },
+      { id: "rs_fetch_ths", name: "采集同花顺", subtitle: "手机讨论流" },
+      { id: "rs_fetch_xq", name: "采集雪球", subtitle: "讨论帖" },
+      { id: "rs_merge", name: "合并语料", subtitle: "三源统一字段" },
+      { id: "rs_filter", name: "识别散户", subtitle: "剔除官号 / 研报 / KOL" },
+      { id: "rs_classify", name: "标注立场", subtitle: "规则词典 + 模型补判" },
+      { id: "rs_agg", name: "按用户计数", subtitle: "一人一票" },
+      { id: "rs_synth", name: "生成解读", subtitle: "样本情绪，不是成交" },
+      { id: "rs_save", name: "保存报告", subtitle: "写入 Markdown" },
+    ],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">◎</div>
+        <h3>先看谁在说话</h3>
+        <p>采集东方财富股吧、同花顺讨论、雪球近三日评论，过滤媒体与认证号后按用户去重，估计发声散户的看多/看空与买入/卖出/观望。这是评论样本，不是真实持仓。</p>
+        <ul class="ai-empty-tips">
+          <li>散户人数 = 去重用户，不是帖子条数</li>
+          <li>买入/卖出是文本意图</li>
+          <li>三源分列，跨平台不对齐真人</li>
+          <li>对照千股千评，不当真相</li>
+        </ul>
+      </div>`,
+    resultTitle(result) {
+      const n = result.metrics?.n_retail_users;
+      const tail = Number.isFinite(Number(n)) ? ` · ${n} 人发声` : "";
+      return `${result.stock_name || ""} 发声散户情绪${tail}`.trim();
+    },
+    resultMeta(result) {
+      const m = result.metrics || {};
+      return [
+        result.stock_code ? `代码 ${result.stock_code}` : "",
+        Number.isFinite(Number(m.n_retail_users)) ? `散户 ${m.n_retail_users}` : "",
+        Number.isFinite(Number(m.buy_users)) ? `买 ${m.buy_users} / 卖 ${m.sell_users} / 观望 ${m.wait_users}` : "",
+        result.report_path ? "已保存" : "",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 发声散户情绪`;
+    },
+    startQuery(company) {
+      return {
+        company,
+        days: "3",
+        max_pages: "3",
+        replies: "1",
+      };
+    },
+  },
 };
 
-window.AI_MODE_ORDER = ["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk"];
+window.AI_MODE_ORDER = ["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk", "sentiment"];
 
 window.AI_MODE_ALIASES = {
   business: "business",
@@ -397,4 +464,9 @@ window.AI_MODE_ALIASES = {
   engine: "buffett-rules",
   "规则引擎": "buffett-rules",
   "巴菲特规则引擎": "buffett-rules",
+  sentiment: "sentiment",
+  retail: "sentiment",
+  "retail-sentiment": "sentiment",
+  "情绪分析": "sentiment",
+  "散户情绪": "sentiment",
 };

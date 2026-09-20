@@ -1,6 +1,6 @@
 (() => {
   const MODES = window.AI_MODES || {};
-  const MODE_ORDER = window.AI_MODE_ORDER || ["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk"];
+  const MODE_ORDER = window.AI_MODE_ORDER || ["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk", "sentiment"];
   const EARNINGS_VIEWS = new Set(["bazhang", "buffett", "buffett-rules"]);
 
   const STATUS_LABELS = {
@@ -241,7 +241,46 @@
     const label = statusMap[job.status] || job.status;
     const stock = job.stock?.code ? ` · ${job.stock.code}` : "";
     const industry = job.result?.industry_name ? ` · ${job.result.industry_name}` : "";
-    return `${label} · ${job.company}${stock}${industry}`;
+    const m = job.result?.metrics || {};
+    const sentiment = Number.isFinite(Number(m.n_retail_users))
+      ? ` · 散户 ${m.n_retail_users} · 买${m.buy_users ?? 0}/卖${m.sell_users ?? 0}/观望${m.wait_users ?? 0}`
+      : "";
+    return `${label} · ${job.company}${stock}${industry}${sentiment}`;
+  }
+
+  function pctLabel(value) {
+    if (value == null || !Number.isFinite(Number(value))) return "—";
+    return `${Math.round(Number(value) * 100)}%`;
+  }
+
+  function sentimentMetricsHtml(result) {
+    const m = result?.metrics;
+    if (!m || !Number.isFinite(Number(m.n_retail_users))) return "";
+    const by = m.by_source || {};
+    const sourceBits = [
+      ["eastmoney", "东财"],
+      ["tonghuashun", "同花顺"],
+      ["xueqiu", "雪球"],
+    ].map(([key, title]) => {
+      const block = by[key] || {};
+      const n = Number(block.n_retail_users);
+      return Number.isFinite(n) ? `${title}${n}` : "";
+    }).filter(Boolean).join(" / ");
+    const kpis = [
+      ["发声散户", String(m.n_retail_users ?? "—")],
+      ["看多", `${m.bull_users ?? 0}（${pctLabel(m.bull_share)}）`],
+      ["看空", `${m.bear_users ?? 0}（${pctLabel(m.bear_share)}）`],
+      ["买入", String(m.buy_users ?? 0)],
+      ["卖出", String(m.sell_users ?? 0)],
+      ["观望", String(m.wait_users ?? 0)],
+    ];
+    const kpiHtml = kpis.map(([label, value]) => (
+      `<div class="engine-kpi sentiment-kpi"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`
+    )).join("");
+    const note = sourceBits
+      ? `<p class="muted sentiment-source-note">分源人数：${esc(sourceBits)}（跨平台可能重复；文本意图 ≠ 成交）</p>`
+      : `<p class="muted sentiment-source-note">文本意图 ≠ 成交；跨平台不对齐真人账号</p>`;
+    return `<div class="sentiment-metrics"><div class="engine-kpis">${kpiHtml}</div>${note}</div>`;
   }
 
   function updatePipelineProgress(agents) {
@@ -436,12 +475,14 @@
     if (!result) return;
     const filename = reportFilename(result);
     const text = resultText(result);
-    const reportKey = `${filename}|${text.length}`;
+    const metricsKey = cfg.id === "sentiment" ? JSON.stringify(result.metrics || {}) : "";
+    const reportKey = `${filename}|${text.length}|${metricsKey}`;
     if (filename) ms.activeReportFile = filename;
     if ($("reportTitle")) $("reportTitle").textContent = cfg.resultTitle?.(result) || String(filename).replace(/\.md$/i, "");
     if ($("reportMeta")) $("reportMeta").textContent = cfg.resultMeta?.(result) || "已保存";
     if (ms.renderedReportKey !== reportKey && $("reportView")) {
-      $("reportView").innerHTML = renderMarkdown(text);
+      const metrics = cfg.id === "sentiment" ? sentimentMetricsHtml(result) : "";
+      $("reportView").innerHTML = `${metrics}${renderMarkdown(text)}`;
       ms.renderedReportKey = reportKey;
     }
     ms.ready = true;
@@ -821,7 +862,9 @@
     ms.renderedReportKey = "";
     ms.lastLogSignature = "";
     try {
-      const qs = new URLSearchParams({ company });
+      const qs = new URLSearchParams(
+        typeof cfg.startQuery === "function" ? cfg.startQuery(company) : { company },
+      );
       const { data } = await api(`${cfg.apiRoot}?${qs}`, {
         method: "POST",
         timeoutMs: 30000,

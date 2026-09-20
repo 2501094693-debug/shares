@@ -213,6 +213,19 @@ body.app-shell.ai-page-root .ai-page {
   margin: 0 0 16px;
 }
 
+.sentiment-metrics {
+  margin: 0 0 18px;
+}
+
+.sentiment-metrics .engine-kpis {
+  margin-bottom: 8px;
+}
+
+.sentiment-source-note {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
 .engine-kpi {
   padding: 10px 12px;
   border: 1px solid var(--line);
