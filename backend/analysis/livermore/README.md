@@ -73,7 +73,7 @@
 
 - 个股日 K：`company.line.fetcher.fetch_kline`（腾讯优先，东财兜底）
 - 上证指数：必须用 `SH000001` 直拉，避免被规范成平安银行 `000001`
-- 股票池与申万归属：`industry.stocks`
+- 股票池与申万归属：`market.industry.stocks`
 - 领头行业：只读轮动缓存 `analysis.persist` 的 `rotation_d20_s9`，不在趋势扫描里重跑轮动
 
 全市场扫描为了速度默认只拉前复权日 K；单股诊断（CLI 或 `/stock`）会再拉不复权，用来认整数关。

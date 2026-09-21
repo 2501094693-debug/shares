@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.codes import normalize_code
-from industry.service import service as industry_service
+from market.industry.service import service as industry_service
 
 
 def _as_meta(row: dict[str, Any]) -> dict[str, Any]:

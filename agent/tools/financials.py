@@ -507,7 +507,7 @@ def _peer_table(code: str, name: str) -> str:
 
         if str(BACKEND_ROOT) not in sys.path:
             sys.path.insert(0, str(BACKEND_ROOT))
-        from industry.service import service as industry
+        from market.industry.service import service as industry
     except Exception as exc:  # noqa: BLE001
         return f"（未能加载行业成分股：{exc}）"
 

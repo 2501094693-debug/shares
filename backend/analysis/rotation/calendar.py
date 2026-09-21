@@ -37,7 +37,7 @@ from analysis.rotation.score import cap_tier_of, score_row, trailing_sigma
 from company.line.fetcher import fetch_kline, load_kline_disk
 from company.line.session import is_cn_market_live
 from core.codes import normalize_code
-from industry.service import service as industry_service
+from market.industry.service import service as industry_service
 from market.steep.calendar import recent_trade_dates
 from market.sw.fund_flow import aggregate_stock_flows_all
 from market.steep.service import service as steep_service

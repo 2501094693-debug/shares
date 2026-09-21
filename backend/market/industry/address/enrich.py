@@ -32,9 +32,9 @@ _EM_SURVEY_URL = (
     "https://emweb.securities.eastmoney.com/PC_HSF10/CompanySurvey/CompanySurveyAjax"
 )
 
-# enrich.py → address → industry → backend → 仓库根
+# enrich.py → address → industry → market → backend → 仓库根
 _CITY_CENTROIDS_PATH = (
-    Path(__file__).resolve().parents[3]
+    Path(__file__).resolve().parents[4]
     / "frontend"
     / "shared"
     / "geo"

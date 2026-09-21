@@ -13,7 +13,7 @@ from analysis.rotation.calendar import (
     refresh_fund_flows,
     screen_rotation,
 )
-from industry.service import service as industry_service
+from market.industry.service import service as industry_service
 from analysis.rotation.config import CACHE_TAG, DEFAULT_LOOKBACK_DAYS, KLINE_WORKERS
 
 

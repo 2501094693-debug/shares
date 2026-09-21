@@ -8,8 +8,8 @@ from __future__ import annotations
 from typing import Any
 
 from core.paths import ensure_cache_dirs
-from industry.stocks import StockStore
-from industry.tree import IndustryTree
+from market.industry.stocks import StockStore
+from market.industry.tree import IndustryTree
 
 
 class IndustryService:

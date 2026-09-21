@@ -31,8 +31,8 @@ from core.paths import (
     cons_cache_path,
     ensure_cache_dirs,
 )
-from industry.stocks.cons_fetcher import fetch_third_cons
-from industry.stocks.schema import EMPTY_CELLS, make_index_entry, stock_key
+from market.industry.stocks.cons_fetcher import fetch_third_cons
+from market.industry.stocks.schema import EMPTY_CELLS, make_index_entry, stock_key
 
 GetL3Meta = Callable[[str], dict[str, Any] | None]
 GetL3Codes = Callable[[], list[str]]

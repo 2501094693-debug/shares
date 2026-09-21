@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from core.cache import TtlCache
-from industry.service import service as industry_service
+from market.industry.service import service as industry_service
 from .em_limit_pool import fetch_limit_pools, guess_limit_pools
 from .em_stock_flow import fetch_stock_flows
 from .fund_flow import (

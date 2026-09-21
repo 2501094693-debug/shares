@@ -10,7 +10,7 @@ from typing import Any
 from core.cache import TtlCache
 from core.codes import normalize_code
 from core.paths import LIST_CACHE_DIR, ensure_cache_dirs
-from industry.service import service as industry_service
+from market.industry.service import service as industry_service
 from market.steep.calendar import recent_trade_dates
 
 from .em_lhb import fetch_details, fetch_seats, ymd, ymd_dash

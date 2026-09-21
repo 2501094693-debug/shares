@@ -17,7 +17,7 @@ from typing import Any
 from company.line.session import cn_now, last_session_close, today_session_open
 from core.cache import TtlCache
 from core.paths import MARKET_HISTORY_CACHE_DIR, ensure_cache_dirs
-from industry.service import service as industry_service
+from market.industry.service import service as industry_service
 
 from .quotes import attach_sw_daily, merge_quote_row
 from .sw_client import fetch_daily_analysis

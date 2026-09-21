@@ -89,7 +89,7 @@ def _resolve_from_stock_index(
 ) -> tuple[str, str]:
     """申万成分股索引按简称兜底。"""
     try:
-        from industry.service import service as industry
+        from market.industry.service import service as industry
 
         industry.stocks.ensure_populated()
         rows = industry.search_stocks(name=company, limit=12) or []
@@ -635,7 +635,7 @@ def _mcap_sort_key(stock: dict[str, Any]) -> float:
 def _fetch_same_layer_peers(code: str, name: str) -> str:
     """申万三级同层公司名单（名称/代码/市值），不含估值倍数。"""
     try:
-        from industry.service import service as industry
+        from market.industry.service import service as industry
     except Exception as exc:  # noqa: BLE001
         return f"（未能加载同层公司名单：{exc}）"
 

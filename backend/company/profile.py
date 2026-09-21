@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from company.statistics import fetch_live_quote, fetch_stock_quote
-from industry.stocks import METRIC_KEYS
-from industry.service import service as industry
+from market.industry.stocks import METRIC_KEYS
+from market.industry.service import service as industry
 
 
 def get_stock_profile(

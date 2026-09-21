@@ -11,7 +11,7 @@ from typing import Any
 from analysis.livermore.config import ACTIONS, DEFAULT_LOOKBACK_DAYS, RS_DAYS
 from analysis.livermore.engine import analyze_index, apply_context, tape_from_meta
 from core.codes import normalize_code
-from industry.service import service as industry_service
+from market.industry.service import service as industry_service
 
 logger = logging.getLogger(__name__)
 

@@ -8,9 +8,9 @@ from typing import Any
 from fastapi import APIRouter, Body, Query
 
 from core.api import err, ok
-from industry.address import enrich_codes
-from industry.address.amap_photos import fetch_place_photos
-from industry.service import service
+from market.industry.address import enrich_codes
+from market.industry.address.amap_photos import fetch_place_photos
+from market.industry.service import service
 
 router = APIRouter()
 

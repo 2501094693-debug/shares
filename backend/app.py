@@ -1,9 +1,8 @@
 """申万三级行业浏览器 — FastAPI 后端。
 
-三套业务：
-- ``industry``：申万分类、成分股检索、地图标注
+业务模块：
+- ``market``：行情与申万行业（涨跌 / 资金流 / 个股榜 / 基金；以及 ``market.industry`` 分类、成分股检索、地图标注）
 - ``company``：单只股票的盘口、K 线、资讯、龙虎榜历史上榜
-- ``market``：申万行业涨跌、资金流向、个股涨跌榜、行业轮动、基金（场内 ETF/LOF + 场外开放式）
 - ``world``：全球主要股指、央行利率、国债收益率、原油期货
 - ``analysis``：研判（涨跌停分析 / 个股分析 / 行业行情分析 / 趋势分析）
 """
@@ -15,7 +14,7 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-# 保证从仓库根目录启动 / PyCharm 调试时也能解析 industry  / company / agent / analysis
+# 保证从仓库根目录启动 / PyCharm 调试时也能解析 market / company / agent / analysis
 _BACKEND_DIR = Path(__file__).resolve().parent
 _ROOT_DIR = _BACKEND_DIR.parent
 if str(_BACKEND_DIR) not in sys.path:
@@ -35,8 +34,8 @@ from company.statistics.fundflow.api import router as fundflow_router
 from company.statistics.owner.api import router as owner_router
 from company.news.financialreport.api import router as financialreport_router
 from market.funds.fund.api import router as fund_router
-from industry.api import router as industry_router
-from industry.service import service as industry_service
+from market.industry.api import router as industry_router
+from market.industry.service import service as industry_service
 from market.funds.fund.service import service as fund_service
 from company.statistics.list.api import router as list_router
 from market.api import router as market_router

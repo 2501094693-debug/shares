@@ -15,7 +15,7 @@ from typing import Any
 from company.line.session import cn_now, is_cn_market_live
 from core.cache import TtlCache
 from core.paths import STEEP_CACHE_DIR, ensure_cache_dirs
-from industry.service import service as industry_service
+from market.industry.service import service as industry_service
 
 from .calendar import recent_trade_dates
 from .em_pool import fetch_day_pools

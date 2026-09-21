@@ -21,7 +21,7 @@ from io import StringIO
 import pandas as pd
 import requests
 
-from industry.stocks.schema import EMPTY_CELLS
+from market.industry.stocks.schema import EMPTY_CELLS
 
 HEADERS = {
     "User-Agent": (
