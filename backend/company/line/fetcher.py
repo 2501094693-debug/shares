@@ -5,8 +5,8 @@
 - ``fetch_ticks``：东财优先、腾讯兜底。
   盘中（09:15–15:31）每次全量查询覆盖当天文件；盘后 / 周末只读该交易日文件。
 
-K 线磁盘缓存历史根；交易时段只拉最新几根合并；休市走缓存，到期用尾盘校验
-（已定型的 K 对不上则当复权 / 缺口，整段重拉）。
+K 线磁盘缓存历史根；交易时段只拉最新几根合并；休市 / 午休走缓存，
+只要自最近一次收盘后已校验过就不再打远程（force 除外；对不上复权 / 缺口仍整段重拉）。
 
 两边返回字段不完全一样，K 线 / 逐笔会先收成同一套再给 API / 统计用。
 不提供分时 trends2。区间涨跌见 ``company.statistics.quote.derived.period_returns``。
@@ -29,7 +29,14 @@ from core.paths import KLINE_CACHE_DIR, TICKS_CACHE_DIR, ensure_cache_dirs
 from company.line.eastmoney_kline import MINUTE_PERIODS as EM_MINUTE_PERIODS
 from company.line.eastmoney_kline import fetch_line as fetch_eastmoney_line
 from company.line.eastmoney_ticks import fetch_ticks as fetch_eastmoney_ticks
-from company.line.session import cn_now, is_cn_market_live, is_cn_session_open, parse_session_day, session_day
+from company.line.session import (
+    cn_now,
+    is_cn_market_live,
+    is_cn_session_open,
+    last_session_close,
+    parse_session_day,
+    session_day,
+)
 from company.line.tencent_kline import fetch_line as fetch_tencent_line
 from company.line.tencent_ticks import fetch_ticks as fetch_tencent_ticks
 
@@ -39,8 +46,6 @@ logger = logging.getLogger(__name__)
 KLINE_LIVE_TTL = 8
 # 带 beg/end 的区间查询仍整段拉，短 TTL。
 KLINE_RANGE_TTL = 120
-# 非交易时段：到期后用最新几根核对是否要更新。
-KLINE_VERIFY_TTL = 30 * 60
 TICKS_TTL = 1
 
 _KLINE_DISK_VERSION = 1
@@ -463,6 +468,8 @@ def fetch_kline(
 
     if stored and len(stored.get("items") or []) >= cap:
         verified_at = float(stored.get("verified_at") or 0)
+        # 非交易时段：收盘后已校验过的磁盘缓存直接用，避免隔半小时又全市场尾盘刷新。
+        sealed_after_close = verified_at >= last_session_close().timestamp()
         if live:
             result = _refresh_with_tail(
                 stored,
@@ -472,7 +479,7 @@ def fetch_kline(
                 disk_adjust=fqt,
                 cap=cap,
             )
-        elif now - verified_at < KLINE_VERIFY_TTL:
+        elif sealed_after_close:
             result = _public_kline(stored)
         else:
             result = _refresh_with_tail(
