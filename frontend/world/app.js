@@ -2,28 +2,38 @@ const POLL_MS = 60_000;
 
 const REGION_COORDS = {
   us: { lat: 40.7128, lng: -74.006, city: "纽约" },
-  eu: { lat: 50.1109, lng: 8.6821, city: "法兰克福" },
-  uk: { lat: 51.5074, lng: -0.1278, city: "伦敦" },
-  de: { lat: 52.52, lng: 13.405, city: "柏林" },
-  fr: { lat: 48.8566, lng: 2.3522, city: "巴黎" },
-  jp: { lat: 35.6762, lng: 139.6503, city: "东京" },
-  kr: { lat: 37.5665, lng: 126.978, city: "首尔" },
-  cn: { lat: 31.2304, lng: 121.4737, city: "上海" },
-  hk: { lat: 22.3193, lng: 114.1694, city: "香港" },
-  in: { lat: 19.076, lng: 72.8777, city: "孟买" },
+  eu: { lat: 47.8, lng: 9.2, city: "法兰克福" },
+  uk: { lat: 53.8, lng: -7.2, city: "伦敦" },
+  de: { lat: 54.6, lng: 16.8, city: "柏林" },
+  fr: { lat: 44.6, lng: 1.2, city: "巴黎" },
+  jp: { lat: 36.2, lng: 140.2, city: "东京" },
+  kr: { lat: 36.1, lng: 129.4, city: "首尔" },
+  cn: { lat: 32.4, lng: 118.8, city: "上海" },
+  hk: { lat: 20.6, lng: 114.8, city: "香港" },
+  in: { lat: 18.4, lng: 74.2, city: "孟买" },
 };
 
 const OIL_COORDS = {
-  brent: { lat: 57.15, lng: -2.09, city: "北海" },
-  wti: { lat: 29.76, lng: -95.37, city: "休斯顿" },
-  dubai: { lat: 25.2048, lng: 55.2708, city: "迪拜" },
+  brent: { lat: 62.4, lng: 1.8, city: "北海" },
+  wti: { lat: 27.2, lng: -92.4, city: "休斯顿" },
+  dubai: { lat: 24.2, lng: 56.8, city: "迪拜" },
 };
 
-const CAT_COLORS = {
-  indices: "#2ad4b8",
-  rates: "#f0b429",
-  bonds: "#a78bfa",
-  oil: "#ff8c42",
+/** 像素偏移，避免西欧 / 东亚卡片叠在一起。 */
+const MARKER_OFFSET = {
+  "region:us": [-8, -10],
+  "region:eu": [88, 6],
+  "region:uk": [-108, -16],
+  "region:de": [124, -56],
+  "region:fr": [-36, 86],
+  "region:jp": [18, -12],
+  "region:kr": [64, 48],
+  "region:cn": [-16, -8],
+  "region:hk": [56, 64],
+  "region:in": [12, 18],
+  "oil:brent": [12, -28],
+  "oil:wti": [78, 52],
+  "oil:dubai": [10, -8],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -31,10 +41,12 @@ const $ = (id) => document.getElementById(id);
 const state = {
   viewMode: "roadmap",
   overview: null,
-  layers: { indices: true, rates: true, bonds: true, oil: true },
+  history: {},
+  layers: { indices: true, oil: true },
   markerDefs: [],
   markers2d: [],
   selectedId: null,
+  chartCode: null,
   pollTimer: 0,
 };
 
@@ -84,20 +96,49 @@ function isChinaMarket(marker) {
   return marker?.id === "region:cn" || marker?.data?.region === "cn";
 }
 
-function emptyDetailText() {
-  return "点击地图标注查看详情，或拖动平移缩放地图。";
+function historyFor(code, price) {
+  const points = state.history?.[code] || [];
+  if (!points.length) return [];
+  const last = Number(points[points.length - 1]?.close);
+  const px = Number(price);
+  if (Number.isFinite(px) && px !== 0 && Number.isFinite(last) && Math.abs(last / px - 1) > 0.18) {
+    return [];
+  }
+  return points;
 }
 
-function resetMapStage() {
-  const stage = $("mapStage");
-  if (!stage) return null;
-  stage.replaceChildren();
-  stage.classList.remove("amap-container");
-  stage.removeAttribute("data-provider");
-  return stage;
+function sparkSvg(points, w = 136, h = 34, { fill = false } = {}) {
+  const closes = (points || [])
+    .map((p) => Number(p.close))
+    .filter((n) => Number.isFinite(n));
+  if (closes.length < 2) {
+    return `<svg class="world-spark" viewBox="0 0 ${w} ${h}" aria-hidden="true"></svg>`;
+  }
+  const min = Math.min(...closes);
+  const max = Math.max(...closes);
+  const span = max - min || 1;
+  const step = (w - 2) / (closes.length - 1);
+  const coords = closes.map((c, i) => {
+    const x = 1 + i * step;
+    const y = h - 1 - ((c - min) / span) * (h - 2);
+    return [x, y];
+  });
+  const line = coords
+    .map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`)
+    .join(" ");
+  const up = closes[closes.length - 1] >= closes[0];
+  const color = up ? "var(--up)" : "var(--down)";
+  const area = fill
+    ? `${line} L${coords[coords.length - 1][0].toFixed(1)},${h} L${coords[0][0].toFixed(1)},${h} Z`
+    : "";
+  return `
+    <svg class="world-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true" style="color:${color}">
+      ${fill ? `<path class="world-spark-fill" d="${area}" fill="currentColor"></path>` : ""}
+      <path d="${line}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"></path>
+    </svg>
+  `;
 }
 
-/** 高德国内点用 GCJ-02；海外点保持 WGS-84。 */
 function wgs84ToGcj02(lng, lat) {
   const PI = Math.PI;
   const A = 6378245.0;
@@ -117,7 +158,7 @@ function wgs84ToGcj02(lng, lat) {
     let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
     ret += ((20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0) / 3.0;
     ret += ((20.0 * Math.sin(x * PI) + 40.0 * Math.sin((x / 3.0) * PI)) * 2.0) / 3.0;
-    ret += ((150.0 * Math.sin((x / 12.0) * PI) + 300.0 * Math.sin((x / 30.0) * PI)) * 2.0) / 3.0;
+    ret += ((150.0 * Math.sin((x / 12.0) * PI) + 300.0 * Math.sin((x * PI) / 30.0)) * 2.0) / 3.0;
     return ret;
   };
   let dLat = transformLat(lng - 105.0, lat - 35.0);
@@ -194,6 +235,7 @@ async function createAmapMap(stage) {
   });
   mapRuntime.provider = "amap";
   stage.dataset.provider = "amap";
+  mapRuntime.map.on("click", () => selectMarker(null, false));
 }
 
 async function ensureMap() {
@@ -228,9 +270,9 @@ function resizeMap() {
 function fitMapMarkers() {
   if (!mapRuntime.map || !state.markerDefs.length) return;
   const overlays = state.markers2d.map((rec) => rec.overlay).filter(Boolean);
-  const padding = [48, 48, 48, 48];
+  const padding = [72, 88, 88, 72];
   if (overlays.length) {
-    mapRuntime.map.setFitView(overlays, false, padding, 5);
+    mapRuntime.map.setFitView(overlays, false, padding, 4);
     return;
   }
   const lngs = [];
@@ -259,46 +301,35 @@ function clearMarkers2d() {
   state.markers2d = [];
 }
 
-function buildSummaryLines(marker) {
-  const lines = [];
-  const { data } = marker;
-
-  if (state.layers.indices && data.indices?.length) {
-    const top = data.indices[0];
-    lines.push(
-      `<span class="world-tag" data-cat="indices">指</span> ${esc(top.name)} ${fmtNum(top.price)} <em data-tone="${tone(top.change_pct)}">${fmtPct(top.change_pct)}</em>`,
-    );
-  }
-  if (state.layers.rates && data.rate) {
-    lines.push(
-      `<span class="world-tag" data-cat="rates">率</span> ${esc(data.rate.label)} ${fmtNum(data.rate.value)}%`,
-    );
-  }
-  if (state.layers.bonds && data.bonds?.length) {
-    const b10 = data.bonds.find((b) => b.id === "10y") || data.bonds[0];
-    const val = b10?.latest?.close;
-    lines.push(
-      `<span class="world-tag" data-cat="bonds">债</span> ${esc(b10.name)} ${fmtNum(val)}%`,
-    );
-  }
-  if (state.layers.oil && data.oil) {
-    const o = data.oil;
-    lines.push(
-      `<span class="world-tag" data-cat="oil">油</span> ${esc(o.name)} ${fmtNum(o.price)} <em data-tone="${tone(o.change_pct)}">${fmtPct(o.change_pct)}</em>`,
-    );
-  }
-  return lines;
-}
-
 function markerLabelHtml(marker) {
-  const enter = isChinaMarket(marker)
-    ? `<div class="world-marker-enter">点击进入中国市场</div>`
-    : "";
+  if (marker.category === "oil") {
+    const o = marker.data.oil || {};
+    return `
+      <div class="world-card world-card-oil">
+        <div class="world-card-kicker">原油 · ${esc(marker.city || "")}</div>
+        <div class="world-card-name">${esc(o.name || marker.title)}</div>
+        <div class="world-card-row">
+          <strong class="world-card-px">${fmtNum(o.price)}</strong>
+          <em data-tone="${tone(o.change_pct)}">${fmtPct(o.change_pct)}</em>
+        </div>
+      </div>
+    `;
+  }
+  const top = marker.data.indices?.[0] || {};
+  const extra = Math.max(0, (marker.data.indices?.length || 0) - 1);
   return `
-    <div class="world-marker-title">${esc(marker.title)}</div>
-    <div class="world-marker-city muted">${esc(marker.city || "")}</div>
-    <div class="world-marker-lines">${buildSummaryLines(marker).join("")}</div>
-    ${enter}
+    <div class="world-card">
+      <div class="world-card-kicker">
+        <span>${esc(marker.title)}</span>
+        <span class="muted">${esc(marker.city || "")}</span>
+      </div>
+      <div class="world-card-name">${esc(top.name || "主要指数")}${extra ? `<span class="muted"> +${extra}</span>` : ""}</div>
+      <div class="world-card-row">
+        <strong class="world-card-px">${fmtNum(top.price)}</strong>
+        <em data-tone="${tone(top.change_pct)}">${fmtPct(top.change_pct)}</em>
+      </div>
+      ${sparkSvg(historyFor(top.code, top.price))}
+    </div>
   `;
 }
 
@@ -311,19 +342,16 @@ function createMarker2d(marker) {
   labelEl.innerHTML = markerLabelHtml(marker);
   labelEl.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (isChinaMarket(marker)) {
-      window.location.href = "/cn";
-      return;
-    }
     selectMarker(marker.id);
   });
 
+  const [ox, oy] = MARKER_OFFSET[marker.id] || [0, -8];
   const overlay = new AMap.Marker({
     position: toAmapPos(marker.lat, marker.lng),
     content: labelEl,
-    offset: new AMap.Pixel(0, -8),
+    offset: new AMap.Pixel(ox, oy),
     anchor: "bottom-center",
-    zIndex: 120,
+    zIndex: marker.id === state.selectedId ? 220 : 120,
   });
   mapRuntime.map.add(overlay);
   state.markers2d.push({ id: marker.id, overlay, labelEl, marker });
@@ -338,18 +366,6 @@ function groupIndicesByRegion(indices) {
   return map;
 }
 
-function groupRatesByRegion(rates) {
-  const map = new Map();
-  for (const row of rates?.items || []) map.set(row.region, row);
-  return map;
-}
-
-function groupBondsByRegion(bonds) {
-  const map = new Map();
-  for (const row of bonds?.items || []) map.set(row.region, row.series || []);
-  return map;
-}
-
 function buildMarkerDefs() {
   const overview = state.overview;
   if (!overview) {
@@ -358,49 +374,19 @@ function buildMarkerDefs() {
   }
 
   const idxMap = groupIndicesByRegion(overview.indices);
-  const rateMap = groupRatesByRegion(overview.rates);
-  const bondMap = groupBondsByRegion(overview.bonds);
   const defs = [];
 
-  const regions = new Set([
-    ...idxMap.keys(),
-    ...rateMap.keys(),
-    ...bondMap.keys(),
-  ]);
-
-  for (const region of regions) {
+  for (const [region, indices] of idxMap) {
     const coord = REGION_COORDS[region];
-    if (!coord) continue;
-
-    const indices = idxMap.get(region) || [];
-    const rateRow = rateMap.get(region);
-    const bonds = bondMap.get(region) || [];
-
-    const hasVisible =
-      (state.layers.indices && indices.length) ||
-      (state.layers.rates && rateRow) ||
-      (state.layers.bonds && bonds.length);
-
-    if (!hasVisible) continue;
-
-    const regionName = indices[0]?.region_name || rateRow?.name || region;
+    if (!coord || !indices.length) continue;
     defs.push({
       id: `region:${region}`,
       category: "indices",
       lat: coord.lat,
       lng: coord.lng,
       city: coord.city,
-      title: regionName,
-      color: CAT_COLORS.indices,
-      data: {
-        region,
-        regionName,
-        indices: state.layers.indices ? indices : [],
-        rate: state.layers.rates && rateRow
-          ? { label: rateRow.label, value: rateRow.latest?.value, history: rateRow.history }
-          : null,
-        bonds: state.layers.bonds ? bonds : [],
-      },
+      title: indices[0]?.region_name || region,
+      data: { region, indices },
     });
   }
 
@@ -415,11 +401,7 @@ function buildMarkerDefs() {
         lng: coord.lng,
         city: coord.city,
         title: item.name,
-        color: CAT_COLORS.oil,
-        data: {
-          oil: item,
-          regionName: item.name,
-        },
+        data: { oil: item },
       });
     }
   }
@@ -439,99 +421,8 @@ function rebuildMarkers() {
   if (state.selectedId && state.markerDefs.some((m) => m.id === state.selectedId)) {
     selectMarker(state.selectedId, false);
   } else {
-    state.selectedId = null;
-    renderDetail(null);
+    selectMarker(null, false);
   }
-}
-
-function renderDetail(markerRec) {
-  const panel = $("detailPanel");
-  if (!panel) return;
-  const marker = markerRec?.marker || markerRec;
-  if (!marker) {
-    panel.innerHTML = `<p class="muted world-detail-empty">${emptyDetailText()}</p>`;
-    return;
-  }
-
-  const { data } = marker;
-  const blocks = [];
-
-  if (data.indices?.length) {
-    blocks.push(`
-      <section class="world-detail-block">
-        <h3><span class="world-layer-dot" data-cat="indices"></span>股市指数</h3>
-        <ul class="world-detail-list">
-          ${data.indices.map((row) => `
-            <li>
-              <span>${esc(row.name)}</span>
-              <strong class="num">${fmtNum(row.price)}</strong>
-              <em class="num" data-tone="${tone(row.change_pct)}">${fmtPct(row.change_pct)}</em>
-            </li>
-          `).join("")}
-        </ul>
-      </section>
-    `);
-  }
-
-  if (data.rate) {
-    blocks.push(`
-      <section class="world-detail-block">
-        <h3><span class="world-layer-dot" data-cat="rates"></span>央行利率</h3>
-        <p class="world-detail-hero">
-          <span>${esc(data.rate.label)}</span>
-          <strong>${fmtNum(data.rate.value)}%</strong>
-        </p>
-      </section>
-    `);
-  }
-
-  if (data.bonds?.length) {
-    blocks.push(`
-      <section class="world-detail-block">
-        <h3><span class="world-layer-dot" data-cat="bonds"></span>国债收益率</h3>
-        <ul class="world-detail-list">
-          ${data.bonds.map((row) => `
-            <li>
-              <span>${esc(row.name)}</span>
-              <strong class="num">${fmtNum(row.latest?.close)}%</strong>
-            </li>
-          `).join("")}
-        </ul>
-      </section>
-    `);
-  }
-
-  if (data.oil) {
-    const o = data.oil;
-    blocks.push(`
-      <section class="world-detail-block">
-        <h3><span class="world-layer-dot" data-cat="oil"></span>原油期货</h3>
-        <p class="world-detail-hero">
-          <span>${esc(o.name)}</span>
-          <strong>${fmtNum(o.price)}</strong>
-          <em class="num" data-tone="${tone(o.change_pct)}">${fmtPct(o.change_pct)}</em>
-        </p>
-        <p class="muted world-detail-meta">开 ${fmtNum(o.open)} · 高 ${fmtNum(o.high)} · 低 ${fmtNum(o.low)}</p>
-      </section>
-    `);
-  }
-
-  const chinaCta =
-    marker.id === "region:cn" || marker.data?.region === "cn"
-      ? `
-        <p class="muted world-detail-enter-hint">行业行情 · 个股行情 · 涨跌停</p>
-        <a class="btn world-detail-enter" href="/cn">进入中国市场</a>
-      `
-      : "";
-
-  panel.innerHTML = `
-    <header class="world-detail-head">
-      <h2>${esc(marker.title)}</h2>
-      <span class="muted">${esc(marker.city || "")}</span>
-      ${chinaCta}
-    </header>
-    ${blocks.join("")}
-  `;
 }
 
 function findMarkerRec(id) {
@@ -541,20 +432,110 @@ function findMarkerRec(id) {
   return def ? { id, marker: def } : null;
 }
 
+function closeChartPop() {
+  const pop = $("worldChartPop");
+  if (!pop) return;
+  pop.hidden = true;
+  pop.replaceChildren();
+}
+
+function renderChartPop(marker) {
+  const pop = $("worldChartPop");
+  if (!pop) return;
+  if (!marker) {
+    closeChartPop();
+    return;
+  }
+
+  if (marker.category === "oil") {
+    const o = marker.data.oil || {};
+    pop.hidden = false;
+    pop.innerHTML = `
+      <header class="world-pop-head">
+        <div>
+          <p class="world-pop-kicker">原油期货 · ${esc(marker.city || "")}</p>
+          <h2>${esc(o.name || marker.title)}</h2>
+        </div>
+        <button type="button" class="world-pop-close" data-close>×</button>
+      </header>
+      <div class="world-pop-hero">
+        <strong>${fmtNum(o.price)}</strong>
+        <em data-tone="${tone(o.change_pct)}">${fmtPct(o.change_pct)}</em>
+      </div>
+      <p class="muted world-pop-meta">开 ${fmtNum(o.open)} · 高 ${fmtNum(o.high)} · 低 ${fmtNum(o.low)}</p>
+    `;
+    pop.querySelector("[data-close]")?.addEventListener("click", () => selectMarker(null, false));
+    return;
+  }
+
+  const indices = marker.data.indices || [];
+  const active = indices.find((row) => row.code === state.chartCode) || indices[0];
+  if (active) state.chartCode = active.code;
+  const points = historyFor(active?.code, active?.price);
+  const first = points[0]?.date || "";
+  const last = points[points.length - 1]?.date || "";
+  const china = isChinaMarket(marker)
+    ? `<a class="btn world-pop-enter" href="/cn">进入中国市场</a>`
+    : "";
+
+  pop.hidden = false;
+  pop.innerHTML = `
+    <header class="world-pop-head">
+      <div>
+        <p class="world-pop-kicker">${esc(marker.title)} · ${esc(marker.city || "")} · 日线</p>
+        <h2>${esc(active?.name || marker.title)}</h2>
+      </div>
+      <button type="button" class="world-pop-close" data-close>×</button>
+    </header>
+    <div class="world-pop-hero">
+      <strong>${fmtNum(active?.price)}</strong>
+      <em data-tone="${tone(active?.change_pct)}">${fmtPct(active?.change_pct)}</em>
+    </div>
+    <div class="world-pop-chart">${sparkSvg(points, 320, 110, { fill: true })}</div>
+    <p class="muted world-pop-meta">${esc(first)}${first && last ? " — " : ""}${esc(last)}${points.length ? ` · ${points.length} 根` : "暂无走势"}</p>
+    ${indices.length > 1 ? `
+      <div class="world-pop-switch" role="tablist">
+        ${indices.map((row) => `
+          <button type="button" class="world-pop-tab${row.code === active.code ? " is-active" : ""}" data-code="${esc(row.code)}">
+            ${esc(row.name)}
+          </button>
+        `).join("")}
+      </div>
+    ` : ""}
+    ${china}
+  `;
+  pop.querySelector("[data-close]")?.addEventListener("click", () => selectMarker(null, false));
+  pop.querySelectorAll("[data-code]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.chartCode = btn.dataset.code;
+      renderChartPop(marker);
+    });
+  });
+}
+
 function selectMarker(id, focus = true) {
-  state.selectedId = id;
+  state.selectedId = id || null;
+  if (!id) state.chartCode = null;
 
   document.querySelectorAll(".world-map-marker-label").forEach((el) => {
-    el.classList.toggle("is-active", el.dataset.markerId === id);
+    el.classList.toggle("is-active", Boolean(id) && el.dataset.markerId === id);
+  });
+  state.markers2d.forEach((rec) => {
+    try {
+      rec.overlay?.setzIndex(rec.id === id ? 220 : 120);
+    } catch {
+      /* ignore */
+    }
   });
 
-  const rec = findMarkerRec(id);
-  renderDetail(rec);
+  const rec = id ? findMarkerRec(id) : null;
+  renderChartPop(rec?.marker || null);
 
   if (!focus || !rec?.marker || !mapRuntime.map) return;
   const { lat, lng } = rec.marker;
   mapRuntime.map.panTo(toAmapPos(lat, lng));
-  if (mapRuntime.map.getZoom() < 4) mapRuntime.map.setZoom(4);
+  if (mapRuntime.map.getZoom() < 3) mapRuntime.map.setZoom(3);
 }
 
 function applyAmapViewMode(mode) {
@@ -629,6 +610,15 @@ async function fetchJson(url, timeoutMs = 90_000, extra = {}) {
   }
 }
 
+async function fetchOptional(url, timeoutMs, extra = {}) {
+  try {
+    return await fetchJson(url, timeoutMs, extra);
+  } catch (err) {
+    console.warn("全球行情接口失败", url, err);
+    return null;
+  }
+}
+
 function apiUrl(path, params = {}) {
   const url = new URL(path, window.location.origin);
   for (const [key, value] of Object.entries(params)) {
@@ -643,26 +633,23 @@ async function loadOverview(force = false, { poll = false } = {}) {
   const httpOpts = poll ? { bypassCache: true, writeCache: true } : {};
   try {
     const [indices, oil] = await Promise.all([
-      fetchJson(apiUrl("/api/global/indices", refresh), 30_000, httpOpts),
-      fetchJson(apiUrl("/api/global/oil", refresh), 30_000, httpOpts),
-    ]);
-    state.overview = { indices, oil, rates: { items: [] }, bonds: { items: [] } };
-    rebuildMarkers();
-    setStatus("指数/原油已更新，利率国债加载中…", "busy");
-
-    const [rates, bonds] = await Promise.all([
-      fetchJson(apiUrl("/api/global/rates", { ...refresh, limit: 24 }), 60_000, httpOpts),
-      fetchJson(apiUrl("/api/global/bonds", { ...refresh, limit: 60 }), 60_000, httpOpts),
+      fetchOptional(apiUrl("/api/global/indices", refresh), 30_000, httpOpts),
+      fetchOptional(apiUrl("/api/global/oil", refresh), 30_000, httpOpts),
     ]);
     state.overview = {
-      indices,
-      oil,
-      rates,
-      bonds,
-      updated_at: new Date().toISOString().slice(0, 19),
+      indices: indices || { items: [] },
+      oil: oil || { items: [] },
     };
     rebuildMarkers();
-    setStatus(`更新 ${state.overview.updated_at}`, "live");
+
+    const history = await fetchOptional(
+      apiUrl("/api/global/indices/history", { ...refresh, limit: 90 }),
+      45_000,
+      httpOpts,
+    );
+    state.history = history?.by_code || {};
+    rebuildMarkers();
+    setStatus("live", "live");
   } catch (err) {
     const msg = err.name === "AbortError" ? "请求超时，请稍后重试" : (err.message || "加载失败");
     setStatus(msg, "error");
@@ -671,21 +658,10 @@ async function loadOverview(force = false, { poll = false } = {}) {
 }
 
 function bindUi() {
-  $("refreshBtn")?.addEventListener("click", () => loadOverview(true));
-
   document.querySelectorAll(".world-view-btn").forEach((btn) => {
     btn.addEventListener("click", () => setViewMode(btn.dataset.view));
   });
-
-  document.querySelectorAll(".world-layer-chip input").forEach((input) => {
-    input.addEventListener("change", () => {
-      const layer = input.closest(".world-layer-chip")?.dataset.layer;
-      if (!layer) return;
-      state.layers[layer] = input.checked;
-      rebuildMarkers();
-    });
-  });
-
+  $("worldChartPop")?.addEventListener("click", (e) => e.stopPropagation());
   window.addEventListener("resize", () => resizeMap());
   state.pollTimer = window.setInterval(() => loadOverview(false, { poll: true }), POLL_MS);
 }
@@ -693,9 +669,17 @@ function bindUi() {
 async function boot() {
   bindUi();
   window.OrbitPrefetch?.boot("world");
-  await ensureMap();
-  resizeMap();
-  await loadOverview(false);
+  const mapTask = ensureMap()
+    .then(() => {
+      resizeMap();
+      if (state.overview) rebuildMarkers();
+    })
+    .catch((err) => {
+      console.error(err);
+      setStatus(err.message || "地图加载失败", "error");
+    });
+  await Promise.all([mapTask, loadOverview(false)]);
+  rebuildMarkers();
   fitMapMarkers();
 }
 

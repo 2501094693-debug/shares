@@ -29,6 +29,10 @@
     screen: { urls: [], docs: ["/analysis", "/js/analysis.js"] },
     fund: {
       urls: ["/api/funds/tree", "/api/otc-funds/tree"],
+      docs: ["/futures", "/js/futures.js"],
+    },
+    futures: {
+      urls: ["/api/futures/tree", "/api/futures/categories", "/api/futures/index/status"],
       docs: [],
     },
     company: { urls: [], docs: [] },
@@ -41,6 +45,7 @@
     steep: ["/api/market/steep?days=15&lite=1", "/api/market/steep?days=15"],
     industry: ["/api/industries"],
     fund: ["/api/funds/tree", "/api/otc-funds/tree"],
+    futures: ["/api/futures/tree", "/api/futures/categories"],
     analysis: [],
     screen: [],
   };
@@ -176,6 +181,8 @@
       else if (from === "fund" || from === "otc-fund") {
         enqueue("/api/funds/tree", 2);
         enqueue("/api/otc-funds/tree", 2);
+      } else if (from === "futures") {
+        enqueue("/api/futures/tree", 2);
       }
       return;
     }

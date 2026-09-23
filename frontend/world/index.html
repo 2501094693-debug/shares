@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="preconnect" href="https://webapi.amap.com" />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=world-amap-only-20260912" />
+  <link rel="stylesheet" href="/css/style.css?v=world-cards-20260923" />
 </head>
 <body class="app-shell world-page-root" data-nav="world">
   <div class="app-stage">
@@ -17,9 +17,10 @@
       <button type="button" class="btn ghost world-view-btn is-active" data-view="roadmap" aria-pressed="true">标准</button>
       <button type="button" class="btn ghost world-view-btn" data-view="satellite" aria-pressed="false">卫星</button>
     </div>
+    <aside id="worldChartPop" class="world-chart-pop" hidden></aside>
   </div>
   <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
-  <script src="/js/shared/orbit-prefetch.js?v=nav-20260919"></script>
-  <script type="module" src="/js/world.js?v=world-amap-only-20260912"></script>
+  <script src="/js/shared/orbit-prefetch.js?v=futures-20260923"></script>
+  <script type="module" src="/js/world.js?v=world-cards-20260923"></script>
 </body>
 </html>

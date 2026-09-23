@@ -4,7 +4,8 @@
     { key: "shares", href: "/shares", title: "个股行情 · 涨幅排序", ico: "▤", label: "个股行情" },
     { key: "steep", href: "/steep", title: "涨跌停 · 多日名单", ico: "↕", label: "涨跌停" },
     { key: "fund", href: "/fund", title: "基金 · ETF / LOF / 开放式", ico: "◉", label: "基金" },
-    { key: "analysis", href: "/analysis", title: "研判 · 行业 / 个股行情 / 涨跌停", ico: "▥", label: "研判" },
+    { key: "futures", href: "/futures", title: "期货 · 商品 / 金融六所", ico: "⬡", label: "期货" },
+    { key: "analysis", href: "/analysis", title: "研判 · 行业 / 个股 / 涨跌停", ico: "▥", label: "研判" },
     { key: "industry", href: "/industry", title: "行业树 · 地图与分类", ico: "◈", label: "行业树" },
   ];
 
@@ -18,6 +19,7 @@
     if (path.startsWith("/analysis") || path.startsWith("/screen")) return "analysis";
     if (path.startsWith("/steep")) return "steep";
     if (path.startsWith("/industry")) return "industry";
+    if (path.startsWith("/futures")) return "futures";
     if (path.startsWith("/otc-fund") || path.startsWith("/fund")) return "fund";
     if (path.startsWith("/company")) return "company";
     return "";

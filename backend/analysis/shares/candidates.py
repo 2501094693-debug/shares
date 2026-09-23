@@ -51,3 +51,6 @@ def collect_universe(code: str = "") -> dict[str, Any]:
         "candidates": items,
         "errors": errors,
     }
+
+
+__all__ = ["collect_universe"]

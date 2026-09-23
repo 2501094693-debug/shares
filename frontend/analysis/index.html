@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=livermore-20260919" />
+  <link rel="stylesheet" href="/css/style.css?v=shares-import-20260924" />
 </head>
 <body class="app-shell company-page-root market-page-root screen-page-root" data-nav="analysis" data-screen-mode="industry">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
@@ -23,9 +23,8 @@
         </div>
         <div class="top-actions">
           <div id="viewSeg" class="market-seg judgment-view" role="tablist" aria-label="研判类型">
-            <button type="button" data-view="industry" class="is-active" role="tab" aria-selected="true">行业行情分析</button>
-            <button type="button" data-view="stock" role="tab" aria-selected="false">个股行情分析</button>
-            <button type="button" data-view="trend" role="tab" aria-selected="false">趋势分析</button>
+            <button type="button" data-view="industry" class="is-active" role="tab" aria-selected="true">行业分析</button>
+            <button type="button" data-view="shares" role="tab" aria-selected="false">个股分析</button>
             <button type="button" data-view="limit" role="tab" aria-selected="false">涨跌停分析</button>
           </div>
           <button id="refreshBtn" class="btn ghost" type="button">重新分析</button>
@@ -45,40 +44,17 @@
             <button type="button" data-days="15" class="is-active">15日</button>
             <button type="button" data-days="30">30日</button>
           </div>
-          <div id="stockDaysSeg" class="market-seg screen-range judgment-stock" role="group" aria-label="回看窗口">
-            <button type="button" data-days="40">40日</button>
-            <button type="button" data-days="60" class="is-active">60日</button>
-            <button type="button" data-days="120">120日</button>
-          </div>
-          <div id="kindSeg" class="market-seg screen-range judgment-stock" role="group" aria-label="走势">
-            <button type="button" data-kind="all" class="is-active">全部</button>
-            <button type="button" data-kind="decline">阴跌</button>
-            <button type="button" data-kind="consolidation">横盘</button>
-          </div>
           <div id="limitTopSeg" class="market-seg screen-range judgment-limit" role="group" aria-label="显示数量">
             <button type="button" data-top="30" class="is-active">每日Top30</button>
             <button type="button" data-top="50">每日Top50</button>
             <button type="button" data-top="0">全部</button>
           </div>
-          <div id="stockTopSeg" class="market-seg screen-range judgment-stock" role="group" aria-label="显示数量">
+          <div id="sharesTopSeg" class="market-seg screen-range judgment-shares" role="group" aria-label="显示数量">
             <button type="button" data-top="50" class="is-active">Top50</button>
             <button type="button" data-top="100">Top100</button>
             <button type="button" data-top="0">全部</button>
           </div>
-          <div id="trendKindSeg" class="market-seg screen-range judgment-trend" role="group" aria-label="动作">
-            <button type="button" data-kind="all" class="is-active">全部</button>
-            <button type="button" data-kind="probe">试探</button>
-            <button type="button" data-kind="pyramid">加码</button>
-            <button type="button" data-kind="hold">持有</button>
-            <button type="button" data-kind="wait">等待</button>
-            <button type="button" data-kind="exit">离场</button>
-            <button type="button" data-kind="cash">空仓</button>
-          </div>
-          <div id="trendTopSeg" class="market-seg screen-range judgment-trend" role="group" aria-label="显示数量">
-            <button type="button" data-top="50" class="is-active">Top50</button>
-            <button type="button" data-top="100">Top100</button>
-            <button type="button" data-top="0">全部</button>
-          </div>
+          <button id="sharesClearBtn" class="btn ghost judgment-shares" type="button" title="清空已设条件">清空条件</button>
           <div id="industryDaysSeg" class="market-seg screen-range judgment-industry" role="group" aria-label="回看窗口">
             <button type="button" data-days="20" class="is-active">近一个月</button>
             <button type="button" data-days="60">近三个月</button>
@@ -94,6 +70,10 @@
 
       <div class="screen-layout">
         <nav id="dayRail" class="screen-day-rail" aria-label="交易日"></nav>
+        <div id="sharesWorkbench" class="shares-workbench judgment-shares-panel hidden">
+          <div id="sharesCondPanel" class="shares-cond-panel" aria-label="日线条件"></div>
+          <div id="sharesPresetBar" class="shares-preset-bar" aria-label="筛选方案"></div>
+        </div>
         <div class="screen-day-main">
           <div id="dayHead" class="screen-day-head"></div>
           <div id="resultList" class="screen-result-list">
@@ -177,9 +157,9 @@
     </div>
   </div>
   <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
-  <script src="/js/shared/orbit-prefetch.js?v=nav-20260919"></script>
-  <script src="/js/shared/nav.js?v=nav-20260919"></script>
+  <script src="/js/shared/orbit-prefetch.js?v=futures-20260923"></script>
+  <script src="/js/shared/nav.js?v=futures-20260923"></script>
   <script src="/js/shared/kline-draw.js?v=screen-20260909-kpan"></script>
-  <script src="/js/analysis.js?v=livermore-20260919b"></script>
+  <script src="/js/analysis.js?v=shares-import-20260924"></script>
 </body>
 </html>

@@ -17,6 +17,7 @@ import urllib3
 _CACHE: dict[str, tuple[float, list[str]]] = {}
 _TTL = 300.0
 # 阿里 + Cloudflare；Windows 11001 时并行 screening 常同时打 DoH，加锁避免惊群。
+_doh_lock = threading.Lock()
 _DOH_PROVIDERS: tuple[tuple[str, str], ...] = (
     ("223.5.5.5", "dns.alidns.com"),
     ("1.1.1.1", "cloudflare-dns.com"),
@@ -39,7 +40,17 @@ _PUSH2_STATIC_BY_HOST: dict[str, tuple[str, ...]] = {
     "push2ex.eastmoney.com": ("140.207.67.212",),
     "push2his.eastmoney.com": ("140.207.67.156",),
 }
-_DEAD_IPS = frozenset({"61.129.129.48"})
+_DEAD_IPS = frozenset(
+    {
+        "61.129.129.48",
+        # 系统 DNS 偶发返回这些节点，TLS 握手后直接掐线（RemoteDisconnected）
+        "112.65.216.155",
+        "114.80.72.189",
+        "101.226.30.206",
+    }
+)
+_BAD_UNTIL: dict[str, float] = {}
+_BAD_TTL = 300.0
 _NUMERIC_PUSH2 = re.compile(r"^\d+\.push2\.eastmoney\.com$")
 _PUSH2_EXEMPT = frozenset(
     {PUSH2_DELAY_HOST, "push2his.eastmoney.com", "push2ex.eastmoney.com"}
@@ -114,6 +125,14 @@ def drop_ip(host: str, ip: str) -> None:
         _CACHE.pop(host, None)
 
 
+def mark_bad_ip(ip: str, *, ttl: float = _BAD_TTL) -> None:
+    """临时拉黑会掐线的 CDN 节点（不写死进 ``_DEAD_IPS``）。"""
+    ip = (ip or "").strip()
+    if not ip:
+        return
+    _BAD_UNTIL[ip] = time.monotonic() + max(30.0, float(ttl))
+
+
 def forget_host(host: str) -> None:
     host = (host or "").strip().lower().rstrip(".")
     if host:
@@ -146,10 +165,32 @@ def resolve_ipv4(host: str) -> list[str]:
     return _usable(list(_static_ips(lookup_host) or _static_ips(host)))
 
 
+def dial_ips(host: str) -> list[str]:
+    """拨号候选：DNS/DoH 结果优先，静态好节点始终垫底（不写入 DNS 缓存）。
+
+    Windows 上系统 DNS 常解析到会 RemoteDisconnected 的 CDN 边缘；
+    静态 IP（``101.226.30.136`` 等）实测可通，必须在 DNS 失败后继续试。
+    """
+    host = (host or "").strip().lower().rstrip(".")
+    if not host:
+        return []
+    if _is_ipv4(host):
+        return [host]
+    canon = canonical_push2_host(host)
+    ordered = list(resolve_ipv4(host))
+    for ip in _static_ips(canon) or _static_ips(host):
+        if ip not in ordered:
+            ordered.append(ip)
+    return _usable(ordered)
+
+
 def _usable(ips: list[str]) -> list[str]:
+    now = time.monotonic()
     out: list[str] = []
     for ip in ips:
-        if ip in _DEAD_IPS or ip in out:
+        if not ip or ip in _DEAD_IPS or ip in out:
+            continue
+        if _BAD_UNTIL.get(ip, 0.0) > now:
             continue
         out.append(ip)
     return out

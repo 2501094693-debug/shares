@@ -3,26 +3,26 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ORBIT · 基金</title>
+  <title>ORBIT · 期货</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=cn-fund-unify-20260912" />
+  <link rel="stylesheet" href="/css/style.css?v=futures-20260923" />
 </head>
-<body class="app-shell company-page-root market-page-root fund-page-root" data-nav="fund">
+<body class="app-shell company-page-root market-page-root fund-page-root futures-page-root" data-nav="futures">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
 
   <div class="app-stage">
-    <div class="app company-page market-page fund-page">
+    <div class="app company-page market-page fund-page futures-page">
       <header class="topbar company-topbar">
         <div class="brand">
           <div>
-            <h1>基金</h1>
-            <p class="company-page-sub">ETF / LOF / 开放式 · 东财</p>
+            <h1>期货</h1>
+            <p class="company-page-sub">商品 / 金融 · 六所主力与合约</p>
           </div>
         </div>
         <div class="top-actions">
-          <button id="rebuildBtn" class="btn ghost" type="button" title="重建当前分类对应的索引">重建索引</button>
+          <button id="rebuildBtn" class="btn ghost" type="button" title="重建期货索引">重建索引</button>
           <button id="refreshBtn" class="btn ghost" type="button">刷新</button>
         </div>
       </header>
@@ -30,17 +30,25 @@
       <div class="market-toolbar fund-toolbar">
         <div class="fund-search-row">
           <label class="search-box fund-search-box">
-            <span class="sr-only">基金名称</span>
-            <input id="nameInput" type="search" placeholder="搜索基金名称…" autocomplete="off" />
+            <span class="sr-only">合约名称</span>
+            <input id="nameInput" type="search" placeholder="搜索名称…" autocomplete="off" />
           </label>
           <label class="search-box fund-search-box">
-            <span class="sr-only">基金代码</span>
+            <span class="sr-only">合约代码</span>
             <input id="codeInput" type="search" placeholder="搜索代码…" autocomplete="off" />
           </label>
-          <div id="marketSeg" class="market-seg" role="group" aria-label="市场">
-            <button type="button" data-market="" class="is-active">全部</button>
-            <button type="button" data-market="SH">沪市</button>
-            <button type="button" data-market="SZ">深市</button>
+          <div id="venueSeg" class="market-seg" role="group" aria-label="交易所">
+            <button type="button" data-venue="" class="is-active">全部</button>
+            <button type="button" data-venue="SHFE">上期</button>
+            <button type="button" data-venue="DCE">大商</button>
+            <button type="button" data-venue="CZCE">郑商</button>
+            <button type="button" data-venue="INE">能源</button>
+            <button type="button" data-venue="GFEX">广期</button>
+            <button type="button" data-venue="CFFEX">中金</button>
+          </div>
+          <div id="mainSeg" class="market-seg" role="group" aria-label="合约类型">
+            <button type="button" data-main="" class="is-active">全部合约</button>
+            <button type="button" data-main="1">仅主力</button>
           </div>
         </div>
         <div class="market-toolbar-tail">
@@ -53,7 +61,7 @@
       <div id="errorBox" class="error hidden"></div>
       <div id="loading" class="loading hidden">正在加载…</div>
 
-      <div class="fund-layout" id="fundLayout">
+      <div class="fund-layout" id="futuresLayout">
         <aside class="fund-tree-pane">
           <header class="fund-pane-head">
             <h2>分类</h2>
@@ -65,8 +73,8 @@
         <section class="fund-list-pane">
           <header class="fund-pane-head">
             <div class="fund-list-title">
-              <h2 id="listTitle">基金列表</h2>
-              <p id="listMeta" class="muted">选择左侧分类，或在顶部搜索</p>
+              <h2 id="listTitle">期货列表</h2>
+              <p id="listMeta" class="muted">选择左侧交易所，或在顶部搜索</p>
             </div>
             <div class="fund-list-tools">
               <label class="search-box fund-filter-box">
@@ -76,22 +84,22 @@
               <div id="sortSeg" class="market-seg" role="group" aria-label="排序">
                 <button type="button" data-sort="change_pct" class="is-active">涨跌</button>
                 <button type="button" data-sort="amount">成交额</button>
-                <button type="button" data-sort="premium">折价率</button>
-                <button type="button" data-sort="main_net">主力</button>
+                <button type="button" data-sort="volume">成交量</button>
+                <button type="button" data-sort="open_interest">持仓</button>
               </div>
             </div>
           </header>
           <div class="fund-list-scroll">
-            <table class="market-table fund-table">
+            <table class="market-table fund-table futures-table">
               <thead id="tableHead">
                 <tr>
                   <th>名称</th>
                   <th class="num">最新</th>
                   <th class="num">涨跌</th>
+                  <th class="num">成交量</th>
                   <th class="num">成交额</th>
-                  <th class="num">折价率</th>
-                  <th class="num">主力</th>
-                  <th class="num">换手</th>
+                  <th class="num">持仓</th>
+                  <th class="num">仓差%</th>
                 </tr>
               </thead>
               <tbody id="tableBody"></tbody>
@@ -114,45 +122,18 @@
           </div>
         </section>
 
-        <aside id="holdingsPane" class="fund-holdings-pane hidden" aria-label="基金持仓">
+        <aside id="detailPane" class="fund-holdings-pane futures-detail-pane hidden" aria-label="合约详情">
           <header class="fund-pane-head fund-holdings-head">
             <div class="fund-holdings-title">
-              <h2 id="holdingsTitle">持仓详情</h2>
-              <p id="holdingsMeta" class="muted">选择基金查看重仓股与行业分布</p>
+              <h2 id="detailTitle">合约详情</h2>
+              <p id="detailMeta" class="muted">选择合约查看行情</p>
             </div>
-            <button id="holdingsClose" class="btn ghost" type="button" aria-label="关闭">关闭</button>
+            <button id="detailClose" class="btn ghost" type="button" aria-label="关闭">关闭</button>
           </header>
-          <div id="holdingsLoading" class="loading hidden">正在加载持仓…</div>
-          <div id="holdingsError" class="error hidden"></div>
-          <div class="fund-holdings-scroll">
-            <section class="fund-holdings-section">
-              <h3>重仓股</h3>
-              <table class="market-table fund-holdings-table">
-                <thead>
-                  <tr>
-                    <th>股票</th>
-                    <th class="num">占比</th>
-                    <th>行业</th>
-                    <th class="num">变动</th>
-                  </tr>
-                </thead>
-                <tbody id="holdingsBody"></tbody>
-              </table>
-            </section>
-            <section class="fund-holdings-section">
-              <h3>行业分布</h3>
-              <table class="market-table fund-holdings-table">
-                <thead>
-                  <tr>
-                    <th>行业</th>
-                    <th class="num">占比</th>
-                    <th class="num">同业均值</th>
-                    <th class="num">差异</th>
-                  </tr>
-                </thead>
-                <tbody id="industryBody"></tbody>
-              </table>
-            </section>
+          <div id="detailLoading" class="loading hidden">正在加载…</div>
+          <div id="detailError" class="error hidden"></div>
+          <div class="fund-holdings-scroll futures-detail-scroll">
+            <dl id="detailBody" class="futures-detail-grid"></dl>
           </div>
         </aside>
       </div>
@@ -162,6 +143,6 @@
   <script src="/js/shared/orbit-http.js?v=futures-20260923"></script>
   <script src="/js/shared/orbit-prefetch.js?v=futures-20260923"></script>
   <script src="/js/shared/nav.js?v=futures-20260923"></script>
-  <script src="/js/fund.js?v=cn-fund-unify-20260912"></script>
+  <script src="/js/futures.js?v=futures-20260923"></script>
 </body>
 </html>

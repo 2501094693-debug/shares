@@ -40,6 +40,17 @@ def global_indices(refresh: str = Query("0")):
         return err(str(exc), 500)
 
 
+@router.get("/api/global/indices/history")
+def global_index_history(
+    limit: int = Query(90, ge=20, le=240),
+    refresh: str = Query("0"),
+):
+    try:
+        return ok(service.index_klines(limit=limit, force=refresh == "1"))
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
 @router.get("/api/global/rates")
 def global_rates(
     region: str = Query("", description="地区代码，空=全部"),

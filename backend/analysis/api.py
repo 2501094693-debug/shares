@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from typing import Any
+
+from fastapi import APIRouter, Body, Query
 
 from analysis.decline.config import DEFAULT_LOOKBACK_DAYS
 from analysis.decline.service import service
-from analysis.grind.config import DEFAULT_LOOKBACK_DAYS as GRIND_LOOKBACK_DAYS
-from analysis.grind.service import service as grind_service
-from analysis.livermore.config import ACTIONS as LIVERMORE_ACTIONS
-from analysis.livermore.config import DEFAULT_LOOKBACK_DAYS as LIVERMORE_LOOKBACK_DAYS
-from analysis.livermore.engine import analyze_stock
-from analysis.livermore.service import service as livermore_service
 from analysis.rotation.config import DEFAULT_LOOKBACK_DAYS as ROTATION_LOOKBACK_DAYS
 from analysis.rotation.config import MAX_LOOKBACK_DAYS, MIN_LOOKBACK_DAYS
 from analysis.rotation.service import service as rotation_service
+from analysis.shares.config import DEFAULT_LOOKBACK_DAYS as SHARES_LOOKBACK_DAYS
+from analysis.shares.config import MAX_LOOKBACK_DAYS as SHARES_MAX_LOOKBACK_DAYS
+from analysis.shares.days import list_trade_days
+from analysis.shares.service import service as shares_service
 from core.api import err, ok
 from core.codes import normalize_code
 
@@ -46,38 +46,6 @@ def get_decline_screen(
         return err(str(exc), 500)
 
 
-@router.get("/api/screen/grind")
-def get_grind_screen(
-    days: int = Query(GRIND_LOOKBACK_DAYS, description="回看窗口（交易日）"),
-    top: int = Query(50, description="前 N 名，0=全部"),
-    kind: str = Query("all", description="all / decline / consolidation"),
-    code: str = Query("", description="只分析一只股票"),
-    refresh: str = Query("0", description="1=强制重新分析"),
-    workers: int = Query(8, ge=1, le=16, description="并发线程数"),
-):
-    """阴跌 / 横盘：全市场软评分。无硬门槛，按分排序。"""
-    if days < 10 or days > 180:
-        return err("days 须在 10–180 之间", 400)
-    if top < 0 or top > 500:
-        return err("top 须在 0–500 之间", 400)
-    kind_l = (kind or "all").strip().lower()
-    if kind_l not in {"all", "decline", "consolidation"}:
-        return err("kind 须为 all / decline / consolidation", 400)
-
-    try:
-        payload = grind_service.run_or_poll(
-            days=days,
-            top=top,
-            kind=kind_l,
-            code=normalize_code(code),
-            force=refresh == "1",
-            workers=workers,
-        )
-        return ok(payload)
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
 @router.get("/api/screen/rotation")
 def get_rotation_screen(
     days: int = Query(
@@ -96,49 +64,70 @@ def get_rotation_screen(
         return err(str(exc), 500)
 
 
-@router.get("/api/screen/livermore")
-def get_livermore_screen(
-    days: int = Query(LIVERMORE_LOOKBACK_DAYS, description="回看窗口（交易日，仅作缓存键）"),
-    top: int = Query(50, description="前 N 名，0=全部"),
-    kind: str = Query("all", description="all / probe / pyramid / hold / wait / exit / cash"),
-    code: str = Query("", description="只分析一只股票"),
-    refresh: str = Query("0", description="1=强制重新分析"),
-    workers: int = Query(8, ge=1, le=16, description="并发线程数"),
+@router.get("/api/screen/shares/days")
+def get_shares_trade_days(
+    days: int = Query(SHARES_LOOKBACK_DAYS, description="近 N 个交易日（约一个月=22）"),
 ):
-    """利弗莫尔趋势：大盘闸门 + 领头行业 + 关键点，输出试探/等待/空仓等动作。"""
-    if days < 10 or days > 180:
-        return err("days 须在 10–180 之间", 400)
-    if top < 0 or top > 500:
-        return err("top 须在 0–500 之间", 400)
-    kind_l = (kind or "all").strip().lower()
-    allowed = {"all", *LIVERMORE_ACTIONS}
-    if kind_l not in allowed:
-        return err("kind 须为 all / probe / pyramid / hold / wait / exit / cash", 400)
+    """近一个月交易日列表 + 可选条件字段说明，供按日勾选筛选条件。"""
+    if days < 1 or days > SHARES_MAX_LOOKBACK_DAYS:
+        return err(f"days 须在 1–{SHARES_MAX_LOOKBACK_DAYS} 之间", 400)
     try:
-        payload = livermore_service.run_or_poll(
-            days=days,
-            top=top,
-            kind=kind_l,
-            code=normalize_code(code),
-            force=refresh == "1",
-            workers=workers,
-        )
-        return ok(payload)
+        return ok(list_trade_days(days))
     except Exception as exc:  # noqa: BLE001
         return err(str(exc), 500)
 
 
-@router.get("/api/screen/livermore/stock")
-def get_livermore_stock(
-    code: str = Query("", description="股票代码，如 000338"),
-):
-    """单股诊断，走不复权关键点。"""
-    code_n = normalize_code(code)
-    if not code_n:
-        return err("缺少参数 code", 400)
+@router.post("/api/screen/shares")
+def post_shares_screen(payload: dict[str, Any] = Body(...)):
+    """按多日日线条件筛选股票。
+
+    Body 示例::
+
+        {
+          "days": [
+            {"date": "2026-09-23", "pct_chg_min": 2, "lower_ratio_min": 0.4},
+            {"date": "2026-09-22", "amplitude_min": 3, "amplitude_max": 8}
+          ],
+          "top": 50,
+          "code": "",
+          "refresh": "0",
+          "workers": 8
+        }
+
+    单日可选字段：pct_chg / max_gain / max_drop / body_pct / body_ratio /
+    lower_ratio / upper_ratio 的 ``*_min`` / ``*_max``。未填字段表示不限；多日之间为 AND。
+    """
+    raw_days = payload.get("days") if isinstance(payload, dict) else None
+    if not isinstance(raw_days, list) or not raw_days:
+        return err("days 须为非空数组", 400)
+
     try:
-        return ok(analyze_stock(code_n, fetch_raw=True))
-    except ValueError as exc:
-        return err(str(exc), 400)
+        top = int(payload.get("top") if payload.get("top") is not None else 50)
+    except (TypeError, ValueError):
+        return err("top 无效", 400)
+    if top < 0 or top > 500:
+        return err("top 须在 0–500 之间", 400)
+
+    try:
+        workers = int(payload.get("workers") if payload.get("workers") is not None else 8)
+    except (TypeError, ValueError):
+        return err("workers 无效", 400)
+    if workers < 1 or workers > 16:
+        return err("workers 须在 1–16 之间", 400)
+
+    refresh = str(payload.get("refresh") or "0").strip()
+    code = normalize_code(str(payload.get("code") or ""))
+
+    try:
+        result = shares_service.run_or_poll(
+            day_specs=raw_days,
+            top=top,
+            code=code,
+            force=refresh == "1",
+            workers=workers,
+        )
+        if result.get("status") == "error" and "data" not in result:
+            return err(str(result.get("error") or "筛选失败"), 400)
+        return ok(result)
     except Exception as exc:  # noqa: BLE001
         return err(str(exc), 500)

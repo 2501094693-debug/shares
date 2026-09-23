@@ -75,7 +75,18 @@ def _fetch_failed(payload: dict[str, Any] | None) -> bool:
         text = str(msg)
         if not (text.startswith("资金流:") or text.startswith("涨跌停池:")):
             continue
-        if any(token in text for token in ("61.129.129.48", "10065", "无法连接", "无法解析", "Max retries")):
+        if any(
+            token in text
+            for token in (
+                "61.129.129.48",
+                "10065",
+                "无法连接",
+                "无法解析",
+                "Max retries",
+                "_doh_lock",
+                "is not defined",
+            )
+        ):
             return True
     return False
 

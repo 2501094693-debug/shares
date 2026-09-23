@@ -7115,7 +7115,7 @@ function setupBackLink() {
       label: "返回基金",
     },
     screen: { href: "/analysis?view=limit", label: "返回研判" },
-    analysis: { href: "/analysis?view=stock", label: "返回研判" },
+    analysis: { href: "/analysis", label: "返回研判" },
   };
   const fallback = industry
     ? { href: industryHref, label: "返回行业树" }

@@ -1,10 +1,10 @@
 """申万三级行业浏览器 — FastAPI 后端。
 
 业务模块：
-- ``market``：行情与申万行业（涨跌 / 资金流 / 个股榜 / 基金；以及 ``market.industry`` 分类、成分股检索、地图标注）
+- ``market``：行情与申万行业（涨跌 / 资金流 / 个股榜 / 基金 / 期货；以及 ``market.industry`` 分类、成分股检索、地图标注）
 - ``company``：单只股票的盘口、K 线、资讯、龙虎榜历史上榜
 - ``world``：全球主要股指、央行利率、国债收益率、原油期货
-- ``analysis``：研判（涨跌停分析 / 个股分析 / 行业行情分析 / 趋势分析）
+- ``analysis``：研判（涨跌停分析 / 行业分析 / 个股分析）
 """
 
 from __future__ import annotations
@@ -34,9 +34,11 @@ from company.statistics.fundflow.api import router as fundflow_router
 from company.statistics.owner.api import router as owner_router
 from company.news.financialreport.api import router as financialreport_router
 from market.funds.fund.api import router as fund_router
+from market.futures.api import router as futures_router
 from market.industry.api import router as industry_router
 from market.industry.service import service as industry_service
 from market.funds.fund.service import service as fund_service
+from market.futures.service import service as futures_service
 from company.statistics.list.api import router as list_router
 from market.api import router as market_router
 from world.api import router as world_router
@@ -100,6 +102,7 @@ async def lifespan(_app: FastAPI):
         print(f"公司索引启动失败: {exc}")
 
     try:
+
         fund_service.start_build_index(force=False)
         print("已启动场内基金索引同步")
     except Exception as exc:  # noqa: BLE001
@@ -117,6 +120,12 @@ async def lifespan(_app: FastAPI):
         print("已启动场外基金索引同步")
     except Exception as exc:  # noqa: BLE001
         print(f"场外基金索引启动失败: {exc}")
+
+    try:
+        futures_service.start_build_index(force=False)
+        print("已启动期货索引同步")
+    except Exception as exc:  # noqa: BLE001
+        print(f"期货索引启动失败: {exc}")
 
     try:
         import threading
@@ -187,6 +196,7 @@ app.include_router(world_router)
 app.include_router(list_router)
 app.include_router(fund_router)
 app.include_router(otc_fund_router)
+app.include_router(futures_router)
 app.include_router(ai_router)
 app.include_router(screen_router)
 
@@ -340,6 +350,24 @@ def fund_page():
 def js_fund():
     return FileResponse(
         FRONTEND / "fund" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/futures")
+@app.get("/futures.html")
+def futures_page():
+    return FileResponse(
+        FRONTEND / "futures" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/futures.js")
+def js_futures():
+    return FileResponse(
+        FRONTEND / "futures" / "app.js",
         media_type="application/javascript",
         headers={"Cache-Control": "no-store, max-age=0"},
     )

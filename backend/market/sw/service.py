@@ -35,7 +35,15 @@ def _sealed_snapshot_broken(payload: dict[str, Any]) -> bool:
         text = str(msg)
         failed = any(
             token in text
-            for token in ("无法解析", "无法连接", "10065", "Max retries", "NewConnectionError")
+            for token in (
+                "无法解析",
+                "无法连接",
+                "10065",
+                "Max retries",
+                "NewConnectionError",
+                "_doh_lock",
+                "is not defined",
+            )
         )
         if not failed:
             continue

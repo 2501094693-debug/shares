@@ -2,28 +2,102 @@
   const POLL_MS = 1200;
   const WEEK = "日一二三四五六";
   const VIEW_KEY = "orbit-judgment-view";
+  const SHARES_SPEC_KEY = "orbit-judgment-shares-specs";
+  const SHARES_PRESET_KEY = "orbit-judgment-shares-presets";
   const VIEW_META = {
     limit: {
       title: "ORBIT · 研判",
       sub: "按每日涨停池分批排名：阴跌 → 横盘 → 涨停，软评分排序并附日 K",
       from: "screen",
     },
-    stock: {
-      title: "ORBIT · 研判",
-      sub: "全市场软评分：找出仍在阴跌或横盘的股票，无硬门槛，按分排序",
-      from: "analysis",
-    },
     industry: {
       title: "ORBIT · 研判",
       sub: "按交易日复盘申万三级行业轮动：上涨/待涨/领涨均按所选交易日切片；行情与主力净流入（当日/5日/10日）回溯至该日。点击行业进入行情树",
       from: "analysis",
     },
-    trend: {
+    shares: {
       title: "ORBIT · 研判",
-      sub: "利弗莫尔规则：大盘六栏 → 领头行业 → 关键点与量能 → 试探/等待/空仓。点击股票打开详情",
+      sub: "按近一个月交易日设置日线条件（相对日 T0/T-1… 可存为方案一键套用），多日 AND 筛选。点「开始筛选」或右上角「重新分析」",
       from: "analysis",
     },
   };
+
+  const SHARES_FIELDS = [
+    {
+      key: "pct_chg",
+      label: "涨跌幅 %",
+      unit: "%",
+      formula: "(C / Cprev − 1) × 100",
+    },
+    {
+      key: "max_gain",
+      label: "最大涨幅 %",
+      unit: "%",
+      formula: "(H / Cprev − 1) × 100",
+    },
+    {
+      key: "max_drop",
+      label: "最大跌幅 %",
+      unit: "%",
+      formula: "(L / Cprev − 1) × 100",
+    },
+    {
+      key: "body_pct",
+      label: "实体幅度 %",
+      unit: "%",
+      formula: "(C − O) / O × 100",
+    },
+    {
+      key: "lower_ratio",
+      label: "下影占比",
+      unit: "",
+      formula: "lower / span",
+    },
+    {
+      key: "upper_ratio",
+      label: "上影占比",
+      unit: "",
+      formula: "upper / span",
+    },
+    {
+      key: "body_ratio",
+      label: "实体占比",
+      unit: "",
+      formula: "body / span",
+    },
+    {
+      key: "vol_ratio",
+      label: "量比",
+      unit: "×",
+      formula: "V / mean(Vprev5)",
+    },
+    {
+      key: "vol_chg",
+      label: "量增幅 %",
+      unit: "%",
+      formula: "(V / Vprev − 1) × 100",
+    },
+  ];
+
+  const SHARES_FORMULA_LEGEND = `
+    <aside class="shares-formula-legend" aria-label="日线几何定义">
+      <div class="shares-formula-legend__syms">
+        <span><b>O</b> 开</span>
+        <span><b>H</b> 高</span>
+        <span><b>L</b> 低</span>
+        <span><b>C</b> 收</span>
+        <span><b>Cprev</b> 昨收</span>
+        <span><b>V</b> 量</span>
+      </div>
+      <div class="shares-formula-legend__defs">
+        <code>body = |C − O|</code>
+        <code>span = H − L</code>
+        <code>lower = min(O, C) − L</code>
+        <code>upper = H − max(O, C)</code>
+        <code>量比 = V / 前5日均量</code>
+      </div>
+    </aside>
+  `;
 
   const limit = {
     days: 15,
@@ -31,24 +105,6 @@
     status: "idle",
     dayRows: [],
     selectedDate: "",
-    updatedAt: "",
-    candidateCount: 0,
-    resultCount: 0,
-    analyzedCount: 0,
-    pollTimer: 0,
-    fetching: false,
-    started: false,
-    error: "",
-    message: "",
-  };
-
-  const stock = {
-    kind: "all",
-    days: 60,
-    top: 50,
-    code: "",
-    status: "idle",
-    items: [],
     updatedAt: "",
     candidateCount: 0,
     resultCount: 0,
@@ -81,24 +137,33 @@
     message: "",
   };
 
-  const trend = {
-    kind: "all",
-    days: 60,
+  const shares = {
     top: 50,
     code: "",
+    lookback: 22,
     status: "idle",
+    dayRows: [],
+    selectedDate: "",
+    specsByDate: {},
+    fields: {},
     items: [],
     updatedAt: "",
     candidateCount: 0,
     resultCount: 0,
     analyzedCount: 0,
-    gateLabel: "",
+    fingerprint: "",
+    specSummary: [],
     note: "",
     pollTimer: 0,
     fetching: false,
+    daysLoaded: false,
     started: false,
     error: "",
     message: "",
+    presets: [],
+    presetHint: "",
+    presetImportOpen: false,
+    presetImportDraft: "",
   };
 
   let view = "industry";
@@ -169,16 +234,14 @@
   function parseView(raw) {
     const value = String(raw || "").toLowerCase();
     if (["limit", "screen", "decline", "zt"].includes(value)) return "limit";
-    if (["stock", "grind", "analysis", "gx"].includes(value)) return "stock";
     if (["industry", "rotation", "rot", "l3", "hy"].includes(value)) return "industry";
-    if (["trend", "livermore", "lv", "qs"].includes(value)) return "trend";
+    if (["shares", "stock", "day", "kline", "个股", "日线"].includes(value)) return "shares";
     return "";
   }
 
   function current() {
-    if (view === "stock") return stock;
     if (view === "industry") return industry;
-    if (view === "trend") return trend;
+    if (view === "shares") return shares;
     return limit;
   }
 
@@ -252,9 +315,11 @@
   function syncUrl() {
     const url = new URL(location.href);
     url.searchParams.set("view", view);
-    if (view === "stock" && stock.code) url.searchParams.set("code", stock.code);
-    else if (view === "trend" && trend.code) url.searchParams.set("code", trend.code);
-    else url.searchParams.delete("code");
+    if (view === "shares" && current().code) {
+      url.searchParams.set("code", current().code);
+    } else {
+      url.searchParams.delete("code");
+    }
     history.replaceState({}, "", url);
   }
 
@@ -263,7 +328,8 @@
     document.title = meta.title;
     $("pageSub").textContent = meta.sub;
     document.body.dataset.screenMode = view;
-    document.body.classList.toggle("analysis-page-root", view === "stock" || view === "trend");
+    const workbench = $("sharesWorkbench");
+    if (workbench) workbench.classList.toggle("hidden", view !== "shares");
     persistView();
     syncUrl();
     renderSeg();
@@ -287,11 +353,7 @@
     });
     markSeg("limitDaysSeg", "days", limit.days);
     markSeg("limitTopSeg", "top", limit.top);
-    markSeg("stockDaysSeg", "days", stock.days);
-    markSeg("stockTopSeg", "top", stock.top);
-    markSeg("kindSeg", "kind", stock.kind);
-    markSeg("trendKindSeg", "kind", trend.kind);
-    markSeg("trendTopSeg", "top", trend.top);
+    markSeg("sharesTopSeg", "top", shares.top);
     markSeg("industryDaysSeg", "days", industry.days);
   }
 
@@ -362,25 +424,703 @@
     $("marketMeta").textContent = limit.updatedAt || "";
   }
 
-  function renderStockSummary() {
-    $("summaryBar").innerHTML = `
-      <span>已分析 <b>${stock.analyzedCount || 0}</b> / ${stock.candidateCount || 0}</span>
-      <span>展示 <b>${(stock.items || []).length}</b></span>
-      <span>窗口 <b>${stock.days}</b> 交易日</span>
-    `;
-    $("marketMeta").textContent = stock.updatedAt || "";
+  function sharesActiveSpecs() {
+    return Object.keys(shares.specsByDate || {})
+      .sort()
+      .map((date) => ({ date, ...(shares.specsByDate[date] || {}) }))
+      .filter((spec) => {
+        return SHARES_FIELDS.some(
+          (f) =>
+            Number.isFinite(Number(spec[`${f.key}_min`])) ||
+            Number.isFinite(Number(spec[`${f.key}_max`])),
+        );
+      });
   }
 
-  function renderTrendSummary() {
-    const counts = trend.counts || {};
-    $("summaryBar").innerHTML = `
-      <span>已分析 <b>${trend.analyzedCount || 0}</b> / ${trend.candidateCount || 0}</span>
-      <span>展示 <b>${(trend.items || []).length}</b></span>
-      <span>大盘 <b>${esc(trend.gateLabel || "—")}</b></span>
-      <span>试探 <b>${counts.probe || 0}</b></span>
-      <span>等待 <b>${counts.wait || 0}</b></span>
+  function sharesSpecCount() {
+    return sharesActiveSpecs().length;
+  }
+
+  function sharesDayHasSpec(date) {
+    const spec = shares.specsByDate[date];
+    if (!spec) return false;
+    return SHARES_FIELDS.some(
+      (f) =>
+        Number.isFinite(Number(spec[`${f.key}_min`])) ||
+        Number.isFinite(Number(spec[`${f.key}_max`])),
+    );
+  }
+
+  function sharesSpecBrief(date) {
+    const spec = shares.specsByDate[date];
+    if (!spec || !sharesDayHasSpec(date)) return "";
+    const parts = [];
+    for (const f of SHARES_FIELDS) {
+      const lo = spec[`${f.key}_min`];
+      const hi = spec[`${f.key}_max`];
+      if (lo == null && hi == null) continue;
+      if (lo != null && hi != null) parts.push(`${f.label}${lo}~${hi}`);
+      else if (lo != null) parts.push(`${f.label}≥${lo}`);
+      else parts.push(`${f.label}≤${hi}`);
+    }
+    return parts.join(" · ");
+  }
+
+  function readNumInput(value) {
+    const text = String(value ?? "").trim();
+    if (!text) return null;
+    const n = Number(text);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function collectSharesForm(panel) {
+    if (!panel || !shares.selectedDate) return;
+    const next = {};
+    for (const f of SHARES_FIELDS) {
+      const lo = readNumInput(panel.querySelector(`[data-field="${f.key}"][data-bound="min"]`)?.value);
+      const hi = readNumInput(panel.querySelector(`[data-field="${f.key}"][data-bound="max"]`)?.value);
+      if (lo != null) next[`${f.key}_min`] = lo;
+      if (hi != null) next[`${f.key}_max`] = hi;
+    }
+    if (Object.keys(next).length) shares.specsByDate[shares.selectedDate] = next;
+    else delete shares.specsByDate[shares.selectedDate];
+    persistSharesSpecs();
+  }
+
+  function persistSharesSpecs() {
+    try {
+      sessionStorage.setItem(SHARES_SPEC_KEY, JSON.stringify(shares.specsByDate || {}));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function restoreSharesSpecs() {
+    try {
+      const raw = sessionStorage.getItem(SHARES_SPEC_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const cleaned = {};
+        for (const [date, spec] of Object.entries(parsed)) {
+          if (!spec || typeof spec !== "object") continue;
+          const next = { ...spec };
+          delete next.direction;
+          for (const dead of [
+            "amplitude_min",
+            "amplitude_max",
+            "body_abs_pct_min",
+            "body_abs_pct_max",
+            "lower_pct_min",
+            "lower_pct_max",
+            "upper_pct_min",
+            "upper_pct_max",
+          ]) {
+            delete next[dead];
+          }
+          const has = SHARES_FIELDS.some(
+            (f) =>
+              Number.isFinite(Number(next[`${f.key}_min`])) ||
+              Number.isFinite(Number(next[`${f.key}_max`])),
+          );
+          if (has) cleaned[date] = next;
+        }
+        shares.specsByDate = cleaned;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function cleanSpecBounds(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const next = {};
+    for (const f of SHARES_FIELDS) {
+      const lo = Number(raw[`${f.key}_min`]);
+      const hi = Number(raw[`${f.key}_max`]);
+      if (Number.isFinite(lo)) next[`${f.key}_min`] = lo;
+      if (Number.isFinite(hi)) next[`${f.key}_max`] = hi;
+    }
+    return Object.keys(next).length ? next : null;
+  }
+
+  function sharesDateOffset(date) {
+    return shares.dayRows.findIndex((d) => d.date === date);
+  }
+
+  function offsetLabel(offset) {
+    const n = Number(offset);
+    if (!Number.isFinite(n) || n < 0) return "?";
+    return n === 0 ? "T0" : `T-${n}`;
+  }
+
+  function specsToRelativeDays() {
+    const days = [];
+    for (const spec of sharesActiveSpecs()) {
+      const offset = sharesDateOffset(spec.date);
+      if (offset < 0) continue;
+      const bounds = cleanSpecBounds(spec);
+      if (!bounds) continue;
+      days.push({ offset, ...bounds });
+    }
+    days.sort((a, b) => a.offset - b.offset);
+    return days;
+  }
+
+  function relativeDaysToSpecs(days) {
+    const specs = {};
+    let skipped = 0;
+    const list = Array.isArray(days) ? days : [];
+    for (const row of list) {
+      const offset = Number(row && row.offset);
+      if (!Number.isFinite(offset) || offset < 0) {
+        skipped += 1;
+        continue;
+      }
+      const day = shares.dayRows[offset];
+      if (!day || !day.date) {
+        skipped += 1;
+        continue;
+      }
+      const bounds = cleanSpecBounds(row);
+      if (!bounds) {
+        skipped += 1;
+        continue;
+      }
+      specs[day.date] = bounds;
+    }
+    return { specs, skipped };
+  }
+
+  function normalizeSharesPresetDays(rawDays) {
+    if (!Array.isArray(rawDays)) return [];
+    return rawDays
+      .map((d) => {
+        const offset = Number(d && d.offset);
+        if (!Number.isFinite(offset) || offset < 0) return null;
+        const bounds = cleanSpecBounds(d);
+        if (!bounds) return null;
+        return { offset, ...bounds };
+      })
+      .filter(Boolean);
+  }
+
+  function normalizeSharesPreset(raw, fallbackName) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const name = String(raw.name || fallbackName || "")
+      .trim()
+      .slice(0, 32);
+    const days = normalizeSharesPresetDays(raw.days);
+    if (!name || !days.length) return null;
+    const id =
+      String(raw.id || "").trim() ||
+      `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+    const top = Number(raw.top);
+    return {
+      id,
+      name,
+      updatedAt: String(raw.updatedAt || new Date().toISOString()),
+      top: Number.isFinite(top) ? top : undefined,
+      days,
+    };
+  }
+
+  function loadSharesPresets() {
+    try {
+      const raw = localStorage.getItem(SHARES_PRESET_KEY);
+      if (!raw) {
+        shares.presets = [];
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        shares.presets = [];
+        return;
+      }
+      shares.presets = parsed
+        .map((p) => {
+          const preset = normalizeSharesPreset(p);
+          if (!preset || !String(p && p.id || "").trim()) return null;
+          return preset;
+        })
+        .filter(Boolean);
+    } catch {
+      shares.presets = [];
+    }
+  }
+
+  function upsertSharesPreset(preset) {
+    const existing = shares.presets.find((p) => p.name === preset.name);
+    if (existing) {
+      existing.days = preset.days;
+      existing.top = preset.top;
+      existing.updatedAt = new Date().toISOString();
+      return existing;
+    }
+    const next = {
+      ...preset,
+      id: `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+      updatedAt: new Date().toISOString(),
+    };
+    shares.presets.unshift(next);
+    return next;
+  }
+
+  function parseSharesPresetImportPayload(rawText, fallbackName) {
+    let data;
+    try {
+      data = JSON.parse(String(rawText || "").trim());
+    } catch {
+      return { error: "JSON 解析失败，请检查格式" };
+    }
+
+    let candidates = [];
+    if (Array.isArray(data)) {
+      const looksLikeDays =
+        data.length > 0 &&
+        data.every(
+          (d) =>
+            d &&
+            typeof d === "object" &&
+            !Array.isArray(d) &&
+            Number.isFinite(Number(d.offset)) &&
+            !Array.isArray(d.days),
+        );
+      candidates = looksLikeDays ? [{ name: fallbackName, days: data }] : data;
+    } else if (data && typeof data === "object") {
+      if (Array.isArray(data.presets)) candidates = data.presets;
+      else if (Array.isArray(data.days)) candidates = [data];
+      else return { error: "缺少 days 字段（或 presets 数组）" };
+    } else {
+      return { error: "JSON 须为对象或数组" };
+    }
+
+    const presets = [];
+    for (const item of candidates) {
+      const preset = normalizeSharesPreset(item, fallbackName);
+      if (preset) presets.push(preset);
+    }
+    if (!presets.length) {
+      return {
+        error: "未识别到有效方案（需要 name + days；仅 days 数组时请先填方案名称）",
+      };
+    }
+    return { presets };
+  }
+
+  function importSharesPresetsFromText(rawText) {
+    const fallbackName = ($("sharesPresetName")?.value || "").trim() || "导入方案";
+    const parsed = parseSharesPresetImportPayload(rawText, fallbackName);
+    if (parsed.error) {
+      shares.presetHint = parsed.error;
+      renderSharesPresetBar();
+      return false;
+    }
+    const saved = parsed.presets.map((p) => upsertSharesPreset(p));
+    persistSharesPresets();
+    shares.presetImportOpen = false;
+    shares.presetImportDraft = "";
+    applySharesPreset(saved[0].id);
+    shares.presetHint =
+      saved.length === 1
+        ? `已导入并套用「${saved[0].name}」，点「开始筛选」运行`
+        : `已导入 ${saved.length} 个方案，已套用「${saved[0].name}」`;
+    renderSharesPresetBar();
+    return true;
+  }
+
+  function persistSharesPresets() {
+    try {
+      localStorage.setItem(SHARES_PRESET_KEY, JSON.stringify(shares.presets || []));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function presetBrief(preset) {
+    const days = (preset && preset.days) || [];
+    if (!days.length) return "空";
+    const labels = days
+      .slice()
+      .sort((a, b) => a.offset - b.offset)
+      .map((d) => offsetLabel(d.offset));
+    return `${days.length}日 · ${labels.join("/")}`;
+  }
+
+  function saveSharesPreset(rawName) {
+    collectSharesForm($("sharesCondPanel"));
+    const name = String(rawName || "").trim();
+    if (!name) {
+      shares.presetHint = "请输入方案名称";
+      renderSharesPresetBar();
+      return false;
+    }
+    const days = specsToRelativeDays();
+    if (!days.length) {
+      shares.presetHint = "请先为至少一个交易日设置条件";
+      renderSharesPresetBar();
+      return false;
+    }
+    const existing = shares.presets.find((p) => p.name === name);
+    upsertSharesPreset({
+      id: existing?.id || `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+      name,
+      updatedAt: new Date().toISOString(),
+      top: shares.top,
+      days,
+    });
+    persistSharesPresets();
+    shares.presetHint = existing ? `已覆盖方案「${name}」` : `已保存方案「${name}」`;
+    renderSharesPresetBar();
+    return true;
+  }
+
+  function applySharesPreset(id) {
+    const preset = shares.presets.find((p) => p.id === id);
+    if (!preset) return;
+    if (!shares.dayRows.length) {
+      shares.presetHint = "交易日尚未加载，请稍后重试";
+      renderSharesPresetBar();
+      return;
+    }
+    const { specs, skipped } = relativeDaysToSpecs(preset.days);
+    if (!Object.keys(specs).length) {
+      shares.presetHint = "方案中的相对日均超出当前窗口";
+      renderSharesPresetBar();
+      return;
+    }
+    shares.specsByDate = specs;
+    persistSharesSpecs();
+    if (Number.isFinite(Number(preset.top))) {
+      shares.top = Number(preset.top);
+      renderSeg();
+    }
+    const dates = Object.keys(specs).sort();
+    if (!dates.includes(shares.selectedDate)) {
+      shares.selectedDate = dates[0] || shares.selectedDate;
+    }
+    stopPoll(shares);
+    shares.started = false;
+    shares.status = "idle";
+    shares.items = [];
+    shares.resultCount = 0;
+    shares.analyzedCount = 0;
+    shares.message = "";
+    const panel = $("sharesCondPanel");
+    if (panel) panel.dataset.date = "";
+    shares.presetHint = skipped
+      ? `已套用「${preset.name}」（${skipped} 个相对日超出窗口已跳过）`
+      : `已套用「${preset.name}」，点「开始筛选」运行`;
+    renderAll();
+    showError("");
+    setLive("idle");
+  }
+
+  function deleteSharesPreset(id) {
+    const before = shares.presets.length;
+    shares.presets = shares.presets.filter((p) => p.id !== id);
+    if (shares.presets.length === before) return;
+    persistSharesPresets();
+    shares.presetHint = "已删除方案";
+    renderSharesPresetBar();
+  }
+
+  function renderSharesPresetBar() {
+    const bar = $("sharesPresetBar");
+    if (!bar) return;
+    if (view !== "shares") {
+      bar.innerHTML = "";
+      return;
+    }
+    const active = document.activeElement;
+    const keepNameFocus = active && active.id === "sharesPresetName";
+    const keepImportFocus = active && active.id === "sharesPresetImportText";
+    const prevName = keepNameFocus
+      ? active.value
+      : $("sharesPresetName")?.value ?? "";
+    const importDraft = keepImportFocus
+      ? active.value
+      : $("sharesPresetImportText")?.value ?? shares.presetImportDraft ?? "";
+    const importSel =
+      keepImportFocus && typeof active.selectionStart === "number"
+        ? { start: active.selectionStart, end: active.selectionEnd }
+        : null;
+    shares.presetImportDraft = importDraft;
+    const chips = (shares.presets || [])
+      .map(
+        (p) => `<span class="shares-preset-chip" data-preset-id="${esc(p.id)}">
+          <button type="button" class="shares-preset-chip__apply" data-preset-apply="${esc(p.id)}" title="一键套用（相对日）">
+            <b>${esc(p.name)}</b><span>${esc(presetBrief(p))}</span>
+          </button>
+          <button type="button" class="shares-preset-chip__del" data-preset-del="${esc(p.id)}" title="删除方案" aria-label="删除 ${esc(p.name)}">×</button>
+        </span>`,
+      )
+      .join("");
+    const importPanel = shares.presetImportOpen
+      ? `<div class="shares-preset-import">
+          <label class="shares-preset-import__label" for="sharesPresetImportText">粘贴方案 JSON</label>
+          <textarea id="sharesPresetImportText" rows="7" spellcheck="false" placeholder='{"name":"长下影·近3日缩量跌","top":50,"days":[{"offset":0,"lower_ratio_min":0.45},{"offset":1,"pct_chg_max":-0.5,"vol_ratio_max":0.85}]}'>${esc(importDraft)}</textarea>
+          <p class="shares-preset-import__tip muted">支持单方案对象、方案数组，或仅 days 数组（名称用左侧输入框）。同名覆盖。</p>
+          <div class="shares-preset-import__actions">
+            <button type="button" class="btn" id="sharesPresetImportConfirm">导入并套用</button>
+            <button type="button" class="btn ghost" id="sharesPresetImportCancel">取消</button>
+          </div>
+        </div>`
+      : "";
+    bar.innerHTML = `
+      <span class="shares-preset-bar__label">方案</span>
+      <div class="shares-preset-bar__save">
+        <input id="sharesPresetName" type="text" maxlength="32" placeholder="方案名称" autocomplete="off" value="${esc(prevName)}" />
+        <button type="button" class="btn ghost" id="sharesPresetSaveBtn">保存方案</button>
+        <button type="button" class="btn ghost" id="sharesPresetImportBtn" aria-expanded="${shares.presetImportOpen ? "true" : "false"}">导入JSON</button>
+      </div>
+      <div class="shares-preset-bar__list">
+        ${chips || `<p class="shares-preset-bar__empty">暂无已存方案 · 设好多日条件后可保存，或导入 JSON</p>`}
+      </div>
+      ${importPanel}
+      ${shares.presetHint ? `<p class="shares-cond-hint shares-preset-bar__hint">${esc(shares.presetHint)}</p>` : ""}
     `;
-    $("marketMeta").textContent = trend.updatedAt || "";
+    if (keepNameFocus) {
+      const input = $("sharesPresetName");
+      if (input) {
+        input.focus();
+        const len = input.value.length;
+        try {
+          input.setSelectionRange(len, len);
+        } catch {
+          /* ignore */
+        }
+      }
+    } else if (keepImportFocus) {
+      const ta = $("sharesPresetImportText");
+      if (ta) {
+        ta.focus();
+        try {
+          const start = importSel ? importSel.start : ta.value.length;
+          const end = importSel ? importSel.end : ta.value.length;
+          ta.setSelectionRange(start, end);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+
+  function sharesChipsHtml(activeDate) {
+    return sharesActiveSpecs()
+      .map((s) => {
+        const active = s.date === activeDate ? " is-active" : "";
+        const off = sharesDateOffset(s.date);
+        const tag = off >= 0 ? offsetLabel(off) : fmtMd(s.date);
+        return `<button type="button" class="shares-cond-chip${active}" data-jump-date="${esc(s.date)}">
+          <b>${esc(tag)}</b><span>${esc(sharesSpecBrief(s.date))}</span>
+        </button>`;
+      })
+      .join("");
+  }
+
+  function refreshSharesChipsOnly() {
+    const panel = $("sharesCondPanel");
+    if (!panel) return;
+    let chips = panel.querySelector(".shares-cond-chips");
+    const html = sharesChipsHtml(shares.selectedDate);
+    if (!html) {
+      if (chips) chips.remove();
+      return;
+    }
+    if (!chips) {
+      chips = document.createElement("div");
+      chips.className = "shares-cond-chips";
+      panel.appendChild(chips);
+    }
+    chips.innerHTML = html;
+  }
+
+  function renderSharesSummary() {
+    const n = sharesSpecCount();
+    $("summaryBar").innerHTML = `
+      <span>条件日 <b>${n}</b></span>
+      <span>已分析 <b>${shares.analyzedCount || 0}</b> / ${shares.candidateCount || 0}</span>
+      <span>入选 <b>${shares.resultCount || (shares.items || []).length}</b></span>
+      <span>展示 <b>${(shares.items || []).length}</b></span>
+    `;
+    $("marketMeta").textContent = shares.message || shares.updatedAt || "";
+  }
+
+  function renderSharesDayRail() {
+    const rail = $("dayRail");
+    if (!shares.dayRows.length) {
+      rail.innerHTML = `<p class="screen-empty muted">暂无交易日</p>`;
+      return;
+    }
+    rail.innerHTML = shares.dayRows
+      .map((day, idx) => {
+        const active = day.date === shares.selectedDate ? " is-active" : "";
+        const has = sharesDayHasSpec(day.date);
+        const marked = has ? " has-spec" : "";
+        const countText = has ? "已设" : offsetLabel(idx);
+        return `<button type="button" class="screen-day-chip${active}${marked}" data-date="${esc(day.date)}" title="${esc(sharesSpecBrief(day.date) || `${offsetLabel(idx)} · ${day.date}`)}">
+          <span class="screen-day-when">
+            <b>${esc(fmtMd(day.date))}</b>
+            <em>${esc(weekday(day.date))} · ${esc(offsetLabel(idx))}</em>
+          </span>
+          <span class="screen-day-count">${esc(countText)}</span>
+        </button>`;
+      })
+      .join("");
+  }
+
+  function renderSharesHead() {
+    const n = sharesSpecCount();
+    const day = shares.selectedDate;
+    const off = day ? sharesDateOffset(day) : -1;
+    const offText = off >= 0 ? ` · ${offsetLabel(off)}` : "";
+    $("dayHead").innerHTML = `
+      <div>
+        <h2>${day ? `${esc(day)} ${esc(weekday(day))}${esc(offText)}` : "个股日线条件"}</h2>
+        <p>已设 <b>${n}</b> 个交易日条件 · 多日 AND · 未填字段不限 · 方案按相对日保存</p>
+      </div>
+    `;
+  }
+
+  function renderSharesCondPanel(force) {
+    const panel = $("sharesCondPanel");
+    if (!panel) return;
+    if (view !== "shares") return;
+    const date = shares.selectedDate;
+    if (!date) {
+      panel.innerHTML = `<p class="shares-cond-hint">上方选择交易日，再设置该日日线条件</p>`;
+      panel.dataset.date = "";
+      return;
+    }
+
+    // 轮询刷新时不要重建表单，避免打断输入焦点
+    const editing =
+      !force &&
+      panel.dataset.date === date &&
+      panel.querySelector("input, select") &&
+      document.activeElement &&
+      panel.contains(document.activeElement);
+    if (editing) {
+      refreshSharesChipsOnly();
+      return;
+    }
+    if (!force && panel.dataset.date === date && panel.querySelector("[data-field]")) {
+      refreshSharesChipsOnly();
+      return;
+    }
+
+    const spec = shares.specsByDate[date] || {};
+    const fieldsHtml = SHARES_FIELDS.map((f) => {
+      const lo = spec[`${f.key}_min`];
+      const hi = spec[`${f.key}_max`];
+      return `<label class="shares-cond-field" title="${esc(f.formula || "")}">
+        <span class="shares-cond-field__name">${esc(f.label)}</span>
+        <code class="shares-cond-field__fx">${esc(f.formula || "")}</code>
+        <span class="shares-cond-range">
+          <input type="number" step="any" inputmode="decimal" data-field="${esc(f.key)}" data-bound="min" placeholder="最小" value="${lo == null ? "" : esc(lo)}" />
+          <em>~</em>
+          <input type="number" step="any" inputmode="decimal" data-field="${esc(f.key)}" data-bound="max" placeholder="最大" value="${hi == null ? "" : esc(hi)}" />
+        </span>
+      </label>`;
+    }).join("");
+    const chips = sharesChipsHtml(date);
+    const off = sharesDateOffset(date);
+    panel.dataset.date = date;
+    panel.innerHTML = `
+      ${SHARES_FORMULA_LEGEND}
+      ${fieldsHtml}
+      <div class="shares-cond-actions">
+        <button type="button" class="btn" id="sharesRunBtn">开始筛选</button>
+        <button type="button" class="btn ghost" id="sharesClearDayBtn">清空本日</button>
+        <p class="shares-cond-hint">当前 ${esc(offsetLabel(off))} · 为各交易日分别设条件，多日同时满足才入选</p>
+      </div>
+      ${chips ? `<div class="shares-cond-chips">${chips}</div>` : ""}
+    `;
+  }
+
+  function sharesCardHtml(row) {
+    const industry = [row.l1_name, row.l2_name, row.l3_name].filter(Boolean).join(" / ");
+    const err = row.error ? `<span class="screen-card-error">${esc(row.error)}</span>` : "";
+    const href = fromHref(row.code || "");
+    const days = row.days || [];
+    const last = days[days.length - 1] || {};
+    const m = last.metrics || {};
+    const fmtVolRatio = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? `${n.toFixed(2)}×` : "—";
+    };
+    const dayChips = days
+      .map((d) => {
+        const mm = d.metrics || {};
+        const tip = [
+          `涨跌 ${fmtPct(mm.pct_chg)}`,
+          `最大涨 ${fmtPct(mm.max_gain)}`,
+          `最大跌 ${fmtPct(mm.max_drop)}`,
+          `实体 ${fmtPct(mm.body_pct)}`,
+          `下影比 ${fmtNum((mm.lower_ratio || 0) * 100, 0)}%`,
+          `上影比 ${fmtNum((mm.upper_ratio || 0) * 100, 0)}%`,
+          `实体比 ${fmtNum((mm.body_ratio || 0) * 100, 0)}%`,
+          `量比 ${fmtVolRatio(mm.vol_ratio)}`,
+          `量增幅 ${fmtPct(mm.vol_chg)}`,
+          d.spec_text || "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        return `<span class="screen-chip" data-tone="${tone(mm.pct_chg)}" title="${esc(tip)}"><em>${esc(fmtMd(d.date))}</em>${fmtPct(mm.pct_chg)}</span>`;
+      })
+      .join("");
+    return `<article class="screen-card is-stock" data-code="${esc(row.code || "")}" data-key="${esc(row.code || "")}" tabindex="0">
+      <a class="screen-card-head" href="${esc(href)}" title="打开公司详情">
+        <span class="screen-rank">${row.rank || ""}</span>
+        <div class="screen-card-name">
+          <strong>${esc(row.name || "")}</strong>
+          <span>${esc(row.code || "")}</span>
+          ${industry ? `<em>${esc(industry)}</em>` : ""}
+        </div>
+        <div class="screen-card-score">
+          <b>${row.matched_days || days.length || 0}</b>
+          <span>命中日</span>
+        </div>
+      </a>
+      ${klineBlock(row.code || "")}
+      <footer class="screen-card-meta">
+        <span>涨跌 <b data-tone="${tone(m.pct_chg)}">${fmtPct(m.pct_chg)}</b></span>
+        <span>最大涨 <b data-tone="${tone(m.max_gain)}">${fmtPct(m.max_gain)}</b></span>
+        <span>最大跌 <b data-tone="${tone(m.max_drop)}">${fmtPct(m.max_drop)}</b></span>
+        <span>实体 <b data-tone="${tone(m.body_pct)}">${fmtPct(m.body_pct)}</b></span>
+        <span>下影比 <b>${fmtNum((m.lower_ratio || 0) * 100, 0)}</b>%</span>
+        <span>上影比 <b>${fmtNum((m.upper_ratio || 0) * 100, 0)}</b>%</span>
+        <span>实体比 <b>${fmtNum((m.body_ratio || 0) * 100, 0)}</b>%</span>
+        <span>量比 <b data-tone="${tone((Number(m.vol_ratio) || 0) - 1)}">${fmtVolRatio(m.vol_ratio)}</b></span>
+        <span>量增幅 <b data-tone="${tone(m.vol_chg)}">${fmtPct(m.vol_chg)}</b></span>
+        ${dayChips}
+        ${err}
+      </footer>
+    </article>`;
+  }
+
+  function patchSharesCard(el, row) {
+    const rank = el.querySelector(".screen-rank");
+    if (rank) rank.textContent = String(row.rank || "");
+    const score = el.querySelector(".screen-card-score b");
+    if (score) score.textContent = String(row.matched_days || (row.days || []).length || 0);
+  }
+
+  function renderSharesCards() {
+    const viewKey = `shares:${shares.fingerprint || sharesSpecCount()}:${shares.code || "-"}`;
+    let empty = "暂无符合条件的股票";
+    if (shares.status === "running") empty = "正在分析，结果会逐只出现…";
+    else if (!sharesSpecCount()) empty = "请先为至少一个交易日设置条件，再点重新分析";
+    else if (!shares.started) empty = "条件已就绪，点右上角「重新分析」开始筛选";
+    renderCards(
+      shares.items || [],
+      (row) => String(row.code || ""),
+      sharesCardHtml,
+      patchSharesCard,
+      empty,
+      viewKey,
+    );
   }
 
   function windowLabel(days) {
@@ -634,45 +1374,6 @@
     if (rankHint) rankHint.textContent = rankN ? `${rankN} 个` : "";
   }
 
-  function kindTitle() {
-    if (stock.kind === "decline") return "阴跌";
-    if (stock.kind === "consolidation") return "横盘";
-    return "阴跌 / 横盘";
-  }
-
-  function renderStockHead() {
-    const scope = stock.code ? `代码 ${stock.code}` : "全市场软评分";
-    $("dayHead").innerHTML = `
-      <div>
-        <h2>${esc(kindTitle())}</h2>
-        <p>${esc(scope)} · 已分析 <b>${stock.analyzedCount || 0}</b> · 展示 <b>${(stock.items || []).length}</b></p>
-      </div>
-    `;
-  }
-
-  function trendKindTitle() {
-    const map = {
-      all: "趋势动作",
-      probe: "试探",
-      pyramid: "加码",
-      hold: "持有",
-      wait: "等待",
-      exit: "离场",
-      cash: "空仓",
-    };
-    return map[trend.kind] || "趋势动作";
-  }
-
-  function renderTrendHead() {
-    const scope = trend.code ? `代码 ${trend.code}` : "全市场规则扫描";
-    $("dayHead").innerHTML = `
-      <div>
-        <h2>${esc(trendKindTitle())}</h2>
-        <p>${esc(scope)} · 大盘 ${esc(trend.gateLabel || "—")} · 已分析 <b>${trend.analyzedCount || 0}</b> · 展示 <b>${(trend.items || []).length}</b></p>
-      </div>
-    `;
-  }
-
   function tagTone(bucket, tag) {
     const key = String(bucket || tag || "");
     if (key === "首次" || key === "新轮到" || key === "近5日跟上" || key === "may_rotate" || key === "may_turn") return "up";
@@ -844,89 +1545,6 @@
     </article>`;
   }
 
-  function actionTone(action) {
-    if (action === "probe" || action === "pyramid" || action === "hold") return "up";
-    if (action === "exit" || action === "cash") return "down";
-    return "flat";
-  }
-
-  function grindCardHtml(row) {
-    const detected = row.detected || {};
-    const dec = detected.decline || {};
-    const cons = detected.consolidation || {};
-    const windowStats = detected.window || {};
-    const scores = row.scores || {};
-    const industry = [row.l1_name, row.l2_name, row.l3_name].filter(Boolean).join(" / ");
-    const err = row.error ? `<span class="screen-card-error">${esc(row.error)}</span>` : "";
-    const href = fromHref(row.code || "");
-    return `<article class="screen-card is-stock" data-code="${esc(row.code || "")}" data-key="${esc(row.code || "")}" tabindex="0">
-      <a class="screen-card-head" href="${esc(href)}" title="打开公司详情">
-        <span class="screen-rank">${row.rank || ""}</span>
-        <div class="screen-card-name">
-          <strong>${esc(row.name || "")}</strong>
-          <span>${esc(row.code || "")}</span>
-          ${industry ? `<em>${esc(industry)}</em>` : ""}
-        </div>
-        <div class="screen-card-score">
-          <b>${fmtNum(scores.total, 1)}</b>
-          <span>${esc(row.kind_label || "—")}</span>
-        </div>
-      </a>
-      ${klineBlock(row.code || "")}
-      <footer class="screen-card-meta">
-        <span>阴跌 <b>${dec.days ?? "—"}</b>天 <b data-tone="${tone(dec.total_pct)}">${fmtPct(dec.total_pct)}</b></span>
-        <span>横盘 <b>${cons.days ?? "—"}</b>天 幅 <b>${fmtNum(cons.range_pct, 1)}</b>%</span>
-        <span>窗口 <b data-tone="${tone(windowStats.total_pct)}">${fmtPct(windowStats.total_pct)}</b></span>
-        ${scoreChip("阴跌", scores.decline)}
-        ${scoreChip("横盘", scores.consolidation)}
-        ${scoreChip("阴跌时长", scores.decline_duration)}
-        ${scoreChip("阴跌质量", scores.decline_quality)}
-        ${scoreChip("横盘时长", scores.consolidation_duration)}
-        ${scoreChip("横盘质量", scores.consolidation_quality)}
-        ${scoreChip("持续", scores.persistence)}
-        ${err}
-      </footer>
-    </article>`;
-  }
-
-  function trendCardHtml(row) {
-    const industry = [row.l1_name, row.l2_name, row.l3_name].filter(Boolean).join(" / ");
-    const err = row.error ? `<span class="screen-card-error">${esc(row.error)}</span>` : "";
-    const href = fromHref(row.code || "");
-    const pivots = row.pivotal || [];
-    const pivotText = pivots
-      .slice(0, 2)
-      .map((p) => `${p.kind || ""} ${p.status || ""}`.trim())
-      .filter(Boolean)
-      .join(" · ");
-    const reasons = (row.reason || []).slice(0, 3).join(" · ");
-    const rs = row.rs || {};
-    const follow = row.follow || {};
-    return `<article class="screen-card is-stock" data-code="${esc(row.code || "")}" data-key="${esc(row.code || "")}" tabindex="0">
-      <a class="screen-card-head" href="${esc(href)}" title="打开公司详情">
-        <span class="screen-rank">${row.rank || ""}</span>
-        <div class="screen-card-name">
-          <strong>${esc(row.name || "")}</strong>
-          <span>${esc(row.code || "")}</span>
-          ${industry ? `<em>${esc(industry)}</em>` : ""}
-        </div>
-        <div class="screen-card-score">
-          <b data-tone="${actionTone(row.action)}">${esc(row.action_label || row.action || "—")}</b>
-          <span>${esc(row.column_label || "—")}</span>
-        </div>
-      </a>
-      ${klineBlock(row.code || "")}
-      <footer class="screen-card-meta">
-        <span>相对大盘 <b data-tone="${tone(rs.vs_index_20d)}">${fmtPct(rs.vs_index_20d)}</b></span>
-        <span>组内 <b>${rs.rank ?? "—"}</b> / ${rs.sample ?? "—"}</span>
-        <span>跟随 <b>${esc(follow.status || "—")}</b></span>
-        ${pivotText ? `<span>${esc(pivotText)}</span>` : ""}
-        ${reasons ? `<span>${esc(reasons)}</span>` : ""}
-        ${err}
-      </footer>
-    </article>`;
-  }
-
   function mountCardKline(card) {
     const kline = card.querySelector(".chart-card--kline");
     const code = kline && kline.dataset.klineCode;
@@ -987,24 +1605,6 @@
     if (score) score.textContent = fmtNum((row.scores || {}).total, 1);
   }
 
-  function patchStockCard(el, row) {
-    patchLimitCard(el, row);
-    const badge = el.querySelector(".screen-card-score span");
-    if (badge) badge.textContent = row.kind_label || "—";
-  }
-
-  function patchTrendCard(el, row) {
-    const rank = el.querySelector(".screen-rank");
-    if (rank) rank.textContent = String(row.rank || "");
-    const score = el.querySelector(".screen-card-score b");
-    if (score) {
-      score.textContent = row.action_label || row.action || "—";
-      score.setAttribute("data-tone", actionTone(row.action));
-    }
-    const badge = el.querySelector(".screen-card-score span");
-    if (badge) badge.textContent = row.column_label || "—";
-  }
-
   function emptyHint(st, noneText) {
     if (!st.started || st.status === "running") return "正在分析，结果会逐只出现…";
     return noneText;
@@ -1018,30 +1618,6 @@
       patchLimitCard,
       emptyHint(limit, "该日暂无结果"),
       limit.selectedDate || "",
-    );
-  }
-
-  function renderStockCards() {
-    const viewKey = `${stock.kind}:${stock.code || "-"}`;
-    renderCards(
-      stock.items || [],
-      (row) => String(row.code || ""),
-      grindCardHtml,
-      patchStockCard,
-      emptyHint(stock, "暂无结果"),
-      viewKey,
-    );
-  }
-
-  function renderTrendCards() {
-    const viewKey = `${trend.kind}:${trend.code || "-"}`;
-    renderCards(
-      trend.items || [],
-      (row) => String(row.code || ""),
-      trendCardHtml,
-      patchTrendCard,
-      emptyHint(trend, "暂无结果"),
-      viewKey,
     );
   }
 
@@ -1062,17 +1638,15 @@
       renderIndustry();
       return;
     }
-    if (view === "trend") {
-      renderTrendSummary();
-      renderTrendHead();
-      renderTrendCards();
-      window.OrbitPrefetch?.intent({ stocks: trend.items });
-      return;
+    if (view === "shares") {
+      renderSharesSummary();
+      renderSharesDayRail();
+      renderSharesHead();
+      renderSharesCondPanel();
+      renderSharesPresetBar();
+      renderSharesCards();
+      window.OrbitPrefetch?.intent({ stocks: shares.items });
     }
-    renderStockSummary();
-    renderStockHead();
-    renderStockCards();
-    window.OrbitPrefetch?.intent({ stocks: stock.items });
   }
 
   function applyLimitData(data) {
@@ -1087,25 +1661,16 @@
     if (view === "limit") renderAll();
   }
 
-  function applyStockData(data) {
-    stock.items = data.items || [];
-    stock.updatedAt = data.updated_at || "";
-    stock.candidateCount = data.candidate_count || 0;
-    stock.resultCount = data.result_count || 0;
-    stock.analyzedCount = data.analyzed_count || data.result_count || 0;
-    if (view === "stock") renderAll();
-  }
-
-  function applyTrendData(data) {
-    trend.items = data.items || [];
-    trend.updatedAt = data.updated_at || "";
-    trend.candidateCount = data.candidate_count || 0;
-    trend.resultCount = data.result_count || 0;
-    trend.analyzedCount = data.analyzed_count || data.result_count || 0;
-    trend.gateLabel = (data.gate && (data.gate.column_label || data.gate.column)) || "";
-    trend.counts = data.action_counts || {};
-    trend.note = data.note || "";
-    if (view === "trend") renderAll();
+  function applySharesData(data) {
+    shares.items = data.items || [];
+    shares.updatedAt = data.updated_at || "";
+    shares.candidateCount = data.candidate_count || 0;
+    shares.resultCount = data.result_count || 0;
+    shares.analyzedCount = data.analyzed_count || data.result_count || 0;
+    shares.fingerprint = data.fingerprint || "";
+    shares.specSummary = data.spec_summary || [];
+    shares.note = data.note || "";
+    if (view === "shares") renderAll();
   }
 
   function applyIndustryData(data) {
@@ -1233,101 +1798,107 @@
     }
   }
 
-  async function loadStock(force) {
-    if (stock.fetching && !force) return;
-    stock.fetching = true;
-    stock.started = true;
-    stock.error = "";
-    if (view === "stock") showError("");
-    if (force) {
-      stock.items = [];
-      stock.resultCount = 0;
-      stock.analyzedCount = 0;
-      if (view === "stock") renderAll();
-      stock.message = stock.code ? `正在分析 ${stock.code}…` : "正在准备股票池…";
-      if (view === "stock") {
-        showLoading(true, stock.message);
-        setLive("busy");
-      }
-    }
-
-    const qs = new URLSearchParams({
-      days: String(stock.days),
-      top: String(stock.top),
-      kind: stock.kind,
-      refresh: force ? "1" : "0",
-    });
-    if (stock.code) qs.set("code", stock.code);
-
+  async function loadSharesDays() {
     try {
-      const res = await fetch(`/api/screen/grind?${qs}`);
+      const res = await fetch(`/api/screen/shares/days?days=${shares.lookback}`, {
+        cache: "no-store",
+      });
       const json = await res.json();
-      if (!json.ok) {
-        throw new Error(json.error || "请求失败");
+      if (!json.ok) throw new Error(json.error || "交易日加载失败");
+      const data = json.data || {};
+      shares.dayRows = data.items || [];
+      shares.fields = data.fields || {};
+      shares.daysLoaded = true;
+      const valid = new Set(shares.dayRows.map((d) => d.date));
+      for (const date of Object.keys(shares.specsByDate || {})) {
+        if (!valid.has(date)) delete shares.specsByDate[date];
       }
-      applyPayload(stock, json.data || {}, applyStockData);
-      if (stock.status === "running") schedulePoll(stock, loadStock);
-      else stopPoll(stock);
+      persistSharesSpecs();
+      if (!shares.dayRows.some((d) => d.date === shares.selectedDate)) {
+        shares.selectedDate = (shares.dayRows[0] && shares.dayRows[0].date) || "";
+      }
+      if (view === "shares") renderAll();
     } catch (err) {
-      stock.error = err.message || String(err);
-      stock.status = "error";
-      if (view === "stock") {
-        showLoading(false);
-        showError(stock.error);
-        setLive("idle");
-      }
-      stopPoll(stock);
-    } finally {
-      stock.fetching = false;
+      shares.error = err.message || String(err);
+      if (view === "shares") showError(shares.error);
     }
   }
 
-  async function loadTrend(force) {
-    if (trend.fetching && !force) return;
-    trend.fetching = true;
-    trend.started = true;
-    trend.error = "";
-    if (view === "trend") showError("");
+  async function loadShares(force) {
+    if (shares.fetching && !force) return;
+    collectSharesForm($("sharesCondPanel"));
+    if (!shares.daysLoaded) await loadSharesDays();
+
+    const daySpecs = sharesActiveSpecs();
+    if (!daySpecs.length) {
+      shares.started = false;
+      shares.status = "idle";
+      shares.items = [];
+      shares.resultCount = 0;
+      shares.message = "请先为交易日设置条件";
+      if (view === "shares") {
+        showLoading(false);
+        renderAll();
+        showError("请先为至少一个交易日设置涨跌 / 实体 / 影线占比等条件");
+        setLive("idle");
+      }
+      return;
+    }
+
+    shares.fetching = true;
+    shares.started = true;
+    shares.error = "";
+    if (view === "shares") showError("");
     if (force) {
-      trend.items = [];
-      trend.resultCount = 0;
-      trend.analyzedCount = 0;
-      if (view === "trend") renderAll();
-      trend.message = trend.code ? `正在分析 ${trend.code}…` : "正在准备股票池…";
-      if (view === "trend") {
-        showLoading(true, trend.message);
+      shares.items = [];
+      shares.resultCount = 0;
+      shares.analyzedCount = 0;
+      if (view === "shares") {
+        renderSharesSummary();
+        renderSharesDayRail();
+        renderSharesHead();
+        renderSharesCards();
+      }
+      shares.message = shares.code ? `正在分析 ${shares.code}…` : "正在按日线条件筛选…";
+      if (view === "shares") {
+        showLoading(true, shares.message);
         setLive("busy");
       }
     }
 
-    const qs = new URLSearchParams({
-      days: String(trend.days),
-      top: String(trend.top),
-      kind: trend.kind,
+    const body = {
+      days: daySpecs,
+      top: shares.top,
       refresh: force ? "1" : "0",
-    });
-    if (trend.code) qs.set("code", trend.code);
+      workers: 8,
+    };
+    if (shares.code) body.code = shares.code;
 
     try {
-      const res = await fetch(`/api/screen/livermore?${qs}`);
+      const res = await fetch("/api/screen/shares", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        cache: "no-store",
+      });
       const json = await res.json();
       if (!json.ok) {
         throw new Error(json.error || "请求失败");
       }
-      applyPayload(trend, json.data || {}, applyTrendData);
-      if (trend.status === "running") schedulePoll(trend, loadTrend);
-      else stopPoll(trend);
+      applyPayload(shares, json.data || {}, applySharesData);
+      if (shares.status === "running") schedulePoll(shares, () => loadShares(false));
+      else stopPoll(shares);
     } catch (err) {
-      trend.error = err.message || String(err);
-      trend.status = "error";
-      if (view === "trend") {
+      shares.error = err.message || String(err);
+      shares.status = "error";
+      if (view === "shares") {
         showLoading(false);
-        showError(trend.error);
+        showError(shares.error);
         setLive("idle");
       }
-      stopPoll(trend);
+      stopPoll(shares);
     } finally {
-      trend.fetching = false;
+      shares.fetching = false;
     }
   }
 
@@ -1383,8 +1954,12 @@
   function load(force) {
     if (view === "limit") return loadLimit(force);
     if (view === "industry") return loadIndustry(force);
-    if (view === "trend") return loadTrend(force);
-    return loadStock(force);
+    if (view === "shares") {
+      if (!shares.daysLoaded) return loadSharesDays().then(() => {
+        if (shares.started || force) return loadShares(force);
+      });
+      return loadShares(force);
+    }
   }
 
   function openCompany(code) {
@@ -1394,19 +1969,12 @@
 
   function submitCode(force) {
     const next = readCode();
-    if (view === "trend") {
-      if (next === trend.code && !force) return;
-      stopPoll(trend);
-      trend.code = next;
-      syncUrl();
-      loadTrend(true);
-      return;
-    }
-    if (next === stock.code && !force) return;
-    stopPoll(stock);
-    stock.code = next;
-    if (view === "stock") syncUrl();
-    loadStock(true);
+    if (view !== "shares") return;
+    if (next === shares.code && !force) return;
+    stopPoll(shares);
+    shares.code = next;
+    syncUrl();
+    loadShares(true);
   }
 
   function resetList() {
@@ -1416,7 +1984,9 @@
   }
 
   function switchView(next) {
-    if (next !== "limit" && next !== "stock" && next !== "industry" && next !== "trend") return;
+    if (next !== "limit" && next !== "industry" && next !== "shares") {
+      return;
+    }
     if (next === view) return;
     stopPoll(current());
     view = next;
@@ -1425,6 +1995,11 @@
     renderAll();
     syncStatusUi();
     const st = current();
+    if (view === "shares") {
+      if (!shares.daysLoaded) loadSharesDays();
+      else if (shares.started) loadShares(false);
+      return;
+    }
     if (!st.started) load(false);
     else if (st.status === "running") load(false);
   }
@@ -1524,30 +2099,20 @@
     });
 
     $("refreshBtn").addEventListener("click", () => {
-      if (view === "stock") stock.code = readCode();
-      if (view === "trend") trend.code = readCode();
+      if (view === "shares") current().code = readCode();
+      if (view === "shares") collectSharesForm($("sharesCondPanel"));
       load(true);
     });
 
     $("codeInput").addEventListener("keydown", (ev) => {
       if (ev.key !== "Enter") return;
       ev.preventDefault();
-      if (view !== "stock" && view !== "trend") return;
+      if (view !== "shares") return;
       submitCode(true);
     });
     $("codeInput").addEventListener("change", () => {
-      if (view !== "stock" && view !== "trend") return;
+      if (view !== "shares") return;
       submitCode(false);
-    });
-
-    $("kindSeg").addEventListener("click", (ev) => {
-      const btn = ev.target.closest("button[data-kind]");
-      if (!btn) return;
-      const kind = btn.dataset.kind;
-      if (kind === stock.kind) return;
-      stock.kind = kind;
-      renderSeg();
-      if (view === "stock") loadStock(false);
     });
 
     $("limitDaysSeg").addEventListener("click", (ev) => {
@@ -1560,16 +2125,6 @@
       if (view === "limit") loadLimit(false);
     });
 
-    $("stockDaysSeg").addEventListener("click", (ev) => {
-      const btn = ev.target.closest("button[data-days]");
-      if (!btn) return;
-      const days = Number(btn.dataset.days);
-      if (days === stock.days) return;
-      stock.days = days;
-      renderSeg();
-      if (view === "stock") loadStock(true);
-    });
-
     $("limitTopSeg").addEventListener("click", (ev) => {
       const btn = ev.target.closest("button[data-top]");
       if (!btn) return;
@@ -1580,34 +2135,140 @@
       if (view === "limit") loadLimit(false);
     });
 
-    $("stockTopSeg").addEventListener("click", (ev) => {
+    $("sharesTopSeg")?.addEventListener("click", (ev) => {
       const btn = ev.target.closest("button[data-top]");
       if (!btn) return;
       const top = Number(btn.dataset.top);
-      if (top === stock.top) return;
-      stock.top = top;
+      if (top === shares.top) return;
+      shares.top = top;
       renderSeg();
-      if (view === "stock") loadStock(false);
+      if (view === "shares" && shares.started) loadShares(false);
     });
 
-    $("trendKindSeg")?.addEventListener("click", (ev) => {
-      const btn = ev.target.closest("button[data-kind]");
-      if (!btn) return;
-      const kind = btn.dataset.kind;
-      if (kind === trend.kind) return;
-      trend.kind = kind;
-      renderSeg();
-      if (view === "trend") loadTrend(false);
+    $("sharesClearBtn")?.addEventListener("click", () => {
+      if (view !== "shares") return;
+      shares.specsByDate = {};
+      persistSharesSpecs();
+      stopPoll(shares);
+      shares.started = false;
+      shares.status = "idle";
+      shares.items = [];
+      shares.resultCount = 0;
+      shares.analyzedCount = 0;
+      shares.message = "";
+      shares.presetHint = "";
+      const panel = $("sharesCondPanel");
+      if (panel) panel.dataset.date = "";
+      renderAll();
+      showError("");
+      setLive("idle");
     });
 
-    $("trendTopSeg")?.addEventListener("click", (ev) => {
-      const btn = ev.target.closest("button[data-top]");
-      if (!btn) return;
-      const top = Number(btn.dataset.top);
-      if (top === trend.top) return;
-      trend.top = top;
-      renderSeg();
-      if (view === "trend") loadTrend(false);
+    $("sharesCondPanel")?.addEventListener("input", (ev) => {
+      if (view !== "shares") return;
+      if (!ev.target.matches("input[data-field], select[data-field]")) return;
+      collectSharesForm($("sharesCondPanel"));
+      renderSharesSummary();
+      renderSharesDayRail();
+      renderSharesHead();
+      refreshSharesChipsOnly();
+    });
+
+    $("sharesCondPanel")?.addEventListener("change", (ev) => {
+      if (view !== "shares") return;
+      if (!ev.target.matches("select[data-field]")) return;
+      collectSharesForm($("sharesCondPanel"));
+      renderSharesSummary();
+      renderSharesDayRail();
+      renderSharesHead();
+      refreshSharesChipsOnly();
+    });
+
+    $("sharesCondPanel")?.addEventListener("click", (ev) => {
+      if (view !== "shares") return;
+      if (ev.target.closest("#sharesRunBtn")) {
+        shares.code = readCode();
+        loadShares(true);
+        return;
+      }
+      if (ev.target.closest("#sharesClearDayBtn")) {
+        if (shares.selectedDate) delete shares.specsByDate[shares.selectedDate];
+        persistSharesSpecs();
+        const panel = $("sharesCondPanel");
+        if (panel) panel.dataset.date = "";
+        renderAll();
+        return;
+      }
+      const chip = ev.target.closest("button[data-jump-date]");
+      if (!chip) return;
+      const date = chip.dataset.jumpDate;
+      if (!date || date === shares.selectedDate) return;
+      collectSharesForm($("sharesCondPanel"));
+      shares.selectedDate = date;
+      renderAll();
+    });
+
+    $("sharesPresetBar")?.addEventListener("click", (ev) => {
+      if (view !== "shares") return;
+      if (ev.target.closest("#sharesPresetSaveBtn")) {
+        const name = $("sharesPresetName")?.value || "";
+        saveSharesPreset(name);
+        return;
+      }
+      if (ev.target.closest("#sharesPresetImportBtn")) {
+        const ta = $("sharesPresetImportText");
+        if (ta) shares.presetImportDraft = ta.value;
+        shares.presetImportOpen = !shares.presetImportOpen;
+        if (shares.presetImportOpen) shares.presetHint = "";
+        renderSharesPresetBar();
+        if (shares.presetImportOpen) $("sharesPresetImportText")?.focus();
+        return;
+      }
+      if (ev.target.closest("#sharesPresetImportCancel")) {
+        const ta = $("sharesPresetImportText");
+        if (ta) shares.presetImportDraft = ta.value;
+        shares.presetImportOpen = false;
+        renderSharesPresetBar();
+        return;
+      }
+      if (ev.target.closest("#sharesPresetImportConfirm")) {
+        const text = $("sharesPresetImportText")?.value || shares.presetImportDraft || "";
+        shares.presetImportDraft = text;
+        importSharesPresetsFromText(text);
+        return;
+      }
+      const del = ev.target.closest("[data-preset-del]");
+      if (del) {
+        deleteSharesPreset(del.dataset.presetDel);
+        return;
+      }
+      const apply = ev.target.closest("[data-preset-apply]");
+      if (apply) {
+        applySharesPreset(apply.dataset.presetApply);
+      }
+    });
+
+    $("sharesPresetBar")?.addEventListener("input", (ev) => {
+      if (view !== "shares") return;
+      if (ev.target && ev.target.id === "sharesPresetImportText") {
+        shares.presetImportDraft = ev.target.value;
+      }
+    });
+
+    $("sharesPresetBar")?.addEventListener("keydown", (ev) => {
+      if (view !== "shares") return;
+      if (ev.key === "Escape" && shares.presetImportOpen) {
+        ev.preventDefault();
+        const ta = $("sharesPresetImportText");
+        if (ta) shares.presetImportDraft = ta.value;
+        shares.presetImportOpen = false;
+        renderSharesPresetBar();
+        return;
+      }
+      if (ev.key !== "Enter") return;
+      if (!ev.target.matches("#sharesPresetName")) return;
+      ev.preventDefault();
+      saveSharesPreset(ev.target.value || "");
     });
 
     $("industryDaysSeg").addEventListener("click", (ev) => {
@@ -1654,7 +2315,15 @@
       const btn = ev.target.closest("button[data-date]");
       if (!btn) return;
       const date = btn.dataset.date;
-      if (!date || date === limit.selectedDate) return;
+      if (!date) return;
+      if (view === "shares") {
+        if (date === shares.selectedDate) return;
+        collectSharesForm($("sharesCondPanel"));
+        shares.selectedDate = date;
+        renderAll();
+        return;
+      }
+      if (date === limit.selectedDate) return;
       limit.selectedDate = date;
       if (view === "limit") renderAll();
     });
@@ -1667,7 +2336,7 @@
     const fromQuery = parseView(params.get("view") || params.get("mode"));
     if (fromQuery) return fromQuery;
     const startCode = String(params.get("code") || "").replace(/\D/g, "").slice(-6);
-    if (startCode.length === 6) return "stock";
+    if (startCode.length === 6) return "shares";
     try {
       const saved = parseView(sessionStorage.getItem(VIEW_KEY));
       if (saved) return saved;
@@ -1680,11 +2349,12 @@
   const params = new URLSearchParams(location.search);
   const startCode = String(params.get("code") || "").replace(/\D/g, "").slice(-6);
   if (startCode.length === 6) {
-    stock.code = startCode;
-    trend.code = startCode;
+    shares.code = startCode;
     $("codeInput").value = startCode;
   }
 
+  restoreSharesSpecs();
+  loadSharesPresets();
   view = initialView();
   applyChrome();
   bindEvents();

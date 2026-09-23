@@ -10,6 +10,7 @@ from core.cache import TtlCache
 
 from world.catalog import BONDS, INDICES, OIL, RATES, REGIONS
 from world.fetchers.bonds import fetch_bond_region, fetch_bonds
+from world.fetchers.index_kline import fetch_index_klines
 from world.fetchers.indices import fetch_indices
 from world.fetchers.oil import fetch_oil
 from world.fetchers.rates import fetch_rate_series, fetch_rates
@@ -20,15 +21,25 @@ _SERIES_TTL = 30 * 60.0
 
 class GlobalMarketService:
     def __init__(self) -> None:
-        self._lock = threading.Lock()
+        # 按 key 细粒度锁：避免指数 K 线等慢请求占住全局锁，拖死其它接口
+        self._meta_lock = threading.Lock()
+        self._key_locks: dict[str, threading.Lock] = {}
         self._spot_cache = TtlCache(_SPOT_TTL)
         self._series_cache = TtlCache(_SERIES_TTL)
+
+    def _lock_for(self, key: str) -> threading.Lock:
+        with self._meta_lock:
+            lock = self._key_locks.get(key)
+            if lock is None:
+                lock = threading.Lock()
+                self._key_locks[key] = lock
+            return lock
 
     def _cached(self, cache: TtlCache, key: str, loader):
         hit = cache.get(key)
         if hit is not None:
             return hit
-        with self._lock:
+        with self._lock_for(key):
             hit = cache.get(key)
             if hit is not None:
                 return hit
@@ -51,6 +62,18 @@ class GlobalMarketService:
             self._spot_cache.put("indices", data)
             return data
         return self._cached(self._spot_cache, "indices", fetch_indices)
+
+    def index_klines(self, *, limit: int = 90, force: bool = False) -> dict[str, Any]:
+        key = f"index-klines:{limit}"
+        if force:
+            data = fetch_index_klines(limit=limit)
+            self._series_cache.put(key, data)
+            return data
+        return self._cached(
+            self._series_cache,
+            key,
+            lambda: fetch_index_klines(limit=limit),
+        )
 
     def oil(self, *, force: bool = False) -> dict[str, Any]:
         if force:

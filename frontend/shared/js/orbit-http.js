@@ -19,6 +19,8 @@
     { prefix: "/api/industries", ttl: 30 * 60_000 },
     { prefix: "/api/funds/tree", ttl: 30 * 60_000 },
     { prefix: "/api/otc-funds/tree", ttl: 30 * 60_000 },
+    { prefix: "/api/futures/tree", ttl: 30 * 60_000 },
+    { prefix: "/api/futures/categories", ttl: 30 * 60_000 },
   ];
   const DEFAULT_TTL = 60_000;
 

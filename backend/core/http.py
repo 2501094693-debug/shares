@@ -21,9 +21,11 @@ from urllib3.poolmanager import PoolManager
 
 from core.resolve import (
     canonical_push2_host,
+    dial_ips,
     drop_ip,
     forget_host,
     is_eastmoney_push2_host,
+    mark_bad_ip,
     remember_host,
     resolve_ipv4,
 )
@@ -111,7 +113,7 @@ def _get_via_ip(
     timeout: int | tuple[float, float],
 ) -> requests.Response:
     url, host = _push2_request(url)
-    ips = resolve_ipv4(host)
+    ips = dial_ips(host)
     if not ips:
         raise requests.ConnectionError(f"无法解析 {host}")
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -132,6 +134,7 @@ def _get_via_ip(
             return resp
         except Exception as exc:  # noqa: BLE001
             drop_ip(host, ip)
+            mark_bad_ip(ip)
             last_error = exc
     forget_host(host)
     raise last_error or requests.ConnectionError(f"无法连接 {host}")
