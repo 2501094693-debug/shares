@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=holder-num-hover-20260924" />
+  <link rel="stylesheet" href="/css/style.css?v=holdings-stats-layout-20260924" />
   <link rel="stylesheet" href="/css/ai-page.css?v=trend-20260924" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
@@ -978,19 +978,17 @@
               <div class="holdings-grid" role="region" aria-label="持股信息">
                 <div class="holdings-col holdings-col--main">
                   <article class="chart-card chart-card--holdings-stats" aria-label="持股结构统计">
-                    <header class="chart-card__head">
+                    <header class="chart-card__head holdings-stats-head">
                       <div class="chart-card__title">
                         <span class="chart-card__mark chart-card__mark--stats" aria-hidden="true"></span>
                         <h3>持股结构</h3>
                       </div>
                       <p id="holdingsStatsMeta" class="chart-card__meta muted">切换到本页后加载</p>
                     </header>
-                    <div class="chart-card__stage holdings-stats-stage">
-                      <div id="holdingsStatsChartWrap" class="chart-canvas-wrap holdings-stats-canvas-wrap">
-                        <canvas id="holdingsStatsChart" width="320" height="200" aria-label="大股东与基金持股统计图"></canvas>
-                        <p id="holdingsStatsChartEmpty" class="muted chart-empty hidden">暂无持股统计</p>
-                      </div>
-                      <ul id="holdingsStatsLegend" class="holdings-stats-legend" aria-label="持股结构图例"></ul>
+                    <div class="holdings-stats-body">
+                      <div id="holdingsStatsBar" class="holdings-stats-bar" role="img" aria-label="持股结构占比" hidden></div>
+                      <ul id="holdingsStatsLegend" class="holdings-stats-metrics" aria-label="持股结构明细"></ul>
+                      <p id="holdingsStatsChartEmpty" class="muted chart-empty holdings-stats-empty">暂无持股统计</p>
                     </div>
                   </article>
 
@@ -1109,6 +1107,6 @@
   <script src="/js/shared/nav.js?v=futures-20260923"></script>
   <script src="/js/shared/ai-modes.js?v=trend-20260924"></script>
   <script src="/js/shared/company-analysis.js?v=trend-20260924"></script>
-  <script src="/js/company.js?v=holdings-stats-20260924"></script>
+  <script src="/js/company.js?v=holdings-stats-layout-20260924"></script>
 </body>
 </html>

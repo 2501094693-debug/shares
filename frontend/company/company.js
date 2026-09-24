@@ -421,8 +421,7 @@ const els = {
   holderNumChart: document.getElementById("holderNumChart"),
   holderNumChartEmpty: document.getElementById("holderNumChartEmpty"),
   holdingsStatsMeta: document.getElementById("holdingsStatsMeta"),
-  holdingsStatsChartWrap: document.getElementById("holdingsStatsChartWrap"),
-  holdingsStatsChart: document.getElementById("holdingsStatsChart"),
+  holdingsStatsBar: document.getElementById("holdingsStatsBar"),
   holdingsStatsChartEmpty: document.getElementById("holdingsStatsChartEmpty"),
   holdingsStatsLegend: document.getElementById("holdingsStatsLegend"),
   fundHoldersTitle: document.getElementById("fundHoldersTitle"),
@@ -3326,6 +3325,7 @@ async function loadFundHolders({ refresh = false } = {}) {
   fundHoldersState.loading = true;
   fundHoldersState.error = "";
   paintFundHolders();
+  paintHoldingsStats();
   if (els.refreshHoldersBtn) els.refreshHoldersBtn.disabled = true;
   if (els.fundHoldersDate) {
     els.fundHoldersDate.disabled = true;
@@ -3417,11 +3417,9 @@ function computeHoldingsStats() {
     if (nameKey) topKeys.add(nameKey);
     const code = String(item?.holder_code || "").trim();
     if (code) topKeys.add(code.toLowerCase());
+    majorCount += 1;
     const ratio = Number(item?.ratio);
-    if (Number.isFinite(ratio)) {
-      majorPct += ratio;
-      majorCount += 1;
-    }
+    if (Number.isFinite(ratio)) majorPct += ratio;
     const shares = Number(item?.shares);
     if (Number.isFinite(shares)) majorShares += shares;
   }
@@ -3446,11 +3444,9 @@ function computeHoldingsStats() {
       deduped += 1;
       continue;
     }
+    fundCount += 1;
     const ratio = fundRatioPct(item, totalShares);
-    if (Number.isFinite(ratio)) {
-      fundPct += ratio;
-      fundCount += 1;
-    }
+    if (Number.isFinite(ratio)) fundPct += ratio;
     const shares = Number(item?.shares);
     if (Number.isFinite(shares)) fundShares += shares;
   }
@@ -3483,69 +3479,6 @@ function computeHoldingsStats() {
   };
 }
 
-function fitHoldingsStatsCanvas() {
-  const canvas = els.holdingsStatsChart;
-  const wrap = els.holdingsStatsChartWrap;
-  if (!canvas || !wrap) return null;
-  const rect = wrap.getBoundingClientRect();
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  const width = Math.max(1, Math.floor(rect.width));
-  const height = Math.max(1, Math.floor(rect.height || 156));
-  const nextW = Math.floor(width * dpr);
-  const nextH = Math.floor(height * dpr);
-  if (canvas.width !== nextW || canvas.height !== nextH) {
-    canvas.width = nextW;
-    canvas.height = nextH;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-  }
-  const ctx = canvas.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  return { ctx, width, height };
-}
-
-function drawHoldingsStatsDonut(stats) {
-  const pack = fitHoldingsStatsCanvas();
-  if (!pack) return;
-  const { ctx, width, height } = pack;
-  ctx.clearRect(0, 0, width, height);
-  const slices = [
-    { key: "major", value: stats.majorPct, color: "#e07a5f" },
-    { key: "fund", value: stats.fundPct, color: "#f0b429" },
-    { key: "other", value: stats.otherPct, color: "rgba(132, 148, 168, 0.35)" },
-  ].filter((slice) => Number.isFinite(slice.value) && slice.value > 0.0001);
-  const cx = width / 2;
-  const cy = height / 2;
-  const radius = Math.max(18, Math.min(width, height) * 0.42);
-  const inner = radius * 0.58;
-  if (!slices.length) return;
-  const total = slices.reduce((sum, slice) => sum + slice.value, 0) || 1;
-  let angle = -Math.PI / 2;
-  for (const slice of slices) {
-    const sweep = (slice.value / total) * Math.PI * 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, radius, angle, angle + sweep);
-    ctx.closePath();
-    ctx.fillStyle = slice.color;
-    ctx.fill();
-    angle += sweep;
-  }
-  ctx.beginPath();
-  ctx.arc(cx, cy, inner, 0, Math.PI * 2);
-  ctx.fillStyle = cssVar("--bg-panel", "#121820");
-  ctx.fill();
-  ctx.fillStyle = cssVar("--text", "#e8eef7");
-  ctx.font = `600 ${Math.max(12, Math.round(radius * 0.28))}px var(--mono, ui-monospace, monospace)`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  const covered = stats.majorPct + stats.fundPct;
-  ctx.fillText(`${covered.toFixed(1)}%`, cx, cy - 6);
-  ctx.fillStyle = cssVar("--muted", "#8494a8");
-  ctx.font = `${Math.max(10, Math.round(radius * 0.18))}px sans-serif`;
-  ctx.fillText("已统计", cx, cy + 12);
-}
-
 function paintHoldingsStats() {
   const stats = computeHoldingsStats();
   if (els.holdingsStatsMeta) {
@@ -3566,77 +3499,86 @@ function paintHoldingsStats() {
       els.holdingsStatsMeta.textContent = bits.join(" · ") || "持股结构";
     }
   }
+
+  const empty = !stats.loading && !stats.ready;
   if (els.holdingsStatsChartEmpty) {
-    const empty = !stats.loading && !stats.ready;
     els.holdingsStatsChartEmpty.classList.toggle("hidden", !empty);
     els.holdingsStatsChartEmpty.textContent = stats.error || "暂无持股统计";
   }
-  if (els.holdingsStatsLegend) {
-    if (!stats.ready && !stats.loading) {
-      els.holdingsStatsLegend.innerHTML = "";
+  if (els.holdingsStatsBar) {
+    if (!stats.ready) {
+      els.holdingsStatsBar.hidden = true;
+      els.holdingsStatsBar.innerHTML = "";
+      els.holdingsStatsBar.removeAttribute("aria-label");
     } else {
-      const rows = [
-        {
-          label: "大股东持股",
-          detail: stats.majorCount ? `前十大 ${stats.majorCount} 户` : "前十大股东",
-          value: `${stats.majorPct.toFixed(2)}%`,
-          color: "#e07a5f",
-          shares: stats.majorShares,
-        },
-        {
-          label: "基金持股",
-          detail: stats.fundCount
-            ? `${stats.fundCount} 只（已去重十大股东）`
-            : stats.deduped
-              ? "均已计入十大股东"
-              : "基金季报合计",
-          value: `${stats.fundPct.toFixed(2)}%`,
-          color: "#f0b429",
-          shares: stats.fundShares,
-        },
-        {
-          label: "其他",
-          detail: "剩余股本",
-          value: `${stats.otherPct.toFixed(2)}%`,
-          color: "rgba(132, 148, 168, 0.55)",
-          shares: null,
-        },
-      ];
-      els.holdingsStatsLegend.innerHTML = rows
-        .map((row) => {
-          const sharesHint =
-            row.shares != null && Number.isFinite(row.shares) && row.shares > 0
-              ? `<small>${escapeHtml(fmtVol(row.shares))}股</small>`
-              : row.detail
-                ? `<small>${escapeHtml(row.detail)}</small>`
-                : "";
-          return `<li>
-            <span class="holdings-stats-swatch" style="--swatch:${escapeHtml(row.color)}" aria-hidden="true"></span>
-            <span class="holdings-stats-legend-label">${escapeHtml(row.label)}${sharesHint}</span>
-            <span class="holdings-stats-legend-value">${escapeHtml(row.value)}</span>
-          </li>`;
-        })
+      const segs = [
+        ["major", stats.majorPct],
+        ["fund", stats.fundPct],
+        ["other", stats.otherPct],
+      ].filter(([, pct]) => Number.isFinite(pct) && pct > 0.0001);
+      els.holdingsStatsBar.hidden = false;
+      els.holdingsStatsBar.setAttribute(
+        "aria-label",
+        `大股东 ${stats.majorPct.toFixed(2)}%，基金 ${stats.fundPct.toFixed(2)}%，其他 ${stats.otherPct.toFixed(2)}%`
+      );
+      els.holdingsStatsBar.innerHTML = segs
+        .map(
+          ([key, pct]) =>
+            `<span class="holdings-stats-seg holdings-stats-seg--${key}" style="flex:${pct.toFixed(3)} 0 0"></span>`
+        )
         .join("");
     }
   }
-  if (stats.ready) drawHoldingsStatsDonut(stats);
-  else if (els.holdingsStatsChart) {
-    const pack = fitHoldingsStatsCanvas();
-    if (pack) pack.ctx.clearRect(0, 0, pack.width, pack.height);
+
+  if (!els.holdingsStatsLegend) return;
+  if (!stats.ready) {
+    els.holdingsStatsLegend.innerHTML = "";
+    return;
   }
+
+  const rows = [
+    {
+      key: "major",
+      label: "大股东",
+      value: `${stats.majorPct.toFixed(2)}%`,
+      detail: [
+        stats.majorCount ? `${stats.majorCount} 户` : "",
+        stats.majorShares > 0 ? `${fmtVol(stats.majorShares)}股` : "",
+      ]
+        .filter(Boolean)
+        .join(" · ") || "前十大股东",
+    },
+    {
+      key: "fund",
+      label: "基金",
+      value: `${stats.fundPct.toFixed(2)}%`,
+      detail: stats.fundCount
+        ? `${stats.fundCount} 只${stats.fundShares > 0 ? ` · ${fmtVol(stats.fundShares)}股` : ""}`
+        : stats.deduped
+          ? "已计入大股东"
+          : "基金季报",
+    },
+    {
+      key: "other",
+      label: "其他",
+      value: `${stats.otherPct.toFixed(2)}%`,
+      detail: "剩余股本",
+    },
+  ];
+
+  els.holdingsStatsLegend.innerHTML = rows
+    .map(
+      (row) => `<li class="holdings-stats-metric holdings-stats-metric--${row.key}">
+        <span class="holdings-stats-metric-label">${escapeHtml(row.label)}</span>
+        <span class="holdings-stats-metric-value">${escapeHtml(row.value)}</span>
+        <span class="holdings-stats-metric-detail">${escapeHtml(row.detail)}</span>
+      </li>`
+    )
+    .join("");
 }
 
 function setupHoldingsStatsChart() {
-  if (!els.holdingsStatsChartWrap || els.holdingsStatsChartWrap.dataset.bound === "1") return;
-  els.holdingsStatsChartWrap.dataset.bound = "1";
-  if (typeof ResizeObserver !== "undefined") {
-    const ro = new ResizeObserver(() => {
-      if (holdersState.items.length || fundHoldersState.items.length) {
-        paintHoldingsStats();
-      }
-    });
-    ro.observe(els.holdingsStatsChartWrap);
-  }
+  // no-op placeholder kept for existing setupFundHoldersBox() call
 }
 
 function holderChangeClass(item) {
@@ -3743,6 +3685,7 @@ async function loadHolders({ refresh = false } = {}) {
   holdersState.loading = true;
   holdersState.error = "";
   paintHolders();
+  paintHoldingsStats();
   if (els.refreshHoldersBtn) els.refreshHoldersBtn.disabled = true;
   if (els.holdersDate) {
     els.holdersDate.disabled = true;
