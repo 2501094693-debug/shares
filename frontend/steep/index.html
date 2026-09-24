@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=cn-nav-20260912" />
+  <link rel="stylesheet" href="/css/style.css?v=steep-card-shares-ar-20260925" />
 </head>
 <body class="app-shell company-page-root market-page-root steep-page-root" data-nav="steep">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
@@ -29,6 +29,10 @@
       <div class="market-toolbar">
         <div id="summaryBar" class="market-summary"></div>
         <div class="market-toolbar-tail">
+          <div id="viewSeg" class="market-seg steep-view" role="group" aria-label="展示">
+            <button type="button" data-view="list" class="is-active">列表</button>
+            <button type="button" data-view="cards">卡片</button>
+          </div>
           <div id="sortSeg" class="market-seg steep-sort" role="group" aria-label="排序">
             <button type="button" data-sort="board">连板</button>
             <button type="button" data-sort="l1">一级</button>
@@ -45,7 +49,7 @@
       <div id="errorBox" class="error hidden"></div>
       <div id="loading" class="loading hidden">正在加载…</div>
 
-      <div class="steep-matrix">
+      <div class="steep-matrix" data-view="list">
         <section class="steep-matrix-row" data-kind="up" id="upRow">
           <button type="button" class="steep-matrix-label" data-tone="up" data-kind="up" aria-expanded="true" title="折叠涨停">
             <span>涨停</span>
@@ -70,6 +74,7 @@
   <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
   <script src="/js/shared/orbit-prefetch.js?v=futures-20260923"></script>
   <script src="/js/shared/nav.js?v=futures-20260923"></script>
-  <script src="/js/steep.js?v=cn-from-20260912"></script>
+  <script src="/js/shared/kline-draw.js?v=screen-20260909-kpan"></script>
+  <script src="/js/steep.js?v=steep-card-shares-ar-20260925"></script>
 </body>
 </html>

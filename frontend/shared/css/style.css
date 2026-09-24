@@ -7187,6 +7187,12 @@ body.app-shell.shares-page-root .shares-page.market-page {
 }
 
 /* —— 涨跌停日历 —— */
+body.app-shell.steep-page-root {
+  --company-quotes-inner: calc(100vw - var(--rail-w) - 24px);
+  --company-hero-w: clamp(280px, calc(var(--company-quotes-inner) * 0.34), 380px);
+  --company-kline-w: calc((var(--company-quotes-inner) - var(--company-hero-w) - 20px) * 1.2 / 2.2);
+}
+
 body.app-shell.steep-page-root .app-stage {
   display: flex;
   flex-direction: column;
@@ -7305,6 +7311,8 @@ body.app-shell.steep-page-root .steep-page.market-page {
   overflow-y: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  container-type: inline-size;
+  container-name: steep-scroll;
 }
 
 .steep-matrix-scroll::-webkit-scrollbar {
@@ -7349,9 +7357,9 @@ body.app-shell.steep-page-root .steep-page.market-page {
 }
 
 .steep-day.is-open {
-  flex: 0 0 860px;
-  width: 860px;
-  min-width: 860px;
+  flex: 0 0 100cqi;
+  width: 100cqi;
+  min-width: 100cqi;
 }
 
 .steep-day-head {
@@ -7471,6 +7479,47 @@ body.app-shell.steep-page-root .steep-page.market-page {
   font-weight: 600;
 }
 
+.steep-matrix[data-view="cards"] .steep-day-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.steep-matrix[data-view="cards"] .steep-stock-cards.screen-result-list {
+  flex: 1 1 0%;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  padding: 6px 8px;
+  gap: 8px;
+  align-items: center;
+  scroll-snap-type: x proximity;
+}
+
+.steep-matrix[data-view="cards"] .steep-stock-cards .screen-card {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: min(100%, var(--steep-card-h, 70dvh));
+  max-height: 100%;
+  aspect-ratio: var(--steep-card-ar, 0.65);
+  align-self: center;
+}
+
+.steep-page .screen-card-score b[data-tone="up"] {
+  color: var(--up);
+}
+
+.steep-page .screen-card-score b[data-tone="down"] {
+  color: var(--down);
+}
+
+.steep-page .screen-card-score b[data-tone="flat"] {
+  color: var(--ink);
+}
+
 .steep-page .market-toolbar {
   gap: 12px;
   flex-wrap: wrap;
@@ -7480,12 +7529,6 @@ body.app-shell.steep-page-root .steep-page.market-page {
   .steep-matrix-label {
     width: 1.8rem;
     letter-spacing: 0.08em;
-  }
-
-  .steep-day.is-open {
-    flex-basis: 720px;
-    width: 720px;
-    min-width: 720px;
   }
 }
 

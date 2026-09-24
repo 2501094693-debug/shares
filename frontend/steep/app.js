@@ -2,6 +2,7 @@
   const DAY_OPTIONS = [15, 30];
   const POLL_MS = 30000;
   const WEEK = "日一二三四五六";
+  const VIEW_KEY = "steep-view";
 
   const state = {
     items: [],
@@ -9,6 +10,7 @@
     days: 15,
     sortKey: "board",
     sortDir: "desc",
+    view: "list",
     open: new Set(),
     collapsed: { up: false, down: false },
     fetching: false,
@@ -39,6 +41,19 @@
     if (abs >= 1e8) return `${sign}${(abs / 1e8).toFixed(2)}亿`;
     if (abs >= 1e4) return `${sign}${(abs / 1e4).toFixed(1)}万`;
     return `${sign}${abs.toFixed(0)}`;
+  }
+
+  function fmtPrice(value) {
+    if (value == null || value === "") return "—";
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    return n.toFixed(2);
+  }
+
+  function stockHref(row) {
+    const qs = new URLSearchParams({ code: row.code || "", from: "steep" });
+    if (row.l3_code) qs.set("industry", row.l3_code);
+    return `/company.html?${qs}`;
   }
 
   function fmtMd(date) {
@@ -128,21 +143,122 @@
           <th class="num">炸板</th>`;
   }
 
-  function stockRow(row, kind) {
+  function boardText(row, kind) {
     const board = kind === "up" ? row.board_count : row.down_days;
-    const boardText = board ? (kind === "up" ? `${board}板` : `${board}天`) : "—";
-    const industry = [row.l1_name, row.l2_name, row.l3_name].filter(Boolean).join(" / ") || "—";
+    if (!board) return "—";
+    return kind === "up" ? `${board}板` : `${board}天`;
+  }
+
+  function industryText(row) {
+    return [row.l1_name, row.l2_name, row.l3_name].filter(Boolean).join(" / ") || "—";
+  }
+
+  function stockRow(row, kind) {
     return `<tr class="is-row is-stock" data-code="${row.code || ""}" data-industry="${row.l3_code || ""}">
       <td>
         <span class="market-stock-name">${row.name || ""}</span>
         <span class="market-stock-code">${row.code || ""}</span>
-        <span class="steep-sw-line">${industry}</span>
+        <span class="steep-sw-line">${industryText(row)}</span>
       </td>
       ${extraCells(row, kind)}
-      <td class="num steep-board-n" data-tone="${tone(row.change_pct)}">${boardText}</td>
+      <td class="num steep-board-n" data-tone="${tone(row.change_pct)}">${boardText(row, kind)}</td>
       <td class="num steep-money">${fmtYi(row.amount)}</td>
       <td class="num steep-money">${fmtYi(row.float_mv)}</td>
     </tr>`;
+  }
+
+  function klineBlock(code) {
+    return `<article class="chart-card chart-card--kline" data-kline-code="${code || ""}">
+      <header class="chart-card__head">
+        <div class="chart-card__head-main">
+          <div class="chart-card__title">
+            <span class="chart-card__mark" aria-hidden="true"></span>
+            <h3>走势</h3>
+          </div>
+          <div class="chart-kline-hover chart-hover-card hidden" aria-hidden="true"></div>
+        </div>
+        <p class="chart-card__meta muted">日K · 前复权</p>
+        <div class="chart-card__controls">
+          <div class="chart-select-group">
+            <label class="chart-select-wrap" aria-label="周期">
+              <select class="chart-select" disabled>
+                <option selected>日K</option>
+              </select>
+            </label>
+            <label class="chart-select-wrap" aria-label="复权">
+              <select class="chart-select" disabled>
+                <option selected>前复权</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </header>
+      <div class="chart-card__stage">
+        <div class="chart-canvas-wrap">
+          <canvas width="960" height="360" aria-label="行情走势图"></canvas>
+          <p class="muted chart-empty hidden">暂无走势数据</p>
+        </div>
+      </div>
+      <footer class="chart-card__foot">
+        <div class="chart-axis-scroll is-disabled">
+          <input class="chart-scroll-bar" type="range" min="0" max="0" value="0" step="1" aria-label="时间轴滑动" disabled />
+        </div>
+      </footer>
+    </article>`;
+  }
+
+  function stockMeta(row, kind) {
+    if (kind === "down") {
+      const opens = Number(row.open_count);
+      return `
+        <span>连跌 <b>${boardText(row, kind)}</b></span>
+        <span>最后 <b>${fmtTime(row.last_seal)}</b></span>
+        <span>封单 <b>${fmtYi(row.seal_fund)}</b></span>
+        <span>开板 <b>${Number.isFinite(opens) ? opens : "—"}</b></span>
+        <span>板上 <b>${fmtYi(row.board_amount)}</b></span>
+        <span>成交 <b>${fmtYi(row.amount)}</b></span>
+        <span>流通 <b>${fmtYi(row.float_mv)}</b></span>`;
+    }
+    const breaks = Number(row.break_count);
+    return `
+      <span>连板 <b>${boardText(row, kind)}</b></span>
+      <span>首次 <b>${fmtTime(row.first_seal)}</b></span>
+      <span>最后 <b>${fmtTime(row.last_seal)}</b></span>
+      <span>封单 <b>${fmtYi(row.seal_fund)}</b></span>
+      <span>炸板 <b>${Number.isFinite(breaks) ? breaks : "—"}</b></span>
+      <span>成交 <b>${fmtYi(row.amount)}</b></span>
+      <span>流通 <b>${fmtYi(row.float_mv)}</b></span>`;
+  }
+
+  function stockCard(row, kind) {
+    const code = row.code || "";
+    const chgTone = tone(row.change_pct);
+    return `<article class="screen-card is-stock" data-code="${code}" data-industry="${row.l3_code || ""}" tabindex="0">
+      <a class="screen-card-head" href="${stockHref(row)}" title="打开公司详情">
+        <div class="screen-card-name">
+          <strong>${row.name || "—"}</strong>
+          <span>${code}</span>
+          <em>${industryText(row)}</em>
+        </div>
+        <div class="screen-card-score">
+          <b data-tone="${chgTone}">${fmtPct(row.change_pct)}</b>
+          <span>${fmtPrice(row.price)}</span>
+        </div>
+      </a>
+      ${klineBlock(code)}
+      <footer class="screen-card-meta">${stockMeta(row, kind)}</footer>
+    </article>`;
+  }
+
+  function mountCardKline(card) {
+    const kline = card.querySelector(".chart-card--kline");
+    const code = kline && kline.dataset.klineCode;
+    if (kline && code && window.OrbitKline) window.OrbitKline.mount(kline, { code, carousel: true });
+  }
+
+  function mountOpenKlines() {
+    if (state.view !== "cards" || !window.OrbitKline) return;
+    document.querySelectorAll(".steep-day.is-open .screen-card.is-stock").forEach(mountCardKline);
   }
 
   function dayTable(day, kind) {
@@ -164,6 +280,17 @@
     </table>`;
   }
 
+  function dayCards(day, kind) {
+    const rows = sortRows(kind === "up" ? day.limit_up || [] : day.limit_down || [], kind);
+    const empty = kind === "up" ? "当日无涨停" : "当日无跌停";
+    if (!rows.length) return `<p class="screen-empty muted">${empty}</p>`;
+    return `<div class="steep-stock-cards screen-result-list" aria-label="${kind === "up" ? "涨停" : "跌停"}卡片">${rows.map((row) => stockCard(row, kind)).join("")}</div>`;
+  }
+
+  function dayBody(day, kind) {
+    return state.view === "cards" ? dayCards(day, kind) : dayTable(day, kind);
+  }
+
   function dayCard(day, kind) {
     const key = paneKey(day.date_raw, kind);
     const open = state.open.has(key);
@@ -177,8 +304,63 @@
         <span class="steep-day-count" data-tone="${kind}">${count}</span>
         <span class="steep-day-caret" aria-hidden="true">${open ? "◂" : "▸"}</span>
       </button>
-      <div class="steep-day-body"${open ? "" : " hidden"}>${open ? dayTable(day, kind) : ""}</div>
+      <div class="steep-day-body"${open ? "" : " hidden"}>${open ? dayBody(day, kind) : ""}</div>
     </article>`;
+  }
+
+  function readView() {
+    try {
+      return localStorage.getItem(VIEW_KEY) === "cards" ? "cards" : "list";
+    } catch {
+      return "list";
+    }
+  }
+
+  function persistView() {
+    try {
+      localStorage.setItem(VIEW_KEY, state.view);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function renderViewSeg() {
+    $("viewSeg")?.querySelectorAll("button[data-view]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.view === state.view);
+    });
+    document.querySelector(".steep-matrix")?.setAttribute("data-view", state.view);
+  }
+
+  function setView(next) {
+    const view = next === "cards" ? "cards" : "list";
+    if (view === state.view) return;
+    state.view = view;
+    persistView();
+    if (view === "cards") syncCardGeometry();
+    render();
+  }
+
+  function measureSharesLikeCardSize() {
+    const probe = document.createElement("div");
+    probe.style.cssText =
+      "position:absolute;left:0;top:0;visibility:hidden;pointer-events:none;width:var(--company-kline-w);height:0";
+    document.body.appendChild(probe);
+    const width = probe.getBoundingClientRect().width || 480;
+    probe.remove();
+    const toolbar = document.querySelector(".steep-page .market-toolbar");
+    const top = toolbar ? toolbar.getBoundingClientRect().bottom : 120;
+    // 与个股行情一致：看板底边距 12 + 卡片列表上下 padding 10+10
+    const height = Math.max(180, window.innerHeight - top - 12 - 20);
+    return { width, height };
+  }
+
+  function syncCardGeometry() {
+    const { width, height } = measureSharesLikeCardSize();
+    if (!(width > 0) || !(height > 0)) return;
+    const root = document.body;
+    root.style.setProperty("--steep-card-w", `${Math.round(width)}px`);
+    root.style.setProperty("--steep-card-h", `${Math.round(height)}px`);
+    root.style.setProperty("--steep-card-ar", (width / height).toFixed(6));
   }
 
   function setLive(kind) {
@@ -276,11 +458,13 @@
     $("upScroll").scrollLeft = left;
     $("downScroll").scrollLeft = left;
     markRowOpen();
+    requestAnimationFrame(mountOpenKlines);
   }
 
   function render() {
     renderRange();
     renderSort();
+    renderViewSeg();
     renderSummary();
     renderTracks();
     applyRowFold();
@@ -450,6 +634,10 @@
   function bind() {
     $("upTrack").addEventListener("click", onTrackClick);
     $("downTrack").addEventListener("click", onTrackClick);
+    $("viewSeg")?.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-view]");
+      if (btn) setView(btn.dataset.view);
+    });
     $("sortSeg").addEventListener("click", (ev) => {
       const btn = ev.target.closest("button[data-sort]");
       if (btn) setSort(btn.dataset.sort);
@@ -464,6 +652,10 @@
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) void load({ silent: true });
     });
+    window.addEventListener("resize", () => {
+      syncCardGeometry();
+      if (state.view === "cards") requestAnimationFrame(mountOpenKlines);
+    });
     bindScroll();
   }
 
@@ -473,22 +665,28 @@
   }
 
   function onTrackClick(ev) {
-    const stock = ev.target.closest("tr.is-stock[data-code]");
+    if (ev.target.closest(".screen-card-head")) return;
+    if (ev.target.closest(".chart-card")) return;
+    const stock = ev.target.closest(".is-stock[data-code]");
     if (stock) {
-      const qs = new URLSearchParams({ code: stock.dataset.code, from: "steep" });
-      if (stock.dataset.industry) qs.set("industry", stock.dataset.industry);
-      window.location.href = `/company.html?${qs}`;
+      window.location.href = stockHref({
+        code: stock.dataset.code,
+        l3_code: stock.dataset.industry,
+      });
       return;
     }
     const head = ev.target.closest(".steep-day-head");
     if (head) togglePane(head.dataset.date, head.dataset.kind);
   }
 
+  state.view = readView();
   loadFold();
   applyRowFold();
+  syncCardGeometry();
+  renderViewSeg();
   bind();
-  window.OrbitPrefetch?.bindHover($("upTrack"), "tr.is-stock[data-code]");
-  window.OrbitPrefetch?.bindHover($("downTrack"), "tr.is-stock[data-code]");
+  window.OrbitPrefetch?.bindHover($("upTrack"), ".is-stock[data-code]");
+  window.OrbitPrefetch?.bindHover($("downTrack"), ".is-stock[data-code]");
   window.OrbitPrefetch?.boot("steep");
   void load().then(() => {
     startPoll();
