@@ -3,6 +3,7 @@
   const WEEK = "日一二三四五六";
   const VIEW_KEY = "orbit-judgment-view";
   const SHARES_SPEC_KEY = "orbit-judgment-shares-specs";
+  const SHARES_LOGIC_KEY = "orbit-judgment-shares-logic";
   const SHARES_PRESET_KEY = "orbit-judgment-shares-presets";
   const VIEW_META = {
     limit: {
@@ -17,10 +18,41 @@
     },
     shares: {
       title: "ORBIT · 研判",
-      sub: "按近一个月交易日设置日线条件（相对日 T0/T-1… 可存为方案一键套用），多日 AND 筛选。点「开始筛选」或右上角「重新分析」",
+      sub: "筛选式工作台：从近月加点组成日子链，相邻日自选且/或，点节点编辑当日条件后开始筛选",
       from: "analysis",
     },
   };
+
+  /** 供「导入 JSON」一键填入的示例方案 */
+  const SHARES_SCHEME_EXAMPLE = {
+    id: "lower_shadow_or_quiet",
+    name: "收下影或缩实体",
+    brief: "T0下影 OR 近5日≥3日|实体|≤1.2%",
+    logic: "or",
+    top: 50,
+    groups: [
+      {
+        id: "lower_shadow",
+        label: "最新一日收下影",
+        logic: "and",
+        days: [{ offset: 0, lower_ratio_min: 0.35, lower_ge_body: true }],
+      },
+      {
+        id: "quiet_body",
+        label: "近五日缩实体",
+        min_hits: 3,
+        days: [
+          { offset: 0, body_abs_pct_max: 1.2 },
+          { offset: 1, body_abs_pct_max: 1.2 },
+          { offset: 2, body_abs_pct_max: 1.2 },
+          { offset: 3, body_abs_pct_max: 1.2 },
+          { offset: 4, body_abs_pct_max: 1.2 },
+        ],
+      },
+    ],
+  };
+
+  const SHARES_PRIMARY_FIELDS = ["pct_chg", "body_pct", "lower_ratio", "vol_ratio"];
 
   const SHARES_FIELDS = [
     {
@@ -141,11 +173,16 @@
     top: 50,
     code: "",
     lookback: 22,
+    logic: "and",
     status: "idle",
     dayRows: [],
     selectedDate: "",
     specsByDate: {},
     fields: {},
+    fieldsMoreOpen: false,
+    formulaOpen: false,
+    presetMenuOpen: false,
+    extraFields: [],
     items: [],
     updatedAt: "",
     candidateCount: 0,
@@ -164,6 +201,11 @@
     presetHint: "",
     presetImportOpen: false,
     presetImportDraft: "",
+    /** 导入的形态方案（groups） */
+    patternId: "",
+    patternScheme: null,
+    /** 未填字段时暂存的日内且/或/非，填入后写入 spec */
+    fieldLogicDraft: {},
   };
 
   let view = "industry";
@@ -329,7 +371,13 @@
     $("pageSub").textContent = meta.sub;
     document.body.dataset.screenMode = view;
     const workbench = $("sharesWorkbench");
+    const benchBody = $("sharesBenchBody");
     if (workbench) workbench.classList.toggle("hidden", view !== "shares");
+    if (benchBody) benchBody.classList.toggle("hidden", view !== "shares");
+    const layout = document.querySelector(".screen-layout");
+    if (layout && view !== "shares") {
+      layout.classList.remove("is-editor-open", "is-editor-collapsed");
+    }
     persistView();
     syncUrl();
     renderSeg();
@@ -455,15 +503,38 @@
     const spec = shares.specsByDate[date];
     if (!spec || !sharesDayHasSpec(date)) return "";
     const parts = [];
+    const fields = [];
     for (const f of SHARES_FIELDS) {
       const lo = spec[`${f.key}_min`];
       const hi = spec[`${f.key}_max`];
       if (lo == null && hi == null) continue;
-      if (lo != null && hi != null) parts.push(`${f.label}${lo}~${hi}`);
-      else if (lo != null) parts.push(`${f.label}≥${lo}`);
-      else parts.push(`${f.label}≤${hi}`);
+      let text = "";
+      if (lo != null && hi != null) text = `${f.label}${lo}~${hi}`;
+      else if (lo != null) text = `${f.label}≥${lo}`;
+      else text = `${f.label}≤${hi}`;
+      if (spec[`${f.key}_not`]) text = `¬${text}`;
+      parts.push(text);
+      fields.push(f.key);
     }
-    return parts.join(" · ");
+    let body = "";
+    const hasJoins = fields.slice(1).some((key) => spec[`${key}_join`] != null);
+    if (hasJoins) {
+      body = parts[0] || "";
+      for (let i = 1; i < parts.length; i += 1) {
+        const join = normalizeSharesJoin(spec[`${fields[i]}_join`]);
+        body += (join === "or" ? " ∨ " : " ∧ ") + parts[i];
+      }
+    } else {
+      const fieldLogic = normalizeSharesLogic(spec.logic);
+      body =
+        fieldLogic === "or"
+          ? parts.join(" ∨ ")
+          : fieldLogic === "not"
+            ? `¬(${parts.join(" ∨ ")})`
+            : parts.join(" ∧ ");
+    }
+    if (spec.not) body = `¬(${body})`;
+    return body;
   }
 
   function readNumInput(value) {
@@ -473,29 +544,213 @@
     return Number.isFinite(n) ? n : null;
   }
 
-  function collectSharesForm(panel) {
+  function normalizeSharesJoin(raw) {
+    const v = String(raw || "").toLowerCase();
+    if (v === "or" || v === "any") return "or";
+    return "and";
+  }
+
+  function sharesJoinLabel(join) {
+    return normalizeSharesJoin(join) === "or" ? "或" : "且";
+  }
+
+  function sharesActiveFieldKeys(spec) {
+    if (!spec) return [];
+    return SHARES_FIELDS.filter(
+      (f) =>
+        Number.isFinite(Number(spec[`${f.key}_min`])) ||
+        Number.isFinite(Number(spec[`${f.key}_max`])),
+    ).map((f) => f.key);
+  }
+
+  function syncFieldJoins(spec) {
+    if (!spec || typeof spec !== "object") return;
+    const keys = sharesActiveFieldKeys(spec);
+    const mode = normalizeSharesLogic(spec.logic);
+    for (const f of SHARES_FIELDS) {
+      if (!keys.includes(f.key)) delete spec[`${f.key}_join`];
+    }
+    if (keys.length < 2 || mode === "not") {
+      for (const key of keys) delete spec[`${key}_join`];
+      return;
+    }
+    const fallback = mode === "or" ? "or" : "and";
+    delete spec.logic;
+    for (let i = 1; i < keys.length; i += 1) {
+      const key = keys[i];
+      if (spec[`${key}_join`] == null) spec[`${key}_join`] = fallback;
+      else spec[`${key}_join`] = normalizeSharesJoin(spec[`${key}_join`]);
+    }
+    delete spec[`${keys[0]}_join`];
+  }
+
+  function syncDayJoins() {
+    const dates = Object.keys(shares.specsByDate || {})
+      .filter((date) => sharesDayHasSpec(date))
+      .sort();
+    const mode = normalizeSharesLogic(shares.logic);
+    dates.forEach((date, idx) => {
+      const spec = shares.specsByDate[date];
+      if (!spec) return;
+      if (idx === 0 || mode === "not" || dates.length < 2) {
+        delete spec.join;
+        return;
+      }
+      // 默认且；已有选择（且/或）一律保留，保证相邻日可各自不同
+      if (spec.join == null) spec.join = "and";
+      else spec.join = normalizeSharesJoin(spec.join);
+    });
+  }
+
+  function applyUniformDayLogic(next) {
+    const mode = normalizeSharesLogic(next);
+    shares.logic = mode;
+    const dates = Object.keys(shares.specsByDate || {})
+      .filter((date) => sharesDayHasSpec(date))
+      .sort();
+    dates.forEach((date, idx) => {
+      const spec = shares.specsByDate[date];
+      if (!spec) return;
+      if (idx === 0 || mode === "not" || dates.length < 2) delete spec.join;
+      else spec.join = mode === "or" ? "or" : "and";
+    });
+  }
+
+  function applyUniformFieldLogic(spec, next) {
+    if (!spec) return;
+    const mode = normalizeSharesLogic(next);
+    const keys = sharesActiveFieldKeys(spec);
+    if (mode === "not") {
+      spec.logic = "not";
+      for (const key of keys) delete spec[`${key}_join`];
+      return;
+    }
+    if (keys.length < 2) {
+      if (mode === "and") delete spec.logic;
+      else spec.logic = mode;
+      for (const key of keys) delete spec[`${key}_join`];
+      return;
+    }
+    delete spec.logic;
+    for (let i = 0; i < keys.length; i += 1) {
+      const key = keys[i];
+      if (i === 0) delete spec[`${key}_join`];
+      else spec[`${key}_join`] = mode === "or" ? "or" : "and";
+    }
+  }
+
+  function dayChainSummary() {
+    const specs = sharesActiveSpecs();
+    if (!specs.length) return "未设条件日";
+    const mode = normalizeSharesLogic(shares.logic);
+    if (mode === "not") {
+      return `¬(${specs.map((s) => offsetLabel(sharesDateOffset(s.date)) || fmtMd(s.date)).join(" ∨ ")})`;
+    }
+    let text = offsetLabel(sharesDateOffset(specs[0].date)) || fmtMd(specs[0].date);
+    for (let i = 1; i < specs.length; i += 1) {
+      const join = normalizeSharesJoin(specs[i].join || "and");
+      const tag = offsetLabel(sharesDateOffset(specs[i].date)) || fmtMd(specs[i].date);
+      text += (join === "or" ? " ∨ " : " ∧ ") + tag;
+    }
+    return text;
+  }
+
+  function collectSharesForm(panel, opts = {}) {
     if (!panel || !shares.selectedDate) return;
+    const date = shares.selectedDate;
     const next = {};
+    const forced =
+      opts.forceDayLogic != null ? normalizeSharesLogic(opts.forceDayLogic) : null;
+    const dayLogicBtn = panel.querySelector("button[data-day-logic].is-active");
+    const draft = shares.fieldLogicDraft[date];
+    const dayLogic =
+      forced ??
+      (dayLogicBtn
+        ? normalizeSharesLogic(dayLogicBtn.dataset.dayLogic)
+        : draft
+          ? normalizeSharesLogic(draft)
+          : "and");
+    if (panel.querySelector("button[data-day-negate].is-active")) next.not = true;
+    const activeKeys = [];
     for (const f of SHARES_FIELDS) {
       const lo = readNumInput(panel.querySelector(`[data-field="${f.key}"][data-bound="min"]`)?.value);
       const hi = readNumInput(panel.querySelector(`[data-field="${f.key}"][data-bound="max"]`)?.value);
       if (lo != null) next[`${f.key}_min`] = lo;
       if (hi != null) next[`${f.key}_max`] = hi;
+      if (lo != null || hi != null) {
+        activeKeys.push(f.key);
+        if (panel.querySelector(`button[data-field-not="${f.key}"].is-active`)) {
+          next[`${f.key}_not`] = true;
+        }
+      }
     }
-    if (Object.keys(next).length) shares.specsByDate[shares.selectedDate] = next;
-    else delete shares.specsByDate[shares.selectedDate];
+    if (activeKeys.length >= 2 && dayLogic === "not") {
+      next.logic = "not";
+    } else if (activeKeys.length >= 2) {
+      const fallback = dayLogic === "or" ? "or" : "and";
+      for (let i = 1; i < activeKeys.length; i += 1) {
+        const key = activeKeys[i];
+        if (forced != null) {
+          next[`${key}_join`] = fallback;
+        } else {
+          const joinBtn = panel.querySelector(`button[data-field-join="${key}"].is-active`);
+          next[`${key}_join`] = normalizeSharesJoin(joinBtn?.dataset.join || fallback);
+        }
+      }
+    } else if (dayLogic !== "and") {
+      next.logic = dayLogic;
+    }
+    const prev = shares.specsByDate[date] || {};
+    if (prev.join != null && normalizeSharesLogic(shares.logic) !== "not") {
+      next.join = normalizeSharesJoin(prev.join);
+    }
+    if (Object.keys(next).some((k) => k.endsWith("_min") || k.endsWith("_max"))) {
+      if (forced != null) {
+        applyUniformFieldLogic(next, forced);
+        delete shares.fieldLogicDraft[date];
+      } else if (draft) {
+        applyUniformFieldLogic(next, draft);
+        delete shares.fieldLogicDraft[date];
+      } else syncFieldJoins(next);
+      shares.specsByDate[date] = next;
+    } else {
+      delete shares.specsByDate[date];
+      if (forced != null) shares.fieldLogicDraft[date] = forced;
+    }
+    syncDayJoins();
     persistSharesSpecs();
+  }
+
+  function sharesLogicLabel(logic) {
+    const v = normalizeSharesLogic(logic);
+    if (v === "or") return "OR（任一满足）";
+    if (v === "not") return "NOT（全部不满足）";
+    return "AND（全部满足）";
+  }
+
+  function normalizeSharesLogic(raw) {
+    const v = String(raw || "").toLowerCase();
+    if (v === "or" || v === "any") return "or";
+    if (v === "not" || v === "nor" || v === "none") return "not";
+    return "and";
   }
 
   function persistSharesSpecs() {
     try {
       sessionStorage.setItem(SHARES_SPEC_KEY, JSON.stringify(shares.specsByDate || {}));
+      sessionStorage.setItem(SHARES_LOGIC_KEY, normalizeSharesLogic(shares.logic));
     } catch {
       /* ignore */
     }
   }
 
   function restoreSharesSpecs() {
+    try {
+      const logicRaw = sessionStorage.getItem(SHARES_LOGIC_KEY);
+      if (logicRaw != null) shares.logic = normalizeSharesLogic(logicRaw);
+    } catch {
+      /* ignore */
+    }
     try {
       const raw = sessionStorage.getItem(SHARES_SPEC_KEY);
       if (!raw) return;
@@ -526,6 +781,9 @@
           if (has) cleaned[date] = next;
         }
         shares.specsByDate = cleaned;
+        syncDayJoins();
+        for (const spec of Object.values(shares.specsByDate)) syncFieldJoins(spec);
+        persistSharesSpecs();
       }
     } catch {
       /* ignore */
@@ -540,8 +798,29 @@
       const hi = Number(raw[`${f.key}_max`]);
       if (Number.isFinite(lo)) next[`${f.key}_min`] = lo;
       if (Number.isFinite(hi)) next[`${f.key}_max`] = hi;
+      if (
+        (Number.isFinite(lo) || Number.isFinite(hi)) &&
+        (raw[`${f.key}_not`] === true || raw[`${f.key}_not`] === 1 || raw[`${f.key}_not`] === "1")
+      ) {
+        next[`${f.key}_not`] = true;
+      }
+      if (
+        (Number.isFinite(lo) || Number.isFinite(hi)) &&
+        raw[`${f.key}_join`] != null
+      ) {
+        next[`${f.key}_join`] = normalizeSharesJoin(raw[`${f.key}_join`]);
+      }
     }
-    return Object.keys(next).length ? next : null;
+    if (!Object.keys(next).some((k) => k.endsWith("_min") || k.endsWith("_max"))) return null;
+    const logic = normalizeSharesLogic(raw.logic);
+    if (logic === "not") next.logic = "not";
+    else if (logic !== "and" && !sharesActiveFieldKeys(next).slice(1).some((k) => next[`${k}_join`] != null)) {
+      next.logic = logic;
+    }
+    if (raw.not === true || raw.not === 1 || raw.not === "1") next.not = true;
+    if (raw.join != null) next.join = normalizeSharesJoin(raw.join);
+    syncFieldJoins(next);
+    return next;
   }
 
   function sharesDateOffset(date) {
@@ -605,22 +884,126 @@
       .filter(Boolean);
   }
 
+  function normalizeSchemeDay(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const offset = Number(raw.offset);
+    if (!Number.isFinite(offset) || offset < 0) return null;
+    const day = { offset };
+    const bounds = cleanSpecBounds(raw);
+    if (bounds) Object.assign(day, bounds);
+    if (raw.lower_ge_body != null) day.lower_ge_body = Boolean(raw.lower_ge_body);
+    const absMax = Number(raw.body_abs_pct_max);
+    if (Number.isFinite(absMax) && absMax >= 0) day.body_abs_pct_max = absMax;
+    const keys = Object.keys(day).filter((k) => k !== "offset");
+    if (!keys.length) return null;
+    return day;
+  }
+
+  function normalizeSchemeGroup(raw, index) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const days = (Array.isArray(raw.days) ? raw.days : [])
+      .map((d) => normalizeSchemeDay(d))
+      .filter(Boolean);
+    if (!days.length) return null;
+    const minHits = Number(raw.min_hits);
+    const id =
+      String(raw.id || raw.name || `g${index}`)
+        .trim()
+        .slice(0, 48) || `g${index}`;
+    const group = {
+      id,
+      label: String(raw.label || raw.name || id)
+        .trim()
+        .slice(0, 48),
+      logic: normalizeSharesLogic(raw.logic),
+      days,
+    };
+    if (Number.isFinite(minHits) && minHits >= 1) {
+      group.min_hits = Math.min(days.length, Math.floor(minHits));
+    }
+    return group;
+  }
+
+  function isSchemeLike(raw) {
+    return Boolean(raw && typeof raw === "object" && Array.isArray(raw.groups) && raw.groups.length);
+  }
+
+  function schemeGroupsToBranches(groups) {
+    return (groups || []).map((g) => {
+      const days = g.days || [];
+      const rules = [];
+      if (g.min_hits != null) {
+        rules.push(`至少 ${g.min_hits}/${days.length} 日命中`);
+      }
+      for (const d of days) {
+        const parts = [`${offsetLabel(d.offset)}`];
+        for (const f of SHARES_FIELDS) {
+          const lo = d[`${f.key}_min`];
+          const hi = d[`${f.key}_max`];
+          if (lo != null && hi != null) parts.push(`${f.key}[${lo},${hi}]`);
+          else if (lo != null) parts.push(`${f.key}≥${lo}`);
+          else if (hi != null) parts.push(`${f.key}≤${hi}`);
+        }
+        if (d.body_abs_pct_max != null) parts.push(`|实体|≤${d.body_abs_pct_max}%`);
+        if (d.lower_ge_body) parts.push("下影≥实体");
+        rules.push(parts.join(" · "));
+      }
+      return {
+        id: g.id,
+        label: g.label || g.id,
+        rules,
+      };
+    });
+  }
+
   function normalizeSharesPreset(raw, fallbackName) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-    const name = String(raw.name || fallbackName || "")
+    const name = String(raw.name || fallbackName || raw.id || "")
       .trim()
       .slice(0, 32);
-    const days = normalizeSharesPresetDays(raw.days);
-    if (!name || !days.length) return null;
+    if (!name) return null;
     const id =
       String(raw.id || "").trim() ||
       `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
     const top = Number(raw.top);
+    const brief = String(raw.brief || "").trim().slice(0, 80);
+
+    if (isSchemeLike(raw)) {
+      const groups = raw.groups
+        .map((g, i) => normalizeSchemeGroup(g, i))
+        .filter(Boolean);
+      if (!groups.length) return null;
+      const logic = normalizeSharesLogic(raw.logic || "or");
+      return {
+        id,
+        name,
+        kind: "scheme",
+        brief,
+        updatedAt: String(raw.updatedAt || new Date().toISOString()),
+        top: Number.isFinite(top) ? top : undefined,
+        logic,
+        groups,
+        scheme: {
+          id,
+          name,
+          brief,
+          logic,
+          top: Number.isFinite(top) ? top : undefined,
+          groups,
+        },
+      };
+    }
+
+    const days = normalizeSharesPresetDays(raw.days);
+    if (!days.length) return null;
     return {
       id,
       name,
+      kind: "days",
+      brief,
       updatedAt: String(raw.updatedAt || new Date().toISOString()),
       top: Number.isFinite(top) ? top : undefined,
+      logic: normalizeSharesLogic(raw.logic),
       days,
     };
   }
@@ -640,7 +1023,7 @@
       shares.presets = parsed
         .map((p) => {
           const preset = normalizeSharesPreset(p);
-          if (!preset || !String(p && p.id || "").trim()) return null;
+          if (!preset || !String(preset.id || "").trim()) return null;
           return preset;
         })
         .filter(Boolean);
@@ -653,13 +1036,27 @@
     const existing = shares.presets.find((p) => p.name === preset.name);
     if (existing) {
       existing.days = preset.days;
+      existing.groups = preset.groups;
+      existing.scheme = preset.scheme;
+      existing.kind = preset.kind || (preset.groups ? "scheme" : "days");
+      existing.brief = preset.brief;
       existing.top = preset.top;
+      existing.logic = normalizeSharesLogic(preset.logic);
       existing.updatedAt = new Date().toISOString();
+      if (preset.id && !String(existing.id || "").startsWith("p_")) {
+        /* keep stable id */
+      } else if (preset.id) {
+        existing.id = preset.id;
+      }
       return existing;
     }
     const next = {
       ...preset,
-      id: `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+      kind: preset.kind || (preset.groups ? "scheme" : "days"),
+      logic: normalizeSharesLogic(preset.logic),
+      id:
+        String(preset.id || "").trim() ||
+        `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
       updatedAt: new Date().toISOString(),
     };
     shares.presets.unshift(next);
@@ -684,13 +1081,15 @@
             typeof d === "object" &&
             !Array.isArray(d) &&
             Number.isFinite(Number(d.offset)) &&
-            !Array.isArray(d.days),
+            !Array.isArray(d.days) &&
+            !Array.isArray(d.groups),
         );
       candidates = looksLikeDays ? [{ name: fallbackName, days: data }] : data;
     } else if (data && typeof data === "object") {
       if (Array.isArray(data.presets)) candidates = data.presets;
+      else if (isSchemeLike(data)) candidates = [data];
       else if (Array.isArray(data.days)) candidates = [data];
-      else return { error: "缺少 days 字段（或 presets 数组）" };
+      else return { error: "缺少 days / groups 字段（或 presets 数组）" };
     } else {
       return { error: "JSON 须为对象或数组" };
     }
@@ -702,10 +1101,28 @@
     }
     if (!presets.length) {
       return {
-        error: "未识别到有效方案（需要 name + days；仅 days 数组时请先填方案名称）",
+        error:
+          "未识别到有效方案（需 name + days，或含 groups 的形态方案；仅 days 数组时请先填方案名称）",
       };
     }
     return { presets };
+  }
+
+  function fillSharesSchemeExample() {
+    const sample = SHARES_SCHEME_EXAMPLE;
+    shares.presetImportOpen = true;
+    shares.presetImportDraft = JSON.stringify(sample, null, 2);
+    shares.presetHint = "已填入「收下影或缩实体」示例，确认后导入并套用";
+    renderSharesPresetBar();
+    const ta = $("sharesPresetImportText");
+    if (ta) {
+      ta.focus();
+      try {
+        ta.setSelectionRange(0, ta.value.length);
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   function importSharesPresetsFromText(rawText) {
@@ -738,13 +1155,20 @@
   }
 
   function presetBrief(preset) {
+    if (preset && (preset.kind === "scheme" || isSchemeLike(preset))) {
+      const groups = preset.groups || [];
+      const labels = groups.map((g) => g.label || g.id).filter(Boolean);
+      const logic = normalizeSharesLogic(preset.logic || "or").toUpperCase();
+      return `${groups.length}组 · ${logic}${labels.length ? ` · ${labels.join("/")}` : ""}`;
+    }
     const days = (preset && preset.days) || [];
     if (!days.length) return "空";
     const labels = days
       .slice()
       .sort((a, b) => a.offset - b.offset)
       .map((d) => offsetLabel(d.offset));
-    return `${days.length}日 · ${labels.join("/")}`;
+    const logic = normalizeSharesLogic(preset && preset.logic).toUpperCase();
+    return `${days.length}日 · ${logic} · ${labels.join("/")}`;
   }
 
   function saveSharesPreset(rawName) {
@@ -755,9 +1179,33 @@
       renderSharesPresetBar();
       return false;
     }
+
+    if (shares.patternScheme && isSchemeLike(shares.patternScheme)) {
+      const existing = shares.presets.find((p) => p.name === name);
+      upsertSharesPreset({
+        id: existing?.id || shares.patternScheme.id || `p_${Date.now().toString(36)}`,
+        name,
+        kind: "scheme",
+        brief: shares.patternScheme.brief || "",
+        updatedAt: new Date().toISOString(),
+        top: shares.top,
+        logic: normalizeSharesLogic(shares.patternScheme.logic || "or"),
+        groups: shares.patternScheme.groups,
+        scheme: {
+          ...shares.patternScheme,
+          name,
+          top: shares.top,
+        },
+      });
+      persistSharesPresets();
+      shares.presetHint = existing ? `已覆盖方案「${name}」` : `已保存形态方案「${name}」`;
+      renderSharesPresetBar();
+      return true;
+    }
+
     const days = specsToRelativeDays();
     if (!days.length) {
-      shares.presetHint = "请先为至少一个交易日设置条件";
+      shares.presetHint = "请先为至少一个交易日设置条件，或导入含 groups 的 JSON";
       renderSharesPresetBar();
       return false;
     }
@@ -765,8 +1213,10 @@
     upsertSharesPreset({
       id: existing?.id || `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
       name,
+      kind: "days",
       updatedAt: new Date().toISOString(),
       top: shares.top,
+      logic: normalizeSharesLogic(shares.logic),
       days,
     });
     persistSharesPresets();
@@ -775,9 +1225,57 @@
     return true;
   }
 
+  function applyImportedScheme(preset) {
+    const scheme = preset.scheme || {
+      id: preset.id,
+      name: preset.name,
+      brief: preset.brief || "",
+      logic: preset.logic || "or",
+      top: preset.top,
+      groups: preset.groups,
+    };
+    shares.patternId = String(scheme.id || preset.id || "imported");
+    shares.patternScheme = {
+      id: shares.patternId,
+      name: String(scheme.name || preset.name || shares.patternId),
+      brief: String(scheme.brief || preset.brief || ""),
+      logic: normalizeSharesLogic(scheme.logic || "or"),
+      top: scheme.top,
+      groups: scheme.groups,
+    };
+    shares.specsByDate = {};
+    persistSharesSpecs();
+    if (Number.isFinite(Number(preset.top))) {
+      shares.top = Number(preset.top);
+      renderSeg();
+    } else if (Number.isFinite(Number(scheme.top))) {
+      shares.top = Number(scheme.top);
+      renderSeg();
+    }
+    stopPoll(shares);
+    shares.started = false;
+    shares.status = "idle";
+    shares.items = [];
+    shares.resultCount = 0;
+    shares.analyzedCount = 0;
+    shares.message = "";
+    const panel = $("sharesCondPanel");
+    if (panel) panel.dataset.date = "";
+    shares.presetHint = `已套用形态「${shares.patternScheme.name}」（导入 JSON，点开始筛选）`;
+    shares.presetMenuOpen = false;
+    shares.presetImportOpen = false;
+    renderAll();
+    showError("");
+    setLive("idle");
+  }
+
   function applySharesPreset(id) {
     const preset = shares.presets.find((p) => p.id === id);
     if (!preset) return;
+    if (preset.kind === "scheme" || isSchemeLike(preset)) {
+      applyImportedScheme(preset);
+      return;
+    }
     if (!shares.dayRows.length) {
       shares.presetHint = "交易日尚未加载，请稍后重试";
       renderSharesPresetBar();
@@ -789,7 +1287,10 @@
       renderSharesPresetBar();
       return;
     }
+    clearSharesPatternMode();
     shares.specsByDate = specs;
+    shares.logic = normalizeSharesLogic(preset.logic);
+    syncDayJoins();
     persistSharesSpecs();
     if (Number.isFinite(Number(preset.top))) {
       shares.top = Number(preset.top);
@@ -811,9 +1312,33 @@
     shares.presetHint = skipped
       ? `已套用「${preset.name}」（${skipped} 个相对日超出窗口已跳过）`
       : `已套用「${preset.name}」，点「开始筛选」运行`;
+    shares.presetMenuOpen = false;
+    shares.presetImportOpen = false;
     renderAll();
     showError("");
     setLive("idle");
+  }
+
+
+  function activePatternMeta() {
+    if (shares.patternScheme && isSchemeLike(shares.patternScheme)) {
+      return {
+        id: shares.patternScheme.id,
+        name: shares.patternScheme.name || shares.patternId,
+        brief: shares.patternScheme.brief || "",
+        branches: schemeGroupsToBranches(shares.patternScheme.groups),
+        fromImport: true,
+      };
+    }
+    return shares.patternId
+      ? { id: shares.patternId, name: shares.patternId, brief: "", branches: [] }
+      : null;
+  }
+
+
+  function clearSharesPatternMode() {
+    shares.patternId = "";
+    shares.patternScheme = null;
   }
 
   function deleteSharesPreset(id) {
@@ -830,14 +1355,16 @@
     if (!bar) return;
     if (view !== "shares") {
       bar.innerHTML = "";
+      bar.hidden = true;
       return;
     }
+    bar.hidden = !shares.presetMenuOpen;
+    if (!shares.presetMenuOpen) return;
+
     const active = document.activeElement;
     const keepNameFocus = active && active.id === "sharesPresetName";
     const keepImportFocus = active && active.id === "sharesPresetImportText";
-    const prevName = keepNameFocus
-      ? active.value
-      : $("sharesPresetName")?.value ?? "";
+    const prevName = keepNameFocus ? active.value : $("sharesPresetName")?.value ?? "";
     const importDraft = keepImportFocus
       ? active.value
       : $("sharesPresetImportText")?.value ?? shares.presetImportDraft ?? "";
@@ -846,40 +1373,61 @@
         ? { start: active.selectionStart, end: active.selectionEnd }
         : null;
     shares.presetImportDraft = importDraft;
-    const chips = (shares.presets || [])
-      .map(
-        (p) => `<span class="shares-preset-chip" data-preset-id="${esc(p.id)}">
-          <button type="button" class="shares-preset-chip__apply" data-preset-apply="${esc(p.id)}" title="一键套用（相对日）">
-            <b>${esc(p.name)}</b><span>${esc(presetBrief(p))}</span>
+
+    const saved = (shares.presets || [])
+      .map((p) => {
+        const kind = p.kind === "scheme" || isSchemeLike(p) ? "形态" : "多日";
+        return `<li class="shares-preset-row">
+          <button type="button" class="shares-preset-row__main" data-preset-apply="${esc(p.id)}">
+            <span class="shares-preset-row__name">${esc(p.name)}</span>
+            <span class="shares-preset-row__meta">${esc(kind)} · ${esc(presetBrief(p))}</span>
           </button>
-          <button type="button" class="shares-preset-chip__del" data-preset-del="${esc(p.id)}" title="删除方案" aria-label="删除 ${esc(p.name)}">×</button>
-        </span>`,
-      )
+          <button type="button" class="shares-preset-row__del" data-preset-del="${esc(p.id)}" title="删除" aria-label="删除 ${esc(p.name)}">×</button>
+        </li>`;
+      })
       .join("");
-    const importPanel = shares.presetImportOpen
-      ? `<div class="shares-preset-import">
-          <label class="shares-preset-import__label" for="sharesPresetImportText">粘贴方案 JSON</label>
-          <textarea id="sharesPresetImportText" rows="7" spellcheck="false" placeholder='{"name":"长下影·近3日缩量跌","top":50,"days":[{"offset":0,"lower_ratio_min":0.45},{"offset":1,"pct_chg_max":-0.5,"vol_ratio_max":0.85}]}'>${esc(importDraft)}</textarea>
-          <p class="shares-preset-import__tip muted">支持单方案对象、方案数组，或仅 days 数组（名称用左侧输入框）。同名覆盖。</p>
-          <div class="shares-preset-import__actions">
-            <button type="button" class="btn" id="sharesPresetImportConfirm">导入并套用</button>
-            <button type="button" class="btn ghost" id="sharesPresetImportCancel">取消</button>
-          </div>
-        </div>`
-      : "";
+
+
     bar.innerHTML = `
-      <span class="shares-preset-bar__label">方案</span>
-      <div class="shares-preset-bar__save">
-        <input id="sharesPresetName" type="text" maxlength="32" placeholder="方案名称" autocomplete="off" value="${esc(prevName)}" />
-        <button type="button" class="btn ghost" id="sharesPresetSaveBtn">保存方案</button>
-        <button type="button" class="btn ghost" id="sharesPresetImportBtn" aria-expanded="${shares.presetImportOpen ? "true" : "false"}">导入JSON</button>
+      <div class="shares-preset-pop__card">
+        <header class="shares-preset-pop__head">
+          <strong>方案</strong>
+          <button type="button" class="shares-preset-pop__close" data-close-preset="1" aria-label="关闭">×</button>
+        </header>
+        <section class="shares-preset-pop__save">
+          <input id="sharesPresetName" type="text" maxlength="32" placeholder="名称，保存当前筛选式" autocomplete="off" value="${esc(prevName)}" />
+          <button type="button" class="btn" id="sharesPresetSaveBtn">保存</button>
+        </section>
+        <section class="shares-preset-pop__block">
+          <h3>已存</h3>
+          ${
+            saved
+              ? `<ul class="shares-preset-list">${saved}</ul>`
+              : `<p class="shares-preset-pop__empty">还没有方案。设好筛选式后填写名称保存。</p>`
+          }
+        </section>
+        <section class="shares-preset-pop__block">
+          <div class="shares-preset-pop__import-head">
+            <h3>导入</h3>
+            <button type="button" class="btn ghost" id="sharesPresetImportBtn" aria-expanded="${shares.presetImportOpen ? "true" : "false"}">${shares.presetImportOpen ? "收起" : "粘贴 JSON"}</button>
+          </div>
+          ${
+            shares.presetImportOpen
+              ? `<div class="shares-preset-import">
+                  <textarea id="sharesPresetImportText" rows="7" spellcheck="false" placeholder="粘贴 days 或多组 groups 方案 JSON">${esc(importDraft)}</textarea>
+                  <div class="shares-preset-import__actions">
+                    <button type="button" class="btn" id="sharesPresetImportConfirm">导入并套用</button>
+                    <button type="button" class="btn ghost" id="sharesPresetImportExample">示例</button>
+                    <button type="button" class="btn ghost" id="sharesPresetImportCancel">取消</button>
+                  </div>
+                </div>`
+              : ""
+          }
+        </section>
+        ${shares.presetHint ? `<p class="shares-preset-pop__hint">${esc(shares.presetHint)}</p>` : ""}
       </div>
-      <div class="shares-preset-bar__list">
-        ${chips || `<p class="shares-preset-bar__empty">暂无已存方案 · 设好多日条件后可保存，或导入 JSON</p>`}
-      </div>
-      ${importPanel}
-      ${shares.presetHint ? `<p class="shares-cond-hint shares-preset-bar__hint">${esc(shares.presetHint)}</p>` : ""}
     `;
+
     if (keepNameFocus) {
       const input = $("sharesPresetName");
       if (input) {
@@ -906,95 +1454,335 @@
     }
   }
 
-  function sharesChipsHtml(activeDate) {
-    return sharesActiveSpecs()
-      .map((s) => {
-        const active = s.date === activeDate ? " is-active" : "";
-        const off = sharesDateOffset(s.date);
-        const tag = off >= 0 ? offsetLabel(off) : fmtMd(s.date);
-        return `<button type="button" class="shares-cond-chip${active}" data-jump-date="${esc(s.date)}">
-          <b>${esc(tag)}</b><span>${esc(sharesSpecBrief(s.date))}</span>
-        </button>`;
-      })
-      .join("");
+  function inferFieldLogic(spec, date) {
+    const keys = sharesActiveFieldKeys(spec);
+    if (!keys.length) {
+      const draft = date && shares.fieldLogicDraft[date];
+      return draft ? normalizeSharesLogic(draft) : "and";
+    }
+    if (!spec) return "and";
+    if (normalizeSharesLogic(spec.logic) === "not") return "not";
+    if (keys.length < 2) return normalizeSharesLogic(spec.logic);
+    const joins = keys.slice(1).map((key) => normalizeSharesJoin(spec[`${key}_join`] || "and"));
+    if (joins.every((j) => j === "or")) return "or";
+    if (joins.every((j) => j === "and")) return "and";
+    return "mixed";
+  }
+
+  function inferDayLogic() {
+    const mode = normalizeSharesLogic(shares.logic);
+    if (mode === "not") return "not";
+    const specs = sharesActiveSpecs();
+    if (specs.length < 2) return mode === "or" ? "or" : "and";
+    const joins = specs.slice(1).map((s) => normalizeSharesJoin(s.join || "and"));
+    if (joins.every((j) => j === "or")) return "or";
+    if (joins.every((j) => j === "and")) return "and";
+    return "mixed";
+  }
+
+  function fieldChainHtml(spec) {
+    const keys = sharesActiveFieldKeys(spec);
+    if (keys.length < 2) {
+      return `<p class="shares-join-empty">再填一个字段后，可在字段间选且/或</p>`;
+    }
+    if (normalizeSharesLogic(spec.logic) === "not") {
+      const labels = keys
+        .map((key) => SHARES_FIELDS.find((f) => f.key === key)?.label || key)
+        .join(" ∨ ");
+      return `<p class="shares-join-empty">字段全部非：¬(${esc(labels)})</p>`;
+    }
+    const bits = [];
+    keys.forEach((key, idx) => {
+      const meta = SHARES_FIELDS.find((f) => f.key === key);
+      const label = meta?.label || key;
+      if (idx > 0) {
+        const join = normalizeSharesJoin(spec[`${key}_join`] || "and");
+        bits.push(`<span class="shares-join-seg" role="group" aria-label="与上一字段连接">
+          <button type="button" data-field-join="${esc(key)}" data-join="and" class="${join === "and" ? "is-active" : ""}">且</button>
+          <button type="button" data-field-join="${esc(key)}" data-join="or" class="${join === "or" ? "is-active" : ""}">或</button>
+        </span>`);
+      }
+      bits.push(`<span class="shares-join-node">${esc(label)}</span>`);
+    });
+    return `<div class="shares-join-chain" aria-label="日内字段连接">${bits.join("")}</div>`;
+  }
+
+  function sharesExprDates() {
+    const dates = new Set(
+      Object.keys(shares.specsByDate || {}).filter((d) => sharesDayHasSpec(d)),
+    );
+    if (shares.selectedDate && !shares.patternId) dates.add(shares.selectedDate);
+    return [...dates].sort();
+  }
+
+  function syncSharesEditorLayout() {
+    const layout = document.querySelector(".screen-page-root[data-screen-mode='shares'] .screen-layout");
+    if (!layout) return;
+    const open = Boolean(shares.selectedDate || shares.patternId);
+    layout.classList.toggle("is-editor-open", open);
+    layout.classList.toggle("is-editor-collapsed", !open);
+  }
+
+  function renderSharesExprBar() {
+    const bar = $("sharesExprBar");
+    if (!bar || view !== "shares") return;
+    syncDayJoins();
+
+    if (shares.patternId) {
+      const meta = activePatternMeta();
+      const name = (meta && meta.name) || shares.patternId;
+      const brief = (meta && meta.brief) || "";
+      bar.innerHTML = `
+        <div class="shares-expr-bar__main">
+          <span class="shares-expr-bar__label">形态</span>
+          <div class="shares-expr-chain">
+            <div class="shares-expr-node is-pattern">
+              <b>${esc(name)}</b>
+              <span>${esc(brief)}</span>
+            </div>
+          </div>
+        </div>
+        <div class="shares-expr-bar__actions">
+          <button type="button" class="btn" id="sharesRunBtn">开始筛选</button>
+          <button type="button" class="btn ghost" id="sharesClearPatternBtn">退出形态</button>
+          <button type="button" class="btn ghost" id="sharesPresetMenuBtn" aria-expanded="${shares.presetMenuOpen ? "true" : "false"}">方案</button>
+        </div>
+      `;
+      return;
+    }
+
+    const dates = sharesExprDates();
+    const mode = normalizeSharesLogic(shares.logic);
+    let chain = "";
+    if (!dates.length) {
+      chain = `<p class="shares-expr-empty">从下方近月交易日加点，组成筛选式</p>`;
+    } else if (mode === "not") {
+      const labels = dates
+        .map((d) => `${offsetLabel(sharesDateOffset(d))} ${fmtMd(d)}`)
+        .join(" ∨ ");
+      chain = `<p class="shares-expr-empty">全部非 ¬(${esc(labels)}) · <button type="button" class="shares-expr-text-btn" data-logic="and" data-exit-nor="1">退出全部非</button></p>`;
+    } else {
+      const bits = [];
+      dates.forEach((date, idx) => {
+        const has = sharesDayHasSpec(date);
+        const brief = sharesSpecBrief(date) || "点此填写条件";
+        const off = offsetLabel(sharesDateOffset(date));
+        const active = date === shares.selectedDate ? " is-active" : "";
+        const draft = has ? "" : " is-draft";
+        if (idx > 0) {
+          const spec = shares.specsByDate[date] || {};
+          const join = normalizeSharesJoin(spec.join || "and");
+          const canJoin = has && sharesDayHasSpec(dates[idx - 1]);
+          bits.push(`<span class="shares-join-seg shares-join-seg--lg${canJoin ? "" : " is-disabled"}" role="group">
+            <button type="button" data-day-join="${esc(date)}" data-join="and" class="${join === "and" ? "is-active" : ""}" ${canJoin ? "" : "disabled"}>且</button>
+            <button type="button" data-day-join="${esc(date)}" data-join="or" class="${join === "or" ? "is-active" : ""}" ${canJoin ? "" : "disabled"}>或</button>
+          </span>`);
+        }
+        bits.push(`<div class="shares-expr-node${active}${draft}" data-jump-date="${esc(date)}">
+          <button type="button" class="shares-expr-node__hit" data-jump-date="${esc(date)}" title="${esc(brief)}">
+            <span class="shares-expr-node__when"><b>${esc(off)}</b><em>${esc(fmtMd(date))}</em></span>
+            <span class="shares-expr-node__brief">${esc(brief)}</span>
+            ${has && (shares.specsByDate[date] || {}).not ? `<span class="shares-expr-node__neg">¬</span>` : ""}
+          </button>
+          <button type="button" class="shares-expr-node__x" data-remove-date="${esc(date)}" title="移出筛选式" aria-label="移出">×</button>
+        </div>`);
+      });
+      chain = `<div class="shares-expr-chain" aria-label="筛选式日子链">${bits.join("")}</div>`;
+    }
+
+    bar.innerHTML = `
+      <div class="shares-expr-bar__main">
+        <span class="shares-expr-bar__label">筛选式</span>
+        ${chain}
+      </div>
+      <div class="shares-expr-bar__actions">
+        <button type="button" class="btn" id="sharesRunBtn" ${sharesSpecCount() || shares.patternId ? "" : "disabled"}>开始筛选</button>
+        <button type="button" class="btn ghost" id="sharesPresetMenuBtn" aria-expanded="${shares.presetMenuOpen ? "true" : "false"}">方案</button>
+        <div class="shares-expr-quick" title="一键统一相邻日连接">
+          <button type="button" data-logic="and">统一且</button>
+          <button type="button" data-logic="or">统一或</button>
+          <button type="button" data-logic="not">全部非</button>
+        </div>
+      </div>
+    `;
   }
 
   function refreshSharesChipsOnly() {
-    const panel = $("sharesCondPanel");
-    if (!panel) return;
-    let chips = panel.querySelector(".shares-cond-chips");
-    const html = sharesChipsHtml(shares.selectedDate);
-    if (!html) {
-      if (chips) chips.remove();
-      return;
-    }
-    if (!chips) {
-      chips = document.createElement("div");
-      chips.className = "shares-cond-chips";
-      panel.appendChild(chips);
-    }
-    chips.innerHTML = html;
+    renderSharesExprBar();
+    renderSharesDayRail();
+    renderSharesHead();
+    renderSharesSummary();
   }
 
   function renderSharesSummary() {
     const n = sharesSpecCount();
     $("summaryBar").innerHTML = `
       <span>条件日 <b>${n}</b></span>
+      <span>式 <b>${esc(dayChainSummary())}</b></span>
       <span>已分析 <b>${shares.analyzedCount || 0}</b> / ${shares.candidateCount || 0}</span>
       <span>入选 <b>${shares.resultCount || (shares.items || []).length}</b></span>
-      <span>展示 <b>${(shares.items || []).length}</b></span>
     `;
     $("marketMeta").textContent = shares.message || shares.updatedAt || "";
   }
 
   function renderSharesDayRail() {
     const rail = $("dayRail");
+    if (!rail) return;
     if (!shares.dayRows.length) {
       rail.innerHTML = `<p class="screen-empty muted">暂无交易日</p>`;
       return;
     }
-    rail.innerHTML = shares.dayRows
-      .map((day, idx) => {
-        const active = day.date === shares.selectedDate ? " is-active" : "";
-        const has = sharesDayHasSpec(day.date);
-        const marked = has ? " has-spec" : "";
-        const countText = has ? "已设" : offsetLabel(idx);
-        return `<button type="button" class="screen-day-chip${active}${marked}" data-date="${esc(day.date)}" title="${esc(sharesSpecBrief(day.date) || `${offsetLabel(idx)} · ${day.date}`)}">
-          <span class="screen-day-when">
-            <b>${esc(fmtMd(day.date))}</b>
-            <em>${esc(weekday(day.date))} · ${esc(offsetLabel(idx))}</em>
-          </span>
-          <span class="screen-day-count">${esc(countText)}</span>
-        </button>`;
-      })
-      .join("");
+    const inExpr = new Set(sharesExprDates());
+    rail.innerHTML = `
+      <span class="shares-day-pool__label">近月加点</span>
+      <div class="shares-day-pool__list">
+        ${shares.dayRows
+          .map((day, idx) => {
+            const active = day.date === shares.selectedDate ? " is-active" : "";
+            const has = sharesDayHasSpec(day.date);
+            const pinned = inExpr.has(day.date) ? " is-pinned" : "";
+            return `<button type="button" class="shares-day-pool-chip${active}${has ? " has-spec" : ""}${pinned}" data-date="${esc(day.date)}" title="${esc(sharesSpecBrief(day.date) || `${offsetLabel(idx)} · ${day.date}`)}">
+              <b>${esc(offsetLabel(idx))}</b>
+              <span>${esc(fmtMd(day.date))}</span>
+            </button>`;
+          })
+          .join("")}
+      </div>
+    `;
   }
 
   function renderSharesHead() {
-    const n = sharesSpecCount();
-    const day = shares.selectedDate;
-    const off = day ? sharesDateOffset(day) : -1;
-    const offText = off >= 0 ? ` · ${offsetLabel(off)}` : "";
+    if (shares.patternId) {
+      const meta = activePatternMeta();
+      const name = (meta && meta.name) || shares.patternId;
+      $("dayHead").innerHTML = `
+        <div class="shares-result-head">
+          <div>
+            <h2>结果</h2>
+            <p>形态 · ${esc(name)} · 入选 <b>${shares.resultCount || (shares.items || []).length}</b></p>
+          </div>
+        </div>
+      `;
+      return;
+    }
     $("dayHead").innerHTML = `
-      <div>
-        <h2>${day ? `${esc(day)} ${esc(weekday(day))}${esc(offText)}` : "个股日线条件"}</h2>
-        <p>已设 <b>${n}</b> 个交易日条件 · 多日 AND · 未填字段不限 · 方案按相对日保存</p>
+      <div class="shares-result-head">
+        <div>
+          <h2>结果</h2>
+          <p>${esc(dayChainSummary())} · 入选 <b>${shares.resultCount || (shares.items || []).length}</b> · 已分析 <b>${shares.analyzedCount || 0}</b> / ${shares.candidateCount || 0}</p>
+        </div>
       </div>
     `;
+  }
+
+  function sharesVisibleFieldKeys(spec) {
+    const active = new Set(sharesActiveFieldKeys(spec));
+    const extras = new Set(shares.extraFields || []);
+    const keys = [];
+    for (const f of SHARES_FIELDS) {
+      if (SHARES_PRIMARY_FIELDS.includes(f.key) || active.has(f.key) || extras.has(f.key)) {
+        keys.push(f.key);
+      }
+    }
+    return keys;
+  }
+
+  function sharesFieldStackHtml(spec) {
+    const keys = sharesVisibleFieldKeys(spec);
+    const filled = sharesActiveFieldKeys(spec);
+    const nor = normalizeSharesLogic(spec.logic) === "not";
+    const parts = [];
+    let filledIndex = 0;
+    keys.forEach((key) => {
+      const f = SHARES_FIELDS.find((x) => x.key === key);
+      if (!f) return;
+      const lo = spec[`${key}_min`];
+      const hi = spec[`${key}_max`];
+      const has = lo != null || hi != null || Number.isFinite(Number(lo)) || Number.isFinite(Number(hi));
+      const reallyFilled = filled.includes(key);
+      if (reallyFilled && filledIndex > 0 && !nor) {
+        const join = normalizeSharesJoin(spec[`${key}_join`] || "and");
+        parts.push(`<div class="shares-field-join" role="group" aria-label="与上一条件连接">
+          <span class="shares-field-join__line" aria-hidden="true"></span>
+          <button type="button" data-field-join="${esc(key)}" data-join="and" class="${join === "and" ? "is-active" : ""}">且</button>
+          <button type="button" data-field-join="${esc(key)}" data-join="or" class="${join === "or" ? "is-active" : ""}">或</button>
+          <span class="shares-field-join__line" aria-hidden="true"></span>
+        </div>`);
+      }
+      if (reallyFilled) filledIndex += 1;
+      const fieldNot = !!spec[`${key}_not`];
+      parts.push(`<div class="shares-field-row${reallyFilled ? " is-filled" : ""}" data-field-row="${esc(key)}">
+        <div class="shares-field-row__top">
+          <span class="shares-field-row__name" title="${esc(f.formula || "")}">${esc(f.label)}</span>
+          <button type="button" class="shares-field-not${fieldNot ? " is-active" : ""}" data-field-not="${esc(key)}" title="该字段取反" aria-pressed="${fieldNot ? "true" : "false"}">¬</button>
+        </div>
+        <div class="shares-cond-range">
+          <input type="number" step="any" inputmode="decimal" data-field="${esc(key)}" data-bound="min" placeholder="最小" value="${lo == null || lo === "" ? "" : esc(lo)}" />
+          <em>~</em>
+          <input type="number" step="any" inputmode="decimal" data-field="${esc(key)}" data-bound="max" placeholder="最大" value="${hi == null || hi === "" ? "" : esc(hi)}" />
+        </div>
+      </div>`);
+    });
+
+    const unused = SHARES_FIELDS.filter((f) => !keys.includes(f.key));
+    if (unused.length) {
+      parts.push(`<div class="shares-field-add">
+        <label class="shares-field-add__label">
+          <span>添加指标</span>
+          <select data-add-field="1">
+            <option value="">选择…</option>
+            ${unused.map((f) => `<option value="${esc(f.key)}">${esc(f.label)}</option>`).join("")}
+          </select>
+        </label>
+      </div>`);
+    }
+    return parts.join("");
   }
 
   function renderSharesCondPanel(force) {
     const panel = $("sharesCondPanel");
     if (!panel) return;
     if (view !== "shares") return;
+    syncSharesEditorLayout();
+
+    if (shares.patternId) {
+      const meta = activePatternMeta();
+      const branches = (meta && meta.branches) || [];
+      const branchHtml = branches
+        .map((b) => {
+          const rules = (b.rules || []).map((r) => `<li>${esc(r)}</li>`).join("");
+          return `<div class="shares-pattern-branch">
+            <p><b>${esc(b.label || b.id || "")}</b></p>
+            ${rules ? `<ul>${rules}</ul>` : ""}
+          </div>`;
+        })
+        .join("");
+      panel.dataset.date = "__pattern__";
+      panel.innerHTML = `
+        <div class="shares-inspector">
+          <header class="shares-inspector__head">
+            <div>
+              <strong>形态规则</strong>
+              <span>${esc((meta && meta.name) || shares.patternId)}</span>
+            </div>
+          </header>
+          <div class="shares-pattern-summary">
+            ${branchHtml || `<p>${esc((meta && meta.brief) || "")}</p>`}
+          </div>
+        </div>
+      `;
+      return;
+    }
+
     const date = shares.selectedDate;
     if (!date) {
-      panel.innerHTML = `<p class="shares-cond-hint">上方选择交易日，再设置该日日线条件</p>`;
+      panel.innerHTML = `<div class="shares-inspector shares-inspector--empty">
+        <p>从筛选式点节点，或从近月轨加点，开始编辑当日条件</p>
+      </div>`;
       panel.dataset.date = "";
       return;
     }
 
-    // 轮询刷新时不要重建表单，避免打断输入焦点
     const editing =
       !force &&
       panel.dataset.date === date &&
@@ -1011,65 +1799,95 @@
     }
 
     const spec = shares.specsByDate[date] || {};
-    const fieldsHtml = SHARES_FIELDS.map((f) => {
-      const lo = spec[`${f.key}_min`];
-      const hi = spec[`${f.key}_max`];
-      return `<label class="shares-cond-field" title="${esc(f.formula || "")}">
-        <span class="shares-cond-field__name">${esc(f.label)}</span>
-        <code class="shares-cond-field__fx">${esc(f.formula || "")}</code>
-        <span class="shares-cond-range">
-          <input type="number" step="any" inputmode="decimal" data-field="${esc(f.key)}" data-bound="min" placeholder="最小" value="${lo == null ? "" : esc(lo)}" />
-          <em>~</em>
-          <input type="number" step="any" inputmode="decimal" data-field="${esc(f.key)}" data-bound="max" placeholder="最大" value="${hi == null ? "" : esc(hi)}" />
-        </span>
-      </label>`;
-    }).join("");
-    const chips = sharesChipsHtml(date);
+    syncFieldJoins(spec);
+    syncDayJoins();
+    const dayLogic = inferFieldLogic(spec, date);
+    const dayNegated = !!spec.not;
     const off = sharesDateOffset(date);
+    const brief = sharesSpecBrief(date);
+
     panel.dataset.date = date;
+    panel.dataset.activeFields = sharesActiveFieldKeys(spec).join(",");
+    panel.dataset.dayCount = String(sharesSpecCount());
     panel.innerHTML = `
-      ${SHARES_FORMULA_LEGEND}
-      ${fieldsHtml}
-      <div class="shares-cond-actions">
-        <button type="button" class="btn" id="sharesRunBtn">开始筛选</button>
-        <button type="button" class="btn ghost" id="sharesClearDayBtn">清空本日</button>
-        <p class="shares-cond-hint">当前 ${esc(offsetLabel(off))} · 为各交易日分别设条件，多日同时满足才入选</p>
+      <div class="shares-inspector">
+        <header class="shares-inspector__head">
+          <div>
+            <strong>${esc(offsetLabel(off))}</strong>
+            <span>${esc(fmtMd(date))} ${esc(weekday(date))}</span>
+          </div>
+          <div class="shares-inspector__tools">
+            <button type="button" class="shares-tool-btn${dayNegated ? " is-active" : ""}" data-day-negate="1" aria-pressed="${dayNegated ? "true" : "false"}" title="本日结果取反">本日¬</button>
+            <button type="button" class="shares-tool-btn" id="sharesClearDayBtn" title="清空本日条件">清空</button>
+            <button type="button" class="shares-tool-btn" data-close-editor="1" title="收起">收起</button>
+          </div>
+        </header>
+        <div class="shares-inspector__mode" role="group" aria-label="字段组合">
+          <span>字段</span>
+          <button type="button" data-day-logic="and" class="${dayLogic === "and" ? "is-active" : ""}">且</button>
+          <button type="button" data-day-logic="or" class="${dayLogic === "or" ? "is-active" : ""}">或</button>
+          <button type="button" data-day-logic="not" class="${dayLogic === "not" ? "is-active" : ""}">非</button>
+          ${dayLogic === "mixed" ? `<em class="shares-inspector__mixed">逐段</em>` : ""}
+        </div>
+        <div class="shares-inspector__fields">
+          ${sharesFieldStackHtml(spec)}
+        </div>
+        <footer class="shares-inspector__foot">
+          <code>${esc(brief || "填写区间后进入筛选式")}</code>
+        </footer>
       </div>
-      ${chips ? `<div class="shares-cond-chips">${chips}</div>` : ""}
     `;
   }
-
   function sharesCardHtml(row) {
     const industry = [row.l1_name, row.l2_name, row.l3_name].filter(Boolean).join(" / ");
     const err = row.error ? `<span class="screen-card-error">${esc(row.error)}</span>` : "";
     const href = fromHref(row.code || "");
     const days = row.days || [];
+    const windowDays = row.window_days || [];
     const last = days[days.length - 1] || {};
-    const m = last.metrics || {};
+    const m = last.metrics || row.latest || {};
     const fmtVolRatio = (v) => {
       const n = Number(v);
       return Number.isFinite(n) ? `${n.toFixed(2)}×` : "—";
     };
-    const dayChips = days
+    const branchChips = (row.branches || [])
+      .map((b) => {
+        const label = b === "lower_shadow" ? "收下影" : b === "quiet_body" ? "缩实体" : b;
+        return `<span class="screen-chip" data-tone="up"><em>命中</em>${esc(label)}</span>`;
+      })
+      .join("");
+    const dayChips = (days.length ? days : windowDays)
       .map((d) => {
-        const mm = d.metrics || {};
+        const mm = d.metrics || d;
         const tip = [
           `涨跌 ${fmtPct(mm.pct_chg)}`,
           `最大涨 ${fmtPct(mm.max_gain)}`,
           `最大跌 ${fmtPct(mm.max_drop)}`,
           `实体 ${fmtPct(mm.body_pct)}`,
+          d.body_abs_pct != null ? `|实体| ${fmtNum(d.body_abs_pct, 2)}%` : "",
           `下影比 ${fmtNum((mm.lower_ratio || 0) * 100, 0)}%`,
           `上影比 ${fmtNum((mm.upper_ratio || 0) * 100, 0)}%`,
           `实体比 ${fmtNum((mm.body_ratio || 0) * 100, 0)}%`,
           `量比 ${fmtVolRatio(mm.vol_ratio)}`,
           `量增幅 ${fmtPct(mm.vol_chg)}`,
           d.spec_text || "",
+          d.is_quiet_body ? "小实体" : "",
+          d.is_lower_shadow ? "收下影" : "",
         ]
           .filter(Boolean)
           .join(" · ");
-        return `<span class="screen-chip" data-tone="${tone(mm.pct_chg)}" title="${esc(tip)}"><em>${esc(fmtMd(d.date))}</em>${fmtPct(mm.pct_chg)}</span>`;
+        const mark = d.is_quiet_body || d.is_lower_shadow ? "up" : tone(mm.pct_chg);
+        return `<span class="screen-chip" data-tone="${mark}" title="${esc(tip)}"><em>${esc(fmtMd(d.date))}</em>${fmtPct(mm.pct_chg)}</span>`;
       })
       .join("");
+    const scoreLabel = row.branches
+      ? row.quiet_count != null
+        ? `${row.quiet_count}日缩`
+        : "形态"
+      : "命中日";
+    const scoreValue = row.branches
+      ? fmtNum(row.score, 2)
+      : row.matched_days || days.length || 0;
     return `<article class="screen-card is-stock" data-code="${esc(row.code || "")}" data-key="${esc(row.code || "")}" tabindex="0">
       <a class="screen-card-head" href="${esc(href)}" title="打开公司详情">
         <span class="screen-rank">${row.rank || ""}</span>
@@ -1079,8 +1897,8 @@
           ${industry ? `<em>${esc(industry)}</em>` : ""}
         </div>
         <div class="screen-card-score">
-          <b>${row.matched_days || days.length || 0}</b>
-          <span>命中日</span>
+          <b>${scoreValue}</b>
+          <span>${esc(scoreLabel)}</span>
         </div>
       </a>
       ${klineBlock(row.code || "")}
@@ -1094,6 +1912,7 @@
         <span>实体比 <b>${fmtNum((m.body_ratio || 0) * 100, 0)}</b>%</span>
         <span>量比 <b data-tone="${tone((Number(m.vol_ratio) || 0) - 1)}">${fmtVolRatio(m.vol_ratio)}</b></span>
         <span>量增幅 <b data-tone="${tone(m.vol_chg)}">${fmtPct(m.vol_chg)}</b></span>
+        ${branchChips}
         ${dayChips}
         ${err}
       </footer>
@@ -1108,10 +1927,12 @@
   }
 
   function renderSharesCards() {
-    const viewKey = `shares:${shares.fingerprint || sharesSpecCount()}:${shares.code || "-"}`;
+    const viewKey = `shares:${shares.fingerprint || shares.patternId || sharesSpecCount()}:${shares.code || "-"}`;
     let empty = "暂无符合条件的股票";
     if (shares.status === "running") empty = "正在分析，结果会逐只出现…";
-    else if (!sharesSpecCount()) empty = "请先为至少一个交易日设置条件，再点重新分析";
+    else if (shares.patternId) {
+      if (!shares.started) empty = "形态方案已就绪，点「开始筛选」或右上角「重新分析」";
+    } else if (!sharesSpecCount()) empty = "请先为至少一个交易日设置条件，再点重新分析";
     else if (!shares.started) empty = "条件已就绪，点右上角「重新分析」开始筛选";
     renderCards(
       shares.items || [],
@@ -1640,6 +2461,7 @@
     }
     if (view === "shares") {
       renderSharesSummary();
+      renderSharesExprBar();
       renderSharesDayRail();
       renderSharesHead();
       renderSharesCondPanel();
@@ -1670,6 +2492,7 @@
     shares.fingerprint = data.fingerprint || "";
     shares.specSummary = data.spec_summary || [];
     shares.note = data.note || "";
+    if (data.logic && data.logic !== "chain") shares.logic = normalizeSharesLogic(data.logic);
     if (view === "shares") renderAll();
   }
 
@@ -1798,6 +2621,7 @@
     }
   }
 
+
   async function loadSharesDays() {
     try {
       const res = await fetch(`/api/screen/shares/days?days=${shares.lookback}`, {
@@ -1829,8 +2653,9 @@
     collectSharesForm($("sharesCondPanel"));
     if (!shares.daysLoaded) await loadSharesDays();
 
+    const usePattern = Boolean(shares.patternScheme && isSchemeLike(shares.patternScheme));
     const daySpecs = sharesActiveSpecs();
-    if (!daySpecs.length) {
+    if (!usePattern && !daySpecs.length) {
       shares.started = false;
       shares.status = "idle";
       shares.items = [];
@@ -1839,7 +2664,7 @@
       if (view === "shares") {
         showLoading(false);
         renderAll();
-        showError("请先为至少一个交易日设置涨跌 / 实体 / 影线占比等条件");
+        showError("请先为至少一个交易日设置涨跌 / 实体 / 影线占比等条件，或导入形态方案");
         setLive("idle");
       }
       return;
@@ -1859,23 +2684,35 @@
         renderSharesHead();
         renderSharesCards();
       }
-      shares.message = shares.code ? `正在分析 ${shares.code}…` : "正在按日线条件筛选…";
+      shares.message = shares.code
+        ? `正在分析 ${shares.code}…`
+        : usePattern
+          ? "正在按形态方案筛选…"
+          : "正在按日线条件筛选…";
       if (view === "shares") {
         showLoading(true, shares.message);
         setLive("busy");
       }
     }
 
-    const body = {
-      days: daySpecs,
-      top: shares.top,
-      refresh: force ? "1" : "0",
-      workers: 8,
-    };
+    const body = usePattern
+      ? {
+          scheme: shares.patternScheme,
+          top: shares.top,
+          refresh: force ? "1" : "0",
+          workers: 8,
+        }
+      : {
+          days: daySpecs,
+          logic: normalizeSharesLogic(shares.logic),
+          top: shares.top,
+          refresh: force ? "1" : "0",
+          workers: 8,
+        };
     if (shares.code) body.code = shares.code;
 
     try {
-      const res = await fetch("/api/screen/shares", {
+      const res = await fetch(usePattern ? "/api/screen/shares/pattern" : "/api/screen/shares", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -2147,6 +2984,7 @@
 
     $("sharesClearBtn")?.addEventListener("click", () => {
       if (view !== "shares") return;
+      clearSharesPatternMode();
       shares.specsByDate = {};
       persistSharesSpecs();
       stopPoll(shares);
@@ -2157,6 +2995,8 @@
       shares.analyzedCount = 0;
       shares.message = "";
       shares.presetHint = "";
+      shares.selectedDate = "";
+      shares.presetMenuOpen = false;
       const panel = $("sharesCondPanel");
       if (panel) panel.dataset.date = "";
       renderAll();
@@ -2167,49 +3007,253 @@
     $("sharesCondPanel")?.addEventListener("input", (ev) => {
       if (view !== "shares") return;
       if (!ev.target.matches("input[data-field], select[data-field]")) return;
-      collectSharesForm($("sharesCondPanel"));
+      const panel = $("sharesCondPanel");
+      const prevKeys = panel?.dataset.activeFields || "";
+      const prevDays = panel?.dataset.dayCount || "";
+      collectSharesForm(panel);
+      const keys = sharesActiveFieldKeys(shares.specsByDate[shares.selectedDate] || {}).join(",");
+      const dayCount = String(sharesSpecCount());
       renderSharesSummary();
+      renderSharesExprBar();
       renderSharesDayRail();
       renderSharesHead();
-      refreshSharesChipsOnly();
+      if (panel && (keys !== prevKeys || dayCount !== prevDays)) {
+        panel.dataset.activeFields = keys;
+        panel.dataset.dayCount = dayCount;
+        const field = ev.target.dataset.field;
+        const bound = ev.target.dataset.bound;
+        const start = ev.target.selectionStart;
+        const end = ev.target.selectionEnd;
+        renderSharesCondPanel(true);
+        const again = panel.querySelector(`[data-field="${field}"][data-bound="${bound}"]`);
+        if (again) {
+          again.focus();
+          try {
+            if (typeof start === "number") again.setSelectionRange(start, end ?? start);
+          } catch {
+            /* ignore */
+          }
+        }
+      } else {
+        refreshSharesChipsOnly();
+      }
     });
+
+    $("sharesCondPanel")?.addEventListener("toggle", (ev) => {
+      if (view !== "shares") return;
+      const details = ev.target.closest("details.shares-formula-details");
+      if (!details) return;
+      shares.formulaOpen = details.open;
+    }, true);
 
     $("sharesCondPanel")?.addEventListener("change", (ev) => {
       if (view !== "shares") return;
+      if (ev.target.matches("select[data-add-field]")) {
+        const key = ev.target.value;
+        if (!key) return;
+        if (!shares.extraFields) shares.extraFields = [];
+        if (!shares.extraFields.includes(key)) shares.extraFields.push(key);
+        collectSharesForm($("sharesCondPanel"));
+        renderSharesCondPanel(true);
+        return;
+      }
       if (!ev.target.matches("select[data-field]")) return;
       collectSharesForm($("sharesCondPanel"));
       renderSharesSummary();
+      renderSharesExprBar();
       renderSharesDayRail();
       renderSharesHead();
-      refreshSharesChipsOnly();
+      renderSharesCondPanel(true);
     });
 
-    $("sharesCondPanel")?.addEventListener("click", (ev) => {
+    function handleSharesLogicClick(ev) {
+      const logicBtn = ev.target.closest("button[data-logic]");
+      if (!logicBtn) return false;
+      const next = normalizeSharesLogic(logicBtn.dataset.logic);
+      const exitNor = logicBtn.dataset.exitNor === "1";
+      if (!exitNor && next === inferDayLogic() && next !== "not") return true;
+      applyUniformDayLogic(next);
+      persistSharesSpecs();
+      renderAll();
+      return true;
+    }
+
+    function handleSharesDayJoinClick(ev) {
+      const dayJoinBtn = ev.target.closest("button[data-day-join]");
+      if (!dayJoinBtn || dayJoinBtn.disabled) return false;
+      const date = dayJoinBtn.dataset.dayJoin;
+      const join = normalizeSharesJoin(dayJoinBtn.dataset.join);
+      const spec = date && shares.specsByDate[date];
+      if (!spec) return true;
+      if (normalizeSharesLogic(shares.logic) === "not") shares.logic = "and";
+      spec.join = join;
+      syncDayJoins();
+      persistSharesSpecs();
+      renderSharesExprBar();
+      renderSharesSummary();
+      renderSharesHead();
+      return true;
+    }
+
+    $("sharesWorkbench")?.addEventListener("click", (ev) => {
       if (view !== "shares") return;
       if (ev.target.closest("#sharesRunBtn")) {
         shares.code = readCode();
         loadShares(true);
         return;
       }
+      if (ev.target.closest("#sharesClearPatternBtn")) {
+        clearSharesPatternMode();
+        shares.presetHint = "已退出形态方案，可继续编辑筛选式";
+        stopPoll(shares);
+        shares.started = false;
+        shares.status = "idle";
+        shares.items = [];
+        shares.resultCount = 0;
+        const panel = $("sharesCondPanel");
+        if (panel) panel.dataset.date = "";
+        renderAll();
+        showError("");
+        setLive("idle");
+        return;
+      }
+      if (ev.target.closest("#sharesPresetMenuBtn")) {
+        shares.presetMenuOpen = !shares.presetMenuOpen;
+        renderSharesExprBar();
+        renderSharesPresetBar();
+        return;
+      }
+      if (ev.target.closest("[data-close-preset]")) {
+        shares.presetMenuOpen = false;
+        renderSharesExprBar();
+        renderSharesPresetBar();
+        return;
+      }
+      if (handleSharesLogicClick(ev)) return;
+      if (handleSharesDayJoinClick(ev)) return;
+      const removeBtn = ev.target.closest("button[data-remove-date]");
+      if (removeBtn) {
+        const date = removeBtn.dataset.removeDate;
+        if (date) {
+          delete shares.specsByDate[date];
+          delete shares.fieldLogicDraft[date];
+          if (shares.selectedDate === date) shares.selectedDate = "";
+          syncDayJoins();
+          persistSharesSpecs();
+          renderAll();
+        }
+        return;
+      }
+      const jump = ev.target.closest("[data-jump-date]");
+      if (jump) {
+        const date = jump.dataset.jumpDate;
+        if (!date) return;
+        collectSharesForm($("sharesCondPanel"));
+        shares.selectedDate = date;
+        renderAll();
+      }
+    });
+
+    $("sharesCondPanel")?.addEventListener("click", (ev) => {
+      if (view !== "shares") return;
       if (ev.target.closest("#sharesClearDayBtn")) {
-        if (shares.selectedDate) delete shares.specsByDate[shares.selectedDate];
+        if (shares.selectedDate) {
+          delete shares.specsByDate[shares.selectedDate];
+          delete shares.fieldLogicDraft[shares.selectedDate];
+        }
+        syncDayJoins();
         persistSharesSpecs();
+        shares.selectedDate = "";
         const panel = $("sharesCondPanel");
         if (panel) panel.dataset.date = "";
         renderAll();
         return;
       }
-      const chip = ev.target.closest("button[data-jump-date]");
-      if (!chip) return;
-      const date = chip.dataset.jumpDate;
-      if (!date || date === shares.selectedDate) return;
-      collectSharesForm($("sharesCondPanel"));
-      shares.selectedDate = date;
-      renderAll();
+      if (ev.target.closest("[data-close-editor]")) {
+        collectSharesForm($("sharesCondPanel"));
+        shares.selectedDate = "";
+        renderAll();
+        return;
+      }
+      const dayLogicBtn = ev.target.closest("button[data-day-logic]");
+      if (dayLogicBtn) {
+        const panel = $("sharesCondPanel");
+        if (!panel || !shares.selectedDate) return;
+        const next = normalizeSharesLogic(dayLogicBtn.dataset.dayLogic);
+        // 用点击目标覆盖 DOM 上仍亮着的旧按钮，避免 collect 读到旧且/或
+        collectSharesForm(panel, { forceDayLogic: next });
+        renderSharesSummary();
+        renderSharesExprBar();
+        renderSharesDayRail();
+        renderSharesHead();
+        renderSharesCondPanel(true);
+        return;
+      }
+      const dayNegBtn = ev.target.closest("button[data-day-negate]");
+      if (dayNegBtn) {
+        const panel = $("sharesCondPanel");
+        if (!panel) return;
+        dayNegBtn.classList.toggle("is-active");
+        dayNegBtn.setAttribute(
+          "aria-pressed",
+          dayNegBtn.classList.contains("is-active") ? "true" : "false",
+        );
+        collectSharesForm(panel);
+        renderSharesSummary();
+        renderSharesExprBar();
+        renderSharesDayRail();
+        renderSharesHead();
+        renderSharesCondPanel(true);
+        return;
+      }
+      const fieldNotBtn = ev.target.closest("button[data-field-not]");
+      if (fieldNotBtn) {
+        const panel = $("sharesCondPanel");
+        if (!panel) return;
+        fieldNotBtn.classList.toggle("is-active");
+        fieldNotBtn.setAttribute(
+          "aria-pressed",
+          fieldNotBtn.classList.contains("is-active") ? "true" : "false",
+        );
+        collectSharesForm(panel);
+        renderSharesSummary();
+        renderSharesExprBar();
+        renderSharesDayRail();
+        renderSharesHead();
+        renderSharesCondPanel(true);
+        return;
+      }
+      const fieldJoinBtn = ev.target.closest("button[data-field-join]");
+      if (fieldJoinBtn) {
+        const panel = $("sharesCondPanel");
+        if (!panel || !shares.selectedDate) return;
+        // 先记下点击目标，再收集表单（此时 DOM 上仍是旧 is-active）
+        const key = fieldJoinBtn.dataset.fieldJoin;
+        const join = normalizeSharesJoin(fieldJoinBtn.dataset.join);
+        if (!key) return;
+        collectSharesForm(panel);
+        const spec = shares.specsByDate[shares.selectedDate];
+        if (!spec) return;
+        delete spec.logic;
+        spec[`${key}_join`] = join;
+        syncFieldJoins(spec);
+        persistSharesSpecs();
+        renderSharesSummary();
+        renderSharesExprBar();
+        renderSharesDayRail();
+        renderSharesHead();
+        renderSharesCondPanel(true);
+      }
     });
 
     $("sharesPresetBar")?.addEventListener("click", (ev) => {
       if (view !== "shares") return;
+      if (ev.target.closest("[data-close-preset]")) {
+        shares.presetMenuOpen = false;
+        renderSharesExprBar();
+        renderSharesPresetBar();
+        return;
+      }
       if (ev.target.closest("#sharesPresetSaveBtn")) {
         const name = $("sharesPresetName")?.value || "";
         saveSharesPreset(name);
@@ -2235,6 +3279,10 @@
         const text = $("sharesPresetImportText")?.value || shares.presetImportDraft || "";
         shares.presetImportDraft = text;
         importSharesPresetsFromText(text);
+        return;
+      }
+      if (ev.target.closest("#sharesPresetImportExample")) {
+        fillSharesSchemeExample();
         return;
       }
       const del = ev.target.closest("[data-preset-del]");
@@ -2317,7 +3365,6 @@
       const date = btn.dataset.date;
       if (!date) return;
       if (view === "shares") {
-        if (date === shares.selectedDate) return;
         collectSharesForm($("sharesCondPanel"));
         shares.selectedDate = date;
         renderAll();

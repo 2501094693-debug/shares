@@ -5,7 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from analysis.decline.bars import normalize_date
-from analysis.shares.config import DEFAULT_LOOKBACK_DAYS, FIELD_META, MAX_LOOKBACK_DAYS
+from analysis.shares.config import (
+    COMPARE_FIELD_META,
+    COMPARE_OPS,
+    COMPARE_TRENDS,
+    DEFAULT_LOOKBACK_DAYS,
+    FIELD_META,
+    MAX_LOOKBACK_DAYS,
+)
 from market.steep.calendar import recent_trade_dates
 
 
@@ -28,5 +35,11 @@ def list_trade_days(days: int = DEFAULT_LOOKBACK_DAYS) -> dict[str, Any]:
         "count": len(items),
         "items": items,
         "fields": FIELD_META,
-        "note": "为每个交易日设置振幅/实体/涨跌/影线等区间；未填字段表示不限。多日条件为 AND。",
+        "compare_fields": COMPARE_FIELD_META,
+        "compare_ops": list(COMPARE_OPS),
+        "compare_trends": list(COMPARE_TRENDS),
+        "note": (
+            "筛选式：为每个交易日设区间；形态：groups 绝对阈值；"
+            "对比：comps 比较前后交易日指标（可兼 days 绝对条件）。"
+        ),
     }

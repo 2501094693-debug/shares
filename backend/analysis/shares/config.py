@@ -31,3 +31,20 @@ FIELD_META: dict[str, dict[str, str]] = {
     "vol_ratio": {"label": "量比", "unit": "倍", "hint": "当日量/前5日均量（不含当日）"},
     "vol_chg": {"label": "量增幅", "unit": "%", "hint": "(当日量/昨量−1)×100"},
 }
+
+# 跨日对比可用字段 = 区间字段 + 派生绝对值 / 波幅
+COMPARE_FIELDS: tuple[str, ...] = RANGE_FIELDS + (
+    "body_abs_pct",  # |实体幅度| %
+    "abs_pct_chg",  # |涨跌幅| %
+    "range_pct",  # 日内波幅 %：max_gain − max_drop
+)
+
+COMPARE_FIELD_META: dict[str, dict[str, str]] = {
+    **FIELD_META,
+    "body_abs_pct": {"label": "|实体|", "unit": "%", "hint": "abs(body_pct)"},
+    "abs_pct_chg": {"label": "|涨跌幅|", "unit": "%", "hint": "abs(pct_chg)"},
+    "range_pct": {"label": "日内波幅", "unit": "%", "hint": "max_gain − max_drop"},
+}
+
+COMPARE_OPS: tuple[str, ...] = ("lt", "le", "gt", "ge", "eq")
+COMPARE_TRENDS: tuple[str, ...] = ("down", "up", "flat")

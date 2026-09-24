@@ -7,8 +7,20 @@ import time
 from typing import Any
 
 from analysis.persist import KIND_SHARES, JobSlot, is_fresh, load_disk, save_disk, strip_charts
-from analysis.shares.conditions import normalize_day_specs, specs_fingerprint
+from analysis.shares.conditions import normalize_day_specs, normalize_logic, specs_fingerprint
+from analysis.shares.compare import (
+    compare_fingerprint,
+    load_compare_scheme,
+    normalize_compare_params,
+    screen_compare,
+)
+from analysis.shares.pattern import (
+    load_pattern_scheme,
+    normalize_pattern_params,
+    screen_scheme,
+)
 from analysis.shares.screen import apply_view, screen_shares
+from analysis.shares.scheme import scheme_fingerprint
 
 
 class SharesScreenService:
@@ -56,24 +68,17 @@ class SharesScreenService:
                 payload["message"] = "正在准备股票池…"
         return payload
 
-    def run_or_poll(
+    def _start_or_poll(
         self,
         *,
-        day_specs: list[dict[str, Any]] | None = None,
-        top: int = 50,
-        code: str = "",
-        force: bool = False,
-        workers: int = 8,
+        fingerprint: str,
+        code: str,
+        top: int,
+        force: bool,
+        worker_target: Any,
+        worker_args: tuple[Any, ...],
+        thread_name: str,
     ) -> dict[str, Any]:
-        specs = normalize_day_specs(day_specs)
-        if not specs:
-            return {
-                "status": "error",
-                "error": "请至少为一天设置有效条件",
-                "elapsed_sec": 0,
-            }
-
-        fingerprint = specs_fingerprint(specs)
         key = self._make_key(fingerprint, code)
 
         with self._lock:
@@ -92,7 +97,6 @@ class SharesScreenService:
                 return self._snapshot(slot, top)
             if packed and slot.result is None:
                 cached_at, data = packed
-                # 磁盘结果条件指纹不一致则丢弃
                 if str((data or {}).get("fingerprint") or "") == fingerprint:
                     slot.result = data
                     slot.finished_at = cached_at
@@ -111,21 +115,110 @@ class SharesScreenService:
             self._slots[key] = slot
 
         thread = threading.Thread(
-            target=self._worker,
-            args=(key, specs, code, workers, run_id),
+            target=worker_target,
+            args=(*worker_args, key, run_id),
             daemon=True,
-            name="shares-day-screen",
+            name=thread_name,
         )
         thread.start()
         with self._lock:
             return self._snapshot(self._slots[key], top)
 
+    def run_or_poll(
+        self,
+        *,
+        day_specs: list[dict[str, Any]] | None = None,
+        logic: str = "and",
+        top: int = 50,
+        code: str = "",
+        force: bool = False,
+        workers: int = 8,
+    ) -> dict[str, Any]:
+        specs = normalize_day_specs(day_specs)
+        if not specs:
+            return {
+                "status": "error",
+                "error": "请至少为一天设置有效条件",
+                "elapsed_sec": 0,
+            }
+
+        mode = normalize_logic(logic)
+        fingerprint = specs_fingerprint(specs, mode)
+        return self._start_or_poll(
+            fingerprint=fingerprint,
+            code=code,
+            top=top,
+            force=force,
+            worker_target=self._worker,
+            worker_args=(specs, mode, code, workers),
+            thread_name="shares-day-screen",
+        )
+
+    def run_or_poll_pattern(
+        self,
+        *,
+        params: dict[str, Any] | None = None,
+        top: int = 50,
+        code: str = "",
+        force: bool = False,
+        workers: int = 8,
+    ) -> dict[str, Any]:
+        normalized = normalize_pattern_params(params)
+        try:
+            scheme = load_pattern_scheme(normalized)
+        except (FileNotFoundError, ValueError, TypeError) as exc:
+            return {
+                "status": "error",
+                "error": str(exc),
+                "elapsed_sec": 0,
+            }
+        fingerprint = f"pat_{scheme_fingerprint(scheme)}"
+        return self._start_or_poll(
+            fingerprint=fingerprint,
+            code=code,
+            top=top,
+            force=force,
+            worker_target=self._pattern_worker,
+            worker_args=(normalized, code, workers),
+            thread_name="shares-pattern-screen",
+        )
+
+    def run_or_poll_compare(
+        self,
+        *,
+        params: dict[str, Any] | None = None,
+        top: int = 50,
+        code: str = "",
+        force: bool = False,
+        workers: int = 8,
+    ) -> dict[str, Any]:
+        try:
+            normalized = normalize_compare_params(params)
+            scheme = load_compare_scheme(normalized)
+        except (ValueError, TypeError) as exc:
+            return {
+                "status": "error",
+                "error": str(exc),
+                "elapsed_sec": 0,
+            }
+        fingerprint = f"cmp_{compare_fingerprint(scheme)}"
+        return self._start_or_poll(
+            fingerprint=fingerprint,
+            code=code,
+            top=top,
+            force=force,
+            worker_target=self._compare_worker,
+            worker_args=(normalized, code, workers),
+            thread_name="shares-compare-screen",
+        )
+
     def _worker(
         self,
-        key: str,
         specs: list[dict[str, Any]],
+        logic: str,
         code: str,
         workers: int,
+        key: str,
         run_id: int,
     ) -> None:
         def on_update(payload: dict[str, Any]) -> None:
@@ -138,6 +231,89 @@ class SharesScreenService:
         try:
             result = screen_shares(
                 day_specs=specs,
+                logic=logic,
+                code=code,
+                workers=workers,
+                top=None,
+                on_update=on_update,
+            )
+            with self._lock:
+                slot = self._slots.get(key)
+                if not slot or slot.run_id != run_id:
+                    return
+                slot.result = result
+                slot.status = "done"
+                slot.finished_at = time.time()
+            save_disk(KIND_SHARES, key, result)
+        except Exception as exc:  # noqa: BLE001
+            with self._lock:
+                slot = self._slots.get(key)
+                if not slot or slot.run_id != run_id:
+                    return
+                slot.status = "error"
+                slot.error = str(exc)
+                slot.finished_at = time.time()
+
+    def _pattern_worker(
+        self,
+        params: dict[str, Any],
+        code: str,
+        workers: int,
+        key: str,
+        run_id: int,
+    ) -> None:
+        def on_update(payload: dict[str, Any]) -> None:
+            with self._lock:
+                slot = self._slots.get(key)
+                if not slot or slot.run_id != run_id:
+                    return
+                slot.result = payload
+
+        try:
+            scheme = load_pattern_scheme(params)
+            result = screen_scheme(
+                scheme,
+                code=code,
+                workers=workers,
+                top=None,
+                on_update=on_update,
+            )
+            with self._lock:
+                slot = self._slots.get(key)
+                if not slot or slot.run_id != run_id:
+                    return
+                slot.result = result
+                slot.status = "done"
+                slot.finished_at = time.time()
+            save_disk(KIND_SHARES, key, result)
+        except Exception as exc:  # noqa: BLE001
+            with self._lock:
+                slot = self._slots.get(key)
+                if not slot or slot.run_id != run_id:
+                    return
+                slot.status = "error"
+                slot.error = str(exc)
+                slot.finished_at = time.time()
+
+    def _compare_worker(
+        self,
+        params: dict[str, Any],
+        code: str,
+        workers: int,
+        key: str,
+        run_id: int,
+    ) -> None:
+        def on_update(payload: dict[str, Any]) -> None:
+            with self._lock:
+                slot = self._slots.get(key)
+                if not slot or slot.run_id != run_id:
+                    return
+                slot.result = payload
+
+        try:
+            scheme = load_compare_scheme(params)
+            result = screen_compare(
+                scheme,
                 code=code,
                 workers=workers,
                 top=None,

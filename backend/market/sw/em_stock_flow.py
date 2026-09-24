@@ -37,8 +37,8 @@ _HOSTS = (
     "https://71.push2.eastmoney.com/api/qt/clist/get",
 )
 _FAIL_COOLDOWN_SEC = 45.0
-_PAGE_ROUNDS = 3
-_WORKERS = 3
+_PAGE_ROUNDS = 2
+_WORKERS = 6
 
 
 _good_lock = threading.Lock()
@@ -97,8 +97,8 @@ def _page(pn: int) -> dict[str, Any]:
                     url,
                     params=params,
                     headers=_HEADERS,
-                    timeout=(6, 20),
-                    retries=1,
+                    timeout=(3, 12),
+                    retries=0,
                 )
             except Exception as exc:  # noqa: BLE001
                 last_error = exc

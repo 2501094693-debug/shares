@@ -4,6 +4,7 @@
 
     python -m analysis.shares --days
     python -m analysis.shares --spec conditions.json --top 30
+    python -m analysis.shares --spec conditions.json --logic or --top 30
     python -m analysis.shares --code 600519 --date 2026-09-23 --pct-chg-min 1 --lower-ratio-min 0.4
 """
 
@@ -18,6 +19,7 @@ _BACKEND = Path(__file__).resolve().parents[2]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
+from analysis.shares.conditions import normalize_logic
 from analysis.shares.days import list_trade_days
 from analysis.shares.screen import screen_shares
 
@@ -42,20 +44,34 @@ def _print_table(items: list[dict]) -> None:
                 f"lower_r={m.get('lower_ratio')} upper_r={m.get('upper_ratio')} "
                 f"body_r={m.get('body_ratio')} {day.get('spec_text')}"
             )
+        if row.get("branches"):
+            latest = row.get("latest") or {}
+            print(
+                f"       branches={','.join(row.get('branches') or [])} "
+                f"quiet={row.get('quiet_count')} "
+                f"lower_r={latest.get('lower_ratio')} body={latest.get('body_pct')} "
+                f"score={row.get('score')}"
+            )
 
 
-def _load_specs(args: argparse.Namespace) -> list[dict]:
+def _load_specs(args: argparse.Namespace) -> tuple[list[dict], str]:
+    """返回 (days, logic)；logic 优先 CLI，其次 JSON 文件。"""
+    file_logic = ""
     if args.spec:
         path = Path(args.spec)
         data = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(data, dict) and "days" in data:
-            return list(data["days"] or [])
-        if isinstance(data, list):
-            return data
-        raise SystemExit("条件文件须为 day 条件数组，或含 days 字段的对象")
+            file_logic = str(data.get("logic") or "")
+            days = list(data["days"] or [])
+        elif isinstance(data, list):
+            days = data
+        else:
+            raise SystemExit("条件文件须为 day 条件数组，或含 days 字段的对象")
+        logic = normalize_logic(args.logic if args.logic else file_logic)
+        return days, logic
 
     if not args.date:
-        return []
+        return [], normalize_logic(args.logic)
 
     one: dict = {"date": args.date}
     if args.pct_chg_min is not None:
@@ -86,7 +102,7 @@ def _load_specs(args: argparse.Namespace) -> list[dict]:
         one["body_ratio_min"] = args.body_ratio_min
     if args.body_ratio_max is not None:
         one["body_ratio_max"] = args.body_ratio_max
-    return [one]
+    return [one], normalize_logic(args.logic)
 
 
 def main() -> None:
@@ -94,6 +110,12 @@ def main() -> None:
     parser.add_argument("--days", type=int, nargs="?", const=22, help="列出近 N 个交易日（默认 22）")
     parser.add_argument("--spec", default="", help="条件 JSON 文件路径")
     parser.add_argument("--date", default="", help="单日条件：交易日 YYYY-MM-DD")
+    parser.add_argument(
+        "--logic",
+        default="",
+        choices=["", "and", "or"],
+        help="多日组合：and 全部满足 / or 任一满足 / not 全部不满足（默认 and；也可写在 --spec JSON 的 logic 字段）",
+    )
     parser.add_argument("--pct-chg-min", type=float, default=None)
     parser.add_argument("--pct-chg-max", type=float, default=None)
     parser.add_argument("--max-gain-min", type=float, default=None)
@@ -126,13 +148,14 @@ def main() -> None:
         print("可选字段：", ", ".join((pack.get("fields") or {}).keys()))
         return
 
-    specs = _load_specs(args)
+    top = None if args.top <= 0 else args.top
+
+    specs, logic = _load_specs(args)
     if not specs:
         parser.error("请用 --days 列出交易日，或 --spec / --date 指定条件")
-
-    top = None if args.top <= 0 else args.top
     data = screen_shares(
         day_specs=specs,
+        logic=logic,
         code=args.code.strip(),
         workers=args.workers,
         top=top,
@@ -144,6 +167,7 @@ def main() -> None:
 
     print(
         f"fingerprint={data.get('fingerprint')}  "
+        f"logic={data.get('logic') or '-'}  "
         f"candidates={data.get('candidate_count')}  analyzed={data.get('analyzed_count')}  "
         f"results={data.get('result_count')}"
     )

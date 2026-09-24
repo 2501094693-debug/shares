@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=shares-import-20260924" />
+  <link rel="stylesheet" href="/css/style.css?v=shares-editor-pop-20260924" />
 </head>
 <body class="app-shell company-page-root market-page-root screen-page-root" data-nav="analysis" data-screen-mode="industry">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
@@ -69,10 +69,13 @@
       <div id="loading" class="loading screen-progress hidden">正在分析…</div>
 
       <div class="screen-layout">
-        <nav id="dayRail" class="screen-day-rail" aria-label="交易日"></nav>
         <div id="sharesWorkbench" class="shares-workbench judgment-shares-panel hidden">
-          <div id="sharesCondPanel" class="shares-cond-panel" aria-label="日线条件"></div>
-          <div id="sharesPresetBar" class="shares-preset-bar" aria-label="筛选方案"></div>
+          <div id="sharesExprBar" class="shares-expr-bar" aria-label="筛选式"></div>
+          <div id="sharesPresetBar" class="shares-preset-pop" aria-label="筛选方案" hidden></div>
+        </div>
+        <nav id="dayRail" class="screen-day-rail" aria-label="交易日"></nav>
+        <div id="sharesBenchBody" class="shares-bench-body judgment-shares-panel hidden">
+          <div id="sharesCondPanel" class="shares-cond-panel" aria-label="本日条件"></div>
         </div>
         <div class="screen-day-main">
           <div id="dayHead" class="screen-day-head"></div>
@@ -160,6 +163,6 @@
   <script src="/js/shared/orbit-prefetch.js?v=futures-20260923"></script>
   <script src="/js/shared/nav.js?v=futures-20260923"></script>
   <script src="/js/shared/kline-draw.js?v=screen-20260909-kpan"></script>
-  <script src="/js/analysis.js?v=shares-import-20260924"></script>
+  <script src="/js/analysis.js?v=shares-import-scheme-20260924"></script>
 </body>
 </html>

@@ -14,6 +14,7 @@ from analysis.rotation.service import service as rotation_service
 from analysis.shares.config import DEFAULT_LOOKBACK_DAYS as SHARES_LOOKBACK_DAYS
 from analysis.shares.config import MAX_LOOKBACK_DAYS as SHARES_MAX_LOOKBACK_DAYS
 from analysis.shares.days import list_trade_days
+from analysis.shares.pattern import normalize_pattern_params
 from analysis.shares.service import service as shares_service
 from core.api import err, ok
 from core.codes import normalize_code
@@ -88,6 +89,7 @@ def post_shares_screen(payload: dict[str, Any] = Body(...)):
             {"date": "2026-09-23", "pct_chg_min": 2, "lower_ratio_min": 0.4},
             {"date": "2026-09-22", "amplitude_min": 3, "amplitude_max": 8}
           ],
+          "logic": "and",
           "top": 50,
           "code": "",
           "refresh": "0",
@@ -95,7 +97,10 @@ def post_shares_screen(payload: dict[str, Any] = Body(...)):
         }
 
     单日可选字段：pct_chg / max_gain / max_drop / body_pct / body_ratio /
-    lower_ratio / upper_ratio 的 ``*_min`` / ``*_max``。未填字段表示不限；多日之间为 AND。
+    lower_ratio / upper_ratio 的 ``*_min`` / ``*_max``。未填字段表示不限。
+    ``logic``：``and`` / ``or`` / ``not``（多日统一组合；若某日带 ``join`` 则改为逐日左结合连接）。
+    单日还可设 ``logic``（字段统一与/或/非）、``{field}_join``（与上一已填字段的与/或）、
+    ``join``（与上一条件日的与/或）、``not``（本日取反）、``{field}_not``（字段取反）。
     """
     raw_days = payload.get("days") if isinstance(payload, dict) else None
     if not isinstance(raw_days, list) or not raw_days:
@@ -115,12 +120,181 @@ def post_shares_screen(payload: dict[str, Any] = Body(...)):
     if workers < 1 or workers > 16:
         return err("workers 须在 1–16 之间", 400)
 
+    logic = str(payload.get("logic") or "and").strip().lower()
+    if logic not in ("and", "or", "not", "nor"):
+        return err("logic 须为 and、or 或 not", 400)
+    if logic == "nor":
+        logic = "not"
+
     refresh = str(payload.get("refresh") or "0").strip()
     code = normalize_code(str(payload.get("code") or ""))
 
     try:
         result = shares_service.run_or_poll(
             day_specs=raw_days,
+            logic=logic,
+            top=top,
+            code=code,
+            force=refresh == "1",
+            workers=workers,
+        )
+        if result.get("status") == "error" and "data" not in result:
+            return err(str(result.get("error") or "筛选失败"), 400)
+        return ok(result)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.post("/api/screen/shares/pattern")
+def post_shares_pattern(payload: dict[str, Any] = Body(...)):
+    """按内联 JSON 形态方案筛选。
+
+    Body 示例::
+
+        {
+          "scheme": {
+            "id": "my_scheme",
+            "logic": "or",
+            "groups": [ ... ]
+          },
+          "top": 50
+        }
+
+    也可直接把 groups 放在 body 顶层。
+    """
+    if not isinstance(payload, dict):
+        return err("body 须为对象", 400)
+
+    has_inline = isinstance(payload.get("scheme"), dict) or (
+        isinstance(payload.get("groups"), list) and bool(payload.get("groups"))
+    )
+    if not has_inline:
+        return err("须提供 scheme 对象或非空 groups 数组", 400)
+
+    try:
+        top = int(payload.get("top") if payload.get("top") is not None else 50)
+    except (TypeError, ValueError):
+        return err("top 无效", 400)
+    if top < 0 or top > 500:
+        return err("top 须在 0–500 之间", 400)
+
+    try:
+        workers = int(payload.get("workers") if payload.get("workers") is not None else 8)
+    except (TypeError, ValueError):
+        return err("workers 无效", 400)
+    if workers < 1 or workers > 16:
+        return err("workers 须在 1–16 之间", 400)
+
+    refresh = str(payload.get("refresh") or "0").strip()
+    code = normalize_code(str(payload.get("code") or ""))
+    try:
+        params = normalize_pattern_params(payload)
+    except ValueError as exc:
+        return err(str(exc), 400)
+
+    try:
+        from analysis.shares.pattern import load_pattern_scheme
+        from analysis.shares.scheme import scheme_has_rules
+
+        scheme = load_pattern_scheme(params)
+        if not scheme_has_rules(scheme):
+            return err("方案无有效条件日", 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(f"方案无效: {exc}", 400)
+
+    try:
+        result = shares_service.run_or_poll_pattern(
+            params=params,
+            top=top,
+            code=code,
+            force=refresh == "1",
+            workers=workers,
+        )
+        if result.get("status") == "error" and "data" not in result:
+            return err(str(result.get("error") or "筛选失败"), 400)
+        return ok(result)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.post("/api/screen/shares/compare")
+def post_shares_compare(payload: dict[str, Any] = Body(...)):
+    """按跨日对比方案筛选：比较前后若干交易日的日线指标。
+
+    Body 示例::
+
+        {
+          "scheme": {
+            "id": "settle_compare",
+            "name": "对比趋稳",
+            "logic": "and",
+            "days": [{"offset": 0, "pct_chg_min": -1.2, "pct_chg_max": 1.2}],
+            "comps": [
+              {
+                "field": "body_abs_pct",
+                "offsets": [4, 3, 2, 1, 0],
+                "trend": "down",
+                "min_pairs": 3
+              },
+              {"field": "vol_ratio", "left": 0, "right": 3, "op": "lt"}
+            ]
+          },
+          "top": 50
+        }
+
+    也可把 comps / days 放在 body 顶层。
+    comps 支持：
+    - 两两对比：left/right（offset）+ op（lt/le/gt/ge/eq）+ 可选 ratio_*/delta_*
+    - 序列趋势：offsets + trend（down/up/flat）+ 可选 min_pairs / strict
+    字段见 /api/screen/shares/days 的 compare_fields。
+    """
+    if not isinstance(payload, dict):
+        return err("body 须为对象", 400)
+
+    has_inline = (
+        isinstance(payload.get("scheme"), dict)
+        or (isinstance(payload.get("comps"), list) and bool(payload.get("comps")))
+        or (isinstance(payload.get("days"), list) and bool(payload.get("days")))
+    )
+    if not has_inline:
+        return err("须提供 scheme 对象，或非空 comps / days", 400)
+
+    try:
+        top = int(payload.get("top") if payload.get("top") is not None else 50)
+    except (TypeError, ValueError):
+        return err("top 无效", 400)
+    if top < 0 or top > 500:
+        return err("top 须在 0–500 之间", 400)
+
+    try:
+        workers = int(payload.get("workers") if payload.get("workers") is not None else 8)
+    except (TypeError, ValueError):
+        return err("workers 无效", 400)
+    if workers < 1 or workers > 16:
+        return err("workers 须在 1–16 之间", 400)
+
+    refresh = str(payload.get("refresh") or "0").strip()
+    code = normalize_code(str(payload.get("code") or ""))
+
+    try:
+        from analysis.shares.compare import (
+            compare_has_rules,
+            load_compare_scheme,
+            normalize_compare_params,
+        )
+
+        params = normalize_compare_params(payload)
+        scheme = load_compare_scheme(params)
+        if not compare_has_rules(scheme):
+            return err("方案无有效对比或绝对条件", 400)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(f"方案无效: {exc}", 400)
+
+    try:
+        result = shares_service.run_or_poll_compare(
+            params=params,
             top=top,
             code=code,
             force=refresh == "1",

@@ -27,7 +27,6 @@ from core.resolve import (
     is_eastmoney_push2_host,
     mark_bad_ip,
     remember_host,
-    resolve_ipv4,
 )
 
 _UA = (
@@ -105,6 +104,17 @@ def _push2_request(url: str) -> tuple[str, str]:
     return urlunparse(parsed._replace(netloc=f"{canon}{port}")), canon
 
 
+def _probe_timeout(
+    timeout: int | tuple[float, float],
+) -> tuple[float, float]:
+    """多 IP 试连时收紧 connect，避免死节点拖满 6s×N。"""
+    if isinstance(timeout, tuple):
+        connect, read = float(timeout[0]), float(timeout[1])
+    else:
+        connect = read = float(timeout)
+    return (min(connect, 2.5), read)
+
+
 def _get_via_ip(
     url: str,
     *,
@@ -118,7 +128,10 @@ def _get_via_ip(
         raise requests.ConnectionError(f"无法解析 {host}")
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     last_error: Exception | None = None
-    for ip in ips:
+    probe = _probe_timeout(timeout)
+    for index, ip in enumerate(ips):
+        # 第一个（静态优先）用原超时；后续快速跳过坏节点
+        wait = timeout if index == 0 else probe
         try:
             sess = _session(verify=False)
             sess.mount("https://", _SNIAdapter(host))
@@ -127,7 +140,7 @@ def _get_via_ip(
                 _url_with_ip(url, ip),
                 params=params,
                 headers=hdrs,
-                timeout=timeout,
+                timeout=wait,
                 allow_redirects=False,
             )
             resp.raise_for_status()
