@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=xq-emotion-scroll-20260920b" />
-  <link rel="stylesheet" href="/css/ai-page.css?v=sentiment-20260920" />
+  <link rel="stylesheet" href="/css/style.css?v=holder-num-hover-20260924" />
+  <link rel="stylesheet" href="/css/ai-page.css?v=trend-20260924" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
@@ -28,8 +28,7 @@
         <button id="refreshEmotionBtn" class="btn ghost" type="button" hidden>刷新情绪</button>
         <button id="refreshFinancialsBtn" class="btn ghost" type="button" hidden>刷新财报</button>
         <button id="refreshListBtn" class="btn ghost" type="button" hidden>刷新龙虎榜</button>
-        <button id="refreshHoldersBtn" class="btn ghost" type="button" hidden>刷新十大股东</button>
-        <button id="refreshFundHoldersBtn" class="btn ghost" type="button" hidden>刷新基金持股</button>
+        <button id="refreshHoldersBtn" class="btn ghost" type="button" hidden>刷新持股</button>
       </div>
     </header>
 
@@ -52,6 +51,7 @@
             <button type="button" class="emotion-source-btn" data-source="competition" aria-selected="false">行业竞争</button>
             <button type="button" class="emotion-source-btn" data-source="chain" aria-selected="false">产业分析</button>
             <button type="button" class="emotion-source-btn" data-source="risk" aria-selected="false">风险评估</button>
+            <button type="button" class="emotion-source-btn" data-source="trend" aria-selected="false">趋势分析</button>
             <button type="button" class="emotion-source-btn" data-source="sentiment" aria-selected="false">情绪分析</button>
           </nav>
           <nav id="earningsSourceBar" class="emotion-source-bar judgment-source-bar judgment-sub-bar" aria-label="财报简述视角" hidden>
@@ -211,6 +211,7 @@
                     <select id="comboMetricSelect" class="chart-select">
                       <option value="pe">估值</option>
                       <option value="fundflow" selected>资金流</option>
+                      <option value="margin">融资融券</option>
                     </select>
                   </label>
                 </div>
@@ -256,6 +257,23 @@
                     <input type="checkbox" checked />
                     <span class="fundflow-legend-swatch" style="--tier-color: #2a9d8f"></span>
                     小单
+                  </label>
+                </div>
+                <div id="marginLegendWrap" class="fundflow-legend hidden" aria-label="融资融券口径">
+                  <label class="fundflow-legend-item" data-series="rzye">
+                    <input type="checkbox" checked />
+                    <span class="fundflow-legend-swatch" style="--tier-color: #e63946"></span>
+                    融资余额
+                  </label>
+                  <label class="fundflow-legend-item" data-series="rzrqye">
+                    <input type="checkbox" checked />
+                    <span class="fundflow-legend-swatch" style="--tier-color: #f4a261"></span>
+                    两融余额
+                  </label>
+                  <label class="fundflow-legend-item" data-series="rqye">
+                    <input type="checkbox" />
+                    <span class="fundflow-legend-swatch" style="--tier-color: #457b9d"></span>
+                    融券余额
                   </label>
                 </div>
               </div>
@@ -910,8 +928,7 @@
         <div class="others-layout">
           <nav id="othersSourceBar" class="emotion-source-bar others-source-bar" aria-label="其他分类">
             <button type="button" class="emotion-source-btn is-active" data-source="lhb" aria-selected="true">龙虎榜</button>
-            <button type="button" class="emotion-source-btn" data-source="holders" aria-selected="false">前十大股东</button>
-            <button type="button" class="emotion-source-btn" data-source="fund-holders" aria-selected="false">基金持股</button>
+            <button type="button" class="emotion-source-btn" data-source="holders" aria-selected="false">持股信息</button>
           </nav>
           <div class="others-view" data-others-view="lhb">
             <div class="lhb-layout company-lhb-layout">
@@ -957,73 +974,127 @@
             </div>
           </div>
           <div class="others-view" data-others-view="holders">
-            <section class="company-section fund-holders-hub holders-hub" aria-label="前十大股东">
-              <header class="section-head fund-holders-head">
-                <div>
-                  <h3 id="holdersTitle">前十大股东</h3>
-                  <p id="holdersMeta" class="muted news-hub-meta"></p>
+            <div class="holders-layout holdings-hub">
+              <div class="holdings-grid" role="region" aria-label="持股信息">
+                <div class="holdings-col holdings-col--main">
+                  <article class="chart-card chart-card--holdings-stats" aria-label="持股结构统计">
+                    <header class="chart-card__head">
+                      <div class="chart-card__title">
+                        <span class="chart-card__mark chart-card__mark--stats" aria-hidden="true"></span>
+                        <h3>持股结构</h3>
+                      </div>
+                      <p id="holdingsStatsMeta" class="chart-card__meta muted">切换到本页后加载</p>
+                    </header>
+                    <div class="chart-card__stage holdings-stats-stage">
+                      <div id="holdingsStatsChartWrap" class="chart-canvas-wrap holdings-stats-canvas-wrap">
+                        <canvas id="holdingsStatsChart" width="320" height="200" aria-label="大股东与基金持股统计图"></canvas>
+                        <p id="holdingsStatsChartEmpty" class="muted chart-empty hidden">暂无持股统计</p>
+                      </div>
+                      <ul id="holdingsStatsLegend" class="holdings-stats-legend" aria-label="持股结构图例"></ul>
+                    </div>
+                  </article>
+
+                  <article class="chart-card chart-card--holder-num" aria-label="股东户数走势">
+                    <header class="chart-card__head">
+                      <div class="chart-card__title">
+                        <span class="chart-card__mark" aria-hidden="true"></span>
+                        <h3>股东户数</h3>
+                      </div>
+                      <p id="holderNumMeta" class="chart-card__meta muted">切换到本页后加载</p>
+                    </header>
+                    <div class="chart-card__stage">
+                      <div id="holderNumChartWrap" class="chart-canvas-wrap">
+                        <canvas id="holderNumChart" width="960" height="200" aria-label="股东户数走势图"></canvas>
+                        <p id="holderNumChartEmpty" class="muted chart-empty hidden">暂无股东户数</p>
+                        <div id="holderNumHoverCard" class="chart-hover-card chart-hover-float holder-num-hover hidden" aria-hidden="true"></div>
+                      </div>
+                    </div>
+                  </article>
+
+                  <section class="holdings-pane company-section fund-holders-hub holders-hub" aria-label="前十大股东">
+                    <header class="holdings-pane-head">
+                      <div class="holdings-pane-title">
+                        <span class="holdings-pane-mark" aria-hidden="true"></span>
+                        <div>
+                          <h3 id="holdersTitle">前十大股东</h3>
+                          <p id="holdersMeta" class="muted news-hub-meta"></p>
+                        </div>
+                      </div>
+                      <label class="cninfo-field fund-holders-date-field holdings-date-field">
+                        <span>报告期</span>
+                        <select id="holdersDate" class="chart-select cninfo-select" aria-label="十大股东报告期">
+                          <option value="">最新</option>
+                        </select>
+                      </label>
+                    </header>
+                    <p id="holdersHint" class="muted holdings-pane-hint"></p>
+                    <div id="holdersBody" class="fund-holders-body holdings-pane-body" tabindex="0">
+                      <table class="market-table fund-holders-table holders-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">#</th>
+                            <th scope="col">股东名称</th>
+                            <th scope="col" class="num">持股</th>
+                            <th scope="col" class="num">占总股本</th>
+                            <th scope="col" class="num">变动</th>
+                            <th scope="col">类型</th>
+                            <th scope="col" class="num">持股市值</th>
+                          </tr>
+                        </thead>
+                        <tbody id="holdersBodyRows">
+                          <tr class="is-empty"><td colspan="7">切换到本页后加载</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
                 </div>
-                <label class="cninfo-field fund-holders-date-field">
-                  <span>报告期</span>
-                  <select id="holdersDate" class="chart-select cninfo-select" aria-label="报告期">
-                    <option value="">最新</option>
-                  </select>
-                </label>
-              </header>
-              <p id="holdersHint" class="muted news-scroll-hint cninfo-hint"></p>
-              <div id="holdersBody" class="fund-holders-body" tabindex="0">
-                <table class="market-table fund-holders-table holders-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">#</th>
-                      <th scope="col">股东名称</th>
-                      <th scope="col" class="num">持股</th>
-                      <th scope="col" class="num">占总股本</th>
-                      <th scope="col" class="num">变动</th>
-                      <th scope="col">类型</th>
-                      <th scope="col" class="num">持股市值</th>
-                    </tr>
-                  </thead>
-                  <tbody id="holdersBodyRows">
-                    <tr class="is-empty"><td colspan="7">切换到本页后加载</td></tr>
-                  </tbody>
-                </table>
+
+                <section class="holdings-pane holdings-pane--fund company-section fund-holders-hub" aria-label="基金持股">
+                  <header class="holdings-pane-head">
+                    <div class="holdings-pane-title">
+                      <span class="holdings-pane-mark holdings-pane-mark--fund" aria-hidden="true"></span>
+                      <div>
+                        <h3 id="fundHoldersTitle">基金持股</h3>
+                        <p id="fundHoldersMeta" class="muted news-hub-meta"></p>
+                      </div>
+                    </div>
+                    <label class="cninfo-field fund-holders-date-field holdings-date-field">
+                      <span>报告期</span>
+                      <select id="fundHoldersDate" class="chart-select cninfo-select" aria-label="基金持股报告期">
+                        <option value="">最新</option>
+                      </select>
+                    </label>
+                  </header>
+                  <p id="fundHoldersHint" class="muted holdings-pane-hint"></p>
+                  <div id="fundHoldersBody" class="fund-holders-body holdings-pane-body" tabindex="0">
+                    <table class="market-table fund-holders-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">#</th>
+                          <th scope="col">基金代码</th>
+                          <th scope="col">基金名称</th>
+                          <th scope="col" class="num">
+                            <button type="button" class="holdings-sort-btn is-active" data-fund-sort="shares" aria-pressed="true">持股数量</button>
+                          </th>
+                          <th scope="col" class="num">
+                            <button type="button" class="holdings-sort-btn" data-fund-sort="weight" aria-pressed="false">占净值比</button>
+                          </th>
+                          <th scope="col" class="num">
+                            <button type="button" class="holdings-sort-btn" data-fund-sort="free" aria-pressed="false">占流通股</button>
+                          </th>
+                          <th scope="col" class="num">
+                            <button type="button" class="holdings-sort-btn" data-fund-sort="mv" aria-pressed="false">持股市值</button>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody id="fundHoldersBodyRows">
+                        <tr class="is-empty"><td colspan="7">切换到本页后加载</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
               </div>
-            </section>
-          </div>
-          <div class="others-view" data-others-view="fund-holders">
-            <section class="company-section fund-holders-hub" aria-label="基金持股">
-              <header class="section-head fund-holders-head">
-                <div>
-                  <h3 id="fundHoldersTitle">基金持股</h3>
-                  <p id="fundHoldersMeta" class="muted news-hub-meta"></p>
-                </div>
-                <label class="cninfo-field fund-holders-date-field">
-                  <span>报告期</span>
-                  <select id="fundHoldersDate" class="chart-select cninfo-select" aria-label="报告期">
-                    <option value="">最新</option>
-                  </select>
-                </label>
-              </header>
-              <p id="fundHoldersHint" class="muted news-scroll-hint cninfo-hint"></p>
-              <div id="fundHoldersBody" class="fund-holders-body" tabindex="0">
-                <table class="market-table fund-holders-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">#</th>
-                      <th scope="col">基金代码</th>
-                      <th scope="col">基金名称</th>
-                      <th scope="col" class="num">占净值比</th>
-                      <th scope="col" class="num">占流通股</th>
-                      <th scope="col" class="num">持股市值</th>
-                    </tr>
-                  </thead>
-                  <tbody id="fundHoldersBodyRows">
-                    <tr class="is-empty"><td colspan="6">切换到本页后加载</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </section>
+            </div>
           </div>
         </div>
       </div>
@@ -1036,8 +1107,8 @@
   <script src="/js/shared/orbit-http.js?v=holders-date-20260919"></script>
   <script src="/js/shared/orbit-prefetch.js?v=holders-date-20260919"></script>
   <script src="/js/shared/nav.js?v=futures-20260923"></script>
-  <script src="/js/shared/ai-modes.js?v=sentiment-20260920b"></script>
-  <script src="/js/shared/company-analysis.js?v=sentiment-20260920b"></script>
-  <script src="/js/company.js?v=sentiment-20260920b"></script>
+  <script src="/js/shared/ai-modes.js?v=trend-20260924"></script>
+  <script src="/js/shared/company-analysis.js?v=trend-20260924"></script>
+  <script src="/js/company.js?v=holdings-stats-20260924"></script>
 </body>
 </html>

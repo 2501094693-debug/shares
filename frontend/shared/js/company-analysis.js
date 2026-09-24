@@ -1,6 +1,6 @@
 (() => {
   const MODES = window.AI_MODES || {};
-  const MODE_ORDER = window.AI_MODE_ORDER || ["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk", "sentiment"];
+  const MODE_ORDER = window.AI_MODE_ORDER || ["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk", "trend", "sentiment"];
   const EARNINGS_VIEWS = new Set(["bazhang", "buffett", "buffett-rules"]);
 
   const STATUS_LABELS = {
@@ -245,7 +245,11 @@
     const sentiment = Number.isFinite(Number(m.n_retail_users))
       ? ` · 散户 ${m.n_retail_users} · 买${m.buy_users ?? 0}/卖${m.sell_users ?? 0}/观望${m.wait_users ?? 0}`
       : "";
-    return `${label} · ${job.company}${stock}${industry}${sentiment}`;
+    const v = job.result?.verdict || {};
+    const trend = v.lean
+      ? ` · ${v.lean}${Number.isFinite(Number(v.confidence)) ? ` · 置信度 ${v.confidence}` : ""}`
+      : "";
+    return `${label} · ${job.company}${stock}${industry}${sentiment}${trend}`;
   }
 
   function pctLabel(value) {
@@ -280,6 +284,28 @@
     const note = sourceBits
       ? `<p class="muted sentiment-source-note">分源人数：${esc(sourceBits)}（跨平台可能重复；文本意图 ≠ 成交）</p>`
       : `<p class="muted sentiment-source-note">文本意图 ≠ 成交；跨平台不对齐真人账号</p>`;
+    return `<div class="sentiment-metrics"><div class="engine-kpis">${kpiHtml}</div>${note}</div>`;
+  }
+
+  function trendMetricsHtml(result) {
+    const v = result?.verdict;
+    if (!v || !v.lean) return "";
+    const main = result.main_force || {};
+    const retail = result.retail || {};
+    const kpis = [
+      ["综合倾向", String(v.lean)],
+      ["置信度", Number.isFinite(Number(v.confidence)) ? String(v.confidence) : "—"],
+      ["主力", String(main.label || v.main_label || "—")],
+      ["散户", `${retail.stance || v.retail_stance || "—"} · ${retail.activity || v.retail_activity || "—"}`],
+      ["关系", String(v.relation || retail.relation_to_main || "—")],
+      ["大单主动买", Number.isFinite(Number(main.active_buy_share))
+        ? `${Math.round(Number(main.active_buy_share) * 100)}%`
+        : "—"],
+    ];
+    const kpiHtml = kpis.map(([label, value]) => (
+      `<div class="engine-kpi sentiment-kpi"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`
+    )).join("");
+    const note = `<p class="muted sentiment-source-note">仅资金与分时；散户为小单活跃度代理，非持仓人数</p>`;
     return `<div class="sentiment-metrics"><div class="engine-kpis">${kpiHtml}</div>${note}</div>`;
   }
 
@@ -475,13 +501,21 @@
     if (!result) return;
     const filename = reportFilename(result);
     const text = resultText(result);
-    const metricsKey = cfg.id === "sentiment" ? JSON.stringify(result.metrics || {}) : "";
+    const metricsKey = cfg.id === "sentiment"
+      ? JSON.stringify(result.metrics || {})
+      : cfg.id === "trend"
+        ? JSON.stringify(result.verdict || {})
+        : "";
     const reportKey = `${filename}|${text.length}|${metricsKey}`;
     if (filename) ms.activeReportFile = filename;
     if ($("reportTitle")) $("reportTitle").textContent = cfg.resultTitle?.(result) || String(filename).replace(/\.md$/i, "");
     if ($("reportMeta")) $("reportMeta").textContent = cfg.resultMeta?.(result) || "已保存";
     if (ms.renderedReportKey !== reportKey && $("reportView")) {
-      const metrics = cfg.id === "sentiment" ? sentimentMetricsHtml(result) : "";
+      const metrics = cfg.id === "sentiment"
+        ? sentimentMetricsHtml(result)
+        : cfg.id === "trend"
+          ? trendMetricsHtml(result)
+          : "";
       $("reportView").innerHTML = `${metrics}${renderMarkdown(text)}`;
       ms.renderedReportKey = reportKey;
     }

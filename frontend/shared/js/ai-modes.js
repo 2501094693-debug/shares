@@ -433,9 +433,70 @@ window.AI_MODES = {
       };
     },
   },
+
+  trend: {
+    id: "trend",
+    label: "趋势分析",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "趋势分析",
+    subtitle: "只看资金动向与分时成交：先列统计，再解读博弈",
+    startBtn: "生成分析",
+    historyHead: "历史报告",
+    reportTitle: "趋势分析",
+    reportMetaDefault: "选择历史报告或生成新的",
+    historyMeta: "历史报告",
+    emptyReports: "暂无历史报告",
+    resumeFail: "恢复趋势分析任务失败",
+    apiRoot: "/api/ai/trend-analysis",
+    jobStoreKey: "orbit.trendAnalysis.activeJob",
+    reportNameRe: /趋势分析/,
+    agentDefs: [
+      { id: "tr_init", name: "解析公司", subtitle: "识别代码与名称" },
+      { id: "tr_fetch", name: "拉取资金与分时", subtitle: "日序 / 分钟 / 快照 / 大单 / 成交" },
+      { id: "tr_main", name: "统计资金动向", subtitle: "五档净额 + 大单四象限" },
+      { id: "tr_retail", name: "统计分时成交", subtitle: "档位 / 时段 / 小单代理" },
+      { id: "tr_synth", name: "生成综合结论", subtitle: "数据统计 + 分析解读" },
+      { id: "tr_save", name: "保存报告", subtitle: "写入 Markdown" },
+    ],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">◇</div>
+        <h3>只看钱怎么流、单怎么撮</h3>
+        <p>报告固定输出资金动向与分时成交统计，再交叉解读主力与小单是否共振或背离，并给出资金语言的失效观察条件。不含日线形态。</p>
+        <ul class="ai-empty-tips">
+          <li>主力标签：吸筹 / 派发 / 对倒 / 分歧 / 观望</li>
+          <li>散户数量是小单活跃度代理，不是持仓人数</li>
+          <li>结论含共振或背离，并给出失效观察条件</li>
+          <li>不做买卖点建议</li>
+        </ul>
+      </div>`,
+    resultTitle(result) {
+      const v = result.verdict || {};
+      const lean = v.lean ? ` · ${v.lean}` : "";
+      return `${result.stock_name || ""} 趋势分析${lean}`.trim();
+    },
+    resultMeta(result) {
+      const v = result.verdict || {};
+      const main = result.main_force || {};
+      return [
+        result.stock_code ? `代码 ${result.stock_code}` : "",
+        result.day || "",
+        v.lean ? `倾向 ${v.lean}` : "",
+        Number.isFinite(Number(v.confidence)) ? `置信度 ${v.confidence}` : "",
+        main.label ? `主力 ${main.label}` : "",
+        result.report_path ? "已保存" : "",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 趋势分析`;
+    },
+    startQuery(company) {
+      return { company };
+    },
+  },
 };
 
-window.AI_MODE_ORDER = ["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk", "sentiment"];
+window.AI_MODE_ORDER = ["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk", "trend", "sentiment"];
 
 window.AI_MODE_ALIASES = {
   business: "business",
@@ -469,4 +530,8 @@ window.AI_MODE_ALIASES = {
   "retail-sentiment": "sentiment",
   "情绪分析": "sentiment",
   "散户情绪": "sentiment",
+  trend: "trend",
+  "trend-analysis": "trend",
+  "趋势分析": "trend",
+  "趋势研判": "trend",
 };

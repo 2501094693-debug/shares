@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from analysis.decline.bars import normalize_date
-from analysis.shares.config import (
+from analysis.shares.common.config import (
     COMPARE_FIELD_META,
     COMPARE_OPS,
     COMPARE_TRENDS,

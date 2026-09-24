@@ -7,7 +7,7 @@ import json
 from typing import Any
 
 from analysis.decline.bars import normalize_date
-from analysis.shares.config import RANGE_FIELDS
+from analysis.shares.common.config import RANGE_FIELDS
 from core.fmt import to_float
 
 LOGIC_AND = "and"

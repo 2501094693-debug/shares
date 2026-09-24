@@ -1,4 +1,4 @@
-"""AI 相关 HTTP 路由：业务简述、行业竞争分析、产业链分析、风险与管理层评估、八看财报解读、巴菲特读表、规则引擎、散户情绪。"""
+"""AI 相关 HTTP 路由：业务简述、行业竞争、产业链、风险、八看、巴菲特、规则引擎、散户情绪、趋势分析。"""
 
 from __future__ import annotations
 
@@ -46,6 +46,13 @@ from agent.retail_service import (
     list_retail_reports,
     read_retail_report,
     start_retail_sentiment,
+)
+from agent.trend_service import (
+    get_trend_job,
+    list_trend_jobs,
+    list_trend_reports,
+    read_trend_report,
+    start_trend_analysis,
 )
 from agent.service import get_brief_job, list_brief_jobs, list_reports, read_report, start_business_brief
 from core.api import err, ok
@@ -428,6 +435,69 @@ def ai_get_retail_report(filename: str):
 @router.get("/api/ai/sentiment-analysis/{job_id}")
 def ai_get_retail_sentiment(job_id: str, full: str = Query("0", description="1=返回完整报告正文")):
     job = get_retail_job(job_id.strip(), include_full_result=full == "1")
+    if not job:
+        return err("任务不存在", 404)
+    return ok(job)
+
+
+@router.post("/api/ai/trend-analysis")
+def ai_start_trend_analysis(
+    company: str = Query("", description="公司名称或代码"),
+    day: str = Query("", description="交易日 YYYY-MM-DD，默认最近可用"),
+    fund_limit: int = Query(60, description="资金流天数"),
+    minute_klt: int = Query(5, description="分钟资金粒度 1|5|15|30|60"),
+    min_deal_amount: float = Query(300_000, description="大单最小金额（元）"),
+    force: str = Query("0", description="1=强制刷新远端数据"),
+):
+    company = company.strip()
+    if not company:
+        return err("缺少参数 company", 400)
+    try:
+        job = start_trend_analysis(
+            company,
+            day=day.strip(),
+            fund_limit=fund_limit,
+            minute_klt=minute_klt,
+            min_deal_amount=min_deal_amount,
+            force=force in {"1", "true", "yes", "on"},
+        )
+        return ok(job)
+    except ValueError as extra:
+        return err(str(extra), 400)
+    except Exception as extra:  # noqa: BLE001
+        return err(str(extra), 500)
+
+
+@router.get("/api/ai/trend-analysis/jobs")
+def ai_list_trend_jobs():
+    try:
+        return ok(list_trend_jobs())
+    except Exception as extra:  # noqa: BLE001
+        return err(str(extra), 500)
+
+
+@router.get("/api/ai/trend-analysis/reports")
+def ai_list_trend_reports():
+    try:
+        return ok(list_trend_reports())
+    except Exception as extra:  # noqa: BLE001
+        return err(str(extra), 500)
+
+
+@router.get("/api/ai/trend-analysis/reports/{filename}")
+def ai_get_trend_report(filename: str):
+    try:
+        content = read_trend_report(filename)
+        return ok({"filename": filename, "content": content})
+    except FileNotFoundError as extra:
+        return err(str(extra), 404)
+    except Exception as extra:  # noqa: BLE001
+        return err(str(extra), 500)
+
+
+@router.get("/api/ai/trend-analysis/{job_id}")
+def ai_get_trend_analysis(job_id: str, full: str = Query("0", description="1=返回完整报告正文")):
+    job = get_trend_job(job_id.strip(), include_full_result=full == "1")
     if not job:
         return err("任务不存在", 404)
     return ok(job)

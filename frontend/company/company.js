@@ -285,6 +285,7 @@ const els = {
   comboMetricWrap: document.getElementById("comboMetricWrap"),
   peLegendWrap: document.getElementById("peLegendWrap"),
   fundflowLegendWrap: document.getElementById("fundflowLegendWrap"),
+  marginLegendWrap: document.getElementById("marginLegendWrap"),
   peChartMeta: document.getElementById("peChartMeta"),
   peChartHoverCard: document.getElementById("peChartHoverCard"),
   peChartWrap: document.getElementById("peChartWrap"),
@@ -414,7 +415,16 @@ const els = {
   holdersDate: document.getElementById("holdersDate"),
   holdersBody: document.getElementById("holdersBody"),
   holdersBodyRows: document.getElementById("holdersBodyRows"),
-  refreshFundHoldersBtn: document.getElementById("refreshFundHoldersBtn"),
+  holderNumMeta: document.getElementById("holderNumMeta"),
+  holderNumHoverCard: document.getElementById("holderNumHoverCard"),
+  holderNumChartWrap: document.getElementById("holderNumChartWrap"),
+  holderNumChart: document.getElementById("holderNumChart"),
+  holderNumChartEmpty: document.getElementById("holderNumChartEmpty"),
+  holdingsStatsMeta: document.getElementById("holdingsStatsMeta"),
+  holdingsStatsChartWrap: document.getElementById("holdingsStatsChartWrap"),
+  holdingsStatsChart: document.getElementById("holdingsStatsChart"),
+  holdingsStatsChartEmpty: document.getElementById("holdingsStatsChartEmpty"),
+  holdingsStatsLegend: document.getElementById("holdingsStatsLegend"),
   fundHoldersTitle: document.getElementById("fundHoldersTitle"),
   fundHoldersMeta: document.getElementById("fundHoldersMeta"),
   fundHoldersHint: document.getElementById("fundHoldersHint"),
@@ -458,9 +468,19 @@ const holdersState = {
   count: 0,
   reportDate: "",
   reportDates: [],
+  totalShares: null,
   totalSharesFmt: "",
   updatedAt: "",
   error: "",
+};
+const holderNumState = {
+  loading: false,
+  items: [],
+  latest: null,
+  source: "",
+  updatedAt: "",
+  error: "",
+  hoverIndex: null,
 };
 let fundHoldersBootstrapped = false;
 const fundHoldersState = {
@@ -470,6 +490,8 @@ const fundHoldersState = {
   reportDate: "",
   updatedAt: "",
   error: "",
+  sortKey: "shares",
+  sortDir: "desc",
 };
 let financialsBootstrapped = false;
 const financialsState = {
@@ -630,7 +652,7 @@ const xqEmotionState = {
 let newsGroup = normalizeNewsGroup(params.get("news") || "");
 let newsBootstrapped = { official: false, financials: false, other: false };
 let emotionBootstrapped = { eastmoney: false, tonghuashun: false, xueqiu: false };
-const ANALYSIS_PANELS = new Set(["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk", "sentiment"]);
+const ANALYSIS_PANELS = new Set(["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk", "sentiment", "trend"]);
 const EARNINGS_VIEWS = new Set(["bazhang", "buffett", "buffett-rules"]);
 const EARNINGS_FAMILY = new Set(["earnings", "财报简述", ...EARNINGS_VIEWS]);
 let lastEarningsView = "bazhang";
@@ -644,10 +666,8 @@ if (["ths-emotion", "ths", "circle"].includes(tabParamRaw)) {
 let othersSubTab = normalizeOthersSubTab(params.get("others") || "");
 if (["list", "lhb", "longhu"].includes(tabParamRaw)) {
   othersSubTab = "lhb";
-} else if (["holders", "owner", "shareholders", "top10", "sdgd"].includes(tabParamRaw)) {
+} else if (["holders", "owner", "shareholders", "top10", "sdgd", "fund-holders", "funds", "fund", "holdings"].includes(tabParamRaw)) {
   othersSubTab = "holders";
-} else if (["fund-holders", "funds", "fund"].includes(tabParamRaw)) {
-  othersSubTab = "fund-holders";
 }
 if (
   NEWS_FINANCIALS_ALIASES.has(tabParamRaw)
@@ -751,10 +771,20 @@ function normalizeJudgmentSubTab(view) {
 
 function normalizeOthersSubTab(view) {
   const raw = String(view || "").trim().toLowerCase();
-  if (raw === "holders" || raw === "owner" || raw === "shareholders" || raw === "top10" || raw === "sdgd") {
+  if (
+    raw === "holders" ||
+    raw === "owner" ||
+    raw === "shareholders" ||
+    raw === "top10" ||
+    raw === "sdgd" ||
+    raw === "fund-holders" ||
+    raw === "funds" ||
+    raw === "fund" ||
+    raw === "holdings" ||
+    raw === "cgxx"
+  ) {
     return "holders";
   }
-  if (raw === "fund-holders" || raw === "funds" || raw === "fund") return "fund-holders";
   return "lhb";
 }
 
@@ -797,7 +827,7 @@ const chartState = {
   hoverAbsIndex: null,
 };
 
-/** 走势 combo 底部指标：pe 估值 | fundflow 资金流 */
+/** 走势 combo 底部指标：pe 估值 | fundflow 资金流 | margin 融资融券 */
 let comboMetricState = "fundflow";
 
 /** @type {{ loading: boolean, liveFetching: boolean, liveFetchPending: boolean, liveFetchGen: number, items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, cached: boolean, live: boolean, phase: string, tradeDate: string, hoverTime: string|null }} */
@@ -898,6 +928,7 @@ function syncComboLegend(mode = chartState.mode) {
   if (els.comboMetricWrap) els.comboMetricWrap.classList.toggle("hidden", !combo);
   if (els.peLegendWrap) els.peLegendWrap.classList.toggle("hidden", !combo || metric !== "pe");
   if (els.fundflowLegendWrap) els.fundflowLegendWrap.classList.toggle("hidden", !combo || metric !== "fundflow");
+  if (els.marginLegendWrap) els.marginLegendWrap.classList.toggle("hidden", !combo || metric !== "margin");
 }
 
 function syncChartModeSelect(mode = chartState.mode) {
@@ -2511,9 +2542,6 @@ function syncOthersRefreshButtons() {
   if (els.refreshHoldersBtn) {
     els.refreshHoldersBtn.hidden = !onOthers || othersSubTab !== "holders";
   }
-  if (els.refreshFundHoldersBtn) {
-    els.refreshFundHoldersBtn.hidden = !onOthers || othersSubTab !== "fund-holders";
-  }
 }
 
 function syncOthersSubTabUi() {
@@ -2540,11 +2568,9 @@ function bootstrapOthersSubTab(view = othersSubTab) {
   } else if (view === "holders") {
     if (!holdersBootstrapped) {
       holdersBootstrapped = true;
-      loadHolders({ refresh: false });
-    }
-  } else if (view === "fund-holders") {
-    if (!fundHoldersBootstrapped) {
       fundHoldersBootstrapped = true;
+      loadHolders({ refresh: false });
+      loadHolderNum({ refresh: false });
       loadFundHolders({ refresh: false });
     }
   }
@@ -3196,8 +3222,53 @@ function syncFundHoldersDateOptions() {
   els.fundHoldersDate.innerHTML = options.join("");
 }
 
+function fundHolderSortValue(item, key = fundHoldersState.sortKey) {
+  if (key === "shares") return Number(item?.shares);
+  if (key === "free") return Number(item?.free_float_ratio_raw);
+  if (key === "mv") return Number(item?.market_value_raw);
+  return Number(item?.weight_raw);
+}
+
+function sortedFundHolders(items = fundHoldersState.items) {
+  const list = Array.isArray(items) ? [...items] : [];
+  const key = fundHoldersState.sortKey || "shares";
+  const dir = fundHoldersState.sortDir === "asc" ? 1 : -1;
+  list.sort((a, b) => {
+    const av = fundHolderSortValue(a, key);
+    const bv = fundHolderSortValue(b, key);
+    const aOk = Number.isFinite(av);
+    const bOk = Number.isFinite(bv);
+    if (!aOk && !bOk) return 0;
+    if (!aOk) return 1;
+    if (!bOk) return -1;
+    if (av === bv) return 0;
+    return av > bv ? dir : -dir;
+  });
+  return list;
+}
+
+function syncFundHoldersSortButtons() {
+  const root = els.fundHoldersBody;
+  if (!root) return;
+  root.querySelectorAll("[data-fund-sort]").forEach((btn) => {
+    const key = btn.getAttribute("data-fund-sort") || "";
+    const active = key === fundHoldersState.sortKey;
+    btn.classList.toggle("is-active", active);
+    btn.classList.toggle("is-asc", active && fundHoldersState.sortDir === "asc");
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
 function paintFundHolders() {
   const st = fundHoldersState;
+  const sortLabels = {
+    shares: "持股数量",
+    weight: "占净值比",
+    free: "占流通股",
+    mv: "持股市值",
+  };
+  const sortLabel = sortLabels[st.sortKey] || "持股数量";
+  const sortDirLabel = st.sortDir === "asc" ? "升序" : "降序";
   if (els.fundHoldersMeta) {
     const bits = [];
     if (st.reportDate) bits.push(`报告期 ${st.reportDate}`);
@@ -3209,28 +3280,30 @@ function paintFundHolders() {
   }
   if (els.fundHoldersHint) {
     els.fundHoldersHint.textContent = st.loading
-      ? "正在从东财拉取基金持股明细…"
+      ? "正在拉取基金持股…"
       : st.error
         ? st.error
-        : "按占净值比例降序；数据来自基金季报披露。";
+        : `按${sortLabel}${sortDirLabel} · 点击表头切换 · 基金季报披露`;
   }
+  syncFundHoldersSortButtons();
   if (!els.fundHoldersBodyRows) return;
   if (st.loading) {
-    els.fundHoldersBodyRows.innerHTML = `<tr class="is-empty"><td colspan="6">正在加载…</td></tr>`;
+    els.fundHoldersBodyRows.innerHTML = `<tr class="is-empty"><td colspan="7">正在加载…</td></tr>`;
     return;
   }
   if (st.error) {
-    els.fundHoldersBodyRows.innerHTML = `<tr class="is-empty"><td colspan="6">${escapeHtml(st.error)}</td></tr>`;
+    els.fundHoldersBodyRows.innerHTML = `<tr class="is-empty"><td colspan="7">${escapeHtml(st.error)}</td></tr>`;
     return;
   }
   if (!st.items.length) {
-    els.fundHoldersBodyRows.innerHTML = `<tr class="is-empty"><td colspan="6">暂无基金持股数据</td></tr>`;
+    els.fundHoldersBodyRows.innerHTML = `<tr class="is-empty"><td colspan="7">暂无基金持股数据</td></tr>`;
     return;
   }
-  els.fundHoldersBodyRows.innerHTML = st.items
+  els.fundHoldersBodyRows.innerHTML = sortedFundHolders(st.items)
     .map((item, idx) => {
       const fundCode = escapeHtml(item.code || "");
       const fundName = escapeHtml(item.name || "-");
+      const shares = escapeHtml(displayValue(item.shares_fmt || fmtVol(item.shares)));
       const weight = escapeHtml(displayValue(item.weight));
       const freeRatio = escapeHtml(displayValue(item.free_float_ratio));
       const marketValue = escapeHtml(displayValue(item.market_value));
@@ -3238,6 +3311,7 @@ function paintFundHolders() {
         <td>${idx + 1}</td>
         <td class="mono">${fundCode}</td>
         <td>${fundName}</td>
+        <td class="num">${shares}</td>
         <td class="num">${weight}</td>
         <td class="num">${freeRatio}</td>
         <td class="num">${marketValue}</td>
@@ -3252,7 +3326,7 @@ async function loadFundHolders({ refresh = false } = {}) {
   fundHoldersState.loading = true;
   fundHoldersState.error = "";
   paintFundHolders();
-  if (els.refreshFundHoldersBtn) els.refreshFundHoldersBtn.disabled = true;
+  if (els.refreshHoldersBtn) els.refreshHoldersBtn.disabled = true;
   if (els.fundHoldersDate) {
     els.fundHoldersDate.disabled = true;
     els.fundHoldersDate.value = reportDate;
@@ -3275,12 +3349,15 @@ async function loadFundHolders({ refresh = false } = {}) {
     fundHoldersState.error = err.message || String(err);
   } finally {
     fundHoldersState.loading = false;
-    if (els.refreshFundHoldersBtn) els.refreshFundHoldersBtn.disabled = false;
+    if (els.refreshHoldersBtn) {
+      els.refreshHoldersBtn.disabled = holdersState.loading || holderNumState.loading;
+    }
     if (els.fundHoldersDate) {
       els.fundHoldersDate.disabled = false;
       els.fundHoldersDate.value = reportDate;
     }
     paintFundHolders();
+    paintHoldingsStats();
   }
 }
 
@@ -3291,6 +3368,274 @@ function setupFundHoldersBox() {
     els.fundHoldersDate.addEventListener("change", () => {
       loadFundHolders({ refresh: false });
     });
+  }
+  if (els.fundHoldersBody && els.fundHoldersBody.dataset.sortBound !== "1") {
+    els.fundHoldersBody.dataset.sortBound = "1";
+    els.fundHoldersBody.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-fund-sort]");
+      if (!btn || !els.fundHoldersBody.contains(btn)) return;
+      const key = btn.getAttribute("data-fund-sort") || "shares";
+      if (fundHoldersState.sortKey === key) {
+        fundHoldersState.sortDir = fundHoldersState.sortDir === "desc" ? "asc" : "desc";
+      } else {
+        fundHoldersState.sortKey = key;
+        fundHoldersState.sortDir = "desc";
+      }
+      paintFundHolders();
+    });
+  }
+  setupHoldingsStatsChart();
+}
+
+function normalizeHoldingsName(value) {
+  return String(value || "")
+    .replace(/[\s　]+/g, "")
+    .replace(/[（(].*?[）)]/g, "")
+    .toLowerCase();
+}
+
+function fundRatioPct(item, totalShares) {
+  const direct = Number(item?.total_share_ratio_raw);
+  if (Number.isFinite(direct)) return direct;
+  const shares = Number(item?.shares);
+  if (Number.isFinite(shares) && Number.isFinite(totalShares) && totalShares > 0) {
+    return (shares / totalShares) * 100;
+  }
+  return null;
+}
+
+function computeHoldingsStats() {
+  const holders = Array.isArray(holdersState.items) ? holdersState.items : [];
+  const funds = Array.isArray(fundHoldersState.items) ? fundHoldersState.items : [];
+  const totalShares = holdersState.totalShares;
+  const topKeys = new Set();
+  let majorPct = 0;
+  let majorShares = 0;
+  let majorCount = 0;
+  for (const item of holders) {
+    const nameKey = normalizeHoldingsName(item?.name);
+    if (nameKey) topKeys.add(nameKey);
+    const code = String(item?.holder_code || "").trim();
+    if (code) topKeys.add(code.toLowerCase());
+    const ratio = Number(item?.ratio);
+    if (Number.isFinite(ratio)) {
+      majorPct += ratio;
+      majorCount += 1;
+    }
+    const shares = Number(item?.shares);
+    if (Number.isFinite(shares)) majorShares += shares;
+  }
+
+  let fundPct = 0;
+  let fundShares = 0;
+  let fundCount = 0;
+  let deduped = 0;
+  const seenFunds = new Set();
+  for (const item of funds) {
+    const code = String(item?.code || "").trim().toLowerCase();
+    const nameKey = normalizeHoldingsName(item?.name);
+    const dedupeKey = code || nameKey;
+    if (dedupeKey && seenFunds.has(dedupeKey)) {
+      deduped += 1;
+      continue;
+    }
+    if (dedupeKey) seenFunds.add(dedupeKey);
+    const inTop =
+      (code && topKeys.has(code)) || (nameKey && topKeys.has(nameKey));
+    if (inTop) {
+      deduped += 1;
+      continue;
+    }
+    const ratio = fundRatioPct(item, totalShares);
+    if (Number.isFinite(ratio)) {
+      fundPct += ratio;
+      fundCount += 1;
+    }
+    const shares = Number(item?.shares);
+    if (Number.isFinite(shares)) fundShares += shares;
+  }
+
+  if ((!Number.isFinite(majorPct) || majorPct <= 0) && majorShares > 0 && totalShares > 0) {
+    majorPct = (majorShares / totalShares) * 100;
+  }
+  if ((!Number.isFinite(fundPct) || fundPct <= 0) && fundShares > 0 && totalShares > 0) {
+    fundPct = (fundShares / totalShares) * 100;
+  }
+
+  majorPct = Math.max(0, Number.isFinite(majorPct) ? majorPct : 0);
+  fundPct = Math.max(0, Number.isFinite(fundPct) ? fundPct : 0);
+  const used = majorPct + fundPct;
+  const otherPct = used > 0 ? Math.max(0, 100 - used) : 0;
+  return {
+    ready: holders.length > 0 || funds.length > 0,
+    loading: holdersState.loading || fundHoldersState.loading,
+    error: holdersState.error || fundHoldersState.error || "",
+    majorPct,
+    fundPct,
+    otherPct,
+    majorShares,
+    fundShares,
+    majorCount,
+    fundCount,
+    deduped,
+    holdersDate: holdersState.reportDate || "",
+    fundsDate: fundHoldersState.reportDate || "",
+  };
+}
+
+function fitHoldingsStatsCanvas() {
+  const canvas = els.holdingsStatsChart;
+  const wrap = els.holdingsStatsChartWrap;
+  if (!canvas || !wrap) return null;
+  const rect = wrap.getBoundingClientRect();
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const width = Math.max(1, Math.floor(rect.width));
+  const height = Math.max(1, Math.floor(rect.height || 156));
+  const nextW = Math.floor(width * dpr);
+  const nextH = Math.floor(height * dpr);
+  if (canvas.width !== nextW || canvas.height !== nextH) {
+    canvas.width = nextW;
+    canvas.height = nextH;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, width, height };
+}
+
+function drawHoldingsStatsDonut(stats) {
+  const pack = fitHoldingsStatsCanvas();
+  if (!pack) return;
+  const { ctx, width, height } = pack;
+  ctx.clearRect(0, 0, width, height);
+  const slices = [
+    { key: "major", value: stats.majorPct, color: "#e07a5f" },
+    { key: "fund", value: stats.fundPct, color: "#f0b429" },
+    { key: "other", value: stats.otherPct, color: "rgba(132, 148, 168, 0.35)" },
+  ].filter((slice) => Number.isFinite(slice.value) && slice.value > 0.0001);
+  const cx = width / 2;
+  const cy = height / 2;
+  const radius = Math.max(18, Math.min(width, height) * 0.42);
+  const inner = radius * 0.58;
+  if (!slices.length) return;
+  const total = slices.reduce((sum, slice) => sum + slice.value, 0) || 1;
+  let angle = -Math.PI / 2;
+  for (const slice of slices) {
+    const sweep = (slice.value / total) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, radius, angle, angle + sweep);
+    ctx.closePath();
+    ctx.fillStyle = slice.color;
+    ctx.fill();
+    angle += sweep;
+  }
+  ctx.beginPath();
+  ctx.arc(cx, cy, inner, 0, Math.PI * 2);
+  ctx.fillStyle = cssVar("--bg-panel", "#121820");
+  ctx.fill();
+  ctx.fillStyle = cssVar("--text", "#e8eef7");
+  ctx.font = `600 ${Math.max(12, Math.round(radius * 0.28))}px var(--mono, ui-monospace, monospace)`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const covered = stats.majorPct + stats.fundPct;
+  ctx.fillText(`${covered.toFixed(1)}%`, cx, cy - 6);
+  ctx.fillStyle = cssVar("--muted", "#8494a8");
+  ctx.font = `${Math.max(10, Math.round(radius * 0.18))}px sans-serif`;
+  ctx.fillText("已统计", cx, cy + 12);
+}
+
+function paintHoldingsStats() {
+  const stats = computeHoldingsStats();
+  if (els.holdingsStatsMeta) {
+    if (stats.loading) {
+      els.holdingsStatsMeta.textContent = "正在汇总持股结构…";
+    } else if (!stats.ready) {
+      els.holdingsStatsMeta.textContent = stats.error || "暂无持股统计";
+    } else {
+      const bits = [];
+      if (stats.holdersDate || stats.fundsDate) {
+        bits.push(
+          stats.holdersDate && stats.fundsDate && stats.holdersDate !== stats.fundsDate
+            ? `股东 ${stats.holdersDate} / 基金 ${stats.fundsDate}`
+            : `报告期 ${stats.holdersDate || stats.fundsDate}`
+        );
+      }
+      if (stats.deduped) bits.push(`去重 ${stats.deduped}`);
+      els.holdingsStatsMeta.textContent = bits.join(" · ") || "持股结构";
+    }
+  }
+  if (els.holdingsStatsChartEmpty) {
+    const empty = !stats.loading && !stats.ready;
+    els.holdingsStatsChartEmpty.classList.toggle("hidden", !empty);
+    els.holdingsStatsChartEmpty.textContent = stats.error || "暂无持股统计";
+  }
+  if (els.holdingsStatsLegend) {
+    if (!stats.ready && !stats.loading) {
+      els.holdingsStatsLegend.innerHTML = "";
+    } else {
+      const rows = [
+        {
+          label: "大股东持股",
+          detail: stats.majorCount ? `前十大 ${stats.majorCount} 户` : "前十大股东",
+          value: `${stats.majorPct.toFixed(2)}%`,
+          color: "#e07a5f",
+          shares: stats.majorShares,
+        },
+        {
+          label: "基金持股",
+          detail: stats.fundCount
+            ? `${stats.fundCount} 只（已去重十大股东）`
+            : stats.deduped
+              ? "均已计入十大股东"
+              : "基金季报合计",
+          value: `${stats.fundPct.toFixed(2)}%`,
+          color: "#f0b429",
+          shares: stats.fundShares,
+        },
+        {
+          label: "其他",
+          detail: "剩余股本",
+          value: `${stats.otherPct.toFixed(2)}%`,
+          color: "rgba(132, 148, 168, 0.55)",
+          shares: null,
+        },
+      ];
+      els.holdingsStatsLegend.innerHTML = rows
+        .map((row) => {
+          const sharesHint =
+            row.shares != null && Number.isFinite(row.shares) && row.shares > 0
+              ? `<small>${escapeHtml(fmtVol(row.shares))}股</small>`
+              : row.detail
+                ? `<small>${escapeHtml(row.detail)}</small>`
+                : "";
+          return `<li>
+            <span class="holdings-stats-swatch" style="--swatch:${escapeHtml(row.color)}" aria-hidden="true"></span>
+            <span class="holdings-stats-legend-label">${escapeHtml(row.label)}${sharesHint}</span>
+            <span class="holdings-stats-legend-value">${escapeHtml(row.value)}</span>
+          </li>`;
+        })
+        .join("");
+    }
+  }
+  if (stats.ready) drawHoldingsStatsDonut(stats);
+  else if (els.holdingsStatsChart) {
+    const pack = fitHoldingsStatsCanvas();
+    if (pack) pack.ctx.clearRect(0, 0, pack.width, pack.height);
+  }
+}
+
+function setupHoldingsStatsChart() {
+  if (!els.holdingsStatsChartWrap || els.holdingsStatsChartWrap.dataset.bound === "1") return;
+  els.holdingsStatsChartWrap.dataset.bound = "1";
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => {
+      if (holdersState.items.length || fundHoldersState.items.length) {
+        paintHoldingsStats();
+      }
+    });
+    ro.observe(els.holdingsStatsChartWrap);
   }
 }
 
@@ -3351,10 +3696,10 @@ function paintHolders() {
   }
   if (els.holdersHint) {
     els.holdersHint.textContent = st.loading
-      ? "正在从东财拉取前十大股东…"
+      ? "正在拉取前十大股东…"
       : st.error
         ? st.error
-        : "按持股数量排名；数据来自定期报告披露的前十大股东。";
+        : "按持股数量排名 · 定期报告披露";
   }
   if (!els.holdersBodyRows) return;
   if (st.loading) {
@@ -3413,6 +3758,8 @@ async function loadHolders({ refresh = false } = {}) {
     holdersState.count = Number(data.count) || holdersState.items.length;
     holdersState.reportDate = data.report_date || reportDate || "";
     holdersState.reportDates = mergeHolderReportDates(data.report_dates);
+    holdersState.totalShares = Number(data.total_shares);
+    if (!Number.isFinite(holdersState.totalShares)) holdersState.totalShares = null;
     holdersState.totalSharesFmt = data.total_shares_fmt || "";
     holdersState.updatedAt = data.updated_at || new Date().toLocaleString("zh-CN", { hour12: false });
     syncHoldersDateOptions();
@@ -3420,10 +3767,14 @@ async function loadHolders({ refresh = false } = {}) {
   } catch (err) {
     holdersState.items = [];
     holdersState.count = 0;
+    holdersState.totalShares = null;
     holdersState.error = err.message || String(err);
   } finally {
     holdersState.loading = false;
-    if (els.refreshHoldersBtn) els.refreshHoldersBtn.disabled = false;
+    if (els.refreshHoldersBtn) {
+      els.refreshHoldersBtn.disabled =
+        fundHoldersState.loading || holderNumState.loading;
+    }
     if (els.holdersDate) {
       els.holdersDate.disabled = false;
       if (reportDate && (holdersState.reportDates || []).includes(reportDate)) {
@@ -3433,6 +3784,7 @@ async function loadHolders({ refresh = false } = {}) {
       }
     }
     paintHolders();
+    paintHoldingsStats();
   }
 }
 
@@ -3443,6 +3795,300 @@ function setupHoldersBox() {
     els.holdersDate.addEventListener("change", () => {
       loadHolders({ refresh: false });
     });
+  }
+  setupHolderNumChart();
+}
+
+function setHolderNumStatus(message, { empty = false } = {}) {
+  if (els.holderNumMeta) els.holderNumMeta.textContent = message || "";
+  if (els.holderNumChartEmpty) {
+    els.holderNumChartEmpty.textContent = empty ? message || "暂无股东户数" : "暂无股东户数";
+    els.holderNumChartEmpty.classList.toggle("hidden", !empty);
+  }
+}
+
+function hideHolderNumHoverCard() {
+  if (!els.holderNumHoverCard) return;
+  els.holderNumHoverCard.classList.add("hidden");
+  els.holderNumHoverCard.setAttribute("aria-hidden", "true");
+  els.holderNumHoverCard.innerHTML = "";
+}
+
+function showHolderNumHoverCard() {
+  if (!els.holderNumHoverCard) return;
+  els.holderNumHoverCard.classList.remove("hidden");
+  els.holderNumHoverCard.setAttribute("aria-hidden", "false");
+}
+
+function paintHolderNumHover(item) {
+  if (!els.holderNumHoverCard || !item) return;
+  const changeTone =
+    Number(item.change) > 0 ? "up" : Number(item.change) < 0 ? "down" : "";
+  const rows = [
+    ["户数", item.holder_num_fmt || fmtVol(item.holder_num)],
+    ["变动", item.change_fmt || "—", changeTone],
+    ["环比", item.change_ratio_fmt || "—", changeTone],
+    ["户均持股", item.avg_hold_num_fmt || fmtVol(item.avg_hold_num)],
+  ]
+    .map(([label, value, tone]) => {
+      const cls = tone ? ` chart-hover-card-value--${tone}` : "";
+      return `<span class="chart-hover-card-row"><span class="chart-hover-card-label">${escapeHtml(label)}</span><span class="chart-hover-card-value${cls}">${escapeHtml(displayValue(value))}</span></span>`;
+    })
+    .join("");
+  els.holderNumHoverCard.innerHTML = `<div class="chart-hover-card-rows chart-hover-card-rows--inline"><span class="chart-hover-card-time">${escapeHtml(item.time || "")}</span>${rows}</div>`;
+  showHolderNumHoverCard();
+}
+
+function holderNumLayout(w, h) {
+  const padL = 54;
+  const padR = 16;
+  const padT = 16;
+  const padB = 28;
+  return {
+    w,
+    h,
+    padL,
+    padR,
+    padT,
+    padB,
+    plotW: Math.max(1, w - padL - padR),
+    plotH: Math.max(1, h - padT - padB),
+  };
+}
+
+function fitHolderNumCanvas() {
+  const canvas = els.holderNumChart;
+  const wrap = els.holderNumChartWrap;
+  if (!canvas || !wrap) return null;
+  const rect = wrap.getBoundingClientRect();
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const width = Math.max(1, Math.floor(rect.width));
+  const height = Math.max(1, Math.floor(rect.height || 168));
+  const nextW = Math.floor(width * dpr);
+  const nextH = Math.floor(height * dpr);
+  const resized = canvas.width !== nextW || canvas.height !== nextH;
+  if (resized) {
+    canvas.width = nextW;
+    canvas.height = nextH;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, width, height, layout: holderNumLayout(width, height), resized };
+}
+
+function renderHolderNumChart(hoverIndex = holderNumState.hoverIndex) {
+  const pack = fitHolderNumCanvas();
+  if (!pack) return;
+  const { ctx, layout } = pack;
+  const items = holderNumState.items || [];
+  const colors = chartColors();
+  ctx.clearRect(0, 0, layout.w, layout.h);
+
+  if (!items.length) {
+    hideHolderNumHoverCard();
+    return;
+  }
+
+  const values = items
+    .map((d) => Number(d.holder_num))
+    .filter((n) => Number.isFinite(n));
+  if (!values.length) {
+    setHolderNumStatus("暂无股东户数", { empty: true });
+    return;
+  }
+
+  let vmin = Math.min(...values);
+  let vmax = Math.max(...values);
+  if (vmin === vmax) {
+    vmin -= Math.abs(vmin) * 0.05 || 1;
+    vmax += Math.abs(vmax) * 0.05 || 1;
+  }
+  const pad = (vmax - vmin) * 0.08;
+  vmin -= pad;
+  vmax += pad;
+
+  const n = items.length;
+  const xAt = (i) => layout.padL + (n <= 1 ? layout.plotW / 2 : (i / (n - 1)) * layout.plotW);
+  const yAt = (v) => layout.padT + ((vmax - v) / (vmax - vmin)) * layout.plotH;
+
+  ctx.strokeStyle = colors.grid;
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i += 1) {
+    const y = layout.padT + (layout.plotH * i) / 3;
+    ctx.beginPath();
+    ctx.moveTo(layout.padL, y);
+    ctx.lineTo(layout.padL + layout.plotW, y);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = colors.muted;
+  ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let i = 0; i <= 3; i += 1) {
+    const v = vmax - ((vmax - vmin) * i) / 3;
+    const y = layout.padT + (layout.plotH * i) / 3;
+    ctx.fillText(fmtVol(v), layout.padL - 8, y);
+  }
+
+  ctx.beginPath();
+  items.forEach((d, i) => {
+    const v = Number(d.holder_num);
+    if (!Number.isFinite(v)) return;
+    const x = xAt(i);
+    const y = yAt(v);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = colors.accent;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  const last = items[items.length - 1];
+  if (last && Number.isFinite(Number(last.holder_num))) {
+    const x = xAt(items.length - 1);
+    const y = yAt(Number(last.holder_num));
+    ctx.fillStyle = colors.accent;
+    ctx.beginPath();
+    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = colors.muted;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const labelIdx = [0, Math.floor((n - 1) / 2), n - 1].filter((v, i, arr) => arr.indexOf(v) === i);
+  for (const i of labelIdx) {
+    const d = items[i];
+    if (!d) continue;
+    ctx.fillText(String(d.time || "").slice(0, 7), xAt(i), layout.padT + layout.plotH + 8);
+  }
+
+  const hi = hoverIndex == null ? null : Math.max(0, Math.min(n - 1, hoverIndex));
+  if (hi != null && items[hi]) {
+    const d = items[hi];
+    const v = Number(d.holder_num);
+    const x = xAt(hi);
+    const y = Number.isFinite(v) ? yAt(v) : layout.padT + layout.plotH / 2;
+    ctx.strokeStyle = colors.cross;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, layout.padT);
+    ctx.lineTo(x, layout.padT + layout.plotH);
+    ctx.stroke();
+    if (Number.isFinite(v)) {
+      ctx.fillStyle = colors.accent;
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    paintHolderNumHover(d);
+  } else {
+    hideHolderNumHoverCard();
+  }
+}
+
+function refreshHolderNumMeta() {
+  const st = holderNumState;
+  if (st.loading) {
+    setHolderNumStatus("正在加载股东户数…");
+    return;
+  }
+  if (st.error) {
+    setHolderNumStatus(st.error, { empty: true });
+    return;
+  }
+  const items = st.items || [];
+  if (!items.length) {
+    setHolderNumStatus("暂无股东户数", { empty: true });
+    return;
+  }
+  const latest = st.latest || items[items.length - 1] || {};
+  const bits = [];
+  if (latest.time) bits.push(latest.time);
+  if (latest.holder_num_fmt || latest.holder_num != null) {
+    bits.push(`户数 ${latest.holder_num_fmt || fmtVol(latest.holder_num)}`);
+  }
+  if (latest.change_fmt) bits.push(`变动 ${latest.change_fmt}`);
+  if (latest.change_ratio_fmt) bits.push(latest.change_ratio_fmt);
+  if (latest.avg_hold_num_fmt) bits.push(`户均 ${latest.avg_hold_num_fmt}`);
+  bits.push(`${items.length} 期`);
+  setHolderNumStatus(bits.join(" · "));
+}
+
+async function loadHolderNum({ refresh = false } = {}) {
+  if (!code || holderNumState.loading) return;
+  holderNumState.loading = true;
+  holderNumState.error = "";
+  refreshHolderNumMeta();
+  hideHolderNumHoverCard();
+  try {
+    const qs = new URLSearchParams({ code, limit: "120" });
+    if (refresh) qs.set("refresh", "1");
+    const json = await api(`/api/stocks/holder-num?${qs.toString()}`);
+    const data = json.data || {};
+    holderNumState.items = Array.isArray(data.items) ? data.items : [];
+    holderNumState.latest = data.latest || holderNumState.items[holderNumState.items.length - 1] || null;
+    holderNumState.source = data.source || "";
+    holderNumState.updatedAt = data.updated_at || "";
+    holderNumState.hoverIndex = null;
+    refreshHolderNumMeta();
+    renderHolderNumChart();
+  } catch (err) {
+    holderNumState.items = [];
+    holderNumState.latest = null;
+    holderNumState.error = err.message || String(err);
+    refreshHolderNumMeta();
+    renderHolderNumChart();
+  } finally {
+    holderNumState.loading = false;
+    if (els.refreshHoldersBtn) {
+      els.refreshHoldersBtn.disabled = holdersState.loading || fundHoldersState.loading;
+    }
+  }
+}
+
+function setupHolderNumChart() {
+  if (!els.holderNumChart || els.holderNumChart.dataset.bound === "1") return;
+  els.holderNumChart.dataset.bound = "1";
+
+  const indexFromEvent = (evt) => {
+    const rect = els.holderNumChart.getBoundingClientRect();
+    const layout = holderNumLayout(rect.width, rect.height);
+    const items = holderNumState.items || [];
+    if (!items.length) return null;
+    const x = evt.clientX - rect.left;
+    const t = (x - layout.padL) / Math.max(1, layout.plotW);
+    const idx = Math.round(t * (items.length - 1));
+    if (!Number.isFinite(idx)) return null;
+    return Math.max(0, Math.min(items.length - 1, idx));
+  };
+
+  els.holderNumChart.addEventListener("pointermove", (evt) => {
+    const idx = indexFromEvent(evt);
+    if (idx == null) return;
+    if (holderNumState.hoverIndex === idx) return;
+    holderNumState.hoverIndex = idx;
+    renderHolderNumChart(idx);
+  });
+  els.holderNumChart.addEventListener("pointerleave", () => {
+    if (holderNumState.hoverIndex == null) return;
+    holderNumState.hoverIndex = null;
+    renderHolderNumChart(null);
+  });
+
+  if (typeof ResizeObserver !== "undefined" && els.holderNumChartWrap) {
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        renderHolderNumChart();
+      });
+    });
+    ro.observe(els.holderNumChartWrap);
   }
 }
 
@@ -7411,6 +8057,14 @@ function applyLinkedRangeToFundflow(range) {
   fundflowState.items = fundflowViewWindow().items;
 }
 
+function applyLinkedRangeToMargin(range) {
+  const vp = viewportFromAxisRange(marginState.allItems, range);
+  if (!vp) return;
+  marginState.viewStart = vp.viewStart;
+  marginState.viewSize = vp.viewSize;
+  marginState.items = marginViewWindow().items;
+}
+
 function propagateLinkedAxis(source) {
   if (linkedAxisLock) return;
   if (source === "kline" && !klineJoinsLinkedAxis()) return;
@@ -7421,7 +8075,9 @@ function propagateLinkedAxis(source) {
         ? peState.items
         : source === "fundflow"
           ? fundflowState.items
-          : turnoverState.items;
+          : source === "margin"
+            ? marginState.items
+            : turnoverState.items;
   const range = visibleAxisRange(items);
   if (!range) return;
   linkedAxisLock = true;
@@ -7429,6 +8085,7 @@ function propagateLinkedAxis(source) {
     if (source !== "kline" && klineJoinsLinkedAxis()) applyLinkedRangeToKline(range);
     if (source !== "pe") applyLinkedRangeToPe(range);
     if (source !== "fundflow") applyLinkedRangeToFundflow(range);
+    if (source !== "margin") applyLinkedRangeToMargin(range);
     if (source !== "turnover") applyLinkedRangeToTurnover(range);
   } finally {
     linkedAxisLock = false;
@@ -8943,6 +9600,87 @@ const fundflowState = {
   visibleTiers: new Set(["super", "big", "mid", "small"]),
 };
 
+const MARGIN_SERIES = {
+  rzye: { key: "rzye", label: "融资余额", color: "#e63946" },
+  rzrqye: { key: "rzrqye", label: "两融余额", color: "#f4a261" },
+  rqye: { key: "rqye", label: "融券余额", color: "#457b9d" },
+};
+
+const marginState = {
+  loading: false,
+  items: [],
+  allItems: [],
+  viewStart: 0,
+  viewSize: 90,
+  source: "",
+  visibleSeries: new Set(["rzye", "rzrqye"]),
+};
+
+function visibleMarginSeries() {
+  return Object.keys(MARGIN_SERIES)
+    .filter((id) => marginState.visibleSeries.has(id))
+    .map((id) => ({ id, ...MARGIN_SERIES[id] }));
+}
+
+function marginSeriesValue(d, series) {
+  const n = Number(d?.[series?.key]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function hasMarginSeriesData(items) {
+  const series = visibleMarginSeries();
+  if (!series.length) return false;
+  return (items || []).some((d) => series.some((s) => marginSeriesValue(d, s) != null));
+}
+
+function marginAtTime(time) {
+  const hit = alignMetricsToKline([{ time }], marginState.allItems)[0];
+  if (!hit) return null;
+  const has =
+    Number.isFinite(Number(hit.rzye)) ||
+    Number.isFinite(Number(hit.rqye)) ||
+    Number.isFinite(Number(hit.rzjme)) ||
+    Number.isFinite(Number(hit.rqjmg));
+  return has ? hit : null;
+}
+
+function marginSignedHtml(amount, fmt, fallbackFmt) {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return "-";
+  let text = fmt || "";
+  if (!text) {
+    const raw = fallbackFmt(Math.abs(n));
+    text = n > 0 ? `+${raw}` : n < 0 ? `-${raw}` : raw;
+  }
+  const cls = n > 0 ? "change-up" : n < 0 ? "change-down" : "";
+  return `<span class="${cls}">${escapeHtml(text)}</span>`;
+}
+
+function marginHoverRows(m, row) {
+  const rows = [];
+  const rzye = Number(m.rzye);
+  if (Number.isFinite(rzye)) {
+    const text = m.rzye_fmt || fmtVol(rzye);
+    rows.push(
+      row("融资余额", `<span style="color:${MARGIN_SERIES.rzye.color}">${escapeHtml(text)}</span>`)
+    );
+  }
+  const rqye = Number(m.rqye);
+  if (Number.isFinite(rqye)) {
+    const text = m.rqye_fmt || fmtVol(rqye);
+    rows.push(
+      row("融券余额", `<span style="color:${MARGIN_SERIES.rqye.color}">${escapeHtml(text)}</span>`)
+    );
+  }
+  if (Number.isFinite(Number(m.rzjme))) {
+    rows.push(row("融资净买", marginSignedHtml(m.rzjme, m.rzjme_fmt, fmtVol)));
+  }
+  if (Number.isFinite(Number(m.rqjmg))) {
+    rows.push(row("融券净卖", marginSignedHtml(m.rqjmg, m.rqjmg_fmt, fmtVol)));
+  }
+  return rows;
+}
+
 function fundflowTierValue(d, tier) {
   const n = Number(d?.[tier.field]);
   return Number.isFinite(n) ? n : null;
@@ -9136,7 +9874,8 @@ function renderChart(hoverIndex = null) {
 
   const combo = comboPanesEnabled();
   const fundflow = combo && comboMetricState === "fundflow";
-  const layout = chartLayout(cssW, cssH, { combo, fundflow });
+  const margin = combo && comboMetricState === "margin";
+  const layout = chartLayout(cssW, cssH, { combo, fundflow: fundflow || margin });
   drawKlineChart(ctx, layout, items, chartState.mode, colors, hoverIndex);
   if (!combo || !layout.pe) return;
 
@@ -9163,6 +9902,24 @@ function renderChart(hoverIndex = null) {
         ctx,
         layout.pe,
         fundflowState.loading ? "资金流加载中…" : "暂无资金流数据",
+        metricColors
+      );
+    }
+    return;
+  }
+  if (margin) {
+    const mgItems = alignMetricsToKline(items, marginState.allItems);
+    if (hasMarginSeriesData(mgItems)) {
+      drawPeOverlayChart(ctx, metricPane, mgItems, visibleMarginSeries(), metricColors, hoverIndex, {
+        yFormat: fmtVol,
+        mode: chartState.mode,
+        skipHoverHair: true,
+      });
+    } else {
+      drawPaneCenterLabel(
+        ctx,
+        layout.pe,
+        marginState.loading ? "两融加载中…" : "暂无融资融券数据",
         metricColors
       );
     }
@@ -9273,6 +10030,9 @@ function fillKlineQuoteCard(absIndex) {
     if (comboMetricState === "fundflow") {
       const ff = fundflowAtTime(d.time);
       if (ff) auxRows.push(...fundflowHoverRows(ff, row));
+    } else if (comboMetricState === "margin") {
+      const mg = marginAtTime(d.time);
+      if (mg) auxRows.push(...marginHoverRows(mg, row));
     } else {
       const peRow = alignMetricsToKline([d], peState.allItems)[0];
       if (peRow) auxRows.push(...peHoverRows(peRow, row));
@@ -11107,18 +11867,49 @@ function resetFundflowViewport(allItems, { preferLinked = true } = {}) {
   fundflowState.items = fundflowViewWindow().items;
 }
 
+function marginViewWindow() {
+  const all = marginState.allItems || [];
+  const total = all.length;
+  let size = Number(marginState.viewSize) || 0;
+  if (size <= 0 || size >= total) size = total;
+  const maxStart = Math.max(0, total - size);
+  const start = Math.min(Math.max(0, Number(marginState.viewStart) || 0), maxStart);
+  return { total, size, start, maxStart, items: total ? all.slice(start, start + size) : [] };
+}
+
+function resetMarginViewport(allItems, { preferLinked = true } = {}) {
+  marginState.allItems = Array.isArray(allItems) ? allItems : [];
+  const total = marginState.allItems.length;
+  const linked = preferLinked && klineJoinsLinkedAxis() ? visibleAxisRange(chartState.items) : null;
+  const vp = linked ? viewportFromAxisRange(marginState.allItems, linked) : null;
+  if (vp) {
+    marginState.viewStart = vp.viewStart;
+    marginState.viewSize = vp.viewSize;
+  } else {
+    let viewSize = METRIC_FALLBACK_VIEW_SIZE;
+    if (viewSize <= 0 || viewSize >= total) viewSize = total;
+    marginState.viewSize = viewSize;
+    marginState.viewStart = Math.max(0, total - viewSize);
+  }
+  marginState.items = marginViewWindow().items;
+}
+
 function syncComboMetricSelect(metric = comboMetricState) {
   if (!els.comboMetricSelect) return;
   if (els.comboMetricSelect.value !== metric) els.comboMetricSelect.value = metric;
 }
 
 function applyComboMetric(metric) {
-  if (!["pe", "fundflow"].includes(metric) || metric === comboMetricState) return;
+  if (!["pe", "fundflow", "margin"].includes(metric) || metric === comboMetricState) return;
   comboMetricState = metric;
   syncComboMetricSelect(metric);
   syncComboLegend();
   if (metric === "fundflow" && !fundflowState.loading && !(fundflowState.allItems || []).length) {
     void loadFundflowChart();
+    return;
+  }
+  if (metric === "margin" && !marginState.loading && !(marginState.allItems || []).length) {
+    void loadMarginChart();
     return;
   }
   renderChart();
@@ -11142,6 +11933,16 @@ function syncPeLegendUi() {
     const input = label.querySelector("input[type=checkbox]");
     if (!series || !input) return;
     input.checked = peState.visibleSeries.has(series);
+  });
+}
+
+function syncMarginLegendUi() {
+  if (!els.marginLegendWrap) return;
+  els.marginLegendWrap.querySelectorAll(".fundflow-legend-item").forEach((label) => {
+    const series = label.getAttribute("data-series");
+    const input = label.querySelector("input[type=checkbox]");
+    if (!series || !input) return;
+    input.checked = marginState.visibleSeries.has(series);
   });
 }
 
@@ -11194,6 +11995,27 @@ function setupComboMetric() {
     });
     syncPeLegendUi();
   }
+  if (els.marginLegendWrap) {
+    els.marginLegendWrap.querySelectorAll(".fundflow-legend-item input[type=checkbox]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const label = input.closest(".fundflow-legend-item");
+        const series = label?.getAttribute("data-series");
+        if (!series || !MARGIN_SERIES[series]) return;
+        if (input.checked) {
+          marginState.visibleSeries.add(series);
+        } else if (marginState.visibleSeries.size <= 1) {
+          input.checked = true;
+          return;
+        } else {
+          marginState.visibleSeries.delete(series);
+        }
+        syncMarginLegendUi();
+        renderChart();
+        refreshKlineQuoteCard();
+      });
+    });
+    syncMarginLegendUi();
+  }
   syncComboLegend();
 }
 
@@ -11226,6 +12048,40 @@ async function loadFundflowChart() {
     fundflowState.source = "";
   } finally {
     fundflowState.loading = false;
+    renderChart();
+    refreshKlineQuoteCard();
+  }
+}
+
+async function fetchMarginPayload({ refresh = false } = {}) {
+  const qs = new URLSearchParams({ code, limit: "1500" });
+  if (refresh) qs.set("refresh", "1");
+  const json = await api(`/api/stocks/margin-trading?${qs.toString()}`);
+  return json.data || {};
+}
+
+async function loadMarginChart() {
+  if (!code) return;
+  marginState.loading = true;
+  renderChart();
+  try {
+    let data = { items: [] };
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      data = await fetchMarginPayload({ refresh: attempt > 0 });
+      if (Array.isArray(data.items) && data.items.length > 1) break;
+      if (attempt < 2) {
+        await new Promise((resolve) => {
+          window.setTimeout(resolve, 450 * (attempt + 1));
+        });
+      }
+    }
+    marginState.source = data.source || "";
+    resetMarginViewport(data.items || []);
+  } catch {
+    resetMarginViewport([]);
+    marginState.source = "";
+  } finally {
+    marginState.loading = false;
     renderChart();
     refreshKlineQuoteCard();
   }
@@ -11601,14 +12457,11 @@ if (els.refreshListBtn) {
   );
 }
 if (els.refreshHoldersBtn) {
-  els.refreshHoldersBtn.addEventListener("click", () =>
-    loadHolders({ refresh: true })
-  );
-}
-if (els.refreshFundHoldersBtn) {
-  els.refreshFundHoldersBtn.addEventListener("click", () =>
-    loadFundHolders({ refresh: true })
-  );
+  els.refreshHoldersBtn.addEventListener("click", () => {
+    loadHolders({ refresh: true });
+    loadHolderNum({ refresh: true });
+    loadFundHolders({ refresh: true });
+  });
 }
 if (els.refreshFinancialsBtn) {
   els.refreshFinancialsBtn.addEventListener("click", () =>
@@ -11670,6 +12523,7 @@ setupTurnoverChart();
     loadTicksChart(),
     loadPeChart(),
     loadFundflowChart(),
+    loadMarginChart(),
     loadNewsGroup(newsGroup, { refresh: false }),
   ]);
   propagateLinkedAxis("kline");

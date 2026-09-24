@@ -1,6 +1,6 @@
 """形态方案：按内联 JSON（groups / scheme）扫描。
 
-方案语义（分组 OR / 至少 M/N）见 ``scheme.py``。
+方案语义（分组 OR / 至少 M/N）见 ``analysis.shares.pattern.scheme``。
 """
 
 from __future__ import annotations
@@ -11,15 +11,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from analysis.decline.bars import parse_bars
-from analysis.shares.candidates import collect_universe
-from analysis.shares.config import KLINE_LIMIT
-from analysis.shares.scheme import (
+from analysis.shares.common.candidates import collect_universe
+from analysis.shares.common.config import KLINE_LIMIT
+from analysis.shares.common.view import apply_view
+from analysis.shares.pattern.scheme import (
     describe_scheme,
     evaluate_scheme,
     scheme_fingerprint,
     scheme_has_rules,
 )
-from analysis.shares.screen import apply_view
 from company.line.fetcher import fetch_kline
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ def pattern_fingerprint(params: dict[str, Any]) -> str:
 
 def load_pattern_scheme(params: dict[str, Any] | None = None) -> dict[str, Any]:
     """从内联 JSON 得到规范化方案。"""
-    from analysis.shares.scheme import normalize_scheme
+    from analysis.shares.pattern.scheme import normalize_scheme
 
     p = normalize_pattern_params(params)
     if "scheme" in p and isinstance(p["scheme"], dict):

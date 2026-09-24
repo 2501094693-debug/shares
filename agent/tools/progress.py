@@ -63,6 +63,12 @@ AGENT_LABELS: dict[str, str] = {
     "rs_agg": "按用户计数",
     "rs_synth": "生成解读",
     "rs_save": "保存报告",
+    "tr_init": "解析公司",
+    "tr_fetch": "拉取资金与分时",
+    "tr_main": "统计资金动向",
+    "tr_retail": "统计分时成交",
+    "tr_synth": "生成综合结论",
+    "tr_save": "保存报告",
 }
 
 PHASE_LABELS: dict[str, str] = {
@@ -77,6 +83,7 @@ PHASE_LABELS: dict[str, str] = {
     "web_search_skip": "跳过联网",
     "llm": "LLM 生成",
     "llm_done": "生成完成",
+    "analyze": "规则分析",
     "map_chain": "绘制产业链地图",
     "save_file": "写入文件",
     "skip": "跳过",
@@ -125,6 +132,14 @@ RETAIL_AGENTS = [
     "rs_agg",
     "rs_synth",
     "rs_save",
+]
+TREND_AGENTS = [
+    "tr_init",
+    "tr_fetch",
+    "tr_main",
+    "tr_retail",
+    "tr_synth",
+    "tr_save",
 ]
 
 
@@ -186,6 +201,10 @@ def init_chain_analyst_agents() -> dict[str, dict[str, str]]:
 
 def init_retail_sentiment_agents() -> dict[str, dict[str, str]]:
     return init_agents_state(RETAIL_AGENTS)
+
+
+def init_trend_analyst_agents() -> dict[str, dict[str, str]]:
+    return init_agents_state(TREND_AGENTS)
 
 
 def report(

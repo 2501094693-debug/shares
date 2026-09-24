@@ -22,7 +22,7 @@ import json
 from typing import Any
 
 from analysis.decline.bars import normalize_date
-from analysis.shares.conditions import (
+from analysis.shares.common.conditions import (
     LOGIC_AND,
     LOGIC_NOT,
     LOGIC_OR,
@@ -32,7 +32,7 @@ from analysis.shares.conditions import (
     normalize_day_spec,
     normalize_logic,
 )
-from analysis.shares.days import list_trade_days
+from analysis.shares.common.days import list_trade_days
 from core.fmt import to_float
 
 
@@ -337,7 +337,7 @@ def evaluate_scheme(
     scheme: dict[str, Any],
 ) -> dict[str, Any] | None:
     """按规范化方案匹配一根股票的日 K；未命中返回 None。"""
-    from analysis.shares.metrics import compact_metrics, measure_bar
+    from analysis.shares.common.metrics import compact_metrics, measure_bar
 
     groups = list(scheme.get("groups") or [])
     if not bars or not groups:

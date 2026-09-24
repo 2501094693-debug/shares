@@ -138,6 +138,7 @@
       `/api/stocks/ticks?code=${enc}`,
       `/api/stocks/fund-flow?code=${enc}&scope=daily&limit=120`,
       `/api/stocks/fund-flow?code=${enc}&scope=big_deal&source=tonghuashun&limit=50&page=1`,
+      `/api/stocks/margin-trading?code=${enc}&limit=1500`,
     ]);
   }
 
@@ -279,6 +280,7 @@
     } else if (panel === "others") {
       enqueue(`/api/list/stock?code=${enc}`, 1);
       enqueue(`/api/stocks/holders?code=${enc}`, 1);
+      enqueue(`/api/stocks/holder-num?code=${enc}`, 1);
       enqueue(`/api/stocks/fund-holders?code=${enc}`, 1);
     }
   }

@@ -8,7 +8,7 @@ from typing import Any
 
 from core.cache import TtlCache
 from core.codes import normalize_code
-from core.fmt import fmt_yi_wan, to_float
+from core.fmt import fmt_shares, fmt_yi_wan, to_float
 from core.http import get_json
 
 logger = logging.getLogger(__name__)
@@ -103,6 +103,7 @@ def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
         "market_value": fmt_yi_wan(market_cap),
         "market_value_raw": market_cap,
         "shares": shares,
+        "shares_fmt": fmt_shares(shares),
         "report_date": _report_date(row.get("REPORT_DATE")),
     }
 

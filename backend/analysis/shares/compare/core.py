@@ -37,25 +37,25 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from analysis.decline.bars import parse_bars
-from analysis.shares.candidates import collect_universe
-from analysis.shares.conditions import (
+from analysis.shares.common.candidates import collect_universe
+from analysis.shares.common.conditions import (
     LOGIC_NOT,
     LOGIC_OR,
     apply_day_not,
     describe_spec,
     normalize_logic,
 )
-from analysis.shares.config import (
+from analysis.shares.common.config import (
     COMPARE_FIELD_META,
     COMPARE_FIELDS,
     COMPARE_OPS,
     COMPARE_TRENDS,
     KLINE_LIMIT,
 )
-from analysis.shares.days import list_trade_days
-from analysis.shares.metrics import compact_metrics, measure_bar
-from analysis.shares.scheme import match_day, normalize_day_list, normalize_day_raw
-from analysis.shares.screen import apply_view
+from analysis.shares.common.days import list_trade_days
+from analysis.shares.common.metrics import compact_metrics, measure_bar
+from analysis.shares.common.view import apply_view
+from analysis.shares.pattern.scheme import match_day, normalize_day_list, normalize_day_raw
 from company.line.fetcher import fetch_kline
 from core.fmt import to_float
 

@@ -8,8 +8,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from analysis.decline.bars import parse_bars
-from analysis.shares.candidates import collect_universe
-from analysis.shares.conditions import (
+from analysis.shares.common.candidates import collect_universe
+from analysis.shares.common.conditions import (
     LOGIC_AND,
     LOGIC_NOT,
     LOGIC_OR,
@@ -22,9 +22,10 @@ from analysis.shares.conditions import (
     normalize_logic,
     specs_fingerprint,
 )
-from analysis.shares.config import KLINE_LIMIT
-from analysis.shares.metrics import compact_metrics, measure_bar
-from analysis.shares.scheme import match_day
+from analysis.shares.common.config import KLINE_LIMIT
+from analysis.shares.common.metrics import compact_metrics, measure_bar
+from analysis.shares.common.view import apply_view
+from analysis.shares.pattern.scheme import match_day
 from company.line.fetcher import fetch_kline
 
 logger = logging.getLogger(__name__)
@@ -191,32 +192,6 @@ def analyze_one(
         "logic": hit.get("logic") or normalize_logic(logic),
         "kline_source": pack.get("source"),
         "kline_count": len(bars),
-    }
-
-
-def apply_view(data: dict[str, Any], top: int | None) -> dict[str, Any]:
-    items = list(data.get("items") or [])
-    items.sort(
-        key=lambda r: (
-            -float(r.get("score") or 0),
-            -int(r.get("matched_days") or 0),
-            -int(r.get("quiet_count") or 0),
-            str(r.get("code") or ""),
-        )
-    )
-    if top is not None and top > 0:
-        items = items[:top]
-    out = []
-    for idx, row in enumerate(items, start=1):
-        item = dict(row)
-        item.pop("chart", None)
-        item["rank"] = idx
-        out.append(item)
-    return {
-        **data,
-        "items": out,
-        "result_count": len(out),
-        "top": top,
     }
 
 

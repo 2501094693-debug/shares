@@ -1,10 +1,12 @@
-"""命令行：按多日日线条件筛选。
+"""命令行：按多日日线条件 / 形态 / 对比 / 组合 AST 筛选。
 
 示例：
 
     python -m analysis.shares --days
     python -m analysis.shares --spec conditions.json --top 30
     python -m analysis.shares --spec conditions.json --logic or --top 30
+    python -m analysis.shares --compare settle.json --top 30
+    python -m analysis.shares --compose tree.json --top 30
     python -m analysis.shares --code 600519 --date 2026-09-23 --pct-chg-min 1 --lower-ratio-min 0.4
 """
 
@@ -19,8 +21,11 @@ _BACKEND = Path(__file__).resolve().parents[2]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-from analysis.shares.conditions import normalize_logic
-from analysis.shares.days import list_trade_days
+from analysis.shares.common.conditions import normalize_logic
+from analysis.shares.common.days import list_trade_days
+from analysis.shares.compare import load_compare_scheme, screen_compare
+from analysis.shares.compose import load_compose_tree, screen_compose
+from analysis.shares.pattern import load_pattern_scheme, screen_scheme
 from analysis.shares.screen import screen_shares
 
 
@@ -44,6 +49,27 @@ def _print_table(items: list[dict]) -> None:
                 f"lower_r={m.get('lower_ratio')} upper_r={m.get('upper_ratio')} "
                 f"body_r={m.get('body_ratio')} {day.get('spec_text')}"
             )
+        for comp in row.get("comps") or []:
+            print(
+                f"       cmp[{comp.get('id') or comp.get('kind')}]: "
+                f"{comp.get('spec_text') or comp.get('label')}"
+            )
+            if comp.get("kind") == "pair":
+                left = comp.get("left") or {}
+                right = comp.get("right") or {}
+                print(
+                    f"         {left.get('date')}={left.get('value')} vs "
+                    f"{right.get('date')}={right.get('value')} "
+                    f"ratio={comp.get('ratio')} delta={comp.get('delta')}"
+                )
+            elif comp.get("kind") == "trend":
+                vals = comp.get("values") or []
+                chain = " → ".join(
+                    f"{v.get('date')}={v.get('value')}" for v in vals
+                )
+                print(
+                    f"         hits={comp.get('pair_hits')}/{comp.get('pair_need')}  {chain}"
+                )
         if row.get("branches"):
             latest = row.get("latest") or {}
             print(
@@ -52,6 +78,8 @@ def _print_table(items: list[dict]) -> None:
                 f"lower_r={latest.get('lower_ratio')} body={latest.get('body_pct')} "
                 f"score={row.get('score')}"
             )
+        elif row.get("score") is not None and row.get("comps"):
+            print(f"       score={row.get('score')} matched_comps={row.get('matched_comps')}")
 
 
 def _load_specs(args: argparse.Namespace) -> tuple[list[dict], str]:
@@ -105,10 +133,43 @@ def _load_specs(args: argparse.Namespace) -> tuple[list[dict], str]:
     return [one], normalize_logic(args.logic)
 
 
+def _load_json_scheme(path: str) -> dict:
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise SystemExit("方案文件须为 JSON 对象")
+    if isinstance(data.get("scheme"), dict):
+        return data["scheme"]
+    return data
+
+
+def _print_result(data: dict, *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+        return
+    print(
+        f"fingerprint={data.get('fingerprint')}  "
+        f"mode={data.get('mode') or data.get('logic') or '-'}  "
+        f"candidates={data.get('candidate_count')}  analyzed={data.get('analyzed_count')}  "
+        f"results={data.get('result_count')}"
+    )
+    for line in data.get("spec_summary") or []:
+        print(" ", line)
+    print(data.get("note") or "")
+    print()
+    _print_table(list(data.get("items") or []))
+    errors = data.get("errors") or []
+    if errors:
+        print()
+        print("errors:", "; ".join(errors[:12]))
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="按多日日线条件筛选股票")
+    parser = argparse.ArgumentParser(description="按多日日线条件 / 形态 / 对比 / 组合 AST 筛选股票")
     parser.add_argument("--days", type=int, nargs="?", const=22, help="列出近 N 个交易日（默认 22）")
-    parser.add_argument("--spec", default="", help="条件 JSON 文件路径")
+    parser.add_argument("--spec", default="", help="筛选式条件 JSON 文件路径")
+    parser.add_argument("--pattern", default="", help="形态方案 JSON（含 groups）")
+    parser.add_argument("--compare", default="", help="对比式方案 JSON（含 comps）")
+    parser.add_argument("--compose", "--scheme", dest="compose", default="", help="统一 AST 方案 JSON（含 nodes）")
     parser.add_argument("--date", default="", help="单日条件：交易日 YYYY-MM-DD")
     parser.add_argument(
         "--logic",
@@ -136,7 +197,14 @@ def main() -> None:
     parser.add_argument("--json", action="store_true", help="JSON 输出")
     args = parser.parse_args()
 
-    if args.days is not None and not args.spec and not args.date:
+    if (
+        args.days is not None
+        and not args.spec
+        and not args.date
+        and not args.compare
+        and not args.pattern
+        and not args.compose
+    ):
         pack = list_trade_days(args.days)
         if args.json:
             print(json.dumps(pack, ensure_ascii=False, indent=2))
@@ -145,41 +213,59 @@ def main() -> None:
         for item in pack.get("items") or []:
             print(f"  [{item.get('label')}] {item.get('date')}")
         print()
-        print("可选字段：", ", ".join((pack.get("fields") or {}).keys()))
+        print("筛选字段：", ", ".join((pack.get("fields") or {}).keys()))
+        print("对比字段：", ", ".join((pack.get("compare_fields") or {}).keys()))
         return
 
     top = None if args.top <= 0 else args.top
+    code = args.code.strip()
+
+    if args.compose:
+        tree = load_compose_tree({"scheme": _load_json_scheme(args.compose)})
+        data = screen_compose(
+            tree,
+            code=code,
+            workers=args.workers,
+            top=top,
+        )
+        _print_result(data, as_json=args.json)
+        return
+
+    if args.compare:
+        scheme = load_compare_scheme({"scheme": _load_json_scheme(args.compare)})
+        data = screen_compare(
+            scheme,
+            code=code,
+            workers=args.workers,
+            top=top,
+        )
+        _print_result(data, as_json=args.json)
+        return
+
+    if args.pattern:
+        scheme = load_pattern_scheme({"scheme": _load_json_scheme(args.pattern)})
+        data = screen_scheme(
+            scheme,
+            code=code,
+            workers=args.workers,
+            top=top,
+        )
+        _print_result(data, as_json=args.json)
+        return
 
     specs, logic = _load_specs(args)
     if not specs:
-        parser.error("请用 --days 列出交易日，或 --spec / --date 指定条件")
+        parser.error(
+            "请用 --days 列出交易日，或 --spec / --date / --compare / --pattern / --compose 指定条件"
+        )
     data = screen_shares(
         day_specs=specs,
         logic=logic,
-        code=args.code.strip(),
+        code=code,
         workers=args.workers,
         top=top,
     )
-
-    if args.json:
-        print(json.dumps(data, ensure_ascii=False, indent=2))
-        return
-
-    print(
-        f"fingerprint={data.get('fingerprint')}  "
-        f"logic={data.get('logic') or '-'}  "
-        f"candidates={data.get('candidate_count')}  analyzed={data.get('analyzed_count')}  "
-        f"results={data.get('result_count')}"
-    )
-    for line in data.get("spec_summary") or []:
-        print(" ", line)
-    print(data.get("note") or "")
-    print()
-    _print_table(list(data.get("items") or []))
-    errors = data.get("errors") or []
-    if errors:
-        print()
-        print("errors:", "; ".join(errors[:12]))
+    _print_result(data, as_json=args.json)
 
 
 if __name__ == "__main__":
