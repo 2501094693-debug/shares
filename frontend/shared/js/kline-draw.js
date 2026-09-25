@@ -675,13 +675,55 @@
     }
   }
 
-  function mount(cardEl, { code, carousel } = {}) {
-    if (!cardEl || !code) return;
+  function applyItems(state, items, { metaText } = {}) {
+    state.allItems = Array.isArray(items) ? items : [];
+    const closes = state.allItems.map((d) => Number(d.close));
+    state.maFull = {};
+    for (const line of MA_LINES) {
+      state.maFull[line.key] = computeSmaSeries(closes, line.period);
+    }
+    const total = state.allItems.length;
+    state.viewSize = VIEW_SIZE;
+    state.viewStart = Math.max(0, total - (VIEW_SIZE < total ? VIEW_SIZE : total));
+    if (state.emptyEl) {
+      state.emptyEl.classList.toggle("hidden", total > 0);
+      if (!total) {
+        state.emptyEl.textContent = "暂无走势数据";
+        state.emptyEl.classList.remove("hidden");
+      }
+    }
+    if (state.metaEl) {
+      state.metaEl.textContent = metaText || (total ? "日K" : "暂无数据");
+    }
+    render(state);
+  }
+
+  function normalizeItems(rawItems) {
+    return (rawItems || [])
+      .map((d) => ({
+        time: d.time || d.date || "",
+        open: d.open,
+        high: d.high,
+        low: d.low,
+        close: d.close,
+        volume: d.volume ?? d.vol ?? 0,
+        pct_chg: d.pct_chg,
+      }))
+      .filter((d) => Number.isFinite(Number(d.close)));
+  }
+
+  function mount(cardEl, { code, items, meta, carousel } = {}) {
+    if (!cardEl) return null;
+    if (!code && items == null) return null;
     if (views.has(cardEl)) {
       const prev = views.get(cardEl);
       prev.carousel = !!carousel;
-      render(prev);
-      return;
+      if (items != null) {
+        applyItems(prev, normalizeItems(items), { metaText: meta });
+      } else {
+        render(prev);
+      }
+      return prev;
     }
     const canvas = cardEl.querySelector("canvas");
     const wrap = cardEl.querySelector(".chart-canvas-wrap");
@@ -705,9 +747,16 @@
       viewSize: VIEW_SIZE,
       viewStart: 0,
       layout: null,
+      setData(nextItems, nextMeta) {
+        applyItems(state, normalizeItems(nextItems), { metaText: nextMeta || meta });
+      },
     };
     views.set(cardEl, state);
     bind(state);
+    if (items != null) {
+      applyItems(state, normalizeItems(items), { metaText: meta || "日K" });
+      return state;
+    }
     if (metaEl) metaEl.textContent = "加载中…";
     if (emptyEl) {
       emptyEl.textContent = "正在加载日K…";
@@ -715,21 +764,9 @@
     }
     loadDayKline(code)
       .then((pack) => {
-        state.allItems = pack.items || [];
-        const closes = state.allItems.map((d) => Number(d.close));
-        state.maFull = {};
-        for (const line of MA_LINES) {
-          state.maFull[line.key] = computeSmaSeries(closes, line.period);
-        }
-        const total = state.allItems.length;
-        state.viewSize = VIEW_SIZE;
-        state.viewStart = Math.max(0, total - (VIEW_SIZE < total ? VIEW_SIZE : total));
-        if (emptyEl) emptyEl.classList.toggle("hidden", total > 0);
-        if (metaEl) {
-          const src = sourceLabel(pack.source);
-          metaEl.textContent = src ? `日K · 前复权 · ${src}` : "日K · 前复权";
-        }
-        render(state);
+        const src = sourceLabel(pack.source);
+        const metaText = meta || (src ? `日K · 前复权 · ${src}` : "日K · 前复权");
+        applyItems(state, pack.items || [], { metaText });
       })
       .catch((err) => {
         if (emptyEl) {
@@ -738,6 +775,7 @@
         }
         if (metaEl) metaEl.textContent = "加载失败";
       });
+    return state;
   }
 
   window.OrbitKline = { mount, VIEW_SIZE };

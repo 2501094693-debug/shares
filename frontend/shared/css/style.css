@@ -11586,6 +11586,8 @@ body.app-shell.world-page-root .app-stage {
   border: none;
   cursor: pointer;
   filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.35));
+  display: flex;
+  justify-content: center;
 }
 
 .world-card {
@@ -11643,6 +11645,22 @@ body.app-shell.world-page-root .app-stage {
   text-overflow: ellipsis;
 }
 
+.world-card--stack {
+  min-width: 148px;
+  max-width: 200px;
+}
+
+.world-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.world-card-item .world-card-name {
+  margin: 0 0 2px;
+}
+
 .world-card-row {
   display: flex;
   align-items: baseline;
@@ -11681,10 +11699,13 @@ body.app-shell.world-page-root .app-stage {
 
 .world-chart-pop {
   position: absolute;
-  left: 16px;
-  bottom: 16px;
+  left: 50%;
+  top: 16px;
+  bottom: auto;
+  right: auto;
+  transform: translateX(-50%);
   z-index: 14;
-  width: min(360px, calc(100% - 32px));
+  width: min(380px, calc(100% - 32px));
   padding: 14px 16px 16px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -11777,6 +11798,266 @@ body.app-shell.world-page-root .app-stage {
   text-decoration: none;
 }
 
+body.app-shell.world-page-root .app-stage.world-stage {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+}
+
+.world-side {
+  position: relative;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 min(360px, 30vw);
+  width: min(360px, 30vw);
+  min-width: 280px;
+  max-width: 400px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  transition:
+    flex-basis 0.22s ease,
+    width 0.22s ease,
+    min-width 0.22s ease,
+    max-width 0.22s ease;
+  background:
+    linear-gradient(180deg, rgba(42, 212, 184, 0.06), transparent 28%),
+    rgba(7, 11, 18, 0.96);
+  backdrop-filter: blur(12px);
+}
+
+.world-side--indices {
+  border-right: 1px solid var(--line);
+}
+
+.world-side--oil {
+  border-left: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(232, 168, 56, 0.07), transparent 28%),
+    rgba(7, 11, 18, 0.96);
+}
+
+.world-side--oil .world-side-kicker {
+  color: #e8a838;
+}
+
+.world-side-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid rgba(70, 210, 190, 0.12);
+}
+
+.world-side-head-main {
+  min-width: 0;
+}
+
+.world-side-head-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.world-side-kicker {
+  margin: 0 0 4px;
+  font-family: var(--display);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+
+.world-side-head h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.world-side-status {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.world-side-status[data-state="live"] {
+  color: var(--accent);
+}
+
+.world-side-status[data-state="error"] {
+  color: var(--warn);
+}
+
+.world-side-toggle {
+  min-width: 28px;
+  padding: 2px 8px;
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.world-side-rail {
+  display: none;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 18px 0;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-family: var(--display);
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  cursor: pointer;
+}
+
+.world-side-rail:hover,
+.world-side-rail:focus-visible {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.world-side--oil .world-side-rail:hover,
+.world-side--oil .world-side-rail:focus-visible {
+  color: #e8a838;
+  background: color-mix(in srgb, #e8a838 10%, transparent);
+}
+
+.world-side.is-collapsed {
+  flex: 0 0 44px;
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+}
+
+.world-side.is-collapsed .world-side-head,
+.world-side.is-collapsed .world-index-list {
+  display: none;
+}
+
+.world-side.is-collapsed .world-side-rail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.world-index-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 10px 14px;
+}
+
+.world-index-empty {
+  margin: 24px 8px;
+  text-align: center;
+  font-size: 0.78rem;
+}
+
+.world-index-region {
+  margin: 4px 2px -2px;
+  font-family: var(--display);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.world-index-region:first-child {
+  margin-top: 0;
+}
+
+.world-index-card.screen-card {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 280px;
+  height: auto;
+  max-height: none;
+  cursor: default;
+  scroll-snap-align: none;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+}
+
+.world-index-card.screen-card:hover,
+.world-index-card.screen-card:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+}
+
+.world-index-card.is-active {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.world-index-card .screen-card-head {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+}
+
+.world-index-card .screen-card-score b[data-tone="up"] {
+  color: var(--up);
+}
+
+.world-index-card .screen-card-score b[data-tone="down"] {
+  color: var(--down);
+}
+
+.world-index-card .screen-card-score b[data-tone="flat"] {
+  color: var(--muted);
+}
+
+.world-index-card .chart-card.chart-card--kline {
+  flex: 0 0 auto;
+  min-height: 200px;
+  height: 220px;
+}
+
+.world-index-card .chart-card--kline .chart-card__meta {
+  max-width: 15rem;
+}
+
+.world-index-card .chart-card__stage {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.world-index-card .chart-canvas-wrap {
+  height: 100%;
+  min-height: 140px;
+}
+
+.world-index-card .chart-canvas-wrap canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.world-map-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+}
+
+.world-map-wrap .world-map-stage {
+  position: absolute;
+  inset: 0;
+}
+
 body.app-shell.world-page-root .world-view-toggle {
   position: absolute;
   top: 14px;
@@ -11811,15 +12092,109 @@ body.app-shell.world-page-root .world-view-toggle {
   color: var(--accent);
 }
 
+.world-map-wrap .world-chart-pop {
+  left: 50%;
+  right: auto;
+  top: 16px;
+  bottom: auto;
+  transform: translateX(-50%);
+}
+
+@media (max-width: 1100px) {
+  .world-side {
+    flex-basis: min(300px, 28vw);
+    width: min(300px, 28vw);
+    min-width: 240px;
+  }
+}
+
 @media (max-width: 900px) {
+  body.app-shell.world-page-root .app-stage.world-stage {
+    flex-direction: column;
+  }
+
+  .world-side {
+    flex: 0 0 min(42dvh, 380px);
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    height: min(42dvh, 380px);
+    border-right: none;
+    border-left: none;
+    border-bottom: 1px solid var(--line);
+    transition: height 0.22s ease, flex-basis 0.22s ease;
+  }
+
+  .world-side.is-collapsed {
+    flex: 0 0 48px;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 48px;
+  }
+
+  .world-side.is-collapsed .world-side-head {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: none;
+  }
+
+  .world-side.is-collapsed .world-side-kicker,
+  .world-side.is-collapsed .world-side-status,
+  .world-side.is-collapsed .world-index-list,
+  .world-side.is-collapsed .world-side-rail {
+    display: none;
+  }
+
+  .world-side.is-collapsed .world-side-head h1 {
+    font-size: 0.92rem;
+  }
+
+  .world-side.is-collapsed .world-side-toggle {
+    display: inline-flex;
+  }
+
+  .world-side--indices {
+    order: 1;
+  }
+
+  .world-map-wrap {
+    order: 2;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .world-side--oil {
+    order: 3;
+    border-bottom: none;
+    border-top: 1px solid var(--line);
+  }
+
+  .world-index-card.screen-card {
+    min-height: 250px;
+  }
+
+  .world-index-card .chart-card.chart-card--kline {
+    height: 190px;
+    min-height: 160px;
+  }
+
   .world-chart-pop {
-    left: 8px;
-    right: 8px;
-    bottom: 8px;
-    width: auto;
+    left: 50%;
+    right: auto;
+    top: 10px;
+    bottom: auto;
+    transform: translateX(-50%);
+    width: min(380px, calc(100% - 16px));
   }
 
   .world-card-oil {
     width: 120px;
+  }
+
+  body.app-shell.world-page-root .world-view-toggle {
+    top: 10px;
+    right: 10px;
   }
 }

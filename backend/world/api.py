@@ -1,13 +1,20 @@
-"""全球市场 HTTP 路由。"""
+"""全球市场 HTTP 路由：聚合原油 / 指数 / 国债三类。"""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
 from core.api import err, ok
+from world.bonds.api import router as bonds_router
+from world.indices.api import router as indices_router
+from world.oil.api import router as oil_router
 from world.service import service
 
 router = APIRouter()
+
+# 扁平挂载子路由，避免嵌套 include_router 在部分 FastAPI 版本下丢失路由
+for _child in (oil_router, indices_router, bonds_router):
+    router.routes.extend(_child.routes)
 
 
 @router.get("/api/global/catalog")
@@ -28,70 +35,5 @@ def global_overview(
             force=refresh == "1",
         )
         return ok(data)
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/global/indices")
-def global_indices(refresh: str = Query("0")):
-    try:
-        return ok(service.indices(force=refresh == "1"))
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/global/indices/history")
-def global_index_history(
-    limit: int = Query(90, ge=20, le=240),
-    refresh: str = Query("0"),
-):
-    try:
-        return ok(service.index_klines(limit=limit, force=refresh == "1"))
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/global/rates")
-def global_rates(
-    region: str = Query("", description="地区代码，空=全部"),
-    limit: int = Query(36, ge=1, le=240),
-    refresh: str = Query("0"),
-):
-    try:
-        data = service.rates(
-            region=region.strip() or None,
-            limit=limit,
-            force=refresh == "1",
-        )
-        return ok(data)
-    except ValueError as exc:
-        return err(str(exc), 400)
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/global/bonds")
-def global_bonds(
-    region: str = Query("", description="地区代码，空=全部"),
-    limit: int = Query(120, ge=10, le=1000),
-    refresh: str = Query("0"),
-):
-    try:
-        data = service.bonds(
-            region=region.strip() or None,
-            limit=limit,
-            force=refresh == "1",
-        )
-        return ok(data)
-    except ValueError as exc:
-        return err(str(exc), 400)
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/global/oil")
-def global_oil(refresh: str = Query("0")):
-    try:
-        return ok(service.oil(force=refresh == "1"))
     except Exception as exc:  # noqa: BLE001
         return err(str(exc), 500)

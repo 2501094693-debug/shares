@@ -7,7 +7,7 @@ from typing import Any
 
 from core.http import browser_get, get_json, get_text
 
-from world.catalog import INDICES
+from world.indices.catalog import INDICES
 
 _EM_HOSTS = (
     "https://push2.eastmoney.com",
@@ -40,7 +40,7 @@ _SINA_SYMBOLS: dict[str, str] = {
     "FTSE": "znb_UKX",
     "GDAXI": "znb_DAX",
     "FCHI": "znb_CAC",
-    "N225": "int_nikkei",
+    # N225：新浪 int_nikkei 点位与东财日K/期货不一致，改走东财
     "KS11": "znb_KOSPI",
     "HSI": "int_hangseng",
     "SENSEX": "znb_SENSEX",

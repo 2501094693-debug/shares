@@ -7,7 +7,7 @@ from typing import Any
 
 from core.http import get_json
 
-from world.catalog import INDICES
+from world.indices.catalog import INDICES
 
 _TX_KLINE_SYMBOLS: dict[str, str] = {
     "DJIA": "usDJI",
@@ -84,7 +84,7 @@ def _from_em(secid: str, limit: int) -> list[dict[str, Any]]:
                     "low": _num(parts[4]) if len(parts) > 4 else None,
                 }
             )
-        if len(out) >= 8:
+        if len(out) >= 2:
             return out[-limit:]
     return []
 
@@ -133,21 +133,36 @@ def _from_tencent(symbol: str, limit: int) -> list[dict[str, Any]]:
     return best[-limit:]
 
 
-def _fetch_one(item: dict[str, str], limit: int) -> list[dict[str, Any]]:
+def _fetch_one(item: dict[str, str], limit: int) -> dict[str, Any]:
+    points: list[dict[str, Any]] = []
     try:
         points = _from_em(item["secid"], limit)
         if len(points) >= 8:
-            return points
+            return {"points": points, "source": "eastmoney", "source_label": "东方财富"}
     except Exception:  # noqa: BLE001
         points = []
     symbol = _TX_KLINE_SYMBOLS.get(item["code"])
     if not symbol:
-        return points
+        return {
+            "points": points,
+            "source": "eastmoney" if points else "",
+            "source_label": "东方财富" if points else "",
+        }
     try:
         tx = _from_tencent(symbol, limit)
     except Exception:  # noqa: BLE001
-        return points
-    return tx if len(tx) > len(points) else points
+        return {
+            "points": points,
+            "source": "eastmoney" if points else "",
+            "source_label": "东方财富" if points else "",
+        }
+    if len(tx) > len(points):
+        return {"points": tx, "source": "tencent", "source_label": "腾讯财经"}
+    return {
+        "points": points,
+        "source": "eastmoney" if points else "",
+        "source_label": "东方财富" if points else "",
+    }
 
 
 def fetch_index_klines(*, limit: int = 90) -> dict[str, Any]:
@@ -155,14 +170,19 @@ def fetch_index_klines(*, limit: int = 90) -> dict[str, Any]:
     cap = max(20, min(int(limit), 240))
     catalog_items = [item for block in INDICES.values() for item in block["items"]]
     by_code: dict[str, list[dict[str, Any]]] = {}
+    source_by_code: dict[str, str] = {}
+    source_label_by_code: dict[str, str] = {}
     with ThreadPoolExecutor(max_workers=6) as pool:
         futures = {pool.submit(_fetch_one, item, cap): item for item in catalog_items}
         for fut in as_completed(futures):
             item = futures[fut]
             try:
-                by_code[item["code"]] = fut.result()
+                pack = fut.result()
             except Exception:  # noqa: BLE001
-                by_code[item["code"]] = []
+                pack = {"points": [], "source": "", "source_label": ""}
+            by_code[item["code"]] = pack.get("points") or []
+            source_by_code[item["code"]] = str(pack.get("source") or "")
+            source_label_by_code[item["code"]] = str(pack.get("source_label") or "")
 
     items: list[dict[str, Any]] = []
     for region, block in INDICES.items():
@@ -175,6 +195,14 @@ def fetch_index_klines(*, limit: int = 90) -> dict[str, Any]:
                     "code": item["code"],
                     "name": item["name"],
                     "points": points,
+                    "source": source_by_code.get(item["code"]) or "",
+                    "source_label": source_label_by_code.get(item["code"]) or "",
                 }
             )
-    return {"limit": cap, "by_code": by_code, "items": items}
+    return {
+        "limit": cap,
+        "by_code": by_code,
+        "source_by_code": source_by_code,
+        "source_label_by_code": source_label_by_code,
+        "items": items,
+    }

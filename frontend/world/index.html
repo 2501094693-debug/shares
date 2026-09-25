@@ -8,19 +8,52 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="preconnect" href="https://webapi.amap.com" />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=world-cards-20260923" />
+  <link rel="stylesheet" href="/css/style.css?v=world-no-overlap3-20260925" />
 </head>
 <body class="app-shell world-page-root" data-nav="world">
-  <div class="app-stage">
-    <div id="mapStage" class="world-map-stage" role="application" aria-label="全球市场地图"></div>
-    <div class="world-view-toggle" role="group" aria-label="底图类型">
-      <button type="button" class="btn ghost world-view-btn is-active" data-view="roadmap" aria-pressed="true">标准</button>
-      <button type="button" class="btn ghost world-view-btn" data-view="satellite" aria-pressed="false">卫星</button>
+  <div class="app-stage world-stage">
+    <aside class="world-side world-side--indices" data-side="indices" aria-label="主要市场指数">
+      <header class="world-side-head">
+        <div class="world-side-head-main">
+          <p class="world-side-kicker">GLOBAL INDICES</p>
+          <h1>主要指数</h1>
+        </div>
+        <div class="world-side-head-actions">
+          <p id="worldStatus" class="world-side-status muted" data-state="">同步中…</p>
+          <button type="button" class="btn ghost world-side-toggle" data-side="indices" aria-expanded="true" aria-controls="worldIndexList" title="收起">◂</button>
+        </div>
+      </header>
+      <button type="button" class="world-side-rail" data-side="indices" hidden aria-label="展开主要指数">主要指数</button>
+      <div id="worldIndexList" class="world-index-list" role="listbox" aria-label="指数列表"></div>
+    </aside>
+
+    <div class="world-map-wrap">
+      <div id="mapStage" class="world-map-stage" role="application" aria-label="全球市场地图"></div>
+      <div class="world-view-toggle" role="group" aria-label="底图类型">
+        <button type="button" class="btn ghost world-view-btn is-active" data-view="roadmap" aria-pressed="true">标准</button>
+        <button type="button" class="btn ghost world-view-btn" data-view="satellite" aria-pressed="false">卫星</button>
+      </div>
+      <aside id="worldChartPop" class="world-chart-pop" hidden></aside>
     </div>
-    <aside id="worldChartPop" class="world-chart-pop" hidden></aside>
+
+    <aside class="world-side world-side--oil" data-side="oil" aria-label="主要原油品种">
+      <header class="world-side-head">
+        <div class="world-side-head-main">
+          <p class="world-side-kicker">CRUDE OIL</p>
+          <h1>各地原油</h1>
+        </div>
+        <div class="world-side-head-actions">
+          <p id="worldOilStatus" class="world-side-status muted" data-state="">同步中…</p>
+          <button type="button" class="btn ghost world-side-toggle" data-side="oil" aria-expanded="true" aria-controls="worldOilList" title="收起">▸</button>
+        </div>
+      </header>
+      <button type="button" class="world-side-rail" data-side="oil" hidden aria-label="展开各地原油">各地原油</button>
+      <div id="worldOilList" class="world-index-list world-oil-list" role="listbox" aria-label="原油列表"></div>
+    </aside>
   </div>
   <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
   <script src="/js/shared/orbit-prefetch.js?v=futures-20260923"></script>
-  <script type="module" src="/js/world.js?v=world-cards-20260923"></script>
+  <script src="/js/shared/kline-draw.js?v=world-no-overlap3-20260925"></script>
+  <script src="/js/world.js?v=world-no-overlap3-20260925"></script>
 </body>
 </html>

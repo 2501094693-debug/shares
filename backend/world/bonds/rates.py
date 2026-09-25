@@ -8,7 +8,7 @@ from typing import Any
 
 from core.http import browser_get, get_json
 
-from world.catalog import RATES
+from world.bonds.catalog import RATES
 
 _JIN10_URL = "https://datacenter-api.jin10.com/reports/list_v2"
 _JIN10_HEADERS = {

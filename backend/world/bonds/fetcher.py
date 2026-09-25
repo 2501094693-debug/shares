@@ -6,7 +6,7 @@ from typing import Any
 
 from core.http import get_json
 
-from world.catalog import BONDS
+from world.bonds.catalog import BONDS
 
 _BOND_URL = "https://bond.finance.sina.com.cn/hq/gb/daily"
 
