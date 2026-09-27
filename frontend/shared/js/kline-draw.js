@@ -146,15 +146,23 @@
     return Math.max(4, Math.min(7, Math.round(Number(priceH) / 42) || 5));
   }
 
-  function chartLayout(w, h) {
+  function hasVolumeData(items) {
+    return (items || []).some((d) => {
+      const v = Number(d?.volume ?? d?.vol);
+      return Number.isFinite(v) && v > 0;
+    });
+  }
+
+  function chartLayout(w, h, { showVolume = true } = {}) {
     const pad = { top: 8, right: 8, bottom: 22, left: 52 };
     const innerW = Math.max(10, w - pad.left - pad.right);
     const innerH = Math.max(10, h - pad.top - pad.bottom);
-    const volH = Math.max(36, Math.floor(innerH * 0.16));
-    const gap = 10;
+    const volH = showVolume ? Math.max(36, Math.floor(innerH * 0.16)) : 0;
+    const gap = showVolume ? 10 : 0;
     const priceH = Math.max(100, innerH - volH - gap);
     return {
       pad,
+      showVolume: Boolean(showVolume),
       price: { x: pad.left, y: pad.top, w: innerW, h: priceH },
       volume: { x: pad.left, y: pad.top + priceH + gap, w: innerW, h: volH },
     };
@@ -321,7 +329,9 @@
     const yTicks = (priceScale.ticks || []).map(yAt);
     const xTicks = [0, 0.5, 1].map((t) => price.x + price.w * t);
     drawGrid(ctx, price, yTicks, xTicks, colors);
-    drawGrid(ctx, volume, [volume.y, volume.y + volume.h], xTicks, colors);
+    if (layout.showVolume !== false && volume.h > 0) {
+      drawGrid(ctx, volume, [volume.y, volume.y + volume.h], xTicks, colors);
+    }
 
     for (let i = 0; i < n; i += 1) {
       const d = items[i];
@@ -349,21 +359,24 @@
       if (up) ctx.strokeRect(x - bodyW / 2, y1, bodyW, bh);
       else ctx.fillRect(x - bodyW / 2, y1, bodyW, bh);
 
-      const vh = (vols[i] / maxVol) * volume.h;
-      ctx.fillStyle = soft;
-      ctx.fillRect(x - bodyW / 2, volume.y + volume.h - vh, bodyW, vh);
+      if (layout.showVolume !== false && volume.h > 0) {
+        const vh = (vols[i] / maxVol) * volume.h;
+        ctx.fillStyle = soft;
+        ctx.fillRect(x - bodyW / 2, volume.y + volume.h - vh, bodyW, vh);
+      }
     }
 
     drawMaLines(ctx, maVisible, yAt, xAt, n);
 
     if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
       const x = xAt(hoverIndex);
+      const yBottom = layout.showVolume !== false && volume.h > 0 ? volume.y + volume.h : price.y + price.h;
       ctx.save();
       ctx.strokeStyle = colors.cross;
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
       ctx.moveTo(x, price.y);
-      ctx.lineTo(x, volume.y + volume.h);
+      ctx.lineTo(x, yBottom);
       ctx.stroke();
       ctx.restore();
     }
@@ -431,7 +444,7 @@
       row("收盘", esc(fmtNum(d.close)), closeCls),
       pctText ? row("涨跌幅", esc(pctText), pctCls) : "",
       ...maRows,
-      row("成交量", esc(fmtVol(d.volume))),
+      state.showVolume ? row("成交量", esc(fmtVol(d.volume))) : "",
     ].filter(Boolean);
     box.innerHTML = `<div class="chart-hover-card-rows chart-hover-card-rows--inline"><span class="chart-hover-card-time">${esc(d.time || "")}</span>${rows.join("")}</div>`;
     box.classList.remove("hidden");
@@ -459,7 +472,10 @@
     state.viewSize = win.size;
     state.items = win.items;
     if (!win.items.length) return;
-    const layout = chartLayout(cssW, cssH);
+    const showVolume =
+      state.showVolume != null ? Boolean(state.showVolume) : hasVolumeData(state.allItems);
+    state.showVolume = showVolume;
+    const layout = chartLayout(cssW, cssH, { showVolume });
     state.layout = layout;
     drawKlineChart(ctx, layout, win.items, state, colors, hoverIndex);
     syncScrollBar(state);
@@ -647,7 +663,9 @@
         evt.stopPropagation();
         hoverIdx = null;
         const rect = canvas.getBoundingClientRect();
-        const layout = chartLayout(rect.width, rect.height);
+        const layout = chartLayout(rect.width, rect.height, {
+          showVolume: state.showVolume !== false,
+        });
         const x = evt.clientX - rect.left;
         let anchorRatio = 0.5;
         if (x >= layout.price.x && x <= layout.price.x + layout.price.w) {
@@ -677,6 +695,11 @@
 
   function applyItems(state, items, { metaText } = {}) {
     state.allItems = Array.isArray(items) ? items : [];
+    if (state.forceShowVolume == null) {
+      state.showVolume = hasVolumeData(state.allItems);
+    } else {
+      state.showVolume = Boolean(state.forceShowVolume);
+    }
     const closes = state.allItems.map((d) => Number(d.close));
     state.maFull = {};
     for (const line of MA_LINES) {
@@ -712,12 +735,13 @@
       .filter((d) => Number.isFinite(Number(d.close)));
   }
 
-  function mount(cardEl, { code, items, meta, carousel } = {}) {
+  function mount(cardEl, { code, items, meta, carousel, showVolume } = {}) {
     if (!cardEl) return null;
     if (!code && items == null) return null;
     if (views.has(cardEl)) {
       const prev = views.get(cardEl);
       prev.carousel = !!carousel;
+      if (showVolume != null) prev.forceShowVolume = showVolume;
       if (items != null) {
         applyItems(prev, normalizeItems(items), { metaText: meta });
       } else {
@@ -742,6 +766,8 @@
       scrollBar,
       scrollWrap,
       carousel: !!carousel,
+      forceShowVolume: showVolume,
+      showVolume: showVolume != null ? Boolean(showVolume) : null,
       allItems: [],
       items: [],
       viewSize: VIEW_SIZE,

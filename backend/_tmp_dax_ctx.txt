@@ -1,0 +1,182 @@
+ss">
+    <script>
+        var papercode = "DAX";
+        if((navigator.userAgent.toLowerCase().match(/(iphone|android)/i))){
+            location.replace("https://quotes.sina.cn/global/hq/qu
+---
+es.php?from=redirect&code=" + papercode);
+        }
+
+        // ������ʹ�Ʊ��ʹ�ö�̬������ȡ
+        //HOTSTOCK
+        var hotstock_daily_a = [["sh600905","��Ͽ��Դ","50201028","0"],["sz000725","�
+---
+   symbol: gbIndexSb('znb_' + papercode),
+                            dom_id: 'h5symbol'
+                        });
+
+                        function gbIndexSb( sb) {
+                      
+---
+n (){
+                        KKE.api('plugins.sinaTKChart.get', {
+                            rate: 0,
+                            symbol: gbIndexSb('znb_' + papercode),
+                   
+---
+nance.sina.com.cn/column/othermarket.shtml">�������</a></td>
+                <td class="off"><a target="_blank"
+                                   href="http://finance.sina.com.cn/roll.shtml
+---
+                <div class="hqmarket_wrap" data-stock data-code="DAX" data-market="gi" data-type="gi">
+                    <div class="market_title">
+                        <h2 data-name>�¹
+---
+ta-stock data-code="DAX" data-market="gi" data-type="gi">
+                    <div class="market_title">
+                        <h2 data-name>�¹�DAXָ��</h2>
+                        <span da
+---
+                  <div class="market_title">
+                        <h2 data-name>�¹�DAXָ��</h2>
+                        <span data-symbol>DAX</span>
+                    </div>
+            
+---
+                  <div class="market_con">
+                        <div class="market_con_main">
+                            <div class="market_price" data-price>--</div>
+                   
+---
+                  <div class="market_con_main">
+                            <div class="market_price" data-price>--</div>
+                            <div class="market_info">
+              
+---
+                  <div class="market_price" data-price>--</div>
+                            <div class="market_info">
+                                <p class="p1">
+                         
+---
+                  <div class="market_info">
+                                <p class="p1">
+                                    <span data-updown>--</span>
+                                   
+---
+                  <div class="market_con_other">
+                            <div class="market_con_other_item">
+                                <p>
+                                    <span
+---
+                  <div class="market_con_other_item">
+                                <p>
+                                    <span>��</span>
+                                    <span data-o
+---
+                  <div class="market_con_other_item">
+                                <p>
+                                    <span>���</span>
+                                    <span data-
+---
+                  <div class="market_con_other_item">
+                                <p>
+                                    <span>���</span>
+                                    <span data-
+---
+                  <div class="market_con_other_item">
+                                <p>
+                                    <span>����</span>
+                                    <span data
+---
+a-stock data-code=".dji" data-market="us" data-type="us">
+                            <span class="s-item-name">
+                                <a href="https://stock.finance.sina.com.cn/us
+---
+-stock data-code=".ixic" data-market="us" data-type="us">
+                            <span class="s-item-name">
+                                <a href="https://stock.finance.sina.com.cn/us
+---
+a-stock data-code=".inx" data-market="us" data-type="us">
+                            <span class="s-item-name">
+                                <a href="https://stock.finance.sina.com.cn/us
+---
+ta-stock data-code="UKX" data-market="gi" data-type="gi">
+                            <span class="s-item-name">
+                                <a href="https://finance.sina.com.cn/stock/gl
+---
+ta-stock data-code="DAX" data-market="gi" data-type="gi">
+                            <span class="s-item-name">
+                                <a href="https://finance.sina.com.cn/stock/gl
+---
+ta-stock data-code="CAC" data-market="gi" data-type="gi">
+                            <span class="s-item-name">
+                                <a href="https://finance.sina.com.cn/stock/gl
+---
+tock data-code="INDEXCF" data-market="gi" data-type="gi">
+                            <span class="s-item-name">
+                                <a href="https://finance.sina.com.cn/stock/gl
+---
+a-stock data-code="IRTS" data-market="gi" data-type="gi">
+                            <span class="s-item-name">
+                                <a href="https://finance.sina.com.cn/stock/gl
+---
+ta-stock data-code="RVI" data-market="gi" data-type="gi">
+                            <span class="s-item-name">
+                                <a href="https://finance.sina.com.cn/stock/gl
+---
+ta-stock data-code="HSI" data-market="hk" data-type="hk">
+                            <span class="s-item-name">
+                                <a href="https://stock.finance.sina.com.cn/hk
+---
+ta-stock data-code="NKY" data-market="gi" data-type="gi">
+                            <span class="s-item-name">
+                                <a href="https://finance.sina.com.cn/stock/gl
+---
+-stock data-code="KOSPI" data-market="gi" data-type="gi">
+                            <span class="s-item-name">
+                                <a href="https://finance.sina.com.cn/stock/gl
+---
+a-stock data-code="TWJQ" data-market="gi" data-type="gi">
+                            <span class="s-item-name">
+                                <a href="https://finance.sina.com.cn/stock/gl
+---
+a-stock data-code="VN30" data-market="gi" data-type="gi">
+                            <span class="s-item-name">
+                                <a href="https://finance.sina.com.cn/stock/gl
+---
+stock data-code="KSE100" data-market="gi" data-type="
+Notice: Undefined index: type in /data0/SINA/projects/cron/usstock_cron5/globalIndexPage/template.php on line 421
+">
+                   
+---
+                href="http://emarketing.sina.com.cn/" class="sinatail">������</a> | <a-->
+<!--                    href="http://corp.sina.com.cn/chn/sina_job.html" class="sinatail">��Ƹ��Ϣ</a>
+---
+ut Sina</a> | <a href="http://marketing.hd.weibo.com/">������</a> | <a href="http://www.sina.com.cn/contactus.html">��ϵ����</a> | <a href="http://corp.sina.com.cn/chn/sina_job.html">��Ƹ��Ϣ</
+---
+                   <span data-symbol>DAX</span>
+                    </div>
+                    <div class="market_con">
+                        <div class="market_con_main">
+                
+---
+                   <div id="h5symbol" style="height:100%"></div>
+                </div>
+                <script>
+                    (function (){
+                        KKE.api('plugins.si
+---
+,
+                            symbol: gbIndexSb('znb_' + papercode),
+                            dom_id: 'h5symbol'
+                        });
+
+                        function gbIndexSb( s
+---
+                   dom_id: 'h5symbol'
+                        });
+
+                        function gbIndexSb( sb) {
+                            return sb.split('').map(function(char) {
+    
+---

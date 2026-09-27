@@ -3,44 +3,47 @@ const HISTORY_LIMIT = 240;
 
 const REGION_COORDS = {
   us: { lat: 40.7128, lng: -74.006, city: "纽约" },
-  eu: { lat: 48.2, lng: 10.8, city: "法兰克福" },
-  uk: { lat: 54.2, lng: -8.4, city: "伦敦" },
-  de: { lat: 55.4, lng: 18.6, city: "柏林" },
-  fr: { lat: 43.2, lng: -0.6, city: "巴黎" },
-  jp: { lat: 37.4, lng: 142.6, city: "东京" },
-  kr: { lat: 34.2, lng: 130.8, city: "首尔" },
-  cn: { lat: 34.8, lng: 116.2, city: "上海" },
-  hk: { lat: 15.2, lng: 111.2, city: "香港" },
-  in: { lat: 16.8, lng: 74.2, city: "孟买" },
+  eu: { lat: 50.1109, lng: 8.6821, city: "法兰克福" },
+  uk: { lat: 51.5074, lng: -0.1278, city: "伦敦" },
+  de: { lat: 52.52, lng: 13.405, city: "柏林" },
+  fr: { lat: 48.8566, lng: 2.3522, city: "巴黎" },
+  jp: { lat: 35.6762, lng: 139.6503, city: "东京" },
+  kr: { lat: 37.5665, lng: 126.978, city: "首尔" },
+  cn: { lat: 31.2304, lng: 121.4737, city: "上海" },
+  hk: { lat: 22.3193, lng: 114.1694, city: "香港" },
+  in: { lat: 19.076, lng: 72.8777, city: "孟买" },
 };
 
 const OIL_COORDS = {
-  brent: { lat: 64.8, lng: 0.4, city: "北海" },
-  wti: { lat: 24.8, lng: -94.8, city: "休斯顿" },
-  dubai: { lat: 27.4, lng: 50.4, city: "迪拜" },
-  oman: { lat: 16.8, lng: 65.6, city: "马斯喀特" },
-  shanghai: { lat: 28.2, lng: 126.4, city: "上海" },
-  urals: { lat: 56.8, lng: 60.4, city: "乌拉尔" },
+  brent: { lat: 59.5, lng: 1.5, city: "北海" },
+  wti: { lat: 29.7604, lng: -95.3698, city: "休斯顿" },
+  dubai: { lat: 25.2048, lng: 55.2708, city: "迪拜" },
+  oman: { lat: 23.588, lng: 58.3829, city: "马斯喀特" },
+  shanghai: { lat: 31.2304, lng: 121.4737, city: "上海" },
+  urals: { lat: 54.9833, lng: 60.05, city: "乌拉尔" },
 };
 
-/** 初始像素偏移（再经 layoutMarkerLabels 螺旋占位避让）。 */
+/**
+ * 卡片相对钉点的初始像素偏移（bottom-center）。
+ * 地理坐标已对准城市；此处只负责把邻近卡片摊开，再经 layout 螺旋避让。
+ */
 const MARKER_OFFSET = {
-  "region:us": [-60, -50],
-  "region:eu": [30, 10],
-  "region:uk": [-170, -40],
-  "region:de": [180, -120],
-  "region:fr": [-90, 150],
-  "region:jp": [100, -110],
-  "region:kr": [170, 10],
-  "region:cn": [-150, -40],
-  "region:hk": [30, 210],
-  "region:in": [-50, 70],
-  "oil:brent": [10, -150],
-  "oil:wti": [120, 140],
-  "oil:dubai": [-160, -50],
-  "oil:oman": [-10, 190],
-  "oil:shanghai": [180, 120],
-  "oil:urals": [-100, -110],
+  "region:us": [0, -14],
+  "region:eu": [28, -72],
+  "region:uk": [-110, -36],
+  "region:de": [120, -48],
+  "region:fr": [-36, 78],
+  "region:jp": [96, -28],
+  "region:kr": [-28, -88],
+  "region:cn": [-120, -24],
+  "region:hk": [48, 72],
+  "region:in": [0, -14],
+  "oil:brent": [0, -14],
+  "oil:wti": [72, 36],
+  "oil:dubai": [-96, -24],
+  "oil:oman": [80, 56],
+  "oil:shanghai": [130, 56],
+  "oil:urals": [-88, -40],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -52,6 +55,8 @@ const state = {
   historySource: {},
   oilHistory: {},
   oilHistorySource: {},
+  /** @type {"all"|"indices"|"oil"} */
+  layerMode: "all",
   layers: { indices: true, oil: true },
   markerDefs: [],
   markers2d: [],
@@ -90,6 +95,62 @@ function fmtPct(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
   return `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
+}
+
+/** 从 quote_time 抽出 MM-DD；仅时间或无法解析时返回空串。 */
+function fmtQuoteDate(value) {
+  if (value == null || value === "") return "";
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const ms = value > 1e12 ? value : value * 1000;
+    const d = new Date(ms);
+    if (Number.isNaN(d.getTime())) return "";
+    return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  const text = String(value).trim();
+  if (!text) return "";
+  if (/^\d{10,13}$/.test(text)) {
+    const n = Number(text);
+    const ms = text.length >= 13 ? n : n * 1000;
+    const d = new Date(ms);
+    if (Number.isNaN(d.getTime())) return "";
+    return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  if (/^\d{8}/.test(text)) {
+    return `${text.slice(4, 6)}-${text.slice(6, 8)}`;
+  }
+  const m = text.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) return `${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  return "";
+}
+
+/** 日 K 最新一根日期 → MM-DD。 */
+function lastKlineDate(points) {
+  if (!points?.length) return "";
+  const last = points[points.length - 1];
+  const raw = last?.date || last?.time || "";
+  return fmtQuoteDate(raw) || (String(raw).length >= 10 ? String(raw).slice(5, 10) : "");
+}
+
+/** 悬浮框日期与最新日 K 对齐；K 线未到时再回退行情日。 */
+function indexQuoteDate(row) {
+  const fromK = lastKlineDate(historyPoints(row?.code));
+  if (fromK) return fromK;
+  return (
+    fmtQuoteDate(row?.quote_time) ||
+    fmtQuoteDate(row?.quote_date) ||
+    "—"
+  );
+}
+
+function oilQuoteDate(row) {
+  const fromK = lastKlineDate(oilHistoryPoints(row?.id));
+  if (fromK) return fromK;
+  return (
+    fmtQuoteDate(row?.quote_date) ||
+    fmtQuoteDate(row?.quote_time) ||
+    fmtQuoteDate([row?.quote_date, row?.quote_time].filter(Boolean).join(" ")) ||
+    "—"
+  );
 }
 
 function tone(value) {
@@ -558,6 +619,12 @@ function clearMarkers2d() {
     } catch {
       /* ignore */
     }
+    try {
+      rec.pinOverlay?.setMap(null);
+      mapRuntime.map?.remove(rec.pinOverlay);
+    } catch {
+      /* ignore */
+    }
   }
   state.markers2d = [];
 }
@@ -571,6 +638,7 @@ function markerIndexRowsHtml(indices) {
         <div class="world-card-row">
           <strong class="world-card-px">${fmtNum(row.price)}</strong>
           <em data-tone="${tone(row.change_pct)}">${fmtPct(row.change_pct)}</em>
+          <span class="world-card-date">${esc(indexQuoteDate(row))}</span>
         </div>
       </div>`,
     )
@@ -582,20 +650,26 @@ function markerLabelHtml(marker) {
     const o = marker.data.oil || {};
     return `
       <div class="world-card world-card-oil">
-        <div class="world-card-kicker">原油 · ${esc(marker.city || "")}</div>
+        <div class="world-card-kicker">
+          <span class="world-card-tag">原油</span>
+          <span>${esc(marker.city || "")}</span>
+        </div>
         <div class="world-card-name">${esc(o.name || marker.title)}</div>
         <div class="world-card-row">
           <strong class="world-card-px">${fmtNum(o.price)}</strong>
           <em data-tone="${tone(o.change_pct)}">${fmtPct(o.change_pct)}</em>
+          <span class="world-card-date">${esc(oilQuoteDate(o))}</span>
         </div>
       </div>
     `;
   }
   const indices = marker.data.indices || [];
   const multi = indices.length > 1;
+  const single = indices[0];
   return `
-    <div class="world-card${multi ? " world-card--stack" : ""}">
+    <div class="world-card world-card-index${multi ? " world-card--stack" : ""}">
       <div class="world-card-kicker">
+        <span class="world-card-tag">指数</span>
         <span>${esc(marker.title)}</span>
         <span class="muted">${esc(marker.city || "")}</span>
       </div>
@@ -603,10 +677,11 @@ function markerLabelHtml(marker) {
         multi
           ? `<div class="world-card-list">${markerIndexRowsHtml(indices)}</div>`
           : `
-      <div class="world-card-name">${esc(indices[0]?.name || "主要指数")}</div>
+      <div class="world-card-name">${esc(single?.name || "主要指数")}</div>
       <div class="world-card-row">
-        <strong class="world-card-px">${fmtNum(indices[0]?.price)}</strong>
-        <em data-tone="${tone(indices[0]?.change_pct)}">${fmtPct(indices[0]?.change_pct)}</em>
+        <strong class="world-card-px">${fmtNum(single?.price)}</strong>
+        <em data-tone="${tone(single?.change_pct)}">${fmtPct(single?.change_pct)}</em>
+        <span class="world-card-date">${esc(indexQuoteDate(single))}</span>
       </div>`
       }
     </div>
@@ -616,25 +691,43 @@ function markerLabelHtml(marker) {
 function createMarker2d(marker) {
   if (!mapRuntime.map) return;
 
-  const labelEl = document.createElement("div");
-  labelEl.className = "world-marker-label world-map-marker-label";
-  labelEl.dataset.markerId = marker.id;
-  labelEl.innerHTML = markerLabelHtml(marker);
-  labelEl.addEventListener("click", (e) => {
-    e.stopPropagation();
-    selectMarker(marker.id);
+  const kind = marker.category === "oil" ? "oil" : "index";
+  const pos = toAmapPos(marker.lat, marker.lng);
+
+  // 钉点钉在真实经纬度，不参与卡片避让偏移
+  const pinEl = document.createElement("div");
+  pinEl.className = `world-marker-pin world-marker-pin--${kind}`;
+  pinEl.dataset.markerId = marker.id;
+  pinEl.title = marker.city || marker.title || "";
+  const pinOverlay = new AMap.Marker({
+    position: pos,
+    content: pinEl,
+    offset: new AMap.Pixel(0, 0),
+    anchor: "center",
+    zIndex: marker.id === state.selectedId ? 210 : 110,
   });
 
-  const [ox, oy] = MARKER_OFFSET[marker.id] || [0, -8];
+  const labelEl = document.createElement("div");
+  labelEl.className = `world-marker-label world-map-marker-label world-marker-label--${kind} is-link`;
+  labelEl.dataset.markerId = marker.id;
+  labelEl.innerHTML = markerLabelHtml(marker);
+  const openChart = (e) => {
+    e.stopPropagation();
+    selectMarker(marker.id);
+  };
+  labelEl.addEventListener("click", openChart);
+  pinEl.addEventListener("click", openChart);
+
+  const [ox, oy] = MARKER_OFFSET[marker.id] || [0, -14];
   const overlay = new AMap.Marker({
-    position: toAmapPos(marker.lat, marker.lng),
+    position: pos,
     content: labelEl,
     offset: new AMap.Pixel(ox, oy),
     anchor: "bottom-center",
     zIndex: marker.id === state.selectedId ? 220 : 120,
   });
-  mapRuntime.map.add(overlay);
-  state.markers2d.push({ id: marker.id, overlay, labelEl, marker });
+  mapRuntime.map.add([pinOverlay, overlay]);
+  state.markers2d.push({ id: marker.id, overlay, pinOverlay, pinEl, labelEl, marker });
 }
 
 function groupIndicesByRegion(indices) {
@@ -646,6 +739,15 @@ function groupIndicesByRegion(indices) {
   return map;
 }
 
+function applyLayerMode(mode) {
+  const next = mode === "indices" || mode === "oil" ? mode : "all";
+  state.layerMode = next;
+  state.layers = {
+    indices: next === "all" || next === "indices",
+    oil: next === "all" || next === "oil",
+  };
+}
+
 function buildMarkerDefs() {
   const overview = state.overview;
   if (!overview) {
@@ -653,21 +755,23 @@ function buildMarkerDefs() {
     return;
   }
 
-  const idxMap = groupIndicesByRegion(overview.indices);
   const defs = [];
 
-  for (const [region, indices] of idxMap) {
-    const coord = REGION_COORDS[region];
-    if (!coord || !indices.length) continue;
-    defs.push({
-      id: `region:${region}`,
-      category: "indices",
-      lat: coord.lat,
-      lng: coord.lng,
-      city: coord.city,
-      title: indices[0]?.region_name || region,
-      data: { region, indices },
-    });
+  if (state.layers.indices) {
+    const idxMap = groupIndicesByRegion(overview.indices);
+    for (const [region, indices] of idxMap) {
+      const coord = REGION_COORDS[region];
+      if (!coord || !indices.length) continue;
+      defs.push({
+        id: `region:${region}`,
+        category: "indices",
+        lat: coord.lat,
+        lng: coord.lng,
+        city: coord.city,
+        title: indices[0]?.region_name || region,
+        data: { region, indices },
+      });
+    }
   }
 
   if (state.layers.oil) {
@@ -768,6 +872,8 @@ function mountIndexKline(card) {
   window.OrbitKline.mount(klineEl, {
     items: points,
     meta: klineMetaText(points, state.historySource?.[code]),
+    // 全球指数日 K 无成交量，不占位
+    showVolume: false,
   });
 }
 
@@ -906,6 +1012,8 @@ function mountOilKline(card) {
   window.OrbitKline.mount(klineEl, {
     items: points,
     meta: klineMetaText(points, state.oilHistorySource?.[id]),
+    // 原油日 K 无成交量，不占位
+    showVolume: false,
   });
 }
 
@@ -1032,12 +1140,18 @@ function ensureOilSelection() {
 }
 
 function highlightMarkers() {
-  document.querySelectorAll(".world-map-marker-label").forEach((el) => {
+  document.querySelectorAll(".world-map-marker-label, .world-marker-pin").forEach((el) => {
     el.classList.toggle("is-active", Boolean(state.selectedId) && el.dataset.markerId === state.selectedId);
   });
   state.markers2d.forEach((rec) => {
+    const active = rec.id === state.selectedId;
     try {
-      rec.overlay?.setzIndex(rec.id === state.selectedId ? 220 : 120);
+      rec.overlay?.setzIndex(active ? 220 : 120);
+    } catch {
+      /* ignore */
+    }
+    try {
+      rec.pinOverlay?.setzIndex(active ? 210 : 110);
     } catch {
       /* ignore */
     }
@@ -1104,6 +1218,7 @@ function closeChartPop() {
   const pop = $("worldChartPop");
   if (!pop) return;
   pop.hidden = true;
+  pop.classList.remove("world-chart-pop--card");
   pop.replaceChildren();
 }
 
@@ -1119,70 +1234,77 @@ function renderChartPop(marker) {
     return;
   }
 
+  pop.hidden = false;
+  pop.classList.add("world-chart-pop--card");
+
+  const closeBtn =
+    `<button type="button" class="world-pop-close" data-close aria-label="关闭">×</button>`;
+
   if (marker.category === "oil") {
     const o = marker.data.oil || {};
-    const ohlc = oilOhlc(o);
-    const points = oilHistoryPoints(o.id);
-    const src = state.oilHistorySource?.[o.id] || "";
-    pop.hidden = false;
+    const row = findOil(o.id) || o;
     pop.innerHTML = `
-      <header class="world-pop-head">
-        <div>
-          <p class="world-pop-kicker">原油 · ${esc(marker.city || "")}${src ? ` · ${esc(src)}` : ""}</p>
-          <h2>${esc(o.name || marker.title)}</h2>
-        </div>
-        <button type="button" class="world-pop-close" data-close aria-label="关闭">×</button>
-      </header>
-      <div class="world-pop-hero">
-        <strong>${fmtNum(o.price)}</strong>
-        <em data-tone="${tone(o.change_pct)}">${fmtPct(o.change_pct)}</em>
+      <div class="world-pop-card-wrap">
+        ${closeBtn}
+        ${oilCardHtml(row)}
       </div>
-      <div class="world-pop-chart">${sparkSvg(points, 320, 110, { fill: true })}</div>
-      <p class="muted world-pop-meta">开 ${fmtNum(ohlc.open)} · 高 ${fmtNum(ohlc.high)} · 低 ${fmtNum(ohlc.low)}</p>
     `;
-    pop.querySelector("[data-close]")?.addEventListener("click", () => selectMarker(null, false));
+    const card = pop.querySelector(".world-oil-card");
+    const remount = () => {
+      if (card) mountOilKline(card);
+    };
+    remount();
+    requestAnimationFrame(() => requestAnimationFrame(remount));
+    pop.querySelector("[data-close]")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectMarker(null, false);
+    });
     return;
   }
 
   const indices = marker.data.indices || [];
   const active = indices.find((row) => row.code === state.chartCode) || indices[0];
-  if (active) state.chartCode = active.code;
-  const points = historyForSpark(active?.code, active?.price);
-  const first = points[0]?.date || points[0]?.time || "";
-  const last = points[points.length - 1]?.date || points[points.length - 1]?.time || "";
-  const src = state.historySource?.[active?.code] || "";
+  if (!active) {
+    closeChartPop();
+    return;
+  }
+  state.chartCode = active.code;
   const china = isChinaMarket(marker)
     ? `<a class="btn world-pop-enter" href="/cn">进入中国市场</a>`
     : "";
 
-  pop.hidden = false;
   pop.innerHTML = `
-    <header class="world-pop-head">
-      <div>
-        <p class="world-pop-kicker">${esc(marker.title)} · ${esc(marker.city || "")} · 日线${src ? ` · ${esc(src)}` : ""}</p>
-        <h2>${esc(active?.name || marker.title)}</h2>
-      </div>
-      <button type="button" class="world-pop-close" data-close aria-label="关闭">×</button>
-    </header>
-    <div class="world-pop-hero">
-      <strong>${fmtNum(active?.price)}</strong>
-      <em data-tone="${tone(active?.change_pct)}">${fmtPct(active?.change_pct)}</em>
-    </div>
-    <div class="world-pop-chart">${sparkSvg(points, 320, 110, { fill: true })}</div>
-    <p class="muted world-pop-meta">${esc(first)}${first && last ? " → " : ""}${esc(last)}${points.length ? ` · ${points.length} 根` : "暂无走势"}</p>
-    ${indices.length > 1 ? `
-      <div class="world-pop-switch" role="tablist">
-        ${indices.map((row) => `
-          <button type="button" class="world-pop-tab${row.code === active?.code ? " is-active" : ""}" data-code="${esc(row.code)}">
+    ${
+      indices.length > 1
+        ? `<div class="world-pop-switch" role="tablist">
+        ${indices
+          .map(
+            (row) => `
+          <button type="button" class="world-pop-tab${row.code === active.code ? " is-active" : ""}" data-code="${esc(row.code)}">
             ${esc(row.name)}
-          </button>
-        `).join("")}
-      </div>
-    ` : ""}
+          </button>`,
+          )
+          .join("")}
+      </div>`
+        : ""
+    }
+    <div class="world-pop-card-wrap">
+      ${closeBtn}
+      ${indexCardHtml(active)}
+    </div>
     ${china}
   `;
-  pop.querySelector("[data-close]")?.addEventListener("click", () => selectMarker(null, false));
-  pop.querySelectorAll("[data-code]").forEach((btn) => {
+  const card = pop.querySelector(".world-index-card");
+  const remount = () => {
+    if (card) mountIndexKline(card);
+  };
+  remount();
+  requestAnimationFrame(() => requestAnimationFrame(remount));
+  pop.querySelector("[data-close]")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selectMarker(null, false);
+  });
+  pop.querySelectorAll(".world-pop-tab[data-code]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       state.chartCode = btn.dataset.code;
@@ -1288,6 +1410,41 @@ function setViewMode(mode) {
     btn.setAttribute("aria-pressed", active ? "true" : "false");
   });
   applyViewMode(next);
+}
+
+const LAYER_MODE_KEY = "orbit-world-layer-mode";
+
+function readLayerMode() {
+  try {
+    const raw = localStorage.getItem(LAYER_MODE_KEY) || "";
+    if (raw === "indices" || raw === "oil" || raw === "all") return raw;
+  } catch {
+    /* ignore */
+  }
+  return "all";
+}
+
+function writeLayerMode(mode) {
+  try {
+    localStorage.setItem(LAYER_MODE_KEY, mode);
+  } catch {
+    /* ignore */
+  }
+}
+
+function syncLayerModeUi() {
+  document.querySelectorAll(".world-layer-btn").forEach((btn) => {
+    const active = btn.dataset.layer === state.layerMode;
+    btn.classList.toggle("is-active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function setLayerMode(mode, { persist = true } = {}) {
+  applyLayerMode(mode);
+  syncLayerModeUi();
+  if (persist) writeLayerMode(state.layerMode);
+  if (state.overview) rebuildMarkers();
 }
 
 async function fetchJson(url, timeoutMs = 90_000, extra = {}) {
@@ -1411,7 +1568,10 @@ function applySideFold(side, collapsed, { persist = true } = {}) {
     cur[side] = collapsed;
     writeSideFold(cur);
   }
-  window.requestAnimationFrame(() => resizeMap());
+  window.requestAnimationFrame(() => {
+    resizeMap();
+    remountVisibleWorldKlines();
+  });
 }
 
 function toggleSideFold(side) {
@@ -1435,13 +1595,35 @@ function bindSideFold() {
   });
 }
 
+function remountVisibleWorldKlines() {
+  document.querySelectorAll("#worldIndexList .world-index-card").forEach((el) => mountIndexKline(el));
+  document.querySelectorAll("#worldOilList .world-oil-card").forEach((el) => mountOilKline(el));
+  const popCard = $("worldChartPop")?.querySelector(".world-index-card, .world-oil-card");
+  if (popCard) {
+    if (popCard.classList.contains("world-oil-card")) mountOilKline(popCard);
+    else mountIndexKline(popCard);
+  }
+}
+
 function bindUi() {
-  bindSideFold();
+  applyLayerMode(readLayerMode());
+  syncLayerModeUi();
+  document.querySelectorAll(".world-layer-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setLayerMode(btn.dataset.layer));
+  });
   document.querySelectorAll(".world-view-btn").forEach((btn) => {
     btn.addEventListener("click", () => setViewMode(btn.dataset.view));
   });
   $("worldChartPop")?.addEventListener("click", (e) => e.stopPropagation());
-  window.addEventListener("resize", () => resizeMap());
+  let resizeTimer = 0;
+  window.addEventListener("resize", () => {
+    resizeMap();
+    if (resizeTimer) window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(() => {
+      resizeTimer = 0;
+      remountVisibleWorldKlines();
+    }, 120);
+  });
   state.pollTimer = window.setInterval(() => loadOverview(false, { poll: true }), POLL_MS);
 }
 

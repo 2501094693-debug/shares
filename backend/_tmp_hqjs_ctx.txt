@@ -1,0 +1,2 @@
+[14]).toFixed(t),c.zdnumSort=+c.zdnum):"global"==c.utype?(c.name=i[13]||c.code,c.price=c.priceSort=i[0]&&i[0].toFixed(t),c.Link="http://finance.si
+---

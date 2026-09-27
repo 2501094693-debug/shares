@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from core.http import browser_get
@@ -91,11 +92,26 @@ def _fetch_sina_map(symbols: list[str]) -> dict[str, str]:
     return by_symbol
 
 
-def _fetch_oilprice_blends(blend_ids: set[str]) -> dict[str, dict[str, float | None]]:
+def _oilprice_quote_date(block: str) -> str | None:
+    """从 delay 文案或 data 属性尽量解析报价日。"""
+    # 常见："(1-day Delay)" — 无绝对日期，交给上层用日 K 回退
+    m = re.search(r"data-last_price_time=['\"](\d+)['\"]", block)
+    if m:
+        try:
+            ts = int(m.group(1))
+            if ts > 1_000_000_000_000:
+                ts //= 1000
+            return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+        except (OSError, OverflowError, ValueError):
+            pass
+    return None
+
+
+def _fetch_oilprice_blends(blend_ids: set[str]) -> dict[str, dict[str, Any]]:
     if not blend_ids:
         return {}
     text = browser_get(_OILPRICE_URL, headers=_OILPRICE_HEADERS, timeout=18).text
-    out: dict[str, dict[str, float | None]] = {}
+    out: dict[str, dict[str, Any]] = {}
     for blend_id in blend_ids:
         m = re.search(rf"data-id='{re.escape(blend_id)}'[\s\S]{{0,2500}}?</tr>", text)
         if not m:
@@ -124,6 +140,7 @@ def _fetch_oilprice_blends(blend_ids: set[str]) -> dict[str, dict[str, float | N
             "open": None,
             "high": None,
             "low": None,
+            "quote_date": _oilprice_quote_date(block),
         }
     return out
 
@@ -149,7 +166,7 @@ def _item_from_sina(spec: dict[str, str], parsed: dict[str, str]) -> dict[str, A
     }
 
 
-def _item_from_oilprice(spec: dict[str, str], row: dict[str, float | None] | None) -> dict[str, Any]:
+def _item_from_oilprice(spec: dict[str, str], row: dict[str, Any] | None) -> dict[str, Any]:
     row = row or {}
     return {
         "id": spec["id"],
@@ -164,7 +181,7 @@ def _item_from_oilprice(spec: dict[str, str], row: dict[str, float | None] | Non
         "change": row.get("change"),
         "change_pct": row.get("change_pct"),
         "quote_time": None,
-        "quote_date": None,
+        "quote_date": row.get("quote_date"),
     }
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from typing import Any
 
 from core.http import browser_get, get_json, get_text
@@ -73,6 +74,43 @@ def _empty_quote() -> dict[str, Any]:
     }
 
 
+def _fmt_quote_time(raw: Any) -> str | None:
+    """统一成可解析的日期时间字符串。
+
+    - 腾讯 ``YYYYMMDDHHMMSS`` → ``YYYY-MM-DD HH:MM:SS``
+    - Unix 秒(10 位) / 毫秒(13 位) → 本地时区日期时间
+    - 其余原样返回
+    """
+    if raw is None or raw == "" or raw == "-":
+        return None
+    if isinstance(raw, float):
+        if not raw.is_integer():
+            return None
+        raw = int(raw)
+    text = str(raw).strip()
+    if not text:
+        return None
+    if text.isdigit() and len(text) == 14:
+        return (
+            f"{text[:4]}-{text[4:6]}-{text[6:8]} "
+            f"{text[8:10]}:{text[10:12]}:{text[12:14]}"
+        )
+    if text.isdigit() and len(text) in (10, 13):
+        try:
+            n = int(text)
+        except ValueError:
+            return text
+        if n <= 0:
+            return None
+        ts = n / 1000.0 if len(text) == 13 else float(n)
+        try:
+            dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone()
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        except (OSError, OverflowError, ValueError):
+            return text
+    return text
+
+
 def _from_em(data: dict[str, Any]) -> dict[str, Any]:
     quote = _empty_quote()
     quote.update(
@@ -84,7 +122,7 @@ def _from_em(data: dict[str, Any]) -> dict[str, Any]:
             "high": _num(data.get("f44")),
             "low": _num(data.get("f45")),
             "prev_close": _num(data.get("f60")),
-            "quote_time": data.get("f86"),
+            "quote_time": _fmt_quote_time(data.get("f86")),
         }
     )
     return quote
@@ -146,7 +184,7 @@ def _parse_tencent_line(text: str) -> dict[str, Any]:
             "change_pct": _num(parts[32] if len(parts) > 32 else None),
             "high": _num(parts[33] if len(parts) > 33 else None),
             "low": _num(parts[34] if len(parts) > 34 else None),
-            "quote_time": parts[30] if len(parts) > 30 else None,
+            "quote_time": _fmt_quote_time(parts[30] if len(parts) > 30 else None),
         }
     )
     return quote
@@ -194,11 +232,31 @@ def _parse_sina_line(text: str, symbol: str) -> dict[str, Any]:
             {
                 "price": _num(parts[1]),
                 "change_pct": _num(parts[2]),
-                "quote_time": parts[3],
+                "quote_time": _fmt_quote_time(parts[3]),
                 "change": _num(parts[4]) if len(parts) > 4 else None,
                 "open": _num(parts[5]) if len(parts) > 5 else None,
                 "high": _num(parts[6]) if len(parts) > 6 else None,
                 "low": _num(parts[7]) if len(parts) > 7 else None,
+            }
+        )
+        return quote
+    # znb_*：…, 美式日期, unix, YYYY-MM-DD, HH:MM:SS, 昨收, 开, 高, 低
+    if symbol.startswith("znb_"):
+        date = parts[6] if len(parts) > 6 else ""
+        time = parts[7] if len(parts) > 7 else ""
+        combined = " ".join(x for x in (date, time) if x) or None
+        if not combined and len(parts) > 5:
+            combined = _fmt_quote_time(parts[5])
+        quote.update(
+            {
+                "price": _num(parts[1]),
+                "change": _num(parts[2]),
+                "change_pct": _num(parts[3]),
+                "quote_time": combined,
+                "prev_close": _num(parts[8]) if len(parts) > 8 else None,
+                "open": _num(parts[9]) if len(parts) > 9 else None,
+                "high": _num(parts[10]) if len(parts) > 10 else None,
+                "low": _num(parts[11]) if len(parts) > 11 else None,
             }
         )
         return quote
@@ -207,7 +265,7 @@ def _parse_sina_line(text: str, symbol: str) -> dict[str, Any]:
             "price": _num(parts[1]),
             "change": _num(parts[2]),
             "change_pct": _num(parts[3]),
-            "quote_time": parts[7] if len(parts) > 7 else None,
+            "quote_time": _fmt_quote_time(parts[7] if len(parts) > 7 else None),
             "prev_close": _num(parts[8]) if len(parts) > 8 else None,
             "open": _num(parts[9]) if len(parts) > 9 else None,
             "high": _num(parts[10]) if len(parts) > 10 else None,

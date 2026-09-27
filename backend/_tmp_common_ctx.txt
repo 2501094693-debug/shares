@@ -1,0 +1,4 @@
+        var _day = c.getDay();
+---
+e"msci":n="msci_"+l,i="msci_"+l;break;case"gi":n="znb_"+l,i="b_"+l;break;default:n=l,i=l}n = n.replace(/-/g,'$45');i = i.replace(/-/g,
+---

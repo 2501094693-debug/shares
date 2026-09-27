@@ -53,7 +53,7 @@ class OilService:
         return self._cached(self._cache, "oil", fetch_oil)
 
     def klines(self, *, limit: int = 90, force: bool = False) -> dict[str, Any]:
-        key = f"oil-klines:{limit}"
+        key = f"oil-klines:v3:{limit}"
         if force:
             data = fetch_oil_klines(limit=limit)
             self._series_cache.put(key, data)

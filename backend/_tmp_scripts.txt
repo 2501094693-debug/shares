@@ -1,0 +1,10 @@
+//beacon.sina.com.cn/a.gif?noScript
+//i1.sinaimg.cn/dy/images/header/2009/standardl2nav_sina_new.gif
+//i1.sinaimg.cn/dy/images/header/2009/standardl2nav_finance.gif
+https://finance.sina.com.cn/sinafinancesdk/js/sf_sdk.js
+https://finance.sina.com.cn/other/src/sff.js
+https://news.sina.com.cn/268/2015/0112/jquery.newest.js
+https://n.sinaimg.cn/finance/stock/hq/src/hq-suggest.js
+https://finance.sina.com.cn/other/src/app/SFANewVersionPop.js
+https://mjs.sinaimg.cn/umd/base-tools-SUDA/1.1.20/index.min.js
+https://n.sinaimg.cn/finance/66ceb6d9/20241119/common.js?v2

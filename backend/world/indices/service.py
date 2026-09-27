@@ -53,7 +53,7 @@ class IndicesService:
         return self._cached(self._spot_cache, "indices", fetch_indices)
 
     def klines(self, *, limit: int = 90, force: bool = False) -> dict[str, Any]:
-        key = f"index-klines:{limit}"
+        key = f"index-klines:v2:{limit}"
         if force:
             data = fetch_index_klines(limit=limit)
             self._series_cache.put(key, data)

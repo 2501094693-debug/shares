@@ -1,4 +1,4 @@
-"""全球指数日 K：东财 push2his，缺口用腾讯 fqkline。"""
+"""全球指数日 K：腾讯 / 新浪优先，东财 push2his 兜底。"""
 
 from __future__ import annotations
 
@@ -9,15 +9,29 @@ from core.http import get_json
 
 from world.indices.catalog import INDICES
 
+# 腾讯 fqkline 符号（含部分海外 ft*）
 _TX_KLINE_SYMBOLS: dict[str, str] = {
     "DJIA": "usDJI",
     "SPX": "usINX",
     "NDX": "usIXIC",
+    "FTSE": "ftUKX",
+    "GDAXI": "ftDAX30",
     "HSI": "hkHSI",
     "000001": "sh000001",
     "399001": "sz399001",
     "000300": "sh000300",
     "399006": "sz399006",
+}
+
+# 新浪 gi.finance 全球指数日 K（akshare index_global_hist_sina 同源）
+_SINA_KLINE_SYMBOLS: dict[str, str] = {
+    "FTSE": "UKX",
+    "GDAXI": "DAX",
+    "FCHI": "CAC",
+    "SX5E": "SX5E",
+    "N225": "NKY",
+    "KS11": "KOSPI",
+    "SENSEX": "SENSEX",
 }
 
 _EM_HIS_HOSTS = (
@@ -34,6 +48,11 @@ _TX_KLINE = (
     "https://ifzq.gtimg.cn/appstock/app/fqkline/get",
 )
 _TX_HEADERS = {"Referer": "https://gu.qq.com/"}
+_SINA_DAILY_URL = "https://gi.finance.sina.com.cn/hq/daily"
+_SINA_HEADERS = {
+    "Referer": "https://finance.sina.com.cn/",
+    "Accept": "application/json, text/plain, */*",
+}
 
 
 def _num(raw: Any) -> float | None:
@@ -61,7 +80,7 @@ def _from_em(secid: str, limit: int) -> list[dict[str, Any]]:
                 f"{host}/api/qt/stock/kline/get",
                 params=params,
                 headers=_EM_HEADERS,
-                timeout=10,
+                timeout=4,
             )
         except Exception:  # noqa: BLE001
             continue
@@ -133,36 +152,83 @@ def _from_tencent(symbol: str, limit: int) -> list[dict[str, Any]]:
     return best[-limit:]
 
 
+def _from_sina(symbol: str, limit: int) -> list[dict[str, Any]]:
+    try:
+        payload = get_json(
+            _SINA_DAILY_URL,
+            params={"symbol": symbol, "num": str(max(limit, 30))},
+            headers=_SINA_HEADERS,
+            timeout=12,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    rows = ((payload or {}).get("result") or {}).get("data") or []
+    if not isinstance(rows, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        close = _num(row.get("c"))
+        if close is None:
+            continue
+        date = str(row.get("d") or "")[:10]
+        if not date:
+            continue
+        out.append(
+            {
+                "date": date,
+                "open": _num(row.get("o")),
+                "close": close,
+                "high": _num(row.get("h")),
+                "low": _num(row.get("l")),
+            }
+        )
+    if len(out) < 2:
+        return []
+    return out[-limit:]
+
+
+def _pack(points: list[dict[str, Any]], source: str, label: str) -> dict[str, Any]:
+    return {"points": points, "source": source, "source_label": label}
+
+
 def _fetch_one(item: dict[str, str], limit: int) -> dict[str, Any]:
-    points: list[dict[str, Any]] = []
+    code = item["code"]
+    best: list[dict[str, Any]] = []
+    best_src = ""
+    best_label = ""
+
+    tx_symbol = _TX_KLINE_SYMBOLS.get(code)
+    if tx_symbol:
+        try:
+            tx = _from_tencent(tx_symbol, limit)
+        except Exception:  # noqa: BLE001
+            tx = []
+        if len(tx) > len(best):
+            best, best_src, best_label = tx, "tencent", "腾讯财经"
+        if len(best) >= 8:
+            return _pack(best, best_src, best_label)
+
+    sina_symbol = _SINA_KLINE_SYMBOLS.get(code)
+    if sina_symbol:
+        try:
+            sina = _from_sina(sina_symbol, limit)
+        except Exception:  # noqa: BLE001
+            sina = []
+        if len(sina) > len(best):
+            best, best_src, best_label = sina, "sina", "新浪财经"
+        if len(best) >= 8:
+            return _pack(best, best_src, best_label)
+
     try:
-        points = _from_em(item["secid"], limit)
-        if len(points) >= 8:
-            return {"points": points, "source": "eastmoney", "source_label": "东方财富"}
+        em = _from_em(item["secid"], limit)
     except Exception:  # noqa: BLE001
-        points = []
-    symbol = _TX_KLINE_SYMBOLS.get(item["code"])
-    if not symbol:
-        return {
-            "points": points,
-            "source": "eastmoney" if points else "",
-            "source_label": "东方财富" if points else "",
-        }
-    try:
-        tx = _from_tencent(symbol, limit)
-    except Exception:  # noqa: BLE001
-        return {
-            "points": points,
-            "source": "eastmoney" if points else "",
-            "source_label": "东方财富" if points else "",
-        }
-    if len(tx) > len(points):
-        return {"points": tx, "source": "tencent", "source_label": "腾讯财经"}
-    return {
-        "points": points,
-        "source": "eastmoney" if points else "",
-        "source_label": "东方财富" if points else "",
-    }
+        em = []
+    if len(em) > len(best):
+        best, best_src, best_label = em, "eastmoney", "东方财富"
+
+    return _pack(best, best_src, best_label)
 
 
 def fetch_index_klines(*, limit: int = 90) -> dict[str, Any]:

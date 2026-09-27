@@ -19,11 +19,10 @@ _OILPRICE_HEADERS = {
     "Origin": "https://oilprice.com",
 }
 
-# 外盘日 K 代码（去掉 hf_ 前缀）
+# 外盘日 K（去掉 hf_ 前缀）
 _GLOBAL_KLINE: dict[str, str] = {
     "brent": "OIL",
     "wti": "CL",
-    "dubai": "DBI",
 }
 # 国内期货日 K
 _INNER_KLINE: dict[str, str] = {
@@ -38,6 +37,16 @@ def _num(raw: Any) -> float | None:
         return round(float(raw), 4)
     except (TypeError, ValueError):
         return None
+
+
+def _ohlc_point(date: str, open_: float | None, high: float | None, low: float | None, close: float) -> dict[str, Any]:
+    """规范化 OHLC，避免 high < open/close 等脏数据。"""
+    o = open_ if open_ is not None else close
+    h = high if high is not None else max(o, close)
+    l = low if low is not None else min(o, close)
+    h = max(h, o, close)
+    l = min(l, o, close)
+    return {"date": date, "open": o, "high": h, "low": l, "close": close}
 
 
 def _parse_jsonp(text: str) -> Any:
@@ -70,13 +79,13 @@ def _from_sina_global(symbol: str, limit: int) -> list[dict[str, Any]]:
         if not date:
             continue
         out.append(
-            {
-                "date": date,
-                "open": _num(row.get("open")),
-                "high": _num(row.get("high")),
-                "low": _num(row.get("low")),
-                "close": close,
-            }
+            _ohlc_point(
+                date,
+                _num(row.get("open")),
+                _num(row.get("high")),
+                _num(row.get("low")),
+                close,
+            )
         )
     return out[-limit:]
 
@@ -101,13 +110,13 @@ def _from_sina_inner(symbol: str, limit: int) -> list[dict[str, Any]]:
         if not date:
             continue
         out.append(
-            {
-                "date": date,
-                "open": _num(row.get("o") if "o" in row else row.get("open")),
-                "high": _num(row.get("h") if "h" in row else row.get("high")),
-                "low": _num(row.get("l") if "l" in row else row.get("low")),
-                "close": close,
-            }
+            _ohlc_point(
+                date,
+                _num(row.get("o") if "o" in row else row.get("open")),
+                _num(row.get("h") if "h" in row else row.get("high")),
+                _num(row.get("l") if "l" in row else row.get("low")),
+                close,
+            )
         )
     return out[-limit:]
 
@@ -164,15 +173,7 @@ def _from_oilprice(blend_id: str, limit: int) -> list[dict[str, Any]]:
         prev: float | None = None
         for date, close in closes:
             open_px = prev if prev is not None else close
-            out.append(
-                {
-                    "date": date,
-                    "open": open_px,
-                    "high": max(open_px, close),
-                    "low": min(open_px, close),
-                    "close": close,
-                }
-            )
+            out.append(_ohlc_point(date, open_px, max(open_px, close), min(open_px, close), close))
             prev = close
         points = out[-limit:]
         if len(points) >= 8:
@@ -183,11 +184,11 @@ def _from_oilprice(blend_id: str, limit: int) -> list[dict[str, Any]]:
 def _fetch_one(spec: dict[str, str], limit: int) -> dict[str, Any]:
     oid = spec["id"]
     try:
-        if oid in _GLOBAL_KLINE:
-            points = _from_sina_global(_GLOBAL_KLINE[oid], limit)
-            return {"points": points, "source": "sina", "source_label": "新浪财经"}
         if oid in _INNER_KLINE:
             points = _from_sina_inner(_INNER_KLINE[oid], limit)
+            return {"points": points, "source": "sina", "source_label": "新浪财经"}
+        if oid in _GLOBAL_KLINE:
+            points = _from_sina_global(_GLOBAL_KLINE[oid], limit)
             return {"points": points, "source": "sina", "source_label": "新浪财经"}
         if spec.get("source") == "oilprice" and spec.get("blend_id"):
             points = _from_oilprice(spec["blend_id"], limit)

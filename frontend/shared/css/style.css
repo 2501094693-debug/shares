@@ -11526,6 +11526,22 @@ button.shares-join-node.is-active,
 /* —— 全球市场 · 地图（Google，不可用时回退高德） —— */
 body.app-shell.world-page-root {
   margin: 0;
+  /* 与个股行情「走势」卡同比例，整体缩小以免弹出时出现滚动条 */
+  --company-quotes-inner: calc(100vw - var(--rail-w) - 24px);
+  --company-hero-w: clamp(280px, calc(var(--company-quotes-inner) * 0.34), 380px);
+  --company-kline-w: calc((var(--company-quotes-inner) - var(--company-hero-w) - 20px) * 1.2 / 2.2);
+  --company-kline-h: calc(100dvh - 110px);
+  --world-pop-scale: 0.82;
+  --world-pop-max-h: calc(100dvh - 128px);
+  --world-pop-max-w: calc(100vw - 48px);
+  --world-card-w: min(
+    calc(var(--company-kline-w) * var(--world-pop-scale)),
+    var(--world-pop-max-w),
+    calc(var(--world-pop-max-h) * var(--company-kline-w) / var(--company-kline-h))
+  );
+  --world-card-h: calc(var(--world-card-w) * var(--company-kline-h) / var(--company-kline-w));
+  --world-card-ratio: 360 / 340;
+  --world-list-pad-x: 10px;
 }
 
 body.app-shell.world-page-root .app-rail {
@@ -11578,16 +11594,44 @@ body.app-shell.world-page-root .app-stage {
   filter: grayscale(0.4);
 }
 
+.world-marker-pin {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.world-marker-pin--index {
+  background: #6ea8ff;
+}
+
+.world-marker-pin--oil {
+  background: #e8a848;
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
+.world-marker-pin.is-active {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
 .world-marker-label {
   pointer-events: auto;
-  width: 158px;
+  width: 188px;
   padding: 0;
   background: transparent;
   border: none;
-  cursor: pointer;
+  cursor: default;
   filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.35));
   display: flex;
   justify-content: center;
+}
+
+.world-marker-label.is-link {
+  cursor: pointer;
 }
 
 .world-card {
@@ -11617,23 +11661,86 @@ body.app-shell.world-page-root .app-stage {
 
 .world-marker-label:hover .world-card,
 .world-marker-label.is-active .world-card {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   transform: translateY(-2px);
 }
 
+.world-card-tag {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+}
+
+.world-card-index {
+  border-color: rgba(110, 168, 255, 0.28);
+  background: linear-gradient(160deg, rgba(18, 32, 52, 0.94), rgba(8, 12, 20, 0.92));
+  box-shadow: inset 3px 0 0 0 rgba(110, 168, 255, 0.7);
+}
+
+.world-card-index .world-card-tag {
+  color: #d7e8ff;
+  background: rgba(110, 168, 255, 0.22);
+}
+
+.world-card-index .world-card-kicker {
+  color: #9ec4ff;
+}
+
+.world-card-index::after {
+  border-right-color: rgba(110, 168, 255, 0.28);
+  border-bottom-color: rgba(110, 168, 255, 0.28);
+}
+
+.world-marker-label--index:hover .world-card-index,
+.world-marker-label--index.is-active .world-card-index {
+  border-color: rgba(110, 168, 255, 0.55);
+}
+
 .world-card-oil {
-  width: 132px;
+  width: 168px;
   padding: 7px 9px 9px;
+  border-radius: 4px 12px 12px 4px;
+  border-color: rgba(232, 168, 72, 0.32);
+  background: linear-gradient(160deg, rgba(42, 28, 12, 0.94), rgba(14, 10, 6, 0.92));
+  box-shadow: inset 3px 0 0 0 rgba(232, 168, 72, 0.75);
+}
+
+.world-card-oil .world-card-tag {
+  color: #fff1d6;
+  background: rgba(232, 168, 72, 0.28);
+}
+
+.world-card-oil .world-card-kicker {
+  color: #e8a848;
+}
+
+.world-card-oil::after {
+  border-right-color: rgba(232, 168, 72, 0.32);
+  border-bottom-color: rgba(232, 168, 72, 0.32);
+}
+
+.world-marker-label--oil:hover .world-card-oil,
+.world-marker-label--oil.is-active .world-card-oil {
+  border-color: rgba(232, 168, 72, 0.6);
 }
 
 .world-card-kicker {
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
   font-family: var(--display);
   font-size: 0.68rem;
   letter-spacing: 0.04em;
   color: var(--ink);
+}
+
+.world-card-kicker .muted {
+  margin-left: auto;
 }
 
 .world-card-name {
@@ -11646,8 +11753,8 @@ body.app-shell.world-page-root .app-stage {
 }
 
 .world-card--stack {
-  min-width: 148px;
-  max-width: 200px;
+  min-width: 178px;
+  max-width: 240px;
 }
 
 .world-card-list {
@@ -11665,7 +11772,7 @@ body.app-shell.world-page-root .app-stage {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
 
 .world-card-px {
@@ -11675,10 +11782,19 @@ body.app-shell.world-page-root .app-stage {
   color: var(--ink);
 }
 
+.world-card-date {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--muted);
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+
 .world-card em {
   font-style: normal;
   font-family: var(--mono);
   font-size: 0.68rem;
+  flex-shrink: 0;
 }
 
 .world-card em[data-tone="up"],
@@ -11698,82 +11814,127 @@ body.app-shell.world-page-root .app-stage {
 }
 
 .world-chart-pop {
-  position: absolute;
+  position: fixed;
   left: 50%;
-  top: 16px;
+  top: 50%;
   bottom: auto;
   right: auto;
-  transform: translateX(-50%);
-  z-index: 14;
-  width: min(380px, calc(100% - 32px));
-  padding: 14px 16px 16px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  transform: translate(-50%, -50%);
+  z-index: 40;
+  width: var(--world-card-w);
+  height: auto;
+  max-height: calc(100dvh - 24px);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.world-chart-pop--card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  max-height: calc(100dvh - 24px);
+  overflow: hidden;
+}
+
+.world-pop-card-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--world-card-w);
+  height: var(--world-card-h);
+  max-width: var(--world-pop-max-w);
+  max-height: var(--world-pop-max-h);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 悬浮走势卡 = 个股行情 K 线卡同尺寸 */
+.world-chart-pop--card .world-index-card.screen-card {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  aspect-ratio: auto;
+  box-shadow: var(--shadow);
   background: rgba(8, 12, 20, 0.94);
   backdrop-filter: blur(14px);
-  box-shadow: var(--shadow);
 }
 
-.world-pop-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
+.world-chart-pop--card .world-index-card .chart-card.chart-card--kline {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
 }
 
-.world-pop-kicker {
-  margin: 0 0 2px;
-  font-size: 0.68rem;
-  color: var(--muted);
+.world-chart-pop--card .world-index-card .chart-card__stage,
+.world-chart-pop--card .world-index-card .chart-canvas-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
 }
 
-.world-pop-head h2 {
-  margin: 0;
-  font-family: var(--display);
-  font-size: 1.05rem;
+.world-chart-pop--card .world-index-card .chart-canvas-wrap canvas {
+  width: 100% !important;
+  height: 100% !important;
 }
 
-.world-pop-close {
+.world-pop-card-wrap .world-pop-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  width: 24px;
+  height: 24px;
   border: none;
+  border-radius: 6px;
   background: transparent;
   color: var(--muted);
-  font-size: 1.2rem;
+  opacity: 0.35;
+  font-size: 1rem;
+  font-weight: 300;
   line-height: 1;
   cursor: pointer;
-  padding: 0 2px;
+  padding: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
-.world-pop-hero {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin: 10px 0 8px;
+.world-pop-card-wrap:hover .world-pop-close,
+.world-pop-card-wrap .world-pop-close:focus-visible {
+  opacity: 0.75;
 }
 
-.world-pop-hero strong {
-  font-family: var(--mono);
-  font-size: 1.35rem;
+.world-pop-card-wrap .world-pop-close:hover,
+.world-pop-card-wrap .world-pop-close:focus-visible {
+  opacity: 1;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
 }
 
-.world-pop-hero em {
-  font-style: normal;
-  font-family: var(--mono);
+/* 头部右侧给关闭按钮留位，避免盖住涨跌幅 */
+.world-chart-pop--card .world-index-card .screen-card-head {
+  padding-right: 34px;
 }
 
-.world-pop-chart .world-spark {
-  height: 110px;
-}
-
-.world-pop-meta {
-  margin: 6px 0 0;
-  font-size: 0.7rem;
-}
-
-.world-pop-switch {
+.world-chart-pop .world-pop-switch {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(8, 12, 20, 0.92);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow);
 }
 
 .world-pop-tab {
@@ -11794,15 +11955,46 @@ body.app-shell.world-page-root .app-stage {
 
 .world-pop-enter {
   display: inline-flex;
-  margin-top: 12px;
+  justify-content: center;
   text-decoration: none;
+  width: 100%;
 }
 
 body.app-shell.world-page-root .app-stage.world-stage {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: 0;
+  display: block;
+  position: relative;
+}
+
+body.app-shell.world-page-root .world-map-wrap {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+body.app-shell.world-page-root .world-map-status {
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+body.app-shell.world-page-root .world-map-status[data-state="live"] {
+  color: var(--accent);
+}
+
+body.app-shell.world-page-root .world-map-status[data-state="error"] {
+  color: var(--down);
+}
+
+body.app-shell.world-page-root .world-side {
+  display: none !important;
 }
 
 .world-side {
@@ -11810,10 +12002,10 @@ body.app-shell.world-page-root .app-stage.world-stage {
   z-index: 8;
   display: flex;
   flex-direction: column;
-  flex: 0 0 min(360px, 30vw);
-  width: min(360px, 30vw);
-  min-width: 280px;
-  max-width: 400px;
+  flex: 0 0 33.333%;
+  width: 33.333%;
+  min-width: 0;
+  max-width: none;
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -11983,8 +12175,10 @@ body.app-shell.world-page-root .app-stage.world-stage {
   width: 100%;
   min-width: 0;
   max-width: none;
-  min-height: 280px;
+  /* 宽随侧栏，高按统一比例（与悬浮卡一致） */
+  aspect-ratio: var(--world-card-ratio);
   height: auto;
+  min-height: 0;
   max-height: none;
   cursor: default;
   scroll-snap-align: none;
@@ -12022,9 +12216,9 @@ body.app-shell.world-page-root .app-stage.world-stage {
 }
 
 .world-index-card .chart-card.chart-card--kline {
-  flex: 0 0 auto;
-  min-height: 200px;
-  height: 220px;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
 }
 
 .world-index-card .chart-card--kline .chart-card__meta {
@@ -12058,11 +12252,19 @@ body.app-shell.world-page-root .app-stage.world-stage {
   inset: 0;
 }
 
-body.app-shell.world-page-root .world-view-toggle {
+body.app-shell.world-page-root .world-map-controls {
   position: absolute;
   top: 14px;
   right: 14px;
   z-index: 12;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.world-map-controls .world-view-toggle {
   background: var(--bg-panel);
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow);
@@ -12075,7 +12277,8 @@ body.app-shell.world-page-root .world-view-toggle {
   overflow: hidden;
 }
 
-.world-view-btn {
+.world-view-btn,
+.world-layer-btn {
   padding: 4px 10px;
   font-size: 0.72rem;
   border: none;
@@ -12083,34 +12286,56 @@ body.app-shell.world-page-root .world-view-toggle {
   min-width: 44px;
 }
 
-.world-view-btn + .world-view-btn {
+.world-view-btn + .world-view-btn,
+.world-layer-btn + .world-layer-btn {
   border-left: 1px solid var(--line);
 }
 
-.world-view-btn.is-active {
+.world-view-btn.is-active,
+.world-layer-btn.is-active {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.world-layer-btn[data-layer="indices"].is-active {
+  background: rgba(110, 168, 255, 0.18);
+  color: #9ec4ff;
+}
+
+.world-layer-btn[data-layer="oil"].is-active {
+  background: rgba(232, 168, 72, 0.18);
+  color: #e8a848;
 }
 
 .world-map-wrap .world-chart-pop {
   left: 50%;
   right: auto;
-  top: 16px;
+  top: 50%;
   bottom: auto;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
+  width: var(--world-card-w);
+  height: auto;
+  max-height: calc(100vh - 24px);
 }
 
 @media (max-width: 1100px) {
   .world-side {
-    flex-basis: min(300px, 28vw);
-    width: min(300px, 28vw);
-    min-width: 240px;
+    flex: 0 0 33.333%;
+    width: 33.333%;
+    min-width: 0;
+    max-width: none;
   }
 }
 
 @media (max-width: 900px) {
+  body.app-shell.world-page-root {
+    --world-pop-scale: 0.9;
+    --world-pop-max-h: calc(100dvh - 96px);
+    --world-pop-max-w: calc(100vw - 32px);
+  }
+
   body.app-shell.world-page-root .app-stage.world-stage {
-    flex-direction: column;
+    display: block;
   }
 
   .world-side {
@@ -12172,28 +12397,39 @@ body.app-shell.world-page-root .world-view-toggle {
   }
 
   .world-index-card.screen-card {
-    min-height: 250px;
+    /* 移动端同样按比例随宽度变高 */
+    min-height: 0;
   }
 
   .world-index-card .chart-card.chart-card--kline {
-    height: 190px;
-    min-height: 160px;
+    height: auto;
+    min-height: 0;
   }
 
   .world-chart-pop {
     left: 50%;
     right: auto;
-    top: 10px;
+    top: 50%;
     bottom: auto;
-    transform: translateX(-50%);
-    width: min(380px, calc(100% - 16px));
+    transform: translate(-50%, -50%);
+    width: var(--world-card-w);
+    height: auto;
+    max-height: calc(100dvh - 16px);
+    overflow: hidden;
+  }
+
+  .world-pop-card-wrap {
+    width: var(--world-card-w);
+    height: var(--world-card-h);
+    max-width: var(--world-pop-max-w);
+    max-height: var(--world-pop-max-h);
   }
 
   .world-card-oil {
-    width: 120px;
+    width: 156px;
   }
 
-  body.app-shell.world-page-root .world-view-toggle {
+  body.app-shell.world-page-root .world-map-controls {
     top: 10px;
     right: 10px;
   }
