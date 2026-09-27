@@ -44,6 +44,16 @@ const MARKER_OFFSET = {
   "oil:oman": [80, 56],
   "oil:shanghai": [130, 56],
   "oil:urals": [-88, -40],
+  "bond:us": [96, 48],
+  "bond:eu": [-104, 44],
+  "bond:uk": [48, 96],
+  "bond:de": [-48, 104],
+  "bond:fr": [108, 28],
+  "bond:jp": [-100, 56],
+  "bond:kr": [92, 52],
+  "bond:cn": [56, -112],
+  "bond:hk": [-96, -52],
+  "bond:in": [84, 56],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -55,14 +65,18 @@ const state = {
   historySource: {},
   oilHistory: {},
   oilHistorySource: {},
-  /** @type {"all"|"indices"|"oil"} */
+  bondHistory: {},
+  bondHistorySource: {},
+  /** @type {"all"|"indices"|"oil"|"bonds"} */
   layerMode: "all",
-  layers: { indices: true, oil: true },
+  layers: { indices: true, oil: true, bonds: true },
   markerDefs: [],
   markers2d: [],
   selectedId: null,
   chartCode: null,
   oilCode: null,
+  /** @type {string|null} region:tenor，如 us:10y */
+  bondKey: null,
   pollTimer: 0,
 };
 
@@ -151,6 +165,103 @@ function oilQuoteDate(row) {
     fmtQuoteDate([row?.quote_date, row?.quote_time].filter(Boolean).join(" ")) ||
     "—"
   );
+}
+
+function fmtYield(value) {
+  if (value == null || value === "") return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return `${n.toFixed(3)}%`;
+}
+
+/** 收益率变动（百分点，非相对涨跌幅）。 */
+function fmtYieldChg(value) {
+  if (value == null || value === "") return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return `${n > 0 ? "+" : ""}${n.toFixed(3)}`;
+}
+
+function bondItems() {
+  return state.overview?.bonds?.items || [];
+}
+
+function findBondRegion(region) {
+  return bondItems().find((row) => row.region === region) || null;
+}
+
+/** 日 K 按日期升序，供 OrbitKline 使用。 */
+function normalizeBondHistory(points) {
+  const list = Array.isArray(points) ? points.slice() : [];
+  if (list.length < 2) return list;
+  const a = String(list[0]?.date || "");
+  const b = String(list[list.length - 1]?.date || "");
+  if (a && b && a > b) list.reverse();
+  return list;
+}
+
+function bondHistoryKey(region, tenorId) {
+  return `${region}:${tenorId}`;
+}
+
+function bondHistoryPoints(region, tenorId) {
+  return state.bondHistory?.[bondHistoryKey(region, tenorId)] || [];
+}
+
+function pickBondSeries(regionRow, tenorId) {
+  const series = regionRow?.series || [];
+  if (!series.length) return null;
+  if (tenorId) {
+    const hit = series.find((s) => s.id === tenorId);
+    if (hit) return hit;
+  }
+  return series.find((s) => s.id === "10y") || series[0];
+}
+
+/** 从最新一根与前一根推报价；history 可能为新→旧或旧→新。 */
+function bondQuote(series) {
+  const history = Array.isArray(series?.history) ? series.history : [];
+  const latest = series?.latest && Object.keys(series.latest).length ? series.latest : null;
+  let newest = latest;
+  let prev = null;
+  if (history.length) {
+    const first = history[0];
+    const last = history[history.length - 1];
+    const newestFirst =
+      !newest?.date ||
+      String(first?.date || "") === String(newest.date) ||
+      (String(first?.date || "") &&
+        String(last?.date || "") &&
+        String(first.date) >= String(last.date));
+    if (newestFirst) {
+      newest = newest || first;
+      prev = history[1] || null;
+    } else {
+      newest = newest || last;
+      prev = history.length >= 2 ? history[history.length - 2] : null;
+    }
+  }
+  const close = newest?.close ?? null;
+  const prevClose = prev?.close ?? null;
+  let change = null;
+  const c = Number(close);
+  const p = Number(prevClose);
+  if (Number.isFinite(c) && Number.isFinite(p)) change = c - p;
+  return {
+    close,
+    change,
+    date: newest?.date || "",
+    open: newest?.open ?? null,
+    high: newest?.high ?? null,
+    low: newest?.low ?? null,
+  };
+}
+
+function bondQuoteDate(region, series) {
+  const fromK = lastKlineDate(bondHistoryPoints(region, series?.id));
+  if (fromK) return fromK;
+  const q = bondQuote(series);
+  return fmtQuoteDate(q.date) || "—";
 }
 
 function tone(value) {
@@ -663,6 +774,26 @@ function markerLabelHtml(marker) {
       </div>
     `;
   }
+  if (marker.category === "bonds") {
+    const regionRow = marker.data.bond || {};
+    const series = pickBondSeries(regionRow, marker.data.tenorId);
+    const q = bondQuote(series);
+    return `
+      <div class="world-card world-card-bond">
+        <div class="world-card-kicker">
+          <span class="world-card-tag">国债</span>
+          <span>${esc(regionRow.name || marker.title)}</span>
+          <span class="muted">${esc(marker.city || "")}</span>
+        </div>
+        <div class="world-card-name">${esc(series?.name || "10年期国债")}</div>
+        <div class="world-card-row">
+          <strong class="world-card-px">${fmtYield(q.close)}</strong>
+          <em data-tone="${tone(q.change)}">${fmtYieldChg(q.change)}</em>
+          <span class="world-card-date">${esc(bondQuoteDate(regionRow.region || marker.data.region, series))}</span>
+        </div>
+      </div>
+    `;
+  }
   const indices = marker.data.indices || [];
   const multi = indices.length > 1;
   const single = indices[0];
@@ -691,7 +822,8 @@ function markerLabelHtml(marker) {
 function createMarker2d(marker) {
   if (!mapRuntime.map) return;
 
-  const kind = marker.category === "oil" ? "oil" : "index";
+  const kind =
+    marker.category === "oil" ? "oil" : marker.category === "bonds" ? "bond" : "index";
   const pos = toAmapPos(marker.lat, marker.lng);
 
   // 钉点钉在真实经纬度，不参与卡片避让偏移
@@ -740,11 +872,12 @@ function groupIndicesByRegion(indices) {
 }
 
 function applyLayerMode(mode) {
-  const next = mode === "indices" || mode === "oil" ? mode : "all";
+  const next = mode === "indices" || mode === "oil" || mode === "bonds" ? mode : "all";
   state.layerMode = next;
   state.layers = {
     indices: next === "all" || next === "indices",
     oil: next === "all" || next === "oil",
+    bonds: next === "all" || next === "bonds",
   };
 }
 
@@ -786,6 +919,27 @@ function buildMarkerDefs() {
         city: coord.city,
         title: item.name,
         data: { oil: item },
+      });
+    }
+  }
+
+  if (state.layers.bonds) {
+    for (const item of overview.bonds?.items || []) {
+      const region = item.region;
+      const coord = REGION_COORDS[region];
+      const series = item.series || [];
+      if (!coord || !series.length) continue;
+      const preferred =
+        (state.bondKey?.startsWith(`${region}:`) && state.bondKey.slice(region.length + 1)) ||
+        "10y";
+      defs.push({
+        id: `bond:${region}`,
+        category: "bonds",
+        lat: coord.lat,
+        lng: coord.lng,
+        city: coord.city,
+        title: item.name || region,
+        data: { region, bond: item, tenorId: preferred },
       });
     }
   }
@@ -974,6 +1128,47 @@ function renderIndexList({ force = false } = {}) {
 
 function oilCity(id) {
   return OIL_COORDS[id]?.city || "";
+}
+
+function bondCardHtml(regionRow, series) {
+  const region = regionRow?.region || "";
+  const tenorId = series?.id || "";
+  const key = bondHistoryKey(region, tenorId);
+  const active = key === state.bondKey;
+  const q = bondQuote(series);
+  const city = REGION_COORDS[region]?.city || "";
+  return `<article class="screen-card world-index-card world-bond-card${active ? " is-active" : ""}" data-bond-key="${esc(key)}" data-bond-region="${esc(region)}" data-bond-tenor="${esc(tenorId)}" role="option" aria-selected="${active ? "true" : "false"}" tabindex="0">
+    <button type="button" class="screen-card-head" data-bond-key="${esc(key)}" title="定位到地图">
+      <div class="screen-card-name">
+        <strong>${esc(series?.name || tenorId)}</strong>
+        <span>${esc(series?.symbol || tenorId.toUpperCase())}</span>
+        <em>${esc(regionRow?.name || region)}${city ? ` · ${esc(city)}` : ""}</em>
+      </div>
+      <div class="screen-card-score">
+        <b data-tone="${tone(q.change)}">${fmtYieldChg(q.change)}</b>
+        <span>${fmtYield(q.close)}</span>
+      </div>
+    </button>
+    ${klineBlock(`bond:${key}`)}
+    <footer class="screen-card-meta">
+      <span>开 <b>${fmtYield(q.open)}</b></span>
+      <span>高 <b>${fmtYield(q.high)}</b></span>
+      <span>低 <b>${fmtYield(q.low)}</b></span>
+    </footer>
+  </article>`;
+}
+
+function mountBondKline(card) {
+  const klineEl = card.querySelector(".chart-card--kline");
+  const region = card.dataset.bondRegion;
+  const tenorId = card.dataset.bondTenor;
+  if (!klineEl || !region || !tenorId || !window.OrbitKline) return;
+  const points = bondHistoryPoints(region, tenorId);
+  window.OrbitKline.mount(klineEl, {
+    items: points,
+    meta: klineMetaText(points, state.bondHistorySource?.[bondHistoryKey(region, tenorId)]),
+    showVolume: false,
+  });
 }
 
 function oilCardHtml(row) {
@@ -1199,11 +1394,23 @@ function ensureIndexSelection() {
   }
 }
 
+function ensureBondSelection() {
+  if (state.bondKey) {
+    const [region, tenorId] = state.bondKey.split(":");
+    const row = findBondRegion(region);
+    if (row && pickBondSeries(row, tenorId)) return;
+  }
+  const first = bondItems()[0];
+  const series = pickBondSeries(first, "10y");
+  state.bondKey = first && series ? bondHistoryKey(first.region, series.id) : null;
+}
+
 function rebuildMarkers() {
   buildMarkerDefs();
   syncMarkers2d();
   ensureIndexSelection();
   ensureOilSelection();
+  ensureBondSelection();
   highlightMarkers();
 }
 
@@ -1258,6 +1465,60 @@ function renderChartPop(marker) {
     pop.querySelector("[data-close]")?.addEventListener("click", (e) => {
       e.stopPropagation();
       selectMarker(null, false);
+    });
+    return;
+  }
+
+  if (marker.category === "bonds") {
+    const region = marker.data.region;
+    const regionRow = findBondRegion(region) || marker.data.bond || {};
+    const seriesList = regionRow.series || [];
+    if (!seriesList.length) {
+      closeChartPop();
+      return;
+    }
+    const preferred =
+      (state.bondKey?.startsWith(`${region}:`) && state.bondKey.slice(region.length + 1)) ||
+      marker.data.tenorId ||
+      "10y";
+    const active = pickBondSeries(regionRow, preferred);
+    state.bondKey = bondHistoryKey(region, active.id);
+    pop.innerHTML = `
+      ${
+        seriesList.length > 1
+          ? `<div class="world-pop-switch" role="tablist">
+        ${seriesList
+          .map(
+            (s) => `
+          <button type="button" class="world-pop-tab${s.id === active.id ? " is-active" : ""}" data-bond-tenor="${esc(s.id)}">
+            ${esc(s.name)}
+          </button>`,
+          )
+          .join("")}
+      </div>`
+          : ""
+      }
+      <div class="world-pop-card-wrap">
+        ${closeBtn}
+        ${bondCardHtml(regionRow, active)}
+      </div>
+    `;
+    const card = pop.querySelector(".world-bond-card");
+    const remount = () => {
+      if (card) mountBondKline(card);
+    };
+    remount();
+    requestAnimationFrame(() => requestAnimationFrame(remount));
+    pop.querySelector("[data-close]")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectMarker(null, false);
+    });
+    pop.querySelectorAll(".world-pop-tab[data-bond-tenor]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        state.bondKey = bondHistoryKey(region, btn.dataset.bondTenor);
+        renderChartPop(marker);
+      });
     });
     return;
   }
@@ -1331,6 +1592,26 @@ function selectMarker(id, focus = true) {
     state.selectedId = id;
     state.oilCode = marker.data.oil?.id || id.replace(/^oil:/, "");
     syncOilCardActive();
+    highlightMarkers();
+    renderChartPop(marker);
+    if (focus && mapRuntime.map) {
+      mapRuntime.map.panTo(toAmapPos(marker.lat, marker.lng));
+      if (mapRuntime.map.getZoom() < 3) mapRuntime.map.setZoom(3);
+    }
+    return;
+  }
+
+  if (marker.category === "bonds") {
+    const region = marker.data.region || id.replace(/^bond:/, "");
+    const regionRow = findBondRegion(region) || marker.data.bond;
+    const series = pickBondSeries(
+      regionRow,
+      (state.bondKey?.startsWith(`${region}:`) && state.bondKey.slice(region.length + 1)) ||
+        marker.data.tenorId ||
+        "10y",
+    );
+    state.selectedId = `bond:${region}`;
+    if (series) state.bondKey = bondHistoryKey(region, series.id);
     highlightMarkers();
     renderChartPop(marker);
     if (focus && mapRuntime.map) {
@@ -1417,7 +1698,7 @@ const LAYER_MODE_KEY = "orbit-world-layer-mode";
 function readLayerMode() {
   try {
     const raw = localStorage.getItem(LAYER_MODE_KEY) || "";
-    if (raw === "indices" || raw === "oil" || raw === "all") return raw;
+    if (raw === "indices" || raw === "oil" || raw === "bonds" || raw === "all") return raw;
   } catch {
     /* ignore */
   }
@@ -1481,19 +1762,47 @@ function apiUrl(path, params = {}) {
   return `${url.pathname}${url.search}`;
 }
 
+function ingestBondPayload(bonds) {
+  const items = bonds?.items || [];
+  const history = {};
+  const historySource = {};
+  for (const regionRow of items) {
+    const region = regionRow.region;
+    for (const series of regionRow.series || []) {
+      const key = bondHistoryKey(region, series.id);
+      history[key] = normalizeBondHistory(series.history || []);
+      historySource[key] = "新浪";
+      // 弹窗/卡片用升序 history，与 K 线一致
+      series.history = history[key];
+      if (history[key].length) {
+        series.latest = history[key][history[key].length - 1];
+      }
+    }
+  }
+  state.bondHistory = history;
+  state.bondHistorySource = historySource;
+  return { items };
+}
+
 async function loadOverview(force = false, { poll = false } = {}) {
   setStatus("同步中…", "busy");
   setOilStatus("同步中…", "busy");
   const refresh = force ? { refresh: "1" } : {};
   const httpOpts = poll ? { bypassCache: true, writeCache: true } : {};
   try {
-    const [indices, oil] = await Promise.all([
+    const [indices, oil, bonds] = await Promise.all([
       fetchOptional(apiUrl("/api/global/indices", refresh), 30_000, httpOpts),
       fetchOptional(apiUrl("/api/global/oil", refresh), 30_000, httpOpts),
+      fetchOptional(
+        apiUrl("/api/global/bonds", { ...refresh, limit: HISTORY_LIMIT }),
+        60_000,
+        httpOpts,
+      ),
     ]);
     state.overview = {
       indices: indices || { items: [] },
       oil: oil || { items: [] },
+      bonds: ingestBondPayload(bonds),
     };
     rebuildMarkers();
 
@@ -1598,9 +1907,12 @@ function bindSideFold() {
 function remountVisibleWorldKlines() {
   document.querySelectorAll("#worldIndexList .world-index-card").forEach((el) => mountIndexKline(el));
   document.querySelectorAll("#worldOilList .world-oil-card").forEach((el) => mountOilKline(el));
-  const popCard = $("worldChartPop")?.querySelector(".world-index-card, .world-oil-card");
+  const popCard = $("worldChartPop")?.querySelector(
+    ".world-index-card, .world-oil-card, .world-bond-card",
+  );
   if (popCard) {
     if (popCard.classList.contains("world-oil-card")) mountOilKline(popCard);
+    else if (popCard.classList.contains("world-bond-card")) mountBondKline(popCard);
     else mountIndexKline(popCard);
   }
 }

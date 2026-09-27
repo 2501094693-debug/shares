@@ -11614,6 +11614,11 @@ body.app-shell.world-page-root .app-stage {
   transform: rotate(45deg);
 }
 
+.world-marker-pin--bond {
+  background: #4ec9a0;
+  border-radius: 2px;
+}
+
 .world-marker-pin.is-active {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 2px 8px rgba(0, 0, 0, 0.45);
 }
@@ -11725,6 +11730,32 @@ body.app-shell.world-page-root .app-stage {
 .world-marker-label--oil:hover .world-card-oil,
 .world-marker-label--oil.is-active .world-card-oil {
   border-color: rgba(232, 168, 72, 0.6);
+}
+
+.world-card-bond {
+  width: 176px;
+  border-color: rgba(78, 201, 160, 0.3);
+  background: linear-gradient(160deg, rgba(12, 36, 28, 0.94), rgba(8, 14, 12, 0.92));
+  box-shadow: inset 3px 0 0 0 rgba(78, 201, 160, 0.75);
+}
+
+.world-card-bond .world-card-tag {
+  color: #d8fff0;
+  background: rgba(78, 201, 160, 0.24);
+}
+
+.world-card-bond .world-card-kicker {
+  color: #4ec9a0;
+}
+
+.world-card-bond::after {
+  border-right-color: rgba(78, 201, 160, 0.3);
+  border-bottom-color: rgba(78, 201, 160, 0.3);
+}
+
+.world-marker-label--bond:hover .world-card-bond,
+.world-marker-label--bond.is-active .world-card-bond {
+  border-color: rgba(78, 201, 160, 0.58);
 }
 
 .world-card-kicker {
@@ -12307,6 +12338,11 @@ body.app-shell.world-page-root .world-map-controls {
   color: #e8a848;
 }
 
+.world-layer-btn[data-layer="bonds"].is-active {
+  background: rgba(78, 201, 160, 0.18);
+  color: #4ec9a0;
+}
+
 .world-map-wrap .world-chart-pop {
   left: 50%;
   right: auto;
@@ -12427,6 +12463,10 @@ body.app-shell.world-page-root .world-map-controls {
 
   .world-card-oil {
     width: 156px;
+  }
+
+  .world-card-bond {
+    width: 160px;
   }
 
   body.app-shell.world-page-root .world-map-controls {

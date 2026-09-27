@@ -39,7 +39,7 @@
   };
 
   const NAV_URLS = {
-    world: ["/api/global/indices", "/api/global/oil"],
+    world: ["/api/global/indices", "/api/global/oil", "/api/global/bonds"],
     market: ["/api/market/tree?lite=1", "/api/market/tree"],
     shares: ["/api/market/shares?lite=1", "/api/market/shares"],
     steep: ["/api/market/steep?days=15&lite=1", "/api/market/steep?days=15"],

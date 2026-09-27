@@ -1,7 +1,0 @@
-DAX30 => v_hint="N";
-日经225指数 => v_hint="N";
-CAC40 => v_hint="jj~021539~\u534e\u5b89\u6cd5\u56fdCAC40ETF\u53d1\u8d77\u5f0f\u8054\u63a5(QDII)A~hafgcac40etffqsljqdiia~QDII^jj~021540~\u534e\u5b89\u6cd5\u56fdCAC40ETF\u53d1\u8d77\u5f0f\u8054\u63a5(QDII)C~hafgcac40etffqsljqdiic~QDII"
-KOSPI指数 => v_hint="N";
-斯托克50 => v_hint="us~fez.am~\u6b27\u6d32\u65af\u6258\u514b50etfspdr~ozstk50etfspdr~GP"
-SENSEX => v_hint="N";
-富时100 => v_hint="jj~539003~\u5efa\u4fe1\u5bcc\u65f6100\u6307\u6570(QDII)A~jxfs100zsqdiia~QDII^jj~008706~\u5efa\u4fe1\u5bcc\u65f6100\u6307\u6570(QDII)C~jxfs100zsqdiic~QDII^jj~008708~\u5efa\u4fe1\u5bcc\u65f6100\u6307\u6570(QDII)C\u7f8e\u5143\u73b0\u6c47~jxfs100zsqdiicmyxh~QDII^jj~008707~\u5efa\u4fe1\u5bcc\u65f6100\u6307\u6570(QDII)A\u7f8e\u5143\u73b0\u6c47~jxfs100zsqdiiamyxh~QDII^jj~023373~\u5efa\u4fe1\u5bcc\u65f6100\u6307\u6570(QDII)D~jxfs100zsqdiid~QDII"
