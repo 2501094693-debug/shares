@@ -612,3 +612,69 @@ def fetch_valuation_extra(code: str) -> dict[str, Any]:
 
     out.pop("_close_for_div", None)
     return out
+
+
+# ---------------------------------------------------------------------------
+# 批量获取实时行情（给涨跌停分析等页面用）
+# ---------------------------------------------------------------------------
+
+
+def fetch_realtime_quotes(codes: list[str]) -> dict[str, dict[str, Any]]:
+    """批量获取多只股票的实时行情。
+
+    返回 dict：key=代码，value=行情字段 dict
+    失败返回空 dict，不抛异常。
+    """
+    if not codes:
+        return {}
+
+    # 东财批量接口：一次请求获取多只股票
+    secids = [secid(c) for c in codes]
+    params = {
+        "fltt": "2",
+        "invt": "2",
+        "fields": "f43,f44,f45,f46,f47,f48,f50,f51,f52,f57,f58,f60,f170,f169",
+        "secids": ",".join(secids),
+        "ut": "fa5fd1943c7b386f172d6893dbfba10b",
+    }
+    headers = {"Referer": "https://quote.eastmoney.com/"}
+
+    result: dict[str, dict[str, Any]] = {}
+    try:
+        payload = get_json(
+            "https://push2delay.eastmoney.com/api/qt/ulist.np/get",
+            params=params,
+            headers=headers,
+            timeout=15,
+        ) or {}
+        data_list = payload.get("data") or []
+        if isinstance(data_list, dict):
+            data_list = [data_list]
+        for i, item in enumerate(data_list):
+            if i >= len(codes):
+                break
+            code = codes[i]
+            if not isinstance(item, dict):
+                continue
+            price = to_float(item.get("f43"))
+            prev = to_float(item.get("f60"))
+            change_amt = to_float(item.get("f169"))
+            change_pct = to_float(item.get("f170"))
+            result[code] = {
+                "price": fmt_price(price),
+                "prev_close": fmt_price(prev),
+                "change_amt": fmt_signed(change_amt),
+                "change_pct": fmt_pct(change_pct),
+                "open": fmt_price(to_float(item.get("f46"))),
+                "high": fmt_price(to_float(item.get("f44"))),
+                "low": fmt_price(to_float(item.get("f45"))),
+                "volume": fmt_volume_hands(to_float(item.get("f47"))),
+                "amount": fmt_yi_wan(to_float(item.get("f48"))),
+                "limit_up": fmt_price(to_float(item.get("f51"))),
+                "limit_down": fmt_price(to_float(item.get("f52"))),
+                "name": item.get("f58") or "",
+            }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("batch realtime quotes failed: %s", exc)
+
+    return result

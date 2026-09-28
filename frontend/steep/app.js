@@ -1,6 +1,7 @@
 (() => {
   const DAY_OPTIONS = [15, 30];
   const POLL_MS = 30000;
+  const LIVE_POLL_MS = 15000; // 实时行情轮询间隔
   const WEEK = "日一二三四五六";
   const VIEW_KEY = "steep-view";
 
@@ -16,7 +17,10 @@
     fetching: false,
     pendingLoad: null,
     pollTimer: 0,
+    liveQuoteTimer: 0,
+    liveQuoteStarted: false,
     syncing: false,
+    liveQuotes: {}, // 实时行情：key=code, value=quote数据
   };
 
   const $ = (id) => document.getElementById(id);
@@ -468,6 +472,11 @@
     renderSummary();
     renderTracks();
     applyRowFold();
+    startLiveQuotesPoll();
+    // render 后用已有实时数据刷新 DOM（下一帧等卡片渲染好）
+    if (Object.keys(state.liveQuotes || {}).length > 0) {
+      requestAnimationFrame(() => patchLiveQuotes());
+    }
   }
 
   function togglePane(dateRaw, kind) {
@@ -478,6 +487,10 @@
     if (state.open.has(key)) {
       const card = document.querySelector(`.steep-day[data-date="${dateRaw}"][data-kind="${kind}"]`);
       card?.scrollIntoView({ inline: "nearest", block: "nearest" });
+      // 展开后立即用已有实时数据刷新 DOM（下一帧等卡片渲染好）
+      if (Object.keys(state.liveQuotes || {}).length > 0) {
+        requestAnimationFrame(() => patchLiveQuotes());
+      }
     }
   }
 
@@ -677,6 +690,82 @@
     }
     const head = ev.target.closest(".steep-day-head");
     if (head) togglePane(head.dataset.date, head.dataset.kind);
+  }
+
+  function stopLiveQuotesPoll() {
+    if (state.liveQuoteTimer) {
+      clearTimeout(state.liveQuoteTimer);
+      state.liveQuoteTimer = 0;
+    }
+  }
+
+  function getAllCodes() {
+    const codes = new Set();
+    for (const day of state.items) {
+      for (const row of day.limit_up || []) {
+        if (row.code) codes.add(row.code);
+      }
+      for (const row of day.limit_down || []) {
+        if (row.code) codes.add(row.code);
+      }
+    }
+    return [...codes];
+  }
+
+  async function fetchLiveQuotes() {
+    const codes = getAllCodes();
+    if (!codes.length) {
+      state.liveQuoteTimer = setTimeout(fetchLiveQuotes, LIVE_POLL_MS);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/stocks/quotes?codes=${codes.join(",")}`);
+      const json = await res.json();
+      if (json.ok && json.data) {
+        state.liveQuotes = json.data;
+        patchLiveQuotes();
+      }
+    } catch (err) {
+      console.warn("[steep] 实时行情获取失败", err);
+    }
+    // 继续轮询
+    state.liveQuoteTimer = setTimeout(fetchLiveQuotes, LIVE_POLL_MS);
+  }
+
+  function patchLiveQuotes() {
+    // 更新卡片视图中的实时数据
+    const upTrack = $("upTrack");
+    const downTrack = $("downTrack");
+    for (const track of [upTrack, downTrack]) {
+      if (!track) continue;
+      track.querySelectorAll("article.is-stock[data-code]").forEach((card) => {
+        const code = card.dataset.code;
+        const quote = state.liveQuotes[code];
+        if (!quote) return;
+        const scoreDiv = card.querySelector(".screen-card-score");
+        if (!scoreDiv) return;
+        // 更新价格
+        const priceEl = scoreDiv.querySelector("span:last-child");
+        if (priceEl && quote.price) {
+          priceEl.textContent = quote.price;
+        }
+        // 更新涨跌幅（API 返回的 change_pct 已是 "10.00%" 格式字符串）
+        const chgEl = scoreDiv.querySelector("b[data-tone]");
+        if (chgEl && quote.change_pct) {
+          // 从 "10.00%" 格式中提取数值用于计算 tone
+          const n = parseFloat(quote.change_pct);
+          chgEl.textContent = quote.change_pct;
+          chgEl.dataset.tone = !Number.isFinite(n) || n === 0 ? "flat" : n > 0 ? "up" : "down";
+        }
+      });
+    }
+  }
+
+  function startLiveQuotesPoll() {
+    // 只启动一次，避免被 render() 反复重置 2 秒延迟
+    if (state.liveQuoteStarted) return;
+    state.liveQuoteStarted = true;
+    state.liveQuoteTimer = setTimeout(fetchLiveQuotes, 2000);
   }
 
   state.view = readView();

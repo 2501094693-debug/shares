@@ -1,5 +1,6 @@
 (() => {
   const POLL_MS = 500;
+  const LIVE_POLL_MS = 15000; // 实时行情轮询间隔
   const WEEK = "日一二三四五六";
 
   const state = {
@@ -13,7 +14,9 @@
     resultCount: 0,
     analyzedCount: 0,
     pollTimer: 0,
+    liveQuoteTimer: 0,
     fetching: false,
+    liveQuotes: {}, // 实时行情：key=code, value=quote数据
   };
 
   const $ = (id) => document.getElementById(id);
@@ -301,6 +304,8 @@
     renderDayRail();
     renderDayHead(selectedDay());
     renderCards();
+    // 渲染完成后启动实时行情轮询
+    startLiveQuotesPoll();
   }
 
   function applyData(data) {
@@ -404,6 +409,76 @@
   function openCompany(code) {
     if (!code) return;
     window.location.href = `/company.html?code=${encodeURIComponent(code)}&from=screen`;
+  }
+
+  // 实时行情相关
+  function stopLiveQuotesPoll() {
+    if (state.liveQuoteTimer) {
+      clearTimeout(state.liveQuoteTimer);
+      state.liveQuoteTimer = 0;
+    }
+  }
+
+  function getVisibleCodes() {
+    const items = resultItems();
+    return [...new Set(items.map((r) => r.code).filter(Boolean))];
+  }
+
+  async function fetchLiveQuotes() {
+    const codes = getVisibleCodes();
+    if (!codes.length) return;
+    try {
+      const res = await fetch(`/api/stocks/quotes?codes=${codes.join(",")}`);
+      const json = await res.json();
+      if (json.ok && json.data) {
+        state.liveQuotes = json.data;
+        patchLiveQuotes();
+      }
+    } catch (err) {
+      console.warn("[screen] 实时行情获取失败", err);
+    }
+    // 继续轮询
+    state.liveQuoteTimer = setTimeout(fetchLiveQuotes, LIVE_POLL_MS);
+  }
+
+  function patchLiveQuotes() {
+    const list = $("resultList");
+    if (!list) return;
+    list.querySelectorAll("article.is-stock[data-code]").forEach((card) => {
+      const code = card.dataset.code;
+      const quote = state.liveQuotes[code];
+      if (!quote) return;
+      // 更新价格和涨跌幅
+      const scoreDiv = card.querySelector(".screen-card-score");
+      if (scoreDiv) {
+        const priceEl = scoreDiv.querySelector("span:last-child");
+        const price = quote.price;
+        const changePct = quote.change_pct;
+        if (priceEl && price) {
+          priceEl.textContent = price;
+        }
+        // 在评分后面添加实时涨跌幅标签
+        if (changePct && !scoreDiv.querySelector(".live-change")) {
+          const changeEl = document.createElement("span");
+          changeEl.className = "live-change";
+          changeEl.dataset.tone = tone(parseFloat(changePct));
+          changeEl.textContent = changePct;
+          scoreDiv.appendChild(changeEl);
+        } else {
+          const changeEl = scoreDiv.querySelector(".live-change");
+          if (changeEl && changePct) {
+            changeEl.textContent = changePct;
+            changeEl.dataset.tone = tone(parseFloat(changePct));
+          }
+        }
+      }
+    });
+  }
+
+  function startLiveQuotesPoll() {
+    stopLiveQuotesPoll();
+    // 首次延迟获取，等卡片渲染完成
+    state.liveQuoteTimer = setTimeout(fetchLiveQuotes, 2000);
   }
 
   function bindEvents() {

@@ -42,8 +42,10 @@ from company.news.query import query_cninfo, query_exchange, query_platform, que
 from company.news.taxonomy.constants import ALL_SECTIONS, DEFAULT_SECTIONS
 from company.statistics.quote.derived.turnover_history import fetch_turnover_history
 from company.statistics.quote.fetch.pe_history import fetch_pe_history
+from company.statistics.quote.live import fetch_realtime_quotes
 from company.profile import get_stock_profile
 from core.api import err, ok
+from core.codes import normalize_code
 
 router = APIRouter()
 
@@ -628,3 +630,27 @@ def _emotion_tonghuashun(
         max_pages=max_pages,
         with_replies=with_replies,
     )
+
+
+@router.get("/api/stocks/quotes")
+def stocks_quotes(
+    codes: str = Query("", description="逗号分隔的股票代码列表，如 000001,600519"),
+):
+    """批量获取多只股票的实时行情（价格、涨跌幅、涨停价等）。
+
+    返回 dict：key=代码，value=行情字段。
+    """
+    if not codes:
+        return err("缺少参数 codes", 400)
+    code_list = [c.strip() for c in codes.split(",") if c.strip()]
+    if not code_list:
+        return err("codes 格式无效", 400)
+    if len(code_list) > 200:
+        return err("最多支持 200 只股票", 400)
+    try:
+        result = fetch_realtime_quotes(code_list)
+        return ok(result)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)

@@ -11340,6 +11340,27 @@ button.shares-join-node.is-active,
   font-size: 0.75rem;
 }
 
+/* 涨跌停分析页实时涨跌幅标签 */
+.screen-card-score .live-change {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.screen-card-score .live-change[data-tone="up"] {
+  color: var(--up);
+}
+
+.screen-card-score .live-change[data-tone="down"] {
+  color: var(--down);
+}
+
+.screen-card-score .live-change[data-tone="flat"] {
+  color: var(--muted);
+}
+
 .screen-card .chart-card.chart-card--kline {
   grid-column: auto;
   grid-row: auto;
@@ -11756,6 +11777,33 @@ body.app-shell.world-page-root .app-stage {
 .world-marker-label--bond:hover .world-card-bond,
 .world-marker-label--bond.is-active .world-card-bond {
   border-color: rgba(78, 201, 160, 0.58);
+}
+
+/* 央行利率卡片 */
+.world-card-rate {
+  width: 176px;
+  border-color: rgba(212, 175, 55, 0.3);
+  background: linear-gradient(160deg, rgba(36, 32, 12, 0.94), rgba(18, 14, 8, 0.92));
+  box-shadow: inset 3px 0 0 0 rgba(212, 175, 55, 0.75);
+}
+
+.world-card-rate .world-card-tag {
+  color: #fff4d4;
+  background: rgba(212, 175, 55, 0.24);
+}
+
+.world-card-rate .world-card-kicker {
+  color: #d4af37;
+}
+
+.world-card-rate::after {
+  border-right-color: rgba(212, 175, 55, 0.3);
+  border-bottom-color: rgba(212, 175, 55, 0.3);
+}
+
+.world-marker-label--rate:hover .world-card-rate,
+.world-marker-label--rate.is-active .world-card-rate {
+  border-color: rgba(212, 175, 55, 0.58);
 }
 
 .world-card-kicker {
@@ -12466,6 +12514,10 @@ body.app-shell.world-page-root .world-map-controls {
   }
 
   .world-card-bond {
+    width: 160px;
+  }
+
+  .world-card-rate {
     width: 160px;
   }
 

@@ -37,6 +37,7 @@ from company.statistics.quote.live.sources import (
     fetch_period_returns,
     fetch_price_extremes,
     fetch_realtime_quote,
+    fetch_realtime_quotes,
     fetch_tencent_quote,
     fetch_valuation_extra,
     map_push2,
