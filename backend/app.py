@@ -5,6 +5,7 @@
 - ``company``：单只股票的盘口、K 线、资讯、龙虎榜历史上榜
 - ``world``：全球主要股指、央行利率、国债收益率、原油期货
 - ``analysis``：研判（涨跌停分析 / 行业分析 / 个股分析）
+- ``mine``：自选股票分组管理
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ from world.api import router as world_router
 from analysis.api import router as screen_router
 from market.funds.otc_fund.api import router as otc_fund_router
 from market.funds.otc_fund.service import service as otc_fund_service
+from mine.api import router as mine_router
 
 ROOT = _BACKEND_DIR.parent
 FRONTEND = ROOT / "frontend"
@@ -201,6 +203,7 @@ app.include_router(otc_fund_router)
 app.include_router(futures_router)
 app.include_router(ai_router)
 app.include_router(screen_router)
+app.include_router(mine_router)
 
 
 @app.get("/api/health")
@@ -286,6 +289,24 @@ def steep_page():
 def js_steep():
     return FileResponse(
         FRONTEND / "steep" / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/mine")
+@app.get("/mine.html")
+def mine_page():
+    return FileResponse(
+        FRONTEND / "mine" / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/js/mine.js")
+def js_mine():
+    return FileResponse(
+        FRONTEND / "mine" / "app.js",
         media_type="application/javascript",
         headers={"Cache-Control": "no-store, max-age=0"},
     )

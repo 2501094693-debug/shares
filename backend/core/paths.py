@@ -22,8 +22,10 @@ TICKS_CACHE_DIR = CACHE_DIR / "ticks"
 STEEP_CACHE_DIR = CACHE_DIR / "steep"
 MARKET_HISTORY_CACHE_DIR = CACHE_DIR / "market_history"
 ANALYSIS_CACHE_DIR = CACHE_DIR / "analysis"
+MINE_CACHE_DIR = CACHE_DIR / "mine"
 
 TREE_CACHE = CACHE_DIR / "industry_tree.json"
+MINE_GROUPS_CACHE = MINE_CACHE_DIR / "groups.json"
 STOCK_INDEX_CACHE = CACHE_DIR / "stocks_index.json"
 CNINFO_ORG_MAP_CACHE = CACHE_DIR / "cninfo_org_map.json"
 STOCK_GEO_CACHE = CACHE_DIR / "stock_geo.json"
@@ -64,6 +66,7 @@ def ensure_cache_dirs() -> None:
     STEEP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     MARKET_HISTORY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     ANALYSIS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    MINE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def otc_fund_rank_cache_path(category_code: str, page: int, page_size: int) -> Path:

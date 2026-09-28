@@ -18,9 +18,9 @@
         <p id="worldStatus" class="world-map-status muted" data-state="">同步中…</p>
         <p id="worldOilStatus" class="world-map-status muted" hidden data-state="">同步中…</p>
         <div class="world-view-toggle" role="group" aria-label="地图图层">
-          <button type="button" class="btn ghost world-layer-btn is-active" data-layer="all" aria-pressed="true">全部</button>
+          <button type="button" class="btn ghost world-layer-btn" data-layer="all" aria-pressed="false">全部</button>
           <button type="button" class="btn ghost world-layer-btn" data-layer="indices" aria-pressed="false">指数</button>
-          <button type="button" class="btn ghost world-layer-btn" data-layer="oil" aria-pressed="false">原油</button>
+          <button type="button" class="btn ghost world-layer-btn is-active" data-layer="oil" aria-pressed="true">原油</button>
           <button type="button" class="btn ghost world-layer-btn" data-layer="bonds" aria-pressed="false">国债</button>
           <button type="button" class="btn ghost world-layer-btn" data-layer="rates" aria-pressed="false">利率</button>
         </div>
@@ -35,6 +35,6 @@
   <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
   <script src="/js/shared/orbit-prefetch.js?v=world-rates-20260928"></script>
   <script src="/js/shared/kline-draw.js?v=world-novol-20260927b"></script>
-  <script src="/js/world.js?v=world-rates-20260928"></script>
+  <script src="/js/world.js?v=world-oil-default-20260928"></script>
 </body>
 </html>

@@ -108,8 +108,8 @@ const state = {
   rateHistory: {},
   rateHistorySource: {},
   /** @type {"all"|"indices"|"oil"|"bonds"|"rates"} */
-  layerMode: "all",
-  layers: { indices: true, oil: true, bonds: true, rates: true },
+  layerMode: "oil",
+  layers: { indices: false, oil: true, bonds: false, rates: false },
   markerDefs: [],
   markers2d: [],
   selectedId: null,
@@ -1959,16 +1959,16 @@ function setViewMode(mode) {
   applyViewMode(next);
 }
 
-const LAYER_MODE_KEY = "orbit-world-layer-mode";
+const LAYER_MODE_KEY = "orbit-world-layer-mode-v2";
 
 function readLayerMode() {
   try {
     const raw = localStorage.getItem(LAYER_MODE_KEY) || "";
-    if (raw === "indices" || raw === "oil" || raw === "bonds" || raw === "all") return raw;
+    if (raw === "indices" || raw === "oil" || raw === "bonds" || raw === "rates" || raw === "all") return raw;
   } catch {
     /* ignore */
   }
-  return "all";
+  return "oil";
 }
 
 function writeLayerMode(mode) {

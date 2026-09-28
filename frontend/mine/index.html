@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="app-shell-root">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ORBIT · 我的</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css?v=mine-shares-cols-20260928" />
+</head>
+<body class="app-shell company-page-root market-page-root mine-page-root" data-nav="mine">
+  <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
+
+  <div class="app-stage">
+    <div class="app company-page market-page mine-page">
+      <header class="topbar company-topbar">
+        <div class="brand">
+          <div>
+            <h1>我的</h1>
+            <p class="company-page-sub">自选分组：新建 / 删除分组，向分组添加或移除股票</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button id="refreshBtn" class="btn ghost" type="button">刷新</button>
+        </div>
+      </header>
+
+      <div class="market-toolbar mine-toolbar">
+        <div id="summaryBar" class="market-summary"></div>
+        <div class="market-toolbar-tail">
+          <span id="liveDot" class="market-live" data-state="idle">IDLE</span>
+          <span id="marketMeta" class="muted market-meta"></span>
+        </div>
+      </div>
+
+      <div id="errorBox" class="error hidden"></div>
+      <div id="loading" class="loading hidden">正在加载…</div>
+
+      <div class="mine-layout" id="mineLayout">
+        <aside class="mine-group-pane">
+          <header class="mine-pane-head">
+            <h2>分组</h2>
+            <span id="groupMeta" class="muted">—</span>
+          </header>
+          <form class="mine-create-row" id="createForm" autocomplete="off">
+            <label class="search-box mine-create-box">
+              <span class="sr-only">分组名称</span>
+              <input id="groupNameInput" type="text" maxlength="40" placeholder="新建分组名称…" required />
+            </label>
+            <button id="createGroupBtn" class="btn" type="submit">新建</button>
+          </form>
+          <div id="groupList" class="mine-group-list" role="listbox" aria-label="自选分组"></div>
+        </aside>
+
+        <section class="mine-stock-pane">
+          <header class="mine-pane-head mine-stock-head">
+            <div class="mine-stock-title">
+              <h2 id="stockTitle">股票</h2>
+              <p id="stockMeta" class="muted">选择左侧分组</p>
+            </div>
+            <div class="mine-stock-tools">
+              <label class="search-box mine-filter-box">
+                <span class="sr-only">筛选</span>
+                <input id="filterInput" type="search" placeholder="筛选名称 / 代码 / 行业…" autocomplete="off" disabled />
+              </label>
+              <button id="deleteGroupBtn" class="btn ghost mine-danger" type="button" disabled title="删除当前分组">删除分组</button>
+            </div>
+          </header>
+
+          <form class="mine-add-row" id="addForm" autocomplete="off">
+            <div class="mine-add-search">
+              <label class="search-box mine-add-box">
+                <span class="sr-only">添加股票</span>
+                <input
+                  id="addInput"
+                  type="search"
+                  placeholder="输入代码 / 名称搜索，或粘贴多个代码（逗号分隔）…"
+                  autocomplete="off"
+                  disabled
+                />
+              </label>
+              <div id="suggestBox" class="mine-suggest" hidden role="listbox" aria-label="搜索结果"></div>
+            </div>
+            <button id="addStockBtn" class="btn" type="submit" disabled>添加</button>
+          </form>
+
+          <div class="mine-stock-board">
+            <div class="mine-stock-scroll">
+              <table class="market-table shares-table mine-table">
+                <thead>
+                  <tr>
+                    <th class="num">#</th>
+                    <th>名称</th>
+                    <th class="num">涨跌</th>
+                    <th class="num">现价</th>
+                    <th>行业</th>
+                    <th class="num">PE</th>
+                    <th class="num">PB</th>
+                    <th class="num">今日</th>
+                    <th class="num">5日</th>
+                    <th class="num">10日</th>
+                    <th class="num">市值</th>
+                    <th class="num">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="stockBody"></tbody>
+              </table>
+            </div>
+            <p id="stockEmpty" class="mine-empty muted">暂无分组，先在左侧新建一个</p>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
+  <script src="/js/shared/orbit-prefetch.js?v=mine-20260928"></script>
+  <script src="/js/shared/nav.js?v=mine-20260928"></script>
+  <script src="/js/mine.js?v=mine-shares-cols-20260928"></script>
+</body>
+</html>

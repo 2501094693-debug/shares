@@ -25,6 +25,10 @@
       urls: ["/api/market/tree?lite=1"],
       docs: ["/market", "/js/market.js"],
     },
+    mine: {
+      urls: ["/api/mine/groups"],
+      docs: ["/mine", "/js/mine.js"],
+    },
     analysis: { urls: [], docs: ["/analysis", "/js/analysis.js"] },
     screen: { urls: [], docs: ["/analysis", "/js/analysis.js"] },
     fund: {
@@ -43,6 +47,7 @@
     market: ["/api/market/tree?lite=1", "/api/market/tree"],
     shares: ["/api/market/shares?lite=1", "/api/market/shares"],
     steep: ["/api/market/steep?days=15&lite=1", "/api/market/steep?days=15"],
+    mine: ["/api/mine/groups"],
     industry: ["/api/industries"],
     fund: ["/api/funds/tree", "/api/otc-funds/tree"],
     futures: ["/api/futures/tree", "/api/futures/categories"],
@@ -175,9 +180,11 @@
       else if (from === "shares") enqueue("/api/market/shares", 2);
       else if (from === "industry" && context.industry) {
         enqueue(`/api/industries/${encodeURIComponent(context.industry)}/stocks`, 2);
-      } else if (from === "steep") {
+      }       else if (from === "steep") {
         enqueue("/api/market/steep?days=15&lite=1", 2);
         enqueue("/api/market/steep?days=15", 3);
+      } else if (from === "mine") {
+        enqueue("/api/mine/groups", 2);
       }
       else if (from === "fund" || from === "otc-fund") {
         enqueue("/api/funds/tree", 2);

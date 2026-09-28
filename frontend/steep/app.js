@@ -7,6 +7,7 @@
 
   const state = {
     items: [],
+    itemsSig: "",
     updatedAt: "",
     days: 15,
     sortKey: "board",
@@ -455,14 +456,45 @@
     saveFold();
   }
 
+  function captureCardScrolls() {
+    const map = new Map();
+    document.querySelectorAll(".steep-day .steep-stock-cards").forEach((el) => {
+      const day = el.closest(".steep-day");
+      if (!day?.dataset.date || !day.dataset.kind) return;
+      map.set(paneKey(day.dataset.date, day.dataset.kind), el.scrollLeft);
+    });
+    return map;
+  }
+
+  function restoreCardScrolls(map) {
+    if (!map?.size) return;
+    document.querySelectorAll(".steep-day .steep-stock-cards").forEach((el) => {
+      const day = el.closest(".steep-day");
+      if (!day?.dataset.date || !day.dataset.kind) return;
+      const key = paneKey(day.dataset.date, day.dataset.kind);
+      if (!map.has(key)) return;
+      el.scrollLeft = map.get(key);
+    });
+  }
+
   function renderTracks() {
-    const left = $("upScroll").scrollLeft || $("downScroll").scrollLeft || 0;
+    const left = Math.max($("upScroll").scrollLeft || 0, $("downScroll").scrollLeft || 0);
+    const cardScrolls = captureCardScrolls();
     $("upTrack").innerHTML = state.items.map((day) => dayCard(day, "up")).join("");
     $("downTrack").innerHTML = state.items.map((day) => dayCard(day, "down")).join("");
-    $("upScroll").scrollLeft = left;
-    $("downScroll").scrollLeft = left;
+    const restoreScroll = () => {
+      $("upScroll").scrollLeft = left;
+      $("downScroll").scrollLeft = left;
+      restoreCardScrolls(cardScrolls);
+    };
+    restoreScroll();
     markRowOpen();
-    requestAnimationFrame(mountOpenKlines);
+    requestAnimationFrame(() => {
+      restoreScroll();
+      mountOpenKlines();
+      // 等容器查询 / 展开卡宽度算完后再写一次，避免被布局夹回 0
+      requestAnimationFrame(restoreScroll);
+    });
   }
 
   function render() {
@@ -541,6 +573,20 @@
     return body;
   }
 
+  function steepItemsSig(items) {
+    return (items || [])
+      .map((day) => {
+        const up = (day.limit_up || [])
+          .map((r) => [r.code, r.board_count, r.seal_fund, r.amount, r.break_count, r.first_seal, r.last_seal, r.float_mv].join(":"))
+          .join(",");
+        const down = (day.limit_down || [])
+          .map((r) => [r.code, r.down_days, r.seal_fund, r.amount, r.open_count, r.last_seal, r.board_amount, r.float_mv].join(":"))
+          .join(",");
+        return [day.date_raw, day.limit_up_count, day.limit_down_count, up, down].join("|");
+      })
+      .join(";");
+  }
+
   function applyPayload(data, { lite = false } = {}) {
     const items = data.items || [];
     if ((lite || data.lite) && state.items.some((day) => (day.limit_up || []).length || (day.limit_down || []).length) && items.length <= state.items.length) {
@@ -548,10 +594,17 @@
       const nextFull = items.reduce((n, day) => n + (day.limit_up || []).length + (day.limit_down || []).length, 0);
       if (nextFull < currentFull) return;
     }
+    const nextSig = steepItemsSig(items);
+    const sameList = nextSig === state.itemsSig && state.items.length > 0;
     state.items = items;
+    state.itemsSig = nextSig;
     state.updatedAt = data.updated_at || "";
     pruneOpen();
-    render();
+    if (sameList) {
+      renderSummary();
+    } else {
+      render();
+    }
     window.OrbitPrefetch?.intent({ stocks: visibleSteepStocks() });
     const errs = data.errors || [];
     if (errs.length) {
