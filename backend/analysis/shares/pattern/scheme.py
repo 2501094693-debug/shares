@@ -13,6 +13,24 @@
         {"id": "b", "min_hits": 3, "days": [{"offset": 0, "body_abs_pct_max": 1.2}, ...]}
       ]
     }
+
+近几日收下影（至少 M/N）::
+
+    {
+      "id": "recent_lower_shadow",
+      "logic": "and",
+      "groups": [{
+        "id": "lower_shadow",
+        "min_hits": 2,
+        "days": [
+          {"offset": 0, "lower_ratio_min": 0.35, "lower_ge_body": true},
+          {"offset": 1, "lower_ratio_min": 0.35, "lower_ge_body": true},
+          {"offset": 2, "lower_ratio_min": 0.35, "lower_ge_body": true},
+          {"offset": 3, "lower_ratio_min": 0.35, "lower_ge_body": true},
+          {"offset": 4, "lower_ratio_min": 0.35, "lower_ge_body": true}
+        ]
+      }]
+    }
 """
 
 from __future__ import annotations
@@ -365,6 +383,9 @@ def evaluate_scheme(
             "body_abs_pct": _body_abs_pct(metrics),
             "negated": bool(spec.get("not")),
             "raw_match": bool(raw),
+            "is_lower_shadow": bool(
+                spec.get("lower_ge_body") or spec.get("lower_ratio_min") is not None
+            ),
         }
         return ok, hit
 
@@ -456,27 +477,58 @@ def evaluate_scheme(
         latest_metrics = measure_bar(last, prev_close=prev_close, bars=bars, idx=idx)
         as_of = str((latest_metrics or {}).get("date") or last.get("date") or "")
 
+    def _hit_dates_for(group_id: str) -> set[str]:
+        group = next((g for g in group_hits if g.get("id") == group_id), None)
+        if group is None:
+            return set()
+        return {str(d.get("date") or "") for d in (group.get("days") or []) if d.get("date")}
+
+    def _shadow_dates() -> set[str]:
+        dates = _hit_dates_for("lower_shadow")
+        if dates:
+            return dates
+        out: set[str] = set()
+        for ghit in group_hits:
+            for hit in ghit.get("days") or []:
+                spec = hit.get("spec") or {}
+                if spec.get("lower_ge_body") or spec.get("lower_ratio_min") is not None:
+                    date = str(hit.get("date") or "")
+                    if date:
+                        out.add(date)
+        return out
+
     score = float(len(group_hits))
     quiet_group = next((g for g in group_hits if g.get("id") == "quiet_body"), None)
-    if quiet_group is None:
-        quiet_group = next((g for g in group_hits if g.get("min_hits") is not None), None)
     quiet_count = int(quiet_group["hit_count"]) if quiet_group else 0
+    shadow_hit_dates = _shadow_dates()
+    shadow_count = len(shadow_hit_dates)
     lower_r = to_float((latest_metrics or {}).get("lower_ratio")) or 0.0
     score += min(0.5, lower_r) * 0.4
     score += min(5, quiet_count) * 0.05
+    score += min(5, shadow_count) * 0.12
+    as_of_idx = by_date.get(as_of)
+    if as_of_idx is not None:
+        for date in shadow_hit_dates:
+            idx = by_date.get(date)
+            if idx is None:
+                continue
+            offset = max(0, int(as_of_idx) - int(idx))
+            score += max(0.0, 0.22 - offset * 0.04)
 
     quiet_src = next((g for g in groups if g.get("id") == "quiet_body"), None)
-    if quiet_src is None:
-        quiet_src = next((g for g in groups if g.get("min_hits") is not None), None)
-    if quiet_src:
-        window_specs: list[dict[str, Any]] = list(quiet_src.get("days") or [])
+    shadow_src = next((g for g in groups if g.get("id") == "lower_shadow"), None)
+    window_src = quiet_src or shadow_src
+    if window_src is None:
+        window_src = next((g for g in groups if g.get("min_hits") is not None), None)
+    if window_src:
+        window_specs: list[dict[str, Any]] = list(window_src.get("days") or [])
     else:
         window_specs = []
         for g in groups:
             window_specs.extend(g.get("days") or [])
 
     quiet_hit_dates = {str(d.get("date") or "") for d in (quiet_group or {}).get("days") or []}
-    shadow_hit = "lower_shadow" in branch_ids
+    shadow_hit = bool(shadow_hit_dates) or "lower_shadow" in branch_ids
 
     window_days: list[dict[str, Any]] = []
     for spec in window_specs:
@@ -496,11 +548,18 @@ def evaluate_scheme(
                 "body_ratio": metrics.get("body_ratio"),
                 "body_pct": metrics.get("body_pct"),
                 "pct_chg": metrics.get("pct_chg"),
-                "is_lower_shadow": shadow_hit and date == as_of,
+                "is_lower_shadow": date in shadow_hit_dates or (
+                    shadow_hit and not shadow_hit_dates and date == as_of
+                ),
                 "is_quiet_body": date in quiet_hit_dates,
                 "metrics": compact_metrics(metrics),
             }
         )
+
+    for hit in all_day_hits:
+        date = str(hit.get("date") or "")
+        hit["is_lower_shadow"] = date in shadow_hit_dates
+        hit["is_quiet_body"] = date in quiet_hit_dates
 
     quiet_days = []
     if quiet_group:
@@ -519,6 +578,7 @@ def evaluate_scheme(
         "groups": group_hits,
         "hit_lower_shadow": shadow_hit,
         "hit_quiet_body": quiet_group is not None,
+        "shadow_count": shadow_count,
         "quiet_count": quiet_count,
         "quiet_min_days": (quiet_src or {}).get("min_hits"),
         "quiet_window": len((quiet_src or {}).get("days") or []),

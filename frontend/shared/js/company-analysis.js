@@ -1,7 +1,7 @@
 (() => {
   const MODES = window.AI_MODES || {};
-  const MODE_ORDER = window.AI_MODE_ORDER || ["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk", "trend", "sentiment"];
-  const EARNINGS_VIEWS = new Set(["bazhang", "buffett", "buffett-rules"]);
+  const MODE_ORDER = window.AI_MODE_ORDER || ["business", "bazhang", "bazhang-rules", "buffett", "buffett-rules", "competition", "chain", "risk", "trend", "fundamentals", "valuation", "sentiment"];
+  const EARNINGS_VIEWS = new Set(["bazhang", "bazhang-rules", "buffett", "buffett-rules"]);
 
   const STATUS_LABELS = {
     pending: "等待",
@@ -126,6 +126,7 @@
   function renderMarkdown(text) {
     if (!text) return "<p class='muted'>（暂无内容）</p>";
     let html = esc(text);
+    html = html.replace(/^#### (.+)$/gm, "<h4>$1</h4>");
     html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
     html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
     html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
@@ -309,6 +310,54 @@
     return `<div class="sentiment-metrics"><div class="engine-kpis">${kpiHtml}</div>${note}</div>`;
   }
 
+  function fmtPrice(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    return n >= 100 ? n.toFixed(2) : String(Math.round(n * 100) / 100);
+  }
+
+  function valuationMetricsHtml(result) {
+    if (!result?.stance && !result?.primary) return "";
+    const kpis = [
+      ["综合态度", String(result.stance || "—")],
+      ["主倍数", String(result.primary || "—")],
+      ["生意类型", String(result.business_type || "—")],
+      ["综合锚股价", fmtPrice(result.anchor_mid_price)],
+      ["巴菲特下限", fmtPrice(result.mos_floor_price)],
+    ];
+    const kpiHtml = kpis.map(([label, value]) => (
+      `<div class="engine-kpi sentiment-kpi"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`
+    )).join("");
+    const note = `<p class="muted sentiment-source-note">数字由规则引擎计算；综合态度不是买卖点</p>`;
+    return `<div class="sentiment-metrics"><div class="engine-kpis">${kpiHtml}</div>${note}</div>`;
+  }
+
+  function fmtMos(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    return `${(n * 100).toFixed(1)}%`;
+  }
+
+  function fundamentalsMetricsHtml(result) {
+    if (!result?.stance && result?.anchor_iv == null) return "";
+    const lightMap = { green: "绿", yellow: "黄", red: "红", gray: "灰" };
+    const dims = Array.isArray(result.dims) ? result.dims : [];
+    const dimText = dims.length
+      ? dims.map((d) => `${d.label || d.key || ""}${lightMap[d.light] || d.light || ""}`).filter(Boolean).join(" · ")
+      : "—";
+    const kpis = [
+      ["规则态度", String(result.stance || "—")],
+      ["内在价值锚", fmtPrice(result.anchor_iv)],
+      ["安全边际", fmtMos(result.anchor_mos)],
+      ["仪表盘", dimText],
+    ];
+    const kpiHtml = kpis.map(([label, value]) => (
+      `<div class="engine-kpi sentiment-kpi"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`
+    )).join("");
+    const note = `<p class="muted sentiment-source-note">台账与仪表盘规则先算；态度不是买卖点</p>`;
+    return `<div class="sentiment-metrics"><div class="engine-kpis">${kpiHtml}</div>${note}</div>`;
+  }
+
   function updatePipelineProgress(agents) {
     const cfg = getConfig();
     const el = $("pipelineProgress");
@@ -472,6 +521,15 @@
       tab.setAttribute("aria-selected", active && visible ? "true" : "false");
     });
     $("aiBoard")?.classList.toggle("is-engine", cfg.kind === "engine");
+    const board = $("aiBoard");
+    const idleOrLoading = !board
+      || board.classList.contains("is-idle")
+      || Boolean($("reportView")?.querySelector(".ai-empty-state"));
+    if (idleOrLoading && $("reportTitle")) $("reportTitle").textContent = cfg.reportTitle;
+    if (board?.classList.contains("is-idle") && $("reportMeta")) {
+      $("reportMeta").textContent = cfg.reportMetaDefault;
+    }
+    renderAgentBoard(getModeState(mode).job?.agents || {});
   }
 
   function showReportLoading(message, title = "正在加载") {
@@ -505,7 +563,11 @@
       ? JSON.stringify(result.metrics || {})
       : cfg.id === "trend"
         ? JSON.stringify(result.verdict || {})
-        : "";
+        : cfg.id === "valuation"
+          ? JSON.stringify({ stance: result.stance, primary: result.primary })
+          : cfg.id === "fundamentals"
+            ? JSON.stringify({ stance: result.stance, anchor_iv: result.anchor_iv, anchor_mos: result.anchor_mos })
+            : "";
     const reportKey = `${filename}|${text.length}|${metricsKey}`;
     if (filename) ms.activeReportFile = filename;
     if ($("reportTitle")) $("reportTitle").textContent = cfg.resultTitle?.(result) || String(filename).replace(/\.md$/i, "");
@@ -515,7 +577,11 @@
         ? sentimentMetricsHtml(result)
         : cfg.id === "trend"
           ? trendMetricsHtml(result)
-          : "";
+          : cfg.id === "valuation"
+            ? valuationMetricsHtml(result)
+            : cfg.id === "fundamentals"
+              ? fundamentalsMetricsHtml(result)
+              : "";
       $("reportView").innerHTML = `${metrics}${renderMarkdown(text)}`;
       ms.renderedReportKey = reportKey;
     }
@@ -572,34 +638,79 @@
     return `${sign}${abs.toFixed(2)}`;
   }
 
-  function engineHtml(pack) {
-    const latest = pack?.metrics?.latest || {};
+  function engineHtml(pack, mode = state.mode) {
     const flags = Array.isArray(pack?.flags) ? pack.flags : [];
     const tables = pack?.tables || {};
-    const kpis = [
-      ["生意类型", pack.business_type || "未知", "text"],
-      ["(a) 归母净利", fmtEngineNum(latest.a), "yi"],
-      ["(b) 折旧摊销", latest.da_disclosed ? fmtEngineNum(latest.b) : "未披露", "yi"],
-      ["资本开支", fmtEngineNum(latest.capex), "yi"],
-      ["所有者盈余上沿", fmtEngineNum(latest.oe_upper), "yi"],
-      ["所有者盈余下沿", latest.da_disclosed ? fmtEngineNum(latest.oe_lower) : "未披露", "yi"],
-      ["有形 ROE", fmtEngineNum(latest.tangible_roe || latest.roe, "pct"), "pct"],
-      ["capex/D&A", latest.da_disclosed ? fmtEngineNum(latest.capex_da, "x") : "未披露", "x"],
-    ];
+    const isZhang = mode === "bazhang-rules" || !!pack?.strategy_type;
+
+    let kpis;
+    let typeLabel;
+    let typeValue;
+    let typeReason;
+    let order;
+
+    if (isZhang && mode !== "buffett-rules") {
+      const profit = pack?.metrics?.profit || {};
+      const cash = pack?.metrics?.cash || {};
+      const comp = pack?.metrics?.competitiveness || {};
+      const strategy = pack?.metrics?.strategy || {};
+      typeLabel = "战略类型";
+      typeValue = pack.strategy_type || strategy.strategy_type || "未知";
+      typeReason = pack.strategy_reason || "";
+      kpis = [
+        ["战略类型", typeValue, "text"],
+        ["核心利润", fmtEngineNum(profit.core_profit), "yi"],
+        ["核心利润率", fmtEngineNum(profit.core_margin, "pct"), "pct"],
+        ["毛利率", fmtEngineNum(profit.gross_margin, "pct"), "pct"],
+        ["OCF/核心利润", fmtEngineNum(cash.ocf_core_ratio, "pct"), "pct"],
+        ["销售收现比", fmtEngineNum(cash.cash_collection_ratio, "pct"), "pct"],
+        ["两头吃指数", fmtEngineNum(comp.two_ends_index, "x"), "x"],
+        ["ROE", fmtEngineNum(profit.roe, "pct"), "pct"],
+      ];
+      order = [
+        ["diagnosis", "综合诊断"],
+        ["asset_structure", "资产结构"],
+        ["liability_structure", "负债结构"],
+        ["core_profit", "核心利润"],
+        ["annual_core", "年报核心利润"],
+        ["cash_quality", "利润含金量"],
+        ["competitiveness", "竞争力"],
+        ["cost_structure", "成本结构"],
+        ["value", "价值创造"],
+        ["annual_value", "年报价值创造"],
+        ["recent_all", "近几期定期报告"],
+      ];
+    } else {
+      const latest = pack?.metrics?.latest || {};
+      typeLabel = "生意类型";
+      typeValue = pack.business_type || "未知";
+      typeReason = pack.business_reason || "";
+      kpis = [
+        ["生意类型", typeValue, "text"],
+        ["(a) 归母净利", fmtEngineNum(latest.a), "yi"],
+        ["(b) 折旧摊销", latest.da_disclosed ? fmtEngineNum(latest.b) : "未披露", "yi"],
+        ["资本开支", fmtEngineNum(latest.capex), "yi"],
+        ["所有者盈余上沿", fmtEngineNum(latest.oe_upper), "yi"],
+        ["所有者盈余下沿", latest.da_disclosed ? fmtEngineNum(latest.oe_lower) : "未披露", "yi"],
+        ["有形 ROE", fmtEngineNum(latest.tangible_roe || latest.roe, "pct"), "pct"],
+        ["capex/D&A", latest.da_disclosed ? fmtEngineNum(latest.capex_da, "x") : "未披露", "x"],
+      ];
+      order = [
+        ["diagnosis", "综合诊断"],
+        ["owner_earnings", "所有者盈余（最新口径）"],
+        ["annual_owner", "年报所有者盈余"],
+        ["recent_all", "近几期定期报告"],
+        ["capital", "资本与回报"],
+        ["allocation", "资本配置"],
+      ];
+    }
+
     const kpiHtml = kpis.map(([label, value]) => (
       `<div class="engine-kpi"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`
     )).join("");
     const flagsHtml = flags.length
       ? `<div class="engine-flags"><h3>风险警示</h3><ul>${flags.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></div>`
       : "";
-    const order = [
-      ["diagnosis", "综合诊断"],
-      ["owner_earnings", "所有者盈余（最新口径）"],
-      ["annual_owner", "年报所有者盈余"],
-      ["recent_all", "近几期定期报告"],
-      ["capital", "资本与回报"],
-      ["allocation", "资本配置"],
-    ];
     const tableHtml = order.map(([key, title]) => {
       const body = tables[key];
       if (!body) return "";
@@ -610,10 +721,10 @@
       : "";
     return `
       <div class="engine-hero">
-        <p class="engine-type">生意类型：<strong>${esc(pack.business_type || "未知")}</strong></p>
+        <p class="engine-type">${esc(typeLabel)}：<strong>${esc(typeValue)}</strong></p>
         <p class="muted">${esc([pack.latest_period, pack.period_kind, pack.ytd ? "累计口径" : ""].filter(Boolean).join(" · ") || "最新定期报告")}</p>
         ${pack.coverage ? `<p class="muted">${esc(pack.coverage)}</p>` : ""}
-        ${pack.business_reason ? `<p class="muted">${esc(pack.business_reason)}</p>` : ""}
+        ${typeReason ? `<p class="muted">${esc(typeReason)}</p>` : ""}
       </div>
       <div class="engine-kpis">${kpiHtml}</div>
       ${flagsHtml}
@@ -633,7 +744,7 @@
     if ($("jobMeta")) $("jobMeta").textContent = "";
     if ($("reportTitle")) $("reportTitle").textContent = cfg.resultTitle?.(pack) || cfg.reportTitle;
     if ($("reportMeta")) $("reportMeta").textContent = cfg.resultMeta?.(pack) || "";
-    if ($("reportView")) $("reportView").innerHTML = engineHtml(pack);
+    if ($("reportView")) $("reportView").innerHTML = engineHtml(pack, state.mode);
     ms.enginePack = pack;
     ms.ready = true;
     focusReportPane();

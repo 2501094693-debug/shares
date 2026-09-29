@@ -92,6 +92,7 @@ def analyze_one_pattern(meta: dict[str, Any], scheme: dict[str, Any]) -> dict[st
         "branches": hit["branches"],
         "hit_lower_shadow": hit["hit_lower_shadow"],
         "hit_quiet_body": hit["hit_quiet_body"],
+        "shadow_count": hit.get("shadow_count") or 0,
         "quiet_count": hit["quiet_count"],
         "quiet_days": hit["quiet_days"],
         "latest": hit["latest"],
@@ -115,6 +116,7 @@ def assemble_pattern(
     items.sort(
         key=lambda r: (
             -float(r.get("score") or 0),
+            -int(r.get("shadow_count") or 0),
             -int(r.get("quiet_count") or 0),
             str(r.get("code") or ""),
         )

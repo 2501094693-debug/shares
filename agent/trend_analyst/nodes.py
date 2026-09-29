@@ -1,4 +1,4 @@
-"""趋势分析智能体 — 节点（仅资金动向 + 分时成交）。"""
+"""趋势分析智能体 — 节点（资金动向列表 + 分时成交列表）。"""
 
 from __future__ import annotations
 
@@ -32,8 +32,6 @@ def init_company(state: TrendState) -> dict:
         "stock_name": stock["name"],
         "stock_market": stock["market"],
         "day": (state.get("day") or "").strip(),
-        "fund_limit": int(state.get("fund_limit") or 60),
-        "minute_klt": int(state.get("minute_klt") or 5),
         "min_deal_amount": float(state.get("min_deal_amount") or 300_000),
         "skip_llm": bool(state.get("skip_llm") or False),
         "force": bool(state.get("force") or False),
@@ -44,12 +42,10 @@ def init_company(state: TrendState) -> dict:
 
 def fetch_pack(state: TrendState) -> dict:
     code = state.get("stock_code") or ""
-    emit_progress("tr_fetch", f"拉取 {code} 资金流 / 分钟资金 / 分时 / 大单…", phase="fetch_data", status="running")
+    emit_progress("tr_fetch", f"拉取 {code} 资金动向列表 / 分时成交列表…", phase="fetch_data", status="running")
     pack = build_trend_pack(
         code,
         day=state.get("day") or "",
-        fund_limit=int(state.get("fund_limit") or 60),
-        minute_klt=int(state.get("minute_klt") or 5),
         min_deal_amount=float(state.get("min_deal_amount") or 300_000),
         force=bool(state.get("force")),
     )
@@ -72,7 +68,7 @@ def fetch_pack(state: TrendState) -> dict:
 def analyze_main(state: TrendState) -> dict:
     emit_progress("tr_main", "统计资金动向…", phase="analyze", status="running")
     main = analyze_fund(state.get("pack") or {})
-    emit_progress("tr_main", f"主力标签：{main.get('label')}", phase="done", status="done")
+    emit_progress("tr_main", f"资金标签：{main.get('label')}", phase="done", status="done")
     return {"main_force": main}
 
 
@@ -109,14 +105,6 @@ def _fmt_num(value: Any, suffix: str = "") -> str:
     return f"{value}{suffix}"
 
 
-def _fmt_align(value: Any) -> str:
-    if value is True:
-        return "同向"
-    if value is False:
-        return "背离"
-    return "—"
-
-
 _SESSION_CN = {
     "auction": "集合竞价",
     "open30": "开盘30分钟",
@@ -129,99 +117,30 @@ _SESSION_CN = {
 
 
 def _stats_section(state: TrendState) -> str:
-    """确定性数据罗列：资金动向 + 分时成交。"""
+    """确定性数据罗列：资金动向列表 + 分时成交列表。"""
     fund = state.get("main_force") or {}
     ticks = state.get("retail") or {}
-    windows = fund.get("windows") if isinstance(fund.get("windows"), dict) else {}
     streak = fund.get("streak") if isinstance(fund.get("streak"), dict) else {}
-    snap = fund.get("snapshot") if isinstance(fund.get("snapshot"), dict) else {}
-    minute = fund.get("minute") if isinstance(fund.get("minute"), dict) else {}
-    session_yi = minute.get("session_main_yi") if isinstance(minute.get("session_main_yi"), dict) else {}
     quad = fund.get("quad") if isinstance(fund.get("quad"), dict) else {}
     lot = ticks.get("small_lot_threshold") or 50
 
     lines: list[str] = [
         "## 数据统计",
         "",
-        "### 一、资金动向",
+        "### 一、资金动向（大单列表）",
         "",
-        "#### 1.1 五档日序摘要",
+        "#### 1.1 摘要",
         "",
         f"- 规则标签：{fund.get('label') or '—'}",
-        f"- 资金日线样本：{fund.get('daily_bars') or 0} 日",
-        f"- 主力连续：{streak.get('direction') or 'flat'} · {streak.get('days') or 0} 日",
-        f"- 近20日主力方向翻转：{fund.get('flip_count_20d') or 0} 次",
-        f"- 近20日主力与小单同向率：{_fmt_pct(fund.get('main_small_align_20d'))}",
-        f"- 近10日超大单与主力同向率：{_fmt_pct(fund.get('super_main_align_10d'))}",
+        f"- 样本：{fund.get('big_deal_count') or 0} 笔",
+        f"- 主动净额 {_fmt_yi(fund.get('net_active_yi'))} · 主动买占比 {_fmt_pct(fund.get('active_buy_share'))}",
+        f"- 最近连续主动单：{streak.get('direction') or 'flat'} · {streak.get('days') or 0} 笔",
+        f"- 主动买 {_fmt_yi(fund.get('active_buy_yi'))} · 主动卖 {_fmt_yi(fund.get('active_sell_yi'))}",
+        f"- 被动买 {_fmt_yi(fund.get('passive_buy_yi'))} · 被动卖 {_fmt_yi(fund.get('passive_sell_yi'))}",
         "",
-        "| 窗口 | 主力 | 超大单 | 大单 | 中单 | 小单 |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "#### 1.2 四象限",
+        "",
     ]
-    for key in ("1", "3", "5", "10", "20"):
-        w = windows.get(key) or {}
-        lines.append(
-            f"| 近{key}日 | {_fmt_yi(w.get('main_yi'))} | {_fmt_yi(w.get('super_yi'))} | "
-            f"{_fmt_yi(w.get('big_yi'))} | {_fmt_yi(w.get('mid_yi'))} | {_fmt_yi(w.get('small_yi'))} |"
-        )
-
-    lines.extend(["", "#### 1.2 近10日明细", ""])
-    recent = fund.get("recent_10d") or []
-    if recent:
-        lines.extend(
-            [
-                "| 日期 | 主力 | 超大单 | 大单 | 中单 | 小单 | 主力净占比 |",
-                "| --- | --- | --- | --- | --- | --- | --- |",
-            ]
-        )
-        for row in recent:
-            pct = row.get("main_net_pct")
-            pct_s = f"{pct}%" if pct is not None else "—"
-            lines.append(
-                f"| {row.get('time') or '—'} | {_fmt_yi(row.get('main_yi'))} | "
-                f"{_fmt_yi(row.get('super_yi'))} | {_fmt_yi(row.get('big_yi'))} | "
-                f"{_fmt_yi(row.get('mid_yi'))} | {_fmt_yi(row.get('small_yi'))} | {pct_s} |"
-            )
-    else:
-        lines.append("- （无日序列）")
-
-    lines.extend(
-        [
-            "",
-            "#### 1.3 当日快照",
-            "",
-            f"- 主力 {_fmt_yi(snap.get('main_yi'))}（占比 {_fmt_num(snap.get('main_net_pct'), '%')}）",
-            f"- 超大单 {_fmt_yi(snap.get('super_yi'))} · 大单 {_fmt_yi(snap.get('big_yi'))} · "
-            f"中单 {_fmt_yi(snap.get('mid_yi'))} · 小单 {_fmt_yi(snap.get('small_yi'))}",
-            f"- 超大单与主力：{_fmt_align(fund.get('super_align_main'))}",
-            "",
-            "#### 1.4 分钟资金（按时段）",
-            "",
-        ]
-    )
-    if minute.get("bars"):
-        lines.append(
-            f"- 分钟样本 {minute.get('bars')} 根 · "
-            f"{'累计差分' if minute.get('cumulative_like') else '点值求和'} · "
-            f"尾盘占全日绝对净额 {_fmt_pct(minute.get('close30_share_of_abs'))}"
-        )
-        for key in ("open30", "morning", "afternoon", "late", "close30"):
-            if key in session_yi:
-                lines.append(f"- {_SESSION_CN.get(key, key)}：{_fmt_yi(session_yi.get(key))}")
-    else:
-        lines.append("- （无分钟资金）")
-
-    lines.extend(
-        [
-            "",
-            "#### 1.5 大单四象限",
-            "",
-            f"- 样本：{fund.get('big_deal_count') or 0} 笔",
-            f"- 主动买 {_fmt_yi(fund.get('active_buy_yi'))} · 主动卖 {_fmt_yi(fund.get('active_sell_yi'))} · "
-            f"主动买占比 {_fmt_pct(fund.get('active_buy_share'))}",
-            f"- 被动买 {_fmt_yi(fund.get('passive_buy_yi'))} · 被动卖 {_fmt_yi(fund.get('passive_sell_yi'))}",
-            "",
-        ]
-    )
     if quad:
         lines.extend(
             [
@@ -238,10 +157,29 @@ def _stats_section(state: TrendState) -> str:
         for k, cn in labels.items():
             q = quad.get(k) or {}
             lines.append(f"| {cn} | {q.get('count') or 0} | {_fmt_yi(q.get('amount_yi'))} |")
+    else:
+        lines.append("- （无大单样本）")
+
+    buckets = fund.get("amount_buckets") or []
+    if buckets:
+        lines.extend(
+            [
+                "",
+                "#### 1.3 金额档",
+                "",
+                "| 档位 | 笔数 | 金额 | 主动买 | 主动卖 |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+        )
+        for row in buckets:
+            lines.append(
+                f"| {row.get('bucket')} | {row.get('count') or 0} | {_fmt_yi(row.get('amount_yi'))} | "
+                f"{_fmt_yi(row.get('active_buy_yi'))} | {_fmt_yi(row.get('active_sell_yi'))} |"
+            )
 
     deal_sess = fund.get("deal_sessions") or {}
     if deal_sess:
-        lines.extend(["", "#### 1.5b 大单按时段（主动）", ""])
+        lines.extend(["", "#### 1.4 按时段（主动）", ""])
         for key, cn in _SESSION_CN.items():
             ds = deal_sess.get(key)
             if not ds:
@@ -252,7 +190,7 @@ def _stats_section(state: TrendState) -> str:
             )
 
     top = fund.get("top_events") or []
-    lines.extend(["", "#### 1.6 Top 大单事件", ""])
+    lines.extend(["", "#### 1.5 Top 大单事件", ""])
     if top:
         lines.extend(
             [
@@ -340,15 +278,15 @@ def _stats_section(state: TrendState) -> str:
             "#### 2.4 小单 / 散户代理",
             "",
             f"- 活跃度：{ticks.get('activity') or '—'} · 动向：{ticks.get('stance') or '—'} · "
-            f"相对主力：{ticks.get('relation_to_main') or '—'}",
+            f"相对资金：{ticks.get('relation_to_main') or '—'}",
             f"- 小单（≤{lot} 手）：{ticks.get('small_trade_count') or 0} 笔"
             f"（买 {ticks.get('small_buy_count') or 0} / 卖 {ticks.get('small_sell_count') or 0}）· "
             f"买占比 {_fmt_pct(ticks.get('small_buy_share'))} · "
             f"量 {_fmt_num(ticks.get('small_volume_lots'), ' 手')}",
             f"- 触及价位簇 {ticks.get('price_bucket_count') or 0} · "
             f"代理分 {_fmt_num(ticks.get('retail_proxy_score'))}",
-            f"- 小单净额：近1日 {_fmt_yi(ticks.get('small_net_1d_yi'))} · "
-            f"近5日 {_fmt_yi(ticks.get('small_net_5d_yi'))}",
+            f"- 小单净额 {_fmt_yi(ticks.get('small_net_yi'))} · "
+            f"大单占分时额 {_fmt_pct(ticks.get('deal_coverage'))}",
             f"- 说明：{ticks.get('note') or '散户数量为小单活跃度代理，非真实持仓人数'}",
             "",
             "#### 2.5 资金 × 分时交叉",
@@ -382,21 +320,21 @@ def _template_narrative(state: TrendState) -> str:
         "### 资金动向解读",
         "",
         f"标签 **{fund.get('label')}**。"
-        f"近5日主力净额 {_fmt_yi(fund.get('main_net_5d_yi'))}，"
-        f"大单主动买占比 {_fmt_pct(fund.get('active_buy_share'))}。"
+        f"主动净额 {_fmt_yi(fund.get('net_active_yi'))}，"
+        f"主动买占比 {_fmt_pct(fund.get('active_buy_share'))}。"
         f"{fund_ev}。",
         "",
         "### 分时成交解读",
         "",
         f"小单活跃度 **{ticks.get('activity')}**，动向 **{ticks.get('stance')}**，"
-        f"相对主力：{ticks.get('relation_to_main')}。"
+        f"相对资金：{ticks.get('relation_to_main')}。"
         f"{tick_ev}。"
         f"{ticks.get('note') or ''}",
         "",
         "### 博弈含义与失效观察",
         "",
         f"关系：**{verdict.get('relation') or ticks.get('relation_to_main') or '—'}**。"
-        f"{verdict.get('invalidation') or '以主力近5日净额与大单主动买占比为主观察锚'}。",
+        f"{verdict.get('invalidation') or '以当日主动买占比与开盘/尾盘交叉为主观察锚'}。",
     ]
     return "\n".join(lines)
 
@@ -451,7 +389,7 @@ def synthesize(state: TrendState) -> dict:
         "",
         f"- 数据日：{state.get('day') or state.get('data_cutoff_date') or ''}",
         f"- 规则结论：{verdict.get('lean')} · 置信度 {verdict.get('confidence')}",
-        f"- 主力：{verdict.get('main_label')} · 散户：{verdict.get('retail_stance')}"
+        f"- 大单：{verdict.get('main_label')} · 散户：{verdict.get('retail_stance')}"
         f"（活跃度 {verdict.get('retail_activity')}）· 关系：{verdict.get('relation')}",
         "",
         stats,
@@ -468,10 +406,10 @@ def synthesize(state: TrendState) -> dict:
         [
             "## 限制",
             "",
-            "- 仅使用资金流与分时成交；不含日线形态、均线或量比",
-            "- 主力净额来自东财分档资金流，存在口径与滞后",
+            "- 仅使用当日资金动向列表与分时成交列表；不含日线、东财分档资金或分钟资金",
+            "- 资金标签来自同花顺 HQ 大单（主动/被动），存在门槛过滤与口径差异",
             "- 散户数量为小单活跃度代理，不是账户数或持仓人数",
-            "- 大单来自同花顺 HQ，失败时仅用资金流序列",
+            "- 大单列表失败时仅用分时成交，结论降置信",
             "- 不做买卖建议；短线推断可能被隔夜消息推翻",
             "",
         ]
@@ -483,7 +421,9 @@ def synthesize(state: TrendState) -> dict:
 
 def save_report(state: TrendState) -> dict:
     company = state.get("company") or ""
-    cutoff = (state.get("data_cutoff_date") or date.today().isoformat()).replace("-", "")
+    cutoff = (
+        state.get("day") or state.get("data_cutoff_date") or date.today().isoformat()
+    ).replace("-", "")
     safe_name = re.sub(r"[^\w\u4e00-\u9fff-]", "_", state.get("stock_name") or company)
     code = state.get("stock_code") or ""
     stem = f"{safe_name}_{code}" if code and code not in safe_name else safe_name

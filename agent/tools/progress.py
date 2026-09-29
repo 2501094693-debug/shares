@@ -69,6 +69,20 @@ AGENT_LABELS: dict[str, str] = {
     "tr_retail": "统计分时成交",
     "tr_synth": "生成综合结论",
     "tr_save": "保存报告",
+    "va_init": "解析公司",
+    "va_fetch": "采集估值数据",
+    "va_history": "历史倍数",
+    "va_fundamentals": "财报正常化",
+    "va_buffett": "巴菲特路径",
+    "va_drivers": "收入关键因素",
+    "va_synth": "交叉对照",
+    "va_save": "保存报告",
+    "fv_resolve": "解析公司",
+    "fv_collect": "采集财务估值",
+    "fv_ledger": "构建台账",
+    "fv_gauge": "仪表盘规则",
+    "fv_brief": "分节解读",
+    "fv_save": "保存报告",
 }
 
 PHASE_LABELS: dict[str, str] = {
@@ -141,6 +155,24 @@ TREND_AGENTS = [
     "tr_synth",
     "tr_save",
 ]
+VALUATION_AGENTS = [
+    "va_init",
+    "va_fetch",
+    "va_history",
+    "va_fundamentals",
+    "va_buffett",
+    "va_drivers",
+    "va_synth",
+    "va_save",
+]
+FUNDAMENTALS_AGENTS = [
+    "fv_resolve",
+    "fv_collect",
+    "fv_ledger",
+    "fv_gauge",
+    "fv_brief",
+    "fv_save",
+]
 
 
 def normalize_node(node: str) -> str:
@@ -205,6 +237,14 @@ def init_retail_sentiment_agents() -> dict[str, dict[str, str]]:
 
 def init_trend_analyst_agents() -> dict[str, dict[str, str]]:
     return init_agents_state(TREND_AGENTS)
+
+
+def init_valuation_analyst_agents() -> dict[str, dict[str, str]]:
+    return init_agents_state(VALUATION_AGENTS)
+
+
+def init_fundamentals_agents() -> dict[str, dict[str, str]]:
+    return init_agents_state(FUNDAMENTALS_AGENTS)
 
 
 def report(

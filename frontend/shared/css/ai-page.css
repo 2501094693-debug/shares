@@ -273,6 +273,18 @@ body.app-shell.ai-page-root .ai-page {
   font-size: 0.95rem;
 }
 
+.engine-section h4 {
+  margin: 14px 0 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.engine-section h4:first-of-type {
+  margin-top: 0;
+}
+
 /* 分析中：仅展示流水线与实时日志 */
 .ai-board.is-running {
   grid-template-columns: 1fr;

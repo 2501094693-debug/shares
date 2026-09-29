@@ -52,15 +52,72 @@ def _sum_fields(row: dict[str, Any], fields: list[str]) -> float:
     return total if found else 0.0
 
 
-def _with_formulas(table: str, formulas: list[tuple[str, str]]) -> str:
-    """在预计算表下附二次加工口径，供报告展示与模型引用。"""
-    if not table or not formulas:
-        return table
-    return (
-        table
-        + "\n\n**计算公式**\n\n"
-        + md_table(["指标", "计算公式"], [[name, formula] for name, formula in formulas])
+def _compose_step(
+    *,
+    raw: str,
+    formulas: list[tuple[str, str]],
+    results: str,
+    conclusions: list[str] | None,
+) -> str:
+    """每一步固定顺序：原始数据 → 计算公式 → 计算结果 → 结论。"""
+    formula_md = (
+        md_table(["指标", "计算公式"], [[name, formula] for name, formula in formulas])
+        if formulas
+        else "（本节无二次加工公式）"
     )
+    conc = [item for item in (conclusions or []) if item]
+    conc_md = "\n".join(f"- {item}" for item in conc) if conc else "- 数据不足，暂不下结论"
+    return "\n".join(
+        [
+            "#### 原始数据",
+            "",
+            (raw or "").strip() or "（无原始科目）",
+            "",
+            "#### 计算公式",
+            "",
+            formula_md,
+            "",
+            "#### 计算结果",
+            "",
+            (results or "").strip() or "（无计算结果）",
+            "",
+            "#### 结论",
+            "",
+            conc_md,
+        ]
+    )
+
+
+def _raw_md(rows: list[dict[str, Any]], columns: list[tuple[str, Any]], *, limit: int | None = None) -> str:
+    cap = PERIOD_LIMIT if limit is None else limit
+    body: list[list[str]] = []
+    for row in rows[:cap]:
+        cells = [period_label(row)]
+        for _, getter in columns:
+            if callable(getter):
+                cells.append(str(getter(row)))
+            elif isinstance(getter, (list, tuple)):
+                cells.append(fmt_yi(to_float(pick(row, *getter))))
+            else:
+                cells.append(fmt_yi(to_float(pick(row, getter))))
+        body.append(cells)
+    return md_table(["报告期"] + [name for name, _ in columns], body)
+
+
+def _pct_col(*keys: str):
+    def _fn(row: dict[str, Any]) -> str:
+        return fmt_pct(to_float(pick(row, *keys)))
+
+    return _fn
+
+
+def _ytd_note(row: dict[str, Any] | None) -> str:
+    if not row:
+        return ""
+    kind = period_kind(row)
+    if kind == "年报":
+        return ""
+    return f"{period_label(row)}为{kind}累计口径，利润表/现金流量表不可与年报直接横比。"
 
 
 def period_kind(row: dict[str, Any]) -> str:
@@ -384,7 +441,270 @@ def _risk_flags(
     return flags
 
 
+def _grade(ratio: float | None, good: float, warn: float, higher_is_better: bool = True) -> str:
+    if ratio is None:
+        return "—"
+    if higher_is_better:
+        if ratio >= good:
+            return "优"
+        if ratio >= warn:
+            return "中"
+        return "差"
+    if ratio <= good:
+        return "优"
+    if ratio <= warn:
+        return "中"
+    return "差"
+
+
+def _asset_conclusions(rows: list[dict[str, Any]]) -> list[str]:
+    latest = rows[0]
+    prev = rows[1] if len(rows) > 1 else None
+    assets = _classify_assets(latest)
+    strategy = _strategy_type(latest, prev)
+    total = _total_assets(latest) or ((assets.get("operating_assets") or 0) + (assets.get("investing_assets") or 0))
+    two_gold_pct = assets["two_gold"] / total * 100 if assets.get("two_gold") and total else None
+    bullets = [
+        _ytd_note(latest),
+        (
+            f"{period_label(latest)}经营性资产 {fmt_yi(assets.get('operating_assets'))}"
+            f"（占比 {fmt_pct(strategy.get('operating_asset_ratio'))}），"
+            f"投资性资产 {fmt_yi(assets.get('investing_assets'))}"
+            f"（占比 {fmt_pct(strategy.get('investing_asset_ratio'))}）。"
+            f"判定规则：投资占比>35%且投资增速快于经营 → 投资主导；经营占比>65% → 经营主导；否则混合。"
+            f"本期判定为 **{strategy.get('strategy_type')}**。"
+        ),
+        (
+            f"经营性资产同比 {fmt_pct(strategy.get('operating_asset_yoy'))}，"
+            f"投资性资产同比 {fmt_pct(strategy.get('investing_asset_yoy'))}。"
+            if prev
+            else ""
+        ),
+        f"两金（应收+存货）{fmt_yi(assets.get('two_gold'))}，占总资产 {fmt_pct(two_gold_pct)}"
+        + ("，占用偏高（>40%）" if two_gold_pct and two_gold_pct > 40 else "")
+        + "。",
+        f"重资产指数（固定资产÷总资产）{fmt_pct(strategy.get('heavy_asset_ratio'))}。",
+    ]
+    return [item for item in bullets if item]
+
+
+def _liability_conclusions(rows: list[dict[str, Any]]) -> list[str]:
+    latest = rows[0]
+    liab = _classify_liabilities(latest)
+    assets = _classify_assets(latest)
+    bullets = [
+        _ytd_note(latest),
+        (
+            f"{period_label(latest)}金融性负债 {fmt_yi(liab.get('financial_liabilities'))}"
+            f"（占负债 {fmt_pct(liab.get('financial_ratio'))}），"
+            f"经营性负债 {fmt_yi(liab.get('operating_liabilities'))}"
+            f"（占负债 {fmt_pct(liab.get('operating_ratio'))}）。"
+        ),
+    ]
+    fin_r, op_r = liab.get("financial_ratio"), liab.get("operating_ratio")
+    if fin_r is not None and op_r is not None:
+        if op_r > fin_r:
+            bullets.append("经营性负债高于金融性负债，更多依靠占用上下游商业信用，而非有息融资。")
+        elif fin_r > 60:
+            bullets.append("金融性负债占比超过60%，对有息债务依赖偏高。")
+        else:
+            bullets.append("有息负债与经营性负债并存，需结合现金流看偿债压力。")
+    cash_val, short_loan = assets.get("cash"), liab.get("short_loan")
+    if cash_val and short_loan and cash_val > short_loan * 2 and short_loan > 0:
+        bullets.append(
+            f"货币资金 {fmt_yi(cash_val)} 同时短期借款 {fmt_yi(short_loan)}，存在存贷双高迹象。"
+        )
+    return [item for item in bullets if item]
+
+
+def _core_profit_conclusions(rows: list[dict[str, Any]]) -> list[str]:
+    latest = rows[0]
+    prev = rows[1] if len(rows) > 1 else None
+    p = _core_profit(latest)
+    prev_p = _core_profit(prev) if prev else None
+    gm, cm = p.get("gross_margin"), p.get("core_margin")
+    gap = (gm - cm) if gm is not None and cm is not None else None
+    bullets = [
+        _ytd_note(latest),
+        (
+            f"代入公式：营业收入 {fmt_yi(p.get('revenue'))} − 营业成本 {fmt_yi(p.get('cogs'))}"
+            f" − 税金及附加 {fmt_yi(p.get('taxes'))} − 销售/管理/研发/财务费用 {fmt_yi(p.get('expenses'))}"
+            f" = 核心利润 {fmt_yi(p.get('core_profit'))}，核心利润率 {fmt_pct(p.get('core_margin'))}。"
+        ),
+        f"毛利率 {fmt_pct(gm)}"
+        + (f"，与核心利润率相差 {fmt_num(gap, 2)} 个百分点，差距来自税金及期间费用。" if gap is not None else "。"),
+    ]
+    if prev_p:
+        core_yoy = yoy(p.get("core_profit"), prev_p.get("core_profit"))
+        bullets.append(
+            f"相对上一期同口径{period_label(prev)}核心利润 {fmt_yi(prev_p.get('core_profit'))}，"
+            f"本期核心利润同比 {fmt_pct(core_yoy)}。"
+        )
+    deduct = p.get("deduct_ratio")
+    if deduct is not None:
+        quality = "经常性利润占比较高" if deduct >= 70 else "扣非占比偏低，利润含非经常损益干扰"
+        bullets.append(f"扣非净利润占归母净利润 {fmt_pct(deduct)}，{quality}。")
+    return [item for item in bullets if item]
+
+
+def _cash_conclusions(rows: list[dict[str, Any]]) -> list[str]:
+    latest = rows[0]
+    prev = rows[1] if len(rows) > 1 else None
+    c = _cash_quality(latest, prev)
+    grade = _grade(c.get("ocf_core_ratio"), 100, 80)
+    bullets = [
+        _ytd_note(latest),
+        (
+            f"{period_label(latest)}经营现金流 {fmt_yi(c.get('ocf'))}，自由现金流 {fmt_yi(c.get('fcf'))}。"
+            f"OCF/核心利润 {fmt_pct(c.get('ocf_core_ratio'))}（≥100%优、≥80%中），评价为 **{grade}**。"
+        ),
+        f"OCF/净利润 {fmt_pct(c.get('ocf_profit_ratio'))}，销售收现比 {fmt_pct(c.get('cash_collection_ratio'))}。",
+        f"现金流模式：{c.get('cashflow_mode')}。",
+    ]
+    disc = c.get("disconnections") or []
+    if disc:
+        bullets.extend(disc)
+    else:
+        bullets.append("未见应收/存货增速显著快于营收，或核心利润与经营现金流增长脱节。")
+    return [item for item in bullets if item]
+
+
+def _competitiveness_conclusions(rows: list[dict[str, Any]]) -> list[str]:
+    latest = rows[0]
+    c = _competitiveness(latest)
+    p = _core_profit(latest)
+    idx = c.get("two_ends_index")
+    if idx is None:
+        power = "分母（应收+预付）为0，无法计算两头吃指数"
+    elif idx > 1:
+        power = ">1，对上下游占款能力强"
+    elif idx >= 0.8:
+        power = "接近1，占款能力中性"
+    else:
+        power = "<1，更多被上下游占用资金"
+    bullets = [
+        _ytd_note(latest),
+        (
+            f"代入公式：（应付账款+预收）{fmt_yi(c.get('upstream_occupy'))}"
+            f" ÷（应收账款+预付）{fmt_yi(c.get('downstream_occupy'))}"
+            f" = 两头吃指数 {fmt_x(idx)}，{power}。"
+        ),
+        (
+            f"存货周转天数 {fmt_num(c.get('inventory_turnover_days'), 0)}天"
+            f"（365×存货÷营业成本），应收周转天数 {fmt_num(c.get('receivable_turnover_days'), 0)}天"
+            f"（365×应收账款÷营业收入），固定资产周转 {fmt_x(c.get('fixed_asset_turnover'))}。"
+        ),
+        f"毛利率 {fmt_pct(p.get('gross_margin'))}，评价竞争力时与两头吃指数一并看。",
+    ]
+    return [item for item in bullets if item]
+
+
+def _cost_conclusions(rows: list[dict[str, Any]]) -> list[str]:
+    latest = next((row for row in rows if _revenue(row)), None)
+    if not latest:
+        return ["营业收入缺失，无法拆成本结构。"]
+    rev = _revenue(latest) or 0
+    cogs = to_float(pick(latest, *COGS_FIELDS))
+    items = [
+        ("营业成本率", to_float(pick(latest, *COGS_FIELDS)) / rev * 100 if cogs is not None and rev else None),
+        ("销售费用率", to_float(pick(latest, "SALE_EXPENSE")) / rev * 100 if pick(latest, "SALE_EXPENSE") and rev else None),
+        ("管理费用率", to_float(pick(latest, "MANAGE_EXPENSE")) / rev * 100 if pick(latest, "MANAGE_EXPENSE") and rev else None),
+        ("研发费用率", to_float(pick(latest, "RESEARCH_EXPENSE")) / rev * 100 if pick(latest, "RESEARCH_EXPENSE") and rev else None),
+        ("财务费用率", to_float(pick(latest, "FINANCE_EXPENSE")) / rev * 100 if pick(latest, "FINANCE_EXPENSE") and rev else None),
+    ]
+    ranked = [(name, val) for name, val in items if val is not None]
+    ranked.sort(key=lambda kv: kv[1], reverse=True)
+    top = f"占比最高的是{ranked[0][0]} {fmt_pct(ranked[0][1])}" if ranked else "各项费用率数据不足"
+    gm = _core_profit(latest).get("gross_margin")
+    return [
+        _ytd_note(latest),
+        f"{period_label(latest)}营业收入 {fmt_yi(rev)}，{top}。",
+        f"毛利率 {fmt_pct(gm)}。营业成本率与毛利率互为对照：毛利率优先取披露数，缺省时用 1−营业成本率。",
+    ]
+
+
+def _value_conclusions(rows: list[dict[str, Any]]) -> list[str]:
+    latest = rows[0]
+    p = _core_profit(latest)
+    d = _dupont_parts(latest, p)
+    roe = p.get("roe")
+    grade = _grade(roe, 15, 8)
+    bullets = [
+        _ytd_note(latest),
+        f"{period_label(latest)}ROE {fmt_pct(roe)}（≥15%优、≥8%中），评价为 **{grade}**；ROA {fmt_pct(d.get('roa'))}，ROIC {fmt_pct(p.get('roic'))}。",
+        (
+            f"杜邦拆解：净利率 {fmt_pct(p.get('net_margin'))} × 资产周转 {fmt_x(d.get('asset_turnover'))}"
+            f" × 权益乘数 {fmt_x(d.get('equity_multiplier'))}。"
+        ),
+        f"归母净利润 {fmt_yi(p.get('net_profit'))}，净资产 {fmt_yi(d.get('equity'))}。",
+    ]
+    return [item for item in bullets if item]
+
+
+def _snapshot_conclusions(rows: list[dict[str, Any]]) -> list[str]:
+    if not rows:
+        return ["未能获取定期报告。"]
+    counts: dict[str, int] = {}
+    for row in rows[:RECENT_LIMIT]:
+        kind = period_kind(row)
+        counts[kind] = counts.get(kind, 0) + 1
+    latest = rows[0]
+    p = _core_profit(latest)
+    cover = "、".join(f"{kind}{n}期" for kind, n in counts.items())
+    return [
+        f"按报告日落最新的定期报告排列，覆盖 {cover}。利润表/现金流量表为累计数，不同类型报告期不可直接横比。",
+        (
+            f"最新一期 {period_label(latest)}（{period_kind(latest)}）营业收入 {fmt_yi(p.get('revenue'))}，"
+            f"核心利润 {fmt_yi(p.get('core_profit'))}，核心利润率 {fmt_pct(p.get('core_margin'))}。"
+        ),
+    ]
+
+
+def _diagnosis_conclusions(metrics: dict[str, Any], flags: list[str], rows: list[list[str]]) -> list[str]:
+    bullets = [
+        f"数据覆盖：{metrics.get('coverage') or '—'}。最新定期报告 {metrics.get('latest_period') or '—'}（{metrics.get('period_kind') or '定期报告'}）。"
+    ]
+    for dim, grade, evidence in rows:
+        if dim in {"最新定期报告", "数据覆盖"}:
+            continue
+        bullets.append(f"{dim}：{grade}（{evidence}）。")
+    if flags:
+        bullets.append("风险警示：" + "；".join(flags) + "。")
+    else:
+        bullets.append("规则引擎未触发重大风险警示。")
+    return bullets
+
+
 def _asset_structure_table(annual: list[dict[str, Any]]) -> str:
+    raw = "\n\n".join(
+        [
+            _raw_md(
+                annual,
+                [
+                    ("货币资金", "MONETARYFUNDS"),
+                    ("应收票据", "NOTE_RECE"),
+                    ("应收账款", "ACCOUNTS_RECE"),
+                    ("预付款项", "PREPAYMENT"),
+                    ("存货", "INVENTORY"),
+                    ("合同资产", "CONTRACT_ASSET"),
+                    ("固定资产", "FIXED_ASSET"),
+                    ("在建工程", "CIP"),
+                    ("无形资产", "INTANGIBLE_ASSET"),
+                ],
+            ),
+            _raw_md(
+                annual,
+                [
+                    ("长期股权投资", "LONG_EQUITY_INVEST"),
+                    ("商誉", "GOODWILL"),
+                    ("投资性房地产", "INVEST_REALESTATE"),
+                    ("其他权益工具投资", "OTHER_EQUITY_INVEST"),
+                    ("交易性金融资产", "TRADE_FINASSET_NOTFVTPL"),
+                    ("总资产", TOTAL_ASSETS_FIELDS),
+                ],
+            ),
+        ]
+    )
     rows: list[list[str]] = []
     for row in annual[:PERIOD_LIMIT]:
         a = _classify_assets(row)
@@ -402,21 +722,52 @@ def _asset_structure_table(annual: list[dict[str, Any]]) -> str:
                 fmt_pct(a["two_gold"] / total * 100 if a["two_gold"] else None),
             ]
         )
-    return _with_formulas(
-        md_table(
-            ["报告期", "经营性资产", "占比", "投资性资产", "占比", "固定资产", "商誉", "两金合计", "两金占比"],
-            rows,
-        ),
-        [
+    return _compose_step(
+        raw=raw,
+        formulas=[
             ("经营性资产", "货币资金、应收、预付、存货、固定资产、在建工程、无形资产等经营占用项合计"),
             ("投资性资产", "长期股权投资、商誉、金融资产、投资性房地产等合计"),
             ("两金合计", "应收账款 + 存货"),
             ("两金占比", "两金合计 ÷ 总资产"),
+            ("战略类型", "投资占比>35%且投资增速>经营增速 → 投资主导；经营占比>65% → 经营主导；否则混合"),
         ],
+        results=md_table(
+            ["报告期", "经营性资产", "占比", "投资性资产", "占比", "固定资产", "商誉", "两金合计", "两金占比"],
+            rows,
+        ),
+        conclusions=_asset_conclusions(annual),
     )
 
 
 def _liability_structure_table(annual: list[dict[str, Any]]) -> str:
+    raw = "\n\n".join(
+        [
+            _raw_md(
+                annual,
+                [
+                    ("短期借款", "SHORT_LOAN"),
+                    ("长期借款", "LONG_LOAN"),
+                    ("应付债券", "BOND_PAYABLE"),
+                    ("应付短期债券", "SHORT_BOND_PAYABLE"),
+                    ("租赁负债", "LEASE_LIABILITY"),
+                    ("一年内到期非流动负债", "NONCURRENT_LIAB_1YEAR"),
+                    ("负债合计", TOTAL_LIAB_FIELDS),
+                ],
+            ),
+            _raw_md(
+                annual,
+                [
+                    ("应付账款", "ACCOUNTS_PAYABLE"),
+                    ("应付票据", "NOTE_PAYABLE"),
+                    ("预收/合同负债", ("ADVANCE_RECEIVABLES", "CONTRACT_LIAB")),
+                    ("应付职工薪酬", "STAFF_SALARY_PAYABLE"),
+                    ("应交税费", "TAX_PAYABLE"),
+                    ("其他应付款", "TOTAL_OTHER_PAYABLE"),
+                    ("货币资金", "MONETARYFUNDS"),
+                ],
+            ),
+        ]
+    )
     rows: list[list[str]] = []
     for row in annual[:PERIOD_LIMIT]:
         l = _classify_liabilities(row)
@@ -432,20 +783,37 @@ def _liability_structure_table(annual: list[dict[str, Any]]) -> str:
                 fmt_yi(l["short_loan"]),
             ]
         )
-    return _with_formulas(
-        md_table(
-            ["报告期", "金融性负债", "占比", "经营性负债", "占比", "应付账款", "预收款项", "短期借款"],
-            rows,
-        ),
-        [
+    return _compose_step(
+        raw=raw,
+        formulas=[
             ("金融性负债", "短期借款 + 长期借款 + 应付债券 + 应付短期债券 + 租赁负债 + 一年内到期非流动负债"),
             ("经营性负债", "应付账款 + 应付票据 + 预收/合同负债 + 应付职工薪酬 + 应交税费 + 其他应付款"),
             ("金融/经营占比", "对应负债 ÷ 负债合计"),
         ],
+        results=md_table(
+            ["报告期", "金融性负债", "占比", "经营性负债", "占比", "应付账款", "预收款项", "短期借款"],
+            rows,
+        ),
+        conclusions=_liability_conclusions(annual),
     )
 
 
 def _core_profit_table(annual: list[dict[str, Any]]) -> str:
+    raw = _raw_md(
+        annual,
+        [
+            ("营业收入", REVENUE_FIELDS),
+            ("营业成本", COGS_FIELDS),
+            ("税金及附加", TAX_FIELDS),
+            ("销售费用", "SALE_EXPENSE"),
+            ("管理费用", "MANAGE_EXPENSE"),
+            ("研发费用", "RESEARCH_EXPENSE"),
+            ("财务费用", "FINANCE_EXPENSE"),
+            ("归母净利润", NET_PROFIT_FIELDS),
+            ("扣非净利润", DEDUCT_PROFIT_FIELDS),
+            ("披露毛利率", _pct_col("XSMLL")),
+        ],
+    )
     rows: list[list[str]] = []
     for row in annual[:PERIOD_LIMIT]:
         p = _core_profit(row)
@@ -462,22 +830,38 @@ def _core_profit_table(annual: list[dict[str, Any]]) -> str:
                 fmt_yi(p["non_core_profit"]),
             ]
         )
-    return _with_formulas(
-        md_table(
-            ["报告期", "营业收入", "核心利润", "核心利润率", "毛利率", "归母净利润", "扣非净利润", "扣非占比", "非核心损益"],
-            rows,
-        ),
-        [
+    return _compose_step(
+        raw=raw,
+        formulas=[
             ("核心利润", "营业收入 − 营业成本 − 税金及附加 − 销售/管理/研发/财务费用"),
             ("核心利润率", "核心利润 ÷ 营业收入"),
             ("毛利率", "优先取利润表主要指标；未披露时按 (营业收入 − 营业成本) ÷ 营业收入"),
             ("扣非占比", "扣非净利润 ÷ 归母净利润"),
             ("非核心损益", "归母净利润 − 核心利润"),
         ],
+        results=md_table(
+            ["报告期", "营业收入", "核心利润", "核心利润率", "毛利率", "归母净利润", "扣非净利润", "扣非占比", "非核心损益"],
+            rows,
+        ),
+        conclusions=_core_profit_conclusions(annual),
     )
 
 
 def _cash_quality_table(annual: list[dict[str, Any]]) -> str:
+    raw = _raw_md(
+        annual,
+        [
+            ("经营现金流", OCF_FIELDS),
+            ("投资现金流", ICF_FIELDS),
+            ("筹资现金流", FCF_FIN_FIELDS),
+            ("购建固定资产等", CAPEX_FIELDS),
+            ("销售商品收现", SALES_CASH_FIELDS),
+            ("归母净利润", NET_PROFIT_FIELDS),
+            ("营业收入", REVENUE_FIELDS),
+            ("应收账款", "ACCOUNTS_RECE"),
+            ("存货", "INVENTORY"),
+        ],
+    )
     rows: list[list[str]] = []
     for i, row in enumerate(annual[:PERIOD_LIMIT]):
         prev = annual[i + 1] if i + 1 < len(annual) else None
@@ -493,21 +877,38 @@ def _cash_quality_table(annual: list[dict[str, Any]]) -> str:
                 c["cashflow_mode"],
             ]
         )
-    return _with_formulas(
-        md_table(
-            ["报告期", "经营现金流", "自由现金流", "OCF/核心利润", "OCF/净利润", "销售收现比", "现金流模式"],
-            rows,
-        ),
-        [
+    return _compose_step(
+        raw=raw,
+        formulas=[
             ("自由现金流", "优先取 FCFF；缺省时 经营现金流 − 购建固定资产等资本开支"),
             ("OCF/核心利润", "经营现金流 ÷ 核心利润"),
             ("OCF/净利润", "经营现金流 ÷ 归母净利润"),
             ("销售收现比", "销售商品提供劳务收到的现金 ÷ 营业收入"),
+            ("利润含金量评价", "OCF/核心利润 ≥100% 优，≥80% 中，否则差"),
         ],
+        results=md_table(
+            ["报告期", "经营现金流", "自由现金流", "OCF/核心利润", "OCF/净利润", "销售收现比", "现金流模式"],
+            rows,
+        ),
+        conclusions=_cash_conclusions(annual),
     )
 
 
 def _competitiveness_table(annual: list[dict[str, Any]]) -> str:
+    raw = _raw_md(
+        annual,
+        [
+            ("应付账款", "ACCOUNTS_PAYABLE"),
+            ("预收/合同负债", ("ADVANCE_RECEIVABLES", "CONTRACT_LIAB")),
+            ("应收账款", "ACCOUNTS_RECE"),
+            ("预付款项", "PREPAYMENT"),
+            ("存货", "INVENTORY"),
+            ("营业成本", COGS_FIELDS),
+            ("营业收入", REVENUE_FIELDS),
+            ("固定资产", "FIXED_ASSET"),
+            ("披露毛利率", _pct_col("XSMLL")),
+        ],
+    )
     rows: list[list[str]] = []
     for row in annual[:PERIOD_LIMIT]:
         c = _competitiveness(row)
@@ -521,21 +922,35 @@ def _competitiveness_table(annual: list[dict[str, Any]]) -> str:
                 fmt_pct(_core_profit(row)["gross_margin"]),
             ]
         )
-    return _with_formulas(
-        md_table(
-            ["报告期", "两头吃指数", "存货周转天数", "应收周转天数", "固定资产周转", "毛利率"],
-            rows,
-        ),
-        [
+    return _compose_step(
+        raw=raw,
+        formulas=[
             ("两头吃指数", "(应付账款 + 预收款项/合同负债) ÷ (应收账款 + 预付款项)；>1 表示对上下游占款能力强"),
             ("存货周转天数", "365 × 存货 ÷ 营业成本"),
             ("应收周转天数", "365 × 应收账款 ÷ 营业收入"),
             ("固定资产周转", "营业收入 ÷ 固定资产"),
         ],
+        results=md_table(
+            ["报告期", "两头吃指数", "存货周转天数", "应收周转天数", "固定资产周转", "毛利率"],
+            rows,
+        ),
+        conclusions=_competitiveness_conclusions(annual),
     )
 
 
 def _cost_structure_table(annual: list[dict[str, Any]]) -> str:
+    raw = _raw_md(
+        annual,
+        [
+            ("营业收入", REVENUE_FIELDS),
+            ("营业成本", COGS_FIELDS),
+            ("销售费用", "SALE_EXPENSE"),
+            ("管理费用", "MANAGE_EXPENSE"),
+            ("研发费用", "RESEARCH_EXPENSE"),
+            ("财务费用", "FINANCE_EXPENSE"),
+            ("披露毛利率", _pct_col("XSMLL")),
+        ],
+    )
     rows: list[list[str]] = []
     for row in annual[:PERIOD_LIMIT]:
         rev = _revenue(row)
@@ -554,16 +969,18 @@ def _cost_structure_table(annual: list[dict[str, Any]]) -> str:
                 fmt_pct(_core_profit(row)["gross_margin"]),
             ]
         )
-    return _with_formulas(
-        md_table(
-            ["报告期", "营业成本率", "销售费用率", "管理费用率", "研发费用率", "财务费用率", "毛利率"],
-            rows,
-        ),
-        [
+    return _compose_step(
+        raw=raw,
+        formulas=[
             ("营业成本率", "营业成本 ÷ 营业收入"),
             ("销售/管理/研发/财务费用率", "对应期间费用 ÷ 营业收入"),
             ("毛利率", "优先取利润表主要指标；未披露时按 1 − 营业成本率"),
         ],
+        results=md_table(
+            ["报告期", "营业成本率", "销售费用率", "管理费用率", "研发费用率", "财务费用率", "毛利率"],
+            rows,
+        ),
+        conclusions=_cost_conclusions(annual),
     )
 
 
@@ -586,6 +1003,19 @@ def _dupont_parts(row: dict[str, Any], profit: dict[str, Any]) -> dict[str, Any]
 
 
 def _value_table(annual: list[dict[str, Any]]) -> str:
+    raw = _raw_md(
+        annual,
+        [
+            ("披露ROE", _pct_col("ROEJQ", "WEIGHTAVG_ROE")),
+            ("披露ROA", _pct_col("ZZCJLL")),
+            ("披露ROIC", _pct_col("ROIC")),
+            ("披露净利率", _pct_col("XSJLL")),
+            ("营业收入", REVENUE_FIELDS),
+            ("归母净利润", NET_PROFIT_FIELDS),
+            ("总资产", TOTAL_ASSETS_FIELDS),
+            ("净资产", TOTAL_EQUITY_FIELDS),
+        ],
+    )
     rows: list[list[str]] = []
     for row in annual[:PERIOD_LIMIT]:
         p = _core_profit(row)
@@ -603,20 +1033,37 @@ def _value_table(annual: list[dict[str, Any]]) -> str:
                 fmt_yi(d["equity"]),
             ]
         )
-    return _with_formulas(
-        md_table(
-            ["报告期", "ROE", "ROA", "ROIC", "净利率", "资产周转", "权益乘数", "归母净利润", "净资产"],
-            rows,
-        ),
-        [
+    return _compose_step(
+        raw=raw,
+        formulas=[
             ("ROA", "优先取主要指标总资产净利率；未披露时 归母净利润 ÷ 总资产"),
             ("资产周转", "营业收入 ÷ 总资产"),
             ("权益乘数", "总资产 ÷ 净资产"),
+            ("价值创造评价", "ROE ≥15% 优，≥8% 中，否则差"),
         ],
+        results=md_table(
+            ["报告期", "ROE", "ROA", "ROIC", "净利率", "资产周转", "权益乘数", "归母净利润", "净资产"],
+            rows,
+        ),
+        conclusions=_value_conclusions(annual),
     )
 
 
 def _snapshot_table(rows: list[dict[str, Any]]) -> str:
+    raw = _raw_md(
+        rows,
+        [
+            ("营业收入", REVENUE_FIELDS),
+            ("归母净利润", NET_PROFIT_FIELDS),
+            ("经营现金流", OCF_FIELDS),
+            ("披露ROE", _pct_col("ROEJQ", "WEIGHTAVG_ROE")),
+            ("应收账款", "ACCOUNTS_RECE"),
+            ("应付账款", "ACCOUNTS_PAYABLE"),
+            ("预收/合同负债", ("ADVANCE_RECEIVABLES", "CONTRACT_LIAB")),
+            ("预付款项", "PREPAYMENT"),
+        ],
+        limit=RECENT_LIMIT,
+    )
     body: list[list[str]] = []
     for row in rows[:RECENT_LIMIT]:
         p = _core_profit(row)
@@ -633,48 +1080,63 @@ def _snapshot_table(rows: list[dict[str, Any]]) -> str:
                 fmt_pct(p["roe"]),
             ]
         )
-    return _with_formulas(
-        md_table(
+    return _compose_step(
+        raw=raw,
+        formulas=[
+            ("核心利润", "营业收入 − 营业成本 − 税金及附加 − 销售/管理/研发/财务费用"),
+            ("两头吃指数", "(应付账款 + 预收款项/合同负债) ÷ (应收账款 + 预付款项)"),
+            ("覆盖与口径", "按报告日落最新排列；利润表/现金流量表为累计数，不同类型不可直接横比"),
+        ],
+        results=md_table(
             ["报告期", "类型", "营业收入", "核心利润", "核心利润率", "经营现金流", "两头吃", "ROE"],
             body,
         ),
-        [
-            ("覆盖", "按报告日落最新的定期报告，年报/半年报/一季报/三季报都列入"),
-            ("口径", "利润表/现金流量表为累计数；不同类型报告期不可直接横比"),
-        ],
+        conclusions=_snapshot_conclusions(rows),
     )
 
 
 def _diagnosis_table(metrics: dict[str, Any], flags: list[str]) -> str:
-    def _grade(ratio: float | None, good: float, warn: float, higher_is_better: bool = True) -> str:
-        if ratio is None:
-            return "—"
-        if higher_is_better:
-            if ratio >= good:
-                return "优"
-            if ratio >= warn:
-                return "中"
-            return "差"
-        if ratio <= good:
-            return "优"
-        if ratio <= warn:
-            return "中"
-        return "差"
-
     cash = metrics.get("cash") or {}
     profit = metrics.get("profit") or {}
+    strategy = metrics.get("strategy") or {}
+    assets = metrics.get("assets") or {}
+    comp = metrics.get("competitiveness") or {}
+    raw = md_table(
+        ["项目", "原始/中间值"],
+        [
+            ["最新定期报告", f"{metrics.get('latest_period') or '—'}（{metrics.get('period_kind') or '定期报告'}）"],
+            ["经营性资产占比", fmt_pct(strategy.get("operating_asset_ratio"))],
+            ["投资性资产占比", fmt_pct(strategy.get("investing_asset_ratio"))],
+            ["OCF/核心利润", fmt_pct(cash.get("ocf_core_ratio"))],
+            ["两头吃指数", fmt_x(comp.get("two_ends_index"))],
+            ["ROE", fmt_pct(profit.get("roe"))],
+            ["两金", fmt_yi(assets.get("two_gold"))],
+            ["警示条数", str(len(flags))],
+        ],
+    )
     rows = [
-        ["战略一致性", metrics.get("strategy", {}).get("strategy_type", "—"), "—"],
+        ["战略一致性", strategy.get("strategy_type", "—"), "经营/投资占比及增速"],
         ["利润含金量", _grade(cash.get("ocf_core_ratio"), 100, 80), f"OCF/核心利润 {fmt_pct(cash.get('ocf_core_ratio'))}"],
         ["资产质量", "中" if len(flags) <= 2 else "差", f"警示 {len(flags)} 项"],
-        ["竞争力", _grade(metrics.get("competitiveness", {}).get("two_ends_index"), 1.2, 0.8), f"两头吃 {fmt_x(metrics.get('competitiveness', {}).get('two_ends_index'))}"],
+        ["竞争力", _grade(comp.get("two_ends_index"), 1.2, 0.8), f"两头吃 {fmt_x(comp.get('two_ends_index'))}"],
         ["价值创造", _grade(profit.get("roe"), 15, 8), f"ROE {fmt_pct(profit.get('roe'))}"],
     ]
     if metrics.get("latest_period"):
         rows.insert(0, ["最新定期报告", metrics["latest_period"], metrics.get("period_kind") or "定期报告"])
     if metrics.get("coverage"):
         rows.insert(1, ["数据覆盖", metrics["coverage"], "年报/半年报/季报均纳入，同比用同口径"])
-    return md_table(["维度", "评价", "关键证据"], rows)
+    return _compose_step(
+        raw=raw,
+        formulas=[
+            ("战略一致性", "投资占比>35%且投资增速>经营增速 → 投资主导；经营占比>65% → 经营主导；否则混合"),
+            ("利润含金量", "OCF/核心利润 ≥100% 优，≥80% 中，否则差"),
+            ("资产质量", "风险警示 ≤2 项为中，否则差"),
+            ("竞争力", "两头吃指数 ≥1.2 优，≥0.8 中，否则差"),
+            ("价值创造", "ROE ≥15% 优，≥8% 中，否则差"),
+        ],
+        results=md_table(["维度", "评价", "关键证据"], rows),
+        conclusions=_diagnosis_conclusions(metrics, flags, rows),
+    )
 
 
 def run_zhang_analysis(

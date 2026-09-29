@@ -1,4 +1,4 @@
-"""趋势分析智能体 — LangGraph 工作流（仅资金 + 分时）。"""
+"""趋势分析智能体 — LangGraph 工作流（资金动向列表 + 分时成交列表）。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from agent.trend_analyst.state import TrendState
 
 
 def build_graph() -> StateGraph:
-    """解析 → 拉数 → 资金统计 → 分时统计 → 综合 → 保存。"""
+    """解析 → 拉两张列表 → 大单统计 → 分时统计 → 综合 → 保存。"""
     graph = StateGraph(TrendState)
 
     graph.add_node("init", init_company)

@@ -367,6 +367,54 @@ window.AI_MODES = {
     },
   },
 
+  "bazhang-rules": {
+    id: "bazhang-rules",
+    kind: "engine",
+    label: "张新民规则引擎",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "张新民规则引擎",
+    subtitle: "强制刷新东财最新全量定期报告 · 八看指标纯计算 · 不经过大模型",
+    startBtn: "重新计算",
+    historyHead: "规则结果",
+    reportTitle: "张新民规则引擎",
+    reportMetaDefault: "强制刷新最新全量定期报告后按八看公式计算，不调用大模型",
+    historyMeta: "规则结果",
+    emptyReports: "暂无结果",
+    resumeFail: "张新民规则引擎计算失败",
+    apiRoot: "/api/ai/bazhang-rules",
+    jobStoreKey: "orbit.bazhangRules.pack",
+    reportNameRe: /$^/,
+    agentDefs: [],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">∑</div>
+        <h3>先算，再解释</h3>
+        <p>张新民规则引擎强制刷新东方财富 F10 全量定期报告，按「八看」逐步列出原始数据、计算公式、计算结果与结论，不调用大模型。</p>
+        <ul class="ai-empty-tips">
+          <li>每一步：原始数据 → 公式 → 结果 → 结论</li>
+          <li>经营主导 / 投资主导 / 混合型</li>
+          <li>核心利润 · OCF/核心利润 · 销售收现比</li>
+          <li>两头吃指数 · 三脱节 · 存贷双高警示</li>
+        </ul>
+      </div>`,
+    resultTitle(result) {
+      const st = result.strategy_type ? ` · ${result.strategy_type}` : "";
+      return `${result.stock_name || ""} 张新民规则引擎${st}`.trim();
+    },
+    resultMeta(result) {
+      return [
+        result.stock_code ? `代码 ${result.stock_code}` : "",
+        result.latest_period || "",
+        result.period_kind || "",
+        result.coverage || "",
+        result.data_available ? "已计算" : "无定期报告",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 张新民规则引擎`;
+    },
+  },
+
   sentiment: {
     id: "sentiment",
     label: "情绪分析",
@@ -439,7 +487,7 @@ window.AI_MODES = {
     label: "趋势分析",
     pageTitle: "ORBIT · 智能分析",
     heading: "趋势分析",
-    subtitle: "只看资金动向与分时成交：先列统计，再解读博弈",
+    subtitle: "只看当日资金动向列表与分时成交列表：先列统计，再解读博弈",
     startBtn: "生成分析",
     historyHead: "历史报告",
     reportTitle: "趋势分析",
@@ -452,8 +500,8 @@ window.AI_MODES = {
     reportNameRe: /趋势分析/,
     agentDefs: [
       { id: "tr_init", name: "解析公司", subtitle: "识别代码与名称" },
-      { id: "tr_fetch", name: "拉取资金与分时", subtitle: "日序 / 分钟 / 快照 / 大单 / 成交" },
-      { id: "tr_main", name: "统计资金动向", subtitle: "五档净额 + 大单四象限" },
+      { id: "tr_fetch", name: "拉取资金与分时", subtitle: "大单列表 + 成交明细" },
+      { id: "tr_main", name: "统计资金动向", subtitle: "四象限 + 时段 + 金额档" },
       { id: "tr_retail", name: "统计分时成交", subtitle: "档位 / 时段 / 小单代理" },
       { id: "tr_synth", name: "生成综合结论", subtitle: "数据统计 + 分析解读" },
       { id: "tr_save", name: "保存报告", subtitle: "写入 Markdown" },
@@ -462,9 +510,9 @@ window.AI_MODES = {
       <div class="ai-empty-state">
         <div class="ai-empty-icon" aria-hidden="true">◇</div>
         <h3>只看钱怎么流、单怎么撮</h3>
-        <p>报告固定输出资金动向与分时成交统计，再交叉解读主力与小单是否共振或背离，并给出资金语言的失效观察条件。不含日线形态。</p>
+        <p>报告只使用公司页同源的两张列表：资金动向（同花顺大单）与分时成交。先列统计，再交叉解读大单与小单是否共振或背离，并给出当日资金语言的失效观察。不含日线与东财分档资金。</p>
         <ul class="ai-empty-tips">
-          <li>主力标签：吸筹 / 派发 / 对倒 / 分歧 / 观望</li>
+          <li>资金标签：偏吸 / 偏抛 / 对倒 / 分歧 / 观望</li>
           <li>散户数量是小单活跃度代理，不是持仓人数</li>
           <li>结论含共振或背离，并给出失效观察条件</li>
           <li>不做买卖点建议</li>
@@ -483,7 +531,7 @@ window.AI_MODES = {
         result.day || "",
         v.lean ? `倾向 ${v.lean}` : "",
         Number.isFinite(Number(v.confidence)) ? `置信度 ${v.confidence}` : "",
-        main.label ? `主力 ${main.label}` : "",
+        main.label ? `资金 ${main.label}` : "",
         result.report_path ? "已保存" : "",
       ].filter(Boolean).join(" · ");
     },
@@ -494,9 +542,126 @@ window.AI_MODES = {
       return { company };
     },
   },
+
+  valuation: {
+    id: "valuation",
+    label: "估值分析",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "估值分析",
+    subtitle: "四路 × 三情景：历史倍数 / 财报正常化 / 巴菲特 / 收入因素；数字由规则引擎先算",
+    startBtn: "生成分析",
+    historyHead: "历史报告",
+    reportTitle: "估值分析",
+    reportMetaDefault: "选择历史报告或生成新的",
+    historyMeta: "历史报告",
+    emptyReports: "暂无历史报告",
+    resumeFail: "恢复估值分析任务失败",
+    apiRoot: "/api/ai/valuation-analysis",
+    jobStoreKey: "orbit.valuationAnalysis.activeJob",
+    reportNameRe: /估值分析/,
+    agentDefs: [
+      { id: "va_init", name: "解析公司", subtitle: "识别代码与名称" },
+      { id: "va_fetch", name: "采集估值数据", subtitle: "盘口 · 近十年倍数 · 财报" },
+      { id: "va_history", name: "历史倍数", subtitle: "近10年 P25 / P50 / P75" },
+      { id: "va_fundamentals", name: "财报正常化", subtitle: "扣非中位数 × 退出倍数" },
+      { id: "va_buffett", name: "巴菲特路径", subtitle: "所有者盈余资本化" },
+      { id: "va_drivers", name: "收入关键因素", subtitle: "营收冲击 × 利润率分位" },
+      { id: "va_synth", name: "交叉对照", subtitle: "综合锚 + 安全边际下限" },
+      { id: "va_save", name: "保存报告", subtitle: "写入 Markdown" },
+    ],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">∑</div>
+        <h3>先算四路，再解释假设</h3>
+        <p>对一只股票给出历史倍数、财报正常化、巴菲特、收入关键因素四组悲观/中性/乐观隐含市值与股价。数字全部由规则引擎计算，模型只说明假设。综合锚贴近近10年定价带，巴菲特中性只作安全边际下限。</p>
+        <ul class="ai-empty-tips">
+          <li>历史窗口近 10 年 P25 / P50 / P75，不用极值</li>
+          <li>亏损或金融股自动换主口径</li>
+          <li>综合态度不是买卖点</li>
+          <li>看不懂时不得「值得进一步研究」</li>
+        </ul>
+      </div>`,
+    resultTitle(result) {
+      const stance = result.stance ? ` · ${result.stance}` : "";
+      return `${result.stock_name || ""} 估值分析${stance}`.trim();
+    },
+    resultMeta(result) {
+      return [
+        result.stock_code ? `代码 ${result.stock_code}` : "",
+        result.business_type || "",
+        result.primary ? `主倍数 ${result.primary}` : "",
+        result.stance ? `态度 ${result.stance}` : "",
+        result.report_path ? "已保存" : "",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 估值分析`;
+    },
+    startQuery(company) {
+      return { company };
+    },
+  },
+
+  fundamentals: {
+    id: "fundamentals",
+    label: "财务估值",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "财务数据、盈利能力与估值",
+    subtitle: "台账 → 仪表盘打灯 → 分节解读：趋势 / 盈利 / 现金流 / 资产负债 / 估值 / 安全边际",
+    startBtn: "生成诊断",
+    historyHead: "历史报告",
+    reportTitle: "财务估值诊断",
+    reportMetaDefault: "选择历史报告或生成新的",
+    historyMeta: "历史报告",
+    emptyReports: "暂无历史报告",
+    resumeFail: "恢复财务估值诊断任务失败",
+    apiRoot: "/api/ai/fundamentals-analysis",
+    jobStoreKey: "orbit.fundamentalsAnalysis.activeJob",
+    reportNameRe: /财务估值|财务数据、盈利能力与估值/,
+    agentDefs: [
+      { id: "fv_resolve", name: "解析公司", subtitle: "识别代码与名称" },
+      { id: "fv_collect", name: "采集财务估值", subtitle: "财报 · 盘口 · 历史倍数 · 同业" },
+      { id: "fv_ledger", name: "构建台账", subtitle: "年报结构化指标" },
+      { id: "fv_gauge", name: "仪表盘规则", subtitle: "五维打灯 + 内在价值" },
+      { id: "fv_brief", name: "分节解读", subtitle: "趋势 · 盈利 · 现金 · 负债 · 估值 · 安全边际" },
+      { id: "fv_save", name: "保存报告", subtitle: "写入 Markdown" },
+    ],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">▣</div>
+        <h3>先建台账，再打灯，后解读</h3>
+        <p>把近 3–5 年财报压成结构化台账，用规则对经营趋势、盈利能力、现金流、资产负债、估值位置打灯，并给出多种内在价值口径与安全边际。模型只解释已算好的数字。</p>
+        <ul class="ai-empty-tips">
+          <li>营收 / 净利 / 经营利润趋势</li>
+          <li>ROE · ROA · 毛利率 · 经营利润率</li>
+          <li>OCF · CapEx · FCF 与利润含金量</li>
+          <li>PE/PB/PS 历史与同业 · 安全边际</li>
+        </ul>
+      </div>`,
+    resultTitle(result) {
+      const stance = result.stance ? ` · ${result.stance}` : "";
+      return `${result.stock_name || ""} 财务估值${stance}`.trim();
+    },
+    resultMeta(result) {
+      const mos = Number(result.anchor_mos);
+      const mosText = Number.isFinite(mos) ? `安全边际 ${(mos * 100).toFixed(1)}%` : "";
+      return [
+        result.stock_code ? `代码 ${result.stock_code}` : "",
+        result.stance ? `态度 ${result.stance}` : "",
+        mosText,
+        result.report_path ? "已保存" : "",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 财务估值`;
+    },
+    startQuery(company) {
+      return { company };
+    },
+  },
 };
 
-window.AI_MODE_ORDER = ["business", "bazhang", "buffett", "buffett-rules", "competition", "chain", "risk", "trend", "sentiment"];
+window.AI_MODE_ORDER = ["business", "bazhang", "bazhang-rules", "buffett", "buffett-rules", "competition", "chain", "risk", "trend", "fundamentals", "valuation", "sentiment"];
 
 window.AI_MODE_ALIASES = {
   business: "business",
@@ -525,6 +690,10 @@ window.AI_MODE_ALIASES = {
   engine: "buffett-rules",
   "规则引擎": "buffett-rules",
   "巴菲特规则引擎": "buffett-rules",
+  "bazhang-rules": "bazhang-rules",
+  "zhang-rules": "bazhang-rules",
+  "张新民规则引擎": "bazhang-rules",
+  "八看规则引擎": "bazhang-rules",
   sentiment: "sentiment",
   retail: "sentiment",
   "retail-sentiment": "sentiment",
@@ -534,4 +703,14 @@ window.AI_MODE_ALIASES = {
   "trend-analysis": "trend",
   "趋势分析": "trend",
   "趋势研判": "trend",
+  valuation: "valuation",
+  "valuation-analysis": "valuation",
+  "估值分析": "valuation",
+  "估值": "valuation",
+  fundamentals: "fundamentals",
+  "fundamentals-analysis": "fundamentals",
+  finval: "fundamentals",
+  "财务估值": "fundamentals",
+  "财务数据": "fundamentals",
+  "盈利能力与估值": "fundamentals",
 };

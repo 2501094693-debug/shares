@@ -42,14 +42,24 @@ def _row(**overrides):
 class EngineTableTests(unittest.TestCase):
     def test_core_profit_table_includes_disclosed_gross_margin(self):
         table = zhang_engine._core_profit_table([_row()])
-        self.assertIn("毛利率", table.splitlines()[0])
+        self.assertIn("#### 原始数据", table)
+        self.assertIn("#### 计算公式", table)
+        self.assertIn("#### 计算结果", table)
+        self.assertIn("#### 结论", table)
+        self.assertIn("毛利率", table)
         self.assertIn("40.00%", table)
-        self.assertIn("计算公式", table)
         self.assertIn("核心利润", table)
+        idx_raw = table.find("#### 原始数据")
+        idx_formula = table.find("#### 计算公式")
+        idx_result = table.find("#### 计算结果")
+        idx_conc = table.find("#### 结论")
+        self.assertLess(idx_raw, idx_formula)
+        self.assertLess(idx_formula, idx_result)
+        self.assertLess(idx_result, idx_conc)
 
     def test_core_profit_table_computes_gross_margin_when_undisclosed(self):
         table = zhang_engine._core_profit_table([_row(XSMLL=None)])
-        self.assertIn("毛利率", table.splitlines()[0])
+        self.assertIn("毛利率", table)
         self.assertIn("40.00%", table)
 
     def test_competitiveness_table_shows_two_ends_formula(self):
@@ -59,6 +69,28 @@ class EngineTableTests(unittest.TestCase):
         self.assertIn("(应付账款 + 预收款项/合同负债) ÷ (应收账款 + 预付款项)", table)
         self.assertIn("365 × 存货 ÷ 营业成本", table)
         self.assertIn("1.00x", table)
+
+    def test_each_step_lists_raw_formula_result_then_conclusion(self):
+        result = zhang_engine.run_zhang_analysis([_row()])
+        for key in (
+            "diagnosis",
+            "asset_structure",
+            "liability_structure",
+            "core_profit",
+            "cash_quality",
+            "competitiveness",
+            "cost_structure",
+            "value",
+            "recent_all",
+        ):
+            table = result["tables"][key]
+            self.assertIn("#### 原始数据", table, key)
+            self.assertIn("#### 计算公式", table, key)
+            self.assertIn("#### 计算结果", table, key)
+            self.assertIn("#### 结论", table, key)
+            self.assertLess(table.find("#### 原始数据"), table.find("#### 计算公式"), key)
+            self.assertLess(table.find("#### 计算公式"), table.find("#### 计算结果"), key)
+            self.assertLess(table.find("#### 计算结果"), table.find("#### 结论"), key)
 
     def test_summary_mentions_gross_margin_and_two_ends_formula(self):
         result = zhang_engine.run_zhang_analysis([_row()])

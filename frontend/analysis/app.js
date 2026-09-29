@@ -34,34 +34,91 @@
     { id: "compose", label: "组合", hint: "把筛选/形态/对比草稿一次联评" },
   ];
 
+  const LOWER_SHADOW_DAY = { lower_ratio_min: 0.35, lower_ge_body: true };
+  const LOWER_SHADOW_WINDOW = [0, 1, 2, 3, 4].map((offset) => ({
+    offset,
+    ...LOWER_SHADOW_DAY,
+  }));
+
+  /** 内置方案：个股分析「方案」菜单可直接套用 */
+  const SHARES_BUILTIN_PRESETS = [
+    {
+      id: "recent_lower_shadow",
+      name: "近几日收下影",
+      brief: "近5日至少2日：下影≥35%振幅且下影≥实体",
+      kind: "scheme",
+      logic: "and",
+      top: 50,
+      groups: [
+        {
+          id: "lower_shadow",
+          label: "近五日收下影",
+          min_hits: 2,
+          days: LOWER_SHADOW_WINDOW,
+        },
+      ],
+    },
+    {
+      id: "consecutive_lower_shadow",
+      name: "近两日连续收下影",
+      brief: "T0 与 T-1 均：下影≥35%振幅且下影≥实体",
+      kind: "scheme",
+      logic: "and",
+      top: 50,
+      groups: [
+        {
+          id: "lower_shadow",
+          label: "近两日连续收下影",
+          logic: "and",
+          days: [0, 1].map((offset) => ({ offset, ...LOWER_SHADOW_DAY })),
+        },
+      ],
+    },
+    {
+      id: "t0_lower_shadow",
+      name: "最新一日收下影",
+      brief: "T0 下影≥35%振幅且下影≥实体",
+      kind: "scheme",
+      logic: "and",
+      top: 50,
+      groups: [
+        {
+          id: "lower_shadow",
+          label: "最新一日收下影",
+          logic: "and",
+          days: [{ offset: 0, ...LOWER_SHADOW_DAY }],
+        },
+      ],
+    },
+    {
+      id: "lower_shadow_or_quiet",
+      name: "收下影或缩实体",
+      brief: "T0下影 OR 近5日≥3日|实体|≤1.2%",
+      kind: "scheme",
+      logic: "or",
+      top: 50,
+      groups: [
+        {
+          id: "lower_shadow",
+          label: "最新一日收下影",
+          logic: "and",
+          days: [{ offset: 0, ...LOWER_SHADOW_DAY }],
+        },
+        {
+          id: "quiet_body",
+          label: "近五日缩实体",
+          min_hits: 3,
+          days: [0, 1, 2, 3, 4].map((offset) => ({
+            offset,
+            body_abs_pct_max: 1.2,
+          })),
+        },
+      ],
+    },
+  ];
+
   /** 供「导入 JSON」一键填入的示例方案 */
-  const SHARES_SCHEME_EXAMPLE = {
-    id: "lower_shadow_or_quiet",
-    name: "收下影或缩实体",
-    brief: "T0下影 OR 近5日≥3日|实体|≤1.2%",
-    logic: "or",
-    top: 50,
-    groups: [
-      {
-        id: "lower_shadow",
-        label: "最新一日收下影",
-        logic: "and",
-        days: [{ offset: 0, lower_ratio_min: 0.35, lower_ge_body: true }],
-      },
-      {
-        id: "quiet_body",
-        label: "近五日缩实体",
-        min_hits: 3,
-        days: [
-          { offset: 0, body_abs_pct_max: 1.2 },
-          { offset: 1, body_abs_pct_max: 1.2 },
-          { offset: 2, body_abs_pct_max: 1.2 },
-          { offset: 3, body_abs_pct_max: 1.2 },
-          { offset: 4, body_abs_pct_max: 1.2 },
-        ],
-      },
-    ],
-  };
+  const SHARES_SCHEME_EXAMPLE = SHARES_BUILTIN_PRESETS[0];
 
   const SHARES_COMPARE_EXAMPLE = {
     id: "settle_compare",
@@ -1986,6 +2043,24 @@
     };
   }
 
+  function sharesBuiltinPresets() {
+    return SHARES_BUILTIN_PRESETS.map((raw) => {
+      const preset = normalizeSharesPreset(raw);
+      if (!preset) return null;
+      preset.builtin = true;
+      if (raw.brief) preset.brief = raw.brief;
+      return preset;
+    }).filter(Boolean);
+  }
+
+  function findSharesPreset(id) {
+    const key = String(id || "");
+    return (
+      sharesBuiltinPresets().find((p) => p.id === key) ||
+      (shares.presets || []).find((p) => p.id === key)
+    );
+  }
+
   function loadSharesPresets() {
     try {
       const raw = localStorage.getItem(SHARES_PRESET_KEY);
@@ -2105,7 +2180,7 @@
     shares.presetHint =
       shares.mode === "compare"
         ? "已填入「对比趋稳」示例，确认后导入并套用"
-        : "已填入「收下影或缩实体」示例，确认后导入并套用";
+        : "已填入「近几日收下影」示例，确认后导入并套用";
     renderSharesPresetBar();
     const ta = $("sharesPresetImportText");
     if (ta) {
@@ -2307,7 +2382,7 @@
   }
 
   function applySharesPreset(id) {
-    const preset = shares.presets.find((p) => p.id === id);
+    const preset = findSharesPreset(id);
     if (!preset) return;
     if (preset.kind === "compare" || isCompareLike(preset)) {
       applyImportedCompare(preset);
@@ -2455,21 +2530,28 @@
       else if (p.kind === "scheme" || isSchemeLike(p)) groups.pattern.push(p);
       else groups.screen.push(p);
     }
-    const renderGroup = (title, list) => {
+    const renderGroup = (title, list, opts = {}) => {
       if (!list.length) return "";
       const rows = list
-        .map(
-          (p) => `<li class="shares-preset-row">
+        .map((p) => {
+          const meta = p.brief || presetBrief(p);
+          const del = opts.builtin
+            ? ""
+            : `<button type="button" class="shares-preset-row__del" data-preset-del="${esc(p.id)}" title="删除" aria-label="删除 ${esc(p.name)}">×</button>`;
+          return `<li class="shares-preset-row">
           <button type="button" class="shares-preset-row__main" data-preset-apply="${esc(p.id)}">
             <span class="shares-preset-row__name">${esc(p.name)}</span>
-            <span class="shares-preset-row__meta">${esc(kindLabel(p))} · ${esc(presetBrief(p))}</span>
+            <span class="shares-preset-row__meta">${esc(kindLabel(p))} · ${esc(meta)}</span>
           </button>
-          <button type="button" class="shares-preset-row__del" data-preset-del="${esc(p.id)}" title="删除" aria-label="删除 ${esc(p.name)}">×</button>
-        </li>`,
-        )
+          ${del}
+        </li>`;
+        })
         .join("");
-      return `<h4 class="shares-preset-pop__kind">${esc(title)}</h4><ul class="shares-preset-list">${rows}</ul>`;
+      return `${
+        title ? `<h4 class="shares-preset-pop__kind">${esc(title)}</h4>` : ""
+      }<ul class="shares-preset-list">${rows}</ul>`;
     };
+    const builtin = renderGroup("", sharesBuiltinPresets(), { builtin: true });
     const saved =
       renderGroup("筛选", groups.screen) +
       renderGroup("形态", groups.pattern) +
@@ -2492,11 +2574,15 @@
           <button type="button" class="btn" id="sharesPresetSaveBtn">保存</button>
         </section>
         <section class="shares-preset-pop__block">
+          <h3>内置</h3>
+          ${builtin}
+        </section>
+        <section class="shares-preset-pop__block">
           <h3>已存</h3>
           ${
             saved
               ? saved
-              : `<p class="shares-preset-pop__empty">还没有方案。设好条件后填写名称保存。</p>`
+              : `<p class="shares-preset-pop__empty">还没有自定义方案。可先套用内置「近几日收下影」，或设好条件后填写名称保存。</p>`
           }
         </section>
         <section class="shares-preset-pop__block">
@@ -2628,6 +2714,21 @@
     layout.classList.toggle("is-editor-collapsed", !open);
   }
 
+  function sharesLowerShadowQuickHtml() {
+    const items = [
+      ["recent_lower_shadow", "近几日收下影"],
+      ["consecutive_lower_shadow", "近两日连续"],
+      ["t0_lower_shadow", "最新一日"],
+    ];
+    const links = items
+      .map(
+        ([id, label]) =>
+          `<button type="button" class="shares-expr-text-btn" data-preset-apply="${esc(id)}">${esc(label)}</button>`,
+      )
+      .join("");
+    return `<span class="shares-expr-quick-presets">${links}</span>`;
+  }
+
   function renderSharesExprBar() {
     const bar = $("sharesExprBar");
     if (!bar || view !== "shares") return;
@@ -2681,7 +2782,7 @@
       const logic = normalizeSharesLogic(shares.patternLogic || "or");
       let chain = "";
       if (!groups.length) {
-        chain = `<p class="shares-expr-empty">点「+ 分支」开始搭建形态，或从方案导入</p>`;
+        chain = `<p class="shares-expr-empty">套用 ${sharesLowerShadowQuickHtml()}，或点「+ 分支」自建形态</p>`;
       } else {
         const bits = [];
         groups.forEach((g, idx) => {
@@ -2794,7 +2895,7 @@
     const mode = normalizeSharesLogic(shares.logic);
     let chain = "";
     if (!dates.length) {
-      chain = `<p class="shares-expr-empty">从下方近月交易日加点，组成筛选式</p>`;
+      chain = `<p class="shares-expr-empty">从下方近月交易日加点，或套用 ${sharesLowerShadowQuickHtml()}</p>`;
     } else if (mode === "not") {
       const labels = dates
         .map((d) => `${offsetLabel(sharesDateOffset(d))} ${fmtMd(d)}`)
@@ -3110,7 +3211,7 @@
     if (!group) {
       panel.dataset.date = "";
       panel.innerHTML = `<div class="shares-inspector shares-inspector--empty">
-        <p>点「+ 分支」新建形态分支，再从近月轨加点</p>
+        <p>套用 ${sharesLowerShadowQuickHtml()}，或点「+ 分支」自建后再从近月轨加点</p>
       </div>`;
       return;
     }
@@ -3503,9 +3604,27 @@
         return `<span class="screen-chip" data-tone="up"><em>命中</em>${esc(label)}</span>`;
       })
       .join("");
+    const dayLooksLowerShadow = (d) => {
+      if (!d) return false;
+      if (d.is_lower_shadow) return true;
+      const spec = d.spec || {};
+      if (spec.lower_ge_body || spec.lower_ratio_min != null) return true;
+      const mm = d.metrics || d;
+      const lr = Number(mm.lower_ratio);
+      const br = Number(mm.body_ratio);
+      return Number.isFinite(lr) && lr >= 0.35 && Number.isFinite(br) && lr >= br;
+    };
+    const shadowDates = new Set(
+      [...days, ...windowDays].filter(dayLooksLowerShadow).map((d) => d.date),
+    );
+    const quietDates = new Set(
+      [...days, ...windowDays].filter((d) => d.is_quiet_body).map((d) => d.date),
+    );
     const dayChips = (days.length ? days : windowDays)
       .map((d) => {
         const mm = d.metrics || d;
+        const isShadow = d.is_lower_shadow || shadowDates.has(d.date) || dayLooksLowerShadow(d);
+        const isQuiet = d.is_quiet_body || quietDates.has(d.date);
         const tip = [
           `涨跌 ${fmtPct(mm.pct_chg)}`,
           `最大涨 ${fmtPct(mm.max_gain)}`,
@@ -3518,13 +3637,14 @@
           `量比 ${fmtVolRatio(mm.vol_ratio)}`,
           `量增幅 ${fmtPct(mm.vol_chg)}`,
           d.spec_text || "",
-          d.is_quiet_body ? "小实体" : "",
-          d.is_lower_shadow ? "收下影" : "",
+          isQuiet ? "小实体" : "",
+          isShadow ? "收下影" : "",
         ]
           .filter(Boolean)
           .join(" · ");
-        const mark = d.is_quiet_body || d.is_lower_shadow ? "up" : tone(mm.pct_chg);
-        return `<span class="screen-chip" data-tone="${mark}" title="${esc(tip)}"><em>${esc(fmtMd(d.date))}</em>${fmtPct(mm.pct_chg)}</span>`;
+        const mark = isQuiet || isShadow ? "up" : tone(mm.pct_chg);
+        const markText = isShadow ? " 下影" : isQuiet ? " 缩" : "";
+        return `<span class="screen-chip" data-tone="${mark}" title="${esc(tip)}"><em>${esc(fmtMd(d.date))}</em>${fmtPct(mm.pct_chg)}${markText}</span>`;
       })
       .join("");
     const useScore =
@@ -3532,16 +3652,25 @@
       (row.matched_nodes != null ||
         (Array.isArray(row.branches) && row.branches.length) ||
         (Array.isArray(row.comps) && row.comps.length));
-    const scoreLabel =
-      row.matched_nodes != null
-        ? "组合分"
-        : Array.isArray(row.branches) && row.branches.length
-          ? row.quiet_count != null
-            ? `${row.quiet_count}日缩`
-            : "形态"
-          : Array.isArray(row.comps) && row.comps.length
-            ? "对比分"
-            : "命中日";
+    const scoreLabel = (() => {
+      if (row.matched_nodes != null) return "组合分";
+      if (Array.isArray(row.branches) && row.branches.length) {
+        const counted = Number(row.shadow_count);
+        const shadowN =
+          Number.isFinite(counted) && counted > 0 ? counted : shadowDates.size;
+        if (
+          shadowN > 0 &&
+          (row.hit_lower_shadow || row.branches.includes("lower_shadow") || shadowDates.size)
+        ) {
+          return `${shadowN}日下影`;
+        }
+        const quietN = Number(row.quiet_count);
+        if (Number.isFinite(quietN) && quietN > 0) return `${quietN}日缩`;
+        return "形态";
+      }
+      if (Array.isArray(row.comps) && row.comps.length) return "对比分";
+      return "命中日";
+    })();
     const scoreValue = useScore
       ? fmtNum(row.score, 2)
       : row.matched_days || days.length || 0;
@@ -4934,6 +5063,11 @@
         loadShares(true);
         return;
       }
+      const applyPreset = ev.target.closest("[data-preset-apply]");
+      if (applyPreset) {
+        applySharesPreset(applyPreset.dataset.presetApply);
+        return;
+      }
 
       const composeLogicBtn = ev.target.closest("button[data-compose-logic]");
       if (composeLogicBtn) {
@@ -5101,6 +5235,11 @@
 
     $("sharesCondPanel")?.addEventListener("click", (ev) => {
       if (view !== "shares") return;
+      const applyPreset = ev.target.closest("[data-preset-apply]");
+      if (applyPreset) {
+        applySharesPreset(applyPreset.dataset.presetApply);
+        return;
+      }
 
       if (shares.mode === "compose") {
         const composeLogicBtn = ev.target.closest("button[data-compose-logic]");
@@ -5419,6 +5558,7 @@
       const apply = ev.target.closest("[data-preset-apply]");
       if (apply) {
         applySharesPreset(apply.dataset.presetApply);
+        return;
       }
     });
 

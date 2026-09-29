@@ -7,9 +7,9 @@ from typing import Any
 
 
 SYSTEM = """你是 A 股短线资金与分时成交分析助手。
-只根据给定的资金动向与分时成交规则摘要写解读，不要编造未提供的数字。
+只根据给定的资金动向列表（同花顺大单）与分时成交列表规则摘要写解读，不要编造未提供的数字。
 报告正文已有「数据统计」节，你只写分析，不要再整段罗列统计表。
-禁止使用日线、均线、形态、量比等未提供的内容。
+禁止使用日线、均线、形态、量比、东财分档主力净额等未提供的内容。
 禁止给出具体买入/卖出点位、仓位或「必涨/必跌」表述。
 散户数量是小单活跃度代理，必须写明不是真实持仓人数。
 资金单位若摘要里是「亿」，保持一致。"""
@@ -23,26 +23,19 @@ def build_synthesis_prompt(
     ticks: dict[str, Any],
     verdict: dict[str, Any],
 ) -> str:
-    # 精简给模型：去掉过长明细表
     fund_lite = {
         k: fund.get(k)
         for k in (
             "label",
             "evidence",
-            "main_net_1d_yi",
-            "main_net_5d_yi",
-            "main_net_10d_yi",
-            "super_net_5d_yi",
-            "small_net_5d_yi",
-            "streak",
-            "flip_count_20d",
-            "main_small_align_20d",
+            "big_deal_count",
             "active_buy_share",
             "active_buy_yi",
             "active_sell_yi",
-            "big_deal_count",
-            "snapshot",
-            "minute",
+            "net_active_yi",
+            "streak",
+            "deal_sessions",
+            "top_events",
         )
         if k in fund
     }
@@ -56,11 +49,11 @@ def build_synthesis_prompt(
             "buy_share",
             "small_trade_count",
             "small_buy_share",
-            "small_net_1d_yi",
-            "small_net_5d_yi",
+            "small_net_yi",
             "pct_vs_pre",
             "peak_session",
             "cross_evidence",
+            "deal_coverage",
             "evidence",
             "note",
         )

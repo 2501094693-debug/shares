@@ -1,11 +1,30 @@
-"""趋势分析规则：仅资金动向 + 分时成交统计与标签。
+"""趋势分析规则：仅资金动向列表 + 分时成交列表。
 
-不做日线/均线/形态。散户「数量」是小单活跃度代理，不是真实持仓人数。
+不做日线、东财分档资金、分钟资金、快照。散户「数量」是小单活跃度代理。
 """
 
 from __future__ import annotations
 
 from typing import Any
+
+_SMALL_LOT = 50
+
+_LOT_BUCKETS = (
+    ("xs", 0, 20),
+    ("s", 21, 50),
+    ("m", 51, 200),
+    ("l", 201, 500),
+    ("xl", 501, 10**9),
+)
+
+_AMOUNT_BUCKETS = (
+    ("30万以下", 0.0, 300_000.0),
+    ("30-100万", 300_000.0, 1_000_000.0),
+    ("100-300万", 1_000_000.0, 3_000_000.0),
+    ("300万+", 3_000_000.0, 1e18),
+)
+
+_SESSION_ORDER = ("auction", "open30", "morning", "afternoon", "late", "close30", "other")
 
 
 def _f(value: Any, default: float | None = None) -> float | None:
@@ -26,15 +45,6 @@ def _items(pack: dict[str, Any] | None) -> list[dict[str, Any]]:
     return [r for r in rows if isinstance(r, dict)]
 
 
-def _sum_field(rows: list[dict[str, Any]], key: str) -> float:
-    total = 0.0
-    for row in rows:
-        v = _f(row.get(key))
-        if v is not None:
-            total += v
-    return total
-
-
 def _yi(value: float | None) -> float | None:
     if value is None:
         return None
@@ -47,99 +57,11 @@ def _pct(num: float, den: float) -> float | None:
     return round(num / den, 4)
 
 
-def _round(value: float | None, nd: int = 3) -> float | None:
-    if value is None:
-        return None
-    return round(value, nd)
-
-
 def _hm(value: Any) -> str:
-    """取 HH:MM。"""
     s = str(value or "")
     if len(s) >= 5 and s[2] == ":":
         return s[:5]
     return s[:5] if s else ""
-
-
-# --- 资金动向 ---
-
-_SMALL_LOT = 50
-
-_LOT_BUCKETS = (
-    ("xs", 0, 20),
-    ("s", 21, 50),
-    ("m", 51, 200),
-    ("l", 201, 500),
-    ("xl", 501, 10**9),
-)
-
-
-def _window_nets(rows: list[dict[str, Any]], n: int) -> dict[str, float | None]:
-    chunk = rows[-n:] if n > 0 else []
-    if not chunk:
-        return {
-            "main": None,
-            "super": None,
-            "big": None,
-            "mid": None,
-            "small": None,
-            "bars": 0,
-        }
-    return {
-        "main": _sum_field(chunk, "main_net"),
-        "super": _sum_field(chunk, "super_net"),
-        "big": _sum_field(chunk, "big_net"),
-        "mid": _sum_field(chunk, "mid_net"),
-        "small": _sum_field(chunk, "small_net"),
-        "bars": len(chunk),
-    }
-
-
-def _streak(rows: list[dict[str, Any]], key: str = "main_net") -> dict[str, Any]:
-    if not rows:
-        return {"direction": "flat", "days": 0}
-    signs: list[int] = []
-    for row in reversed(rows):
-        v = _f(row.get(key)) or 0.0
-        if abs(v) < 1e5:
-            signs.append(0)
-        else:
-            signs.append(1 if v > 0 else -1)
-    if not signs or signs[0] == 0:
-        return {"direction": "flat", "days": 0}
-    d = signs[0]
-    n = 0
-    for s in signs:
-        if s == d:
-            n += 1
-        else:
-            break
-    return {"direction": "in" if d > 0 else "out", "days": n}
-
-
-def _flip_count(rows: list[dict[str, Any]], key: str = "main_net") -> int:
-    signs: list[int] = []
-    for row in rows:
-        v = _f(row.get(key)) or 0.0
-        if abs(v) < 1e5:
-            continue
-        signs.append(1 if v > 0 else -1)
-    if len(signs) < 2:
-        return 0
-    return sum(1 for a, b in zip(signs, signs[1:]) if a != b)
-
-
-def _align_rate(rows: list[dict[str, Any]], a: str, b: str) -> float | None:
-    same = total = 0
-    for row in rows:
-        va = _f(row.get(a)) or 0.0
-        vb = _f(row.get(b)) or 0.0
-        if abs(va) < 1e5 or abs(vb) < 1e5:
-            continue
-        total += 1
-        if (va > 0) == (vb > 0):
-            same += 1
-    return _pct(same, total)
 
 
 def _session_bucket(hm: str) -> str:
@@ -167,115 +89,66 @@ def _session_bucket(hm: str) -> str:
     return "other"
 
 
+def _quad_key(side: str, aggr: str) -> str | None:
+    if side == "buy" and aggr == "active":
+        return "active_buy"
+    if side == "sell" and aggr == "active":
+        return "active_sell"
+    if side == "buy" and aggr == "passive":
+        return "passive_buy"
+    if side == "sell" and aggr == "passive":
+        return "passive_sell"
+    return None
+
+
 def analyze_fund(pack: dict[str, Any]) -> dict[str, Any]:
-    """资金动向详细统计 + 主力标签。"""
-    daily = sorted(_items(pack.get("fund_daily")), key=lambda r: str(r.get("time") or ""))
-    minute = sorted(_items(pack.get("fund_minute")), key=lambda r: str(r.get("time") or ""))
-    deals = _items(pack.get("big_deal"))
-    snap = pack.get("fund_snapshot") if isinstance(pack.get("fund_snapshot"), dict) else {}
+    """资金动向列表（同花顺大单）统计 + 当日标签。"""
+    deals = sorted(
+        _items(pack.get("big_deal")),
+        key=lambda r: (str(r.get("time") or ""), str(r.get("event_id") or "")),
+    )
 
-    windows = {n: _window_nets(daily, n) for n in (1, 3, 5, 10, 20)}
-    latest = daily[-1] if daily else {}
-    streak = _streak(daily)
-    flips_20 = _flip_count(daily[-20:])
-    main_small_align = _align_rate(daily[-20:], "main_net", "small_net")
-    super_main_align = _align_rate(daily[-10:], "super_net", "main_net")
-
-    recent10 = []
-    for row in daily[-10:]:
-        recent10.append(
-            {
-                "time": str(row.get("time") or "")[:10],
-                "main_yi": _yi(_f(row.get("main_net"))),
-                "super_yi": _yi(_f(row.get("super_net"))),
-                "big_yi": _yi(_f(row.get("big_net"))),
-                "mid_yi": _yi(_f(row.get("mid_net"))),
-                "small_yi": _yi(_f(row.get("small_net"))),
-                "main_net_pct": _f(row.get("main_net_pct")),
-            }
-        )
-
-    snapshot = {
-        "main_yi": _yi(_f(snap.get("main_net"))),
-        "super_yi": _yi(_f(snap.get("super_net"))),
-        "big_yi": _yi(_f(snap.get("big_net"))),
-        "mid_yi": _yi(_f(snap.get("mid_net"))),
-        "small_yi": _yi(_f(snap.get("small_net"))),
-        "main_net_pct": _f(snap.get("main_net_pct")),
-        "super_net_pct": _f(snap.get("super_net_pct")),
-        "big_net_pct": _f(snap.get("big_net_pct")),
-        "mid_net_pct": _f(snap.get("mid_net_pct")),
-        "small_net_pct": _f(snap.get("small_net_pct")),
-    }
-
-    # 分钟资金按时段（东财分钟多为累计净流入 → 差分；否则按点值求和）
-    session_nets: dict[str, float] = {
-        "open30": 0.0,
-        "morning": 0.0,
-        "afternoon": 0.0,
-        "late": 0.0,
-        "close30": 0.0,
-        "other": 0.0,
-    }
-    cumulative_like = True
-    if minute:
-        vals = [_f(r.get("main_net")) or 0.0 for r in minute]
-        pos = sum(1 for v in vals if v > 0)
-        neg = sum(1 for v in vals if v < 0)
-        peak = max((abs(v) for v in vals), default=0.0)
-        if pos > 0 and neg > 0 and peak > 0 and abs(vals[-1]) < peak * 0.9:
-            cumulative_like = False
-        prev = 0.0
-        for row, v in zip(minute, vals):
-            delta = (v - prev) if cumulative_like else v
-            prev = v if cumulative_like else prev
-            hm = _hm(row.get("time"))
-            bucket = _session_bucket(hm)
-            if bucket == "auction":
-                bucket = "open30"
-            elif bucket == "noon":
-                continue
-            if bucket not in session_nets:
-                bucket = "other"
-            session_nets[bucket] += delta
-
-    session_yi = {k: _yi(v) for k, v in session_nets.items()}
-    close_share = None
-    total_min = sum(session_nets.values())
-    if abs(total_min) > 1e5:
-        close_share = _pct(session_nets.get("close30", 0.0), abs(total_min))
-
-    # 大单四象限
     quad = {
         "active_buy": {"count": 0, "amount": 0.0},
         "active_sell": {"count": 0, "amount": 0.0},
         "passive_buy": {"count": 0, "amount": 0.0},
         "passive_sell": {"count": 0, "amount": 0.0},
     }
-    deal_sessions: dict[str, dict[str, float]] = {}
+    deal_sessions: dict[str, dict[str, float]] = {
+        k: {"active_buy": 0.0, "active_sell": 0.0, "count": 0.0} for k in _SESSION_ORDER
+    }
+    amount_stats = {
+        name: {"count": 0, "amount": 0.0, "active_buy": 0.0, "active_sell": 0.0}
+        for name, _, _ in _AMOUNT_BUCKETS
+    }
     top_events: list[dict[str, Any]] = []
+
     for row in deals:
         amt = _f(row.get("amount")) or 0.0
         side = str(row.get("side") or "").lower()
         aggr = str(row.get("aggressor") or "").lower()
-        key = None
-        if side == "buy" and aggr == "active":
-            key = "active_buy"
-        elif side == "sell" and aggr == "active":
-            key = "active_sell"
-        elif side == "buy" and aggr == "passive":
-            key = "passive_buy"
-        elif side == "sell" and aggr == "passive":
-            key = "passive_sell"
+        key = _quad_key(side, aggr)
         if key:
             quad[key]["count"] += 1
             quad[key]["amount"] += amt
         hm = _hm(row.get("time"))
         sb = _session_bucket(hm)
-        if sb not in deal_sessions:
-            deal_sessions[sb] = {"active_buy": 0.0, "active_sell": 0.0}
+        if sb == "noon":
+            sb = "other"
+        sess = deal_sessions.setdefault(sb, {"active_buy": 0.0, "active_sell": 0.0, "count": 0.0})
+        sess["count"] += 1
         if key in {"active_buy", "active_sell"}:
-            deal_sessions[sb][key] += amt
+            sess[key] += amt
+        for name, lo, hi in _AMOUNT_BUCKETS:
+            if lo <= amt < hi:
+                bucket = amount_stats[name]
+                bucket["count"] += 1
+                bucket["amount"] += amt
+                if key == "active_buy":
+                    bucket["active_buy"] += amt
+                elif key == "active_sell":
+                    bucket["active_sell"] += amt
+                break
         top_events.append(
             {
                 "time": str(row.get("time") or ""),
@@ -287,6 +160,7 @@ def analyze_fund(pack: dict[str, Any]) -> dict[str, Any]:
                 "volume_lots": _f(row.get("volume_lots")),
             }
         )
+
     top_events.sort(key=lambda x: abs(x.get("amount_yi") or 0), reverse=True)
     top_events = top_events[:8]
 
@@ -294,132 +168,125 @@ def analyze_fund(pack: dict[str, Any]) -> dict[str, Any]:
     active_sell = quad["active_sell"]["amount"]
     active_total = active_buy + active_sell
     active_buy_share = _pct(active_buy, active_total)
+    net_active = active_buy - active_sell
 
-    main_5 = windows[5]["main"] or 0.0
-    main_10 = windows[10]["main"] or 0.0
-    super_5 = windows[5]["super"] or 0.0
+    streak = _active_streak(deals)
+    open_net = deal_sessions["open30"]["active_buy"] - deal_sessions["open30"]["active_sell"]
+    close_net = deal_sessions["close30"]["active_buy"] - deal_sessions["close30"]["active_sell"]
 
     label = "观望"
     evidence: list[str] = []
-    if abs(main_5) < 1e6 and abs(main_10) < 2e6 and not deals:
+    if len(deals) < 5:
         label = "观望"
-        evidence.append("近5/10日主力净额接近零且无大单样本")
-    elif main_5 > 0 and main_10 > 0 and (active_buy_share is None or active_buy_share >= 0.55):
-        label = "吸筹"
-        evidence.append("近5日与近10日主力净流入同向")
-        if active_buy_share is not None:
-            evidence.append(f"大单主动买占比 {active_buy_share:.0%}")
-    elif main_5 < 0 and main_10 < 0 and (active_buy_share is None or active_buy_share <= 0.45):
-        label = "派发"
-        evidence.append("近5日与近10日主力净流出同向")
-        if active_buy_share is not None:
-            evidence.append(f"大单主动买占比仅 {active_buy_share:.0%}")
-    elif main_5 * main_10 < 0:
-        label = "分歧"
-        evidence.append("近5日与近10日主力净额方向相反")
-    elif active_buy > 0 and active_sell > 0 and abs(active_buy - active_sell) / max(active_total, 1) < 0.15:
+        evidence.append(f"大单样本仅 {len(deals)} 笔，不足以下方向")
+    elif active_total > 0 and abs(active_buy - active_sell) / active_total < 0.15:
         label = "对倒"
-        evidence.append("大单主动买/卖金额接近，疑似对倒或分歧博弈")
-    elif main_5 > 0:
-        label = "吸筹"
-        evidence.append("近5日主力净流入")
-    elif main_5 < 0:
-        label = "派发"
-        evidence.append("近5日主力净流出")
+        evidence.append("主动买/卖金额接近，疑似对倒或对敲")
+    elif abs(open_net) > 1e5 and abs(close_net) > 1e5 and (open_net > 0) != (close_net > 0):
+        label = "分歧"
+        evidence.append("开盘30分钟与尾盘30分钟主动净额方向相反")
+    elif net_active > 0 and (active_buy_share is None or active_buy_share >= 0.55):
+        label = "偏吸"
+        evidence.append("当日主动买净额为正")
+        if active_buy_share is not None:
+            evidence.append(f"主动买占比 {active_buy_share:.0%}")
+    elif net_active < 0 and (active_buy_share is None or active_buy_share <= 0.45):
+        label = "偏抛"
+        evidence.append("当日主动卖净额为正")
+        if active_buy_share is not None:
+            evidence.append(f"主动买占比仅 {active_buy_share:.0%}")
+    elif net_active > 0:
+        label = "偏吸"
+        evidence.append("当日主动买净额为正，但主动买占比不够一边倒")
+    elif net_active < 0:
+        label = "偏抛"
+        evidence.append("当日主动卖净额为正，但主动卖占比不够一边倒")
 
-    align = None
-    if abs(super_5) > 1e5 and abs(main_5) > 1e5:
-        align = (super_5 > 0) == (main_5 > 0)
-        evidence.append("超大单与主力同向" if align else "超大单与主力背离")
     if streak["days"] >= 3:
         evidence.append(
-            f"主力连续{streak['days']}日{'流入' if streak['direction'] == 'in' else '流出'}"
+            f"最近连续 {streak['days']} 笔主动单为"
+            f"{'买' if streak['direction'] == 'in' else '卖'}"
         )
-
-    def _win_yi(w: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "bars": w["bars"],
-            "main_yi": _yi(w["main"]),
-            "super_yi": _yi(w["super"]),
-            "big_yi": _yi(w["big"]),
-            "mid_yi": _yi(w["mid"]),
-            "small_yi": _yi(w["small"]),
-        }
 
     return {
         "label": label,
         "evidence": evidence,
-        "daily_bars": len(daily),
-        "windows": {str(k): _win_yi(v) for k, v in windows.items()},
-        "main_net_1d_yi": _yi(_f(latest.get("main_net"))),
-        "main_net_5d_yi": _yi(main_5),
-        "main_net_10d_yi": _yi(main_10),
-        "super_net_5d_yi": _yi(super_5),
-        "big_net_5d_yi": _yi(windows[5]["big"]),
-        "small_net_5d_yi": _yi(windows[5]["small"]),
-        "streak": streak,
-        "flip_count_20d": flips_20,
-        "main_small_align_20d": main_small_align,
-        "super_main_align_10d": super_main_align,
-        "super_align_main": align,
-        "recent_10d": recent10,
-        "snapshot": snapshot,
-        "snapshot_main_yi": snapshot["main_yi"],
-        "snapshot_super_yi": snapshot["super_yi"],
-        "snapshot_small_yi": snapshot["small_yi"],
-        "minute": {
-            "bars": len(minute),
-            "cumulative_like": cumulative_like if minute else None,
-            "session_main_yi": session_yi,
-            "close30_share_of_abs": close_share,
-        },
         "big_deal_count": len(deals),
-        "quad": {
-            k: {"count": v["count"], "amount_yi": _yi(v["amount"])} for k, v in quad.items()
-        },
+        "quad": {k: {"count": v["count"], "amount_yi": _yi(v["amount"])} for k, v in quad.items()},
         "active_buy_yi": _yi(active_buy),
         "active_sell_yi": _yi(active_sell),
         "passive_buy_yi": _yi(quad["passive_buy"]["amount"]),
         "passive_sell_yi": _yi(quad["passive_sell"]["amount"]),
         "active_buy_share": active_buy_share,
+        "net_active_yi": _yi(net_active),
+        "streak": streak,
         "deal_sessions": {
             k: {
                 "active_buy_yi": _yi(v.get("active_buy")),
                 "active_sell_yi": _yi(v.get("active_sell")),
+                "count": int(v.get("count") or 0),
             }
             for k, v in deal_sessions.items()
+            if v.get("count")
         },
+        "amount_buckets": [
+            {
+                "bucket": name,
+                "count": v["count"],
+                "amount_yi": _yi(v["amount"]),
+                "active_buy_yi": _yi(v["active_buy"]),
+                "active_sell_yi": _yi(v["active_sell"]),
+            }
+            for name, v in amount_stats.items()
+        ],
         "top_events": top_events,
     }
 
 
-# --- 分时成交 ---
+def _active_streak(deals: list[dict[str, Any]]) -> dict[str, Any]:
+    """从最近一笔主动单往回数连续同向笔数。days 字段兼容旧报告（此处为笔数）。"""
+    direction = 0
+    n = 0
+    for row in reversed(deals):
+        side = str(row.get("side") or "").lower()
+        aggr = str(row.get("aggressor") or "").lower()
+        if aggr != "active":
+            continue
+        sign = 1 if side == "buy" else (-1 if side == "sell" else 0)
+        if sign == 0:
+            continue
+        if direction == 0:
+            direction = sign
+        if sign == direction:
+            n += 1
+        else:
+            break
+    if n == 0:
+        return {"direction": "flat", "days": 0}
+    return {"direction": "in" if direction > 0 else "out", "days": n}
+
 
 def analyze_ticks(pack: dict[str, Any], fund: dict[str, Any] | None = None) -> dict[str, Any]:
-    """分时成交详细统计 + 散户代理标签。"""
+    """分时成交列表统计 + 散户代理标签。"""
     ticks_pack = pack.get("ticks") if isinstance(pack.get("ticks"), dict) else {}
     ticks = _items(ticks_pack)
     pre_price = _f(ticks_pack.get("pre_price"))
     last_price = _f(ticks_pack.get("last_price"))
     last_time = str(ticks_pack.get("last_time") or "")
 
-    daily = sorted(_items(pack.get("fund_daily")), key=lambda r: str(r.get("time") or ""))
-    small_5 = _sum_field(daily[-5:], "small_net") if daily else None
-    small_1 = _f(daily[-1].get("small_net")) if daily else None
-    snap = pack.get("fund_snapshot") if isinstance(pack.get("fund_snapshot"), dict) else {}
-    snap_small = _f(snap.get("small_net"))
-
     buy_n = sell_n = auction_n = mid_n = 0
-    buy_vol = sell_vol = auction_vol = mid_vol = 0.0
+    buy_vol = sell_vol = auction_vol = 0.0
     buy_amt = sell_amt = 0.0
     small_buy_n = small_sell_n = 0
     small_buy_vol = small_sell_vol = 0.0
+    small_buy_amt = small_sell_amt = 0.0
     price_buckets: set[str] = set()
     lot_stats: dict[str, dict[str, float]] = {
         name: {"buy_n": 0, "sell_n": 0, "buy_vol": 0.0, "sell_vol": 0.0, "amt": 0.0}
         for name, _, _ in _LOT_BUCKETS
     }
     sessions: dict[str, dict[str, float]] = {}
+    minute_ticks: dict[str, dict[str, float]] = {}
 
     def _ensure_session(sb: str) -> dict[str, float]:
         if sb not in sessions:
@@ -447,15 +314,26 @@ def analyze_ticks(pack: dict[str, Any], fund: dict[str, Any] | None = None) -> d
 
         hm = _hm(row.get("time"))
         sb = _session_bucket(hm)
+        if sb == "noon":
+            sb = "other"
         sess = _ensure_session(sb)
         sess["n"] += 1
         sess["vol"] += vol
         sess["amt"] += amt
 
+        minute = minute_ticks.setdefault(
+            hm, {"n": 0, "buy_n": 0, "sell_n": 0, "first": None, "last": None, "amt": 0.0}
+        )
+        minute["n"] += 1
+        minute["amt"] += amt
+        if minute["first"] is None and price is not None:
+            minute["first"] = price
+        if price is not None:
+            minute["last"] = price
+
         is_auction = side_raw in {"auction", "4"}
         is_buy = side_raw in {"buy", "1", "b"}
         is_sell = side_raw in {"sell", "2", "s"}
-        is_mid = side_raw in {"mid", "0", "m"} or (not is_buy and not is_sell and not is_auction)
 
         if is_auction:
             auction_n += 1
@@ -467,14 +345,15 @@ def analyze_ticks(pack: dict[str, Any], fund: dict[str, Any] | None = None) -> d
             buy_vol += vol
             buy_amt += amt
             sess["buy_n"] += 1
+            minute["buy_n"] += 1
         elif is_sell:
             sell_n += 1
             sell_vol += vol
             sell_amt += amt
             sess["sell_n"] += 1
+            minute["sell_n"] += 1
         else:
             mid_n += 1
-            mid_vol += vol
 
         bucket_name = "xl"
         for name, lo, hi in _LOT_BUCKETS:
@@ -495,17 +374,21 @@ def analyze_ticks(pack: dict[str, Any], fund: dict[str, Any] | None = None) -> d
             if is_buy:
                 small_buy_n += 1
                 small_buy_vol += vol
+                small_buy_amt += amt
                 sess["small_buy_n"] += 1
             elif is_sell:
                 small_sell_n += 1
                 small_sell_vol += vol
+                small_sell_amt += amt
 
     small_n = small_buy_n + small_sell_n
     small_vol = small_buy_vol + small_sell_vol
+    small_net_amt = small_buy_amt - small_sell_amt
     trade_n = buy_n + sell_n
     buy_share = _pct(buy_n, trade_n)
     buy_vol_share = _pct(buy_vol, buy_vol + sell_vol)
     small_buy_share = _pct(small_buy_n, small_n)
+    tick_amount = buy_amt + sell_amt
 
     activity = "低"
     if small_n >= 800 or (small_n >= 300 and len(price_buckets) >= 40):
@@ -514,13 +397,13 @@ def analyze_ticks(pack: dict[str, Any], fund: dict[str, Any] | None = None) -> d
         activity = "中"
 
     stance = "观望"
-    if small_buy_share is not None and small_buy_share >= 0.58 and (small_5 or 0) >= 0:
+    if small_buy_share is not None and small_buy_share >= 0.58 and small_net_amt >= 0:
         stance = "偏买"
-    elif small_buy_share is not None and small_buy_share <= 0.42 and (small_5 or 0) <= 0:
+    elif small_buy_share is not None and small_buy_share <= 0.42 and small_net_amt <= 0:
         stance = "偏卖"
-    elif small_5 is not None and small_5 > 1e6:
+    elif small_net_amt > 1e6:
         stance = "偏买"
-    elif small_5 is not None and small_5 < -1e6:
+    elif small_net_amt < -1e6:
         stance = "偏卖"
     elif small_buy_share is not None:
         if small_buy_share >= 0.55:
@@ -530,29 +413,20 @@ def analyze_ticks(pack: dict[str, Any], fund: dict[str, Any] | None = None) -> d
 
     main_label = str((fund or {}).get("label") or "")
     relation = "不明"
-    if main_label == "吸筹" and stance == "偏买":
+    if main_label == "偏吸" and stance == "偏买":
         relation = "跟风"
-    elif main_label == "吸筹" and stance == "偏卖":
+    elif main_label == "偏吸" and stance == "偏卖":
         relation = "背离（散户在出）"
-    elif main_label == "派发" and stance == "偏买":
+    elif main_label == "偏抛" and stance == "偏买":
         relation = "接盘"
-    elif main_label == "派发" and stance == "偏卖":
+    elif main_label == "偏抛" and stance == "偏卖":
         relation = "同步离场"
     elif main_label in {"对倒", "分歧"}:
         relation = "博弈中"
+    elif main_label == "观望":
+        relation = "资金样本不足"
 
-    # 交叉：开盘大单主动买 vs 小单
-    cross: list[str] = []
-    deal_sess = (fund or {}).get("deal_sessions") or {}
-    open_deal = deal_sess.get("open30") or {}
-    open_ab = open_deal.get("active_buy_yi") or 0
-    open_as = open_deal.get("active_sell_yi") or 0
-    open_tick = sessions.get("open30") or {}
-    open_small_buy = _pct(open_tick.get("small_buy_n", 0), open_tick.get("small_n", 0) or 0)
-    if open_ab and open_as is not None and open_ab > open_as and open_small_buy is not None and open_small_buy < 0.45:
-        cross.append("开盘30分钟：大单偏主动买，小单买占比偏低（大单进、小单偏出）")
-    if open_as and open_ab is not None and open_as > open_ab and open_small_buy is not None and open_small_buy > 0.55:
-        cross.append("开盘30分钟：大单偏主动卖，小单买占比偏高（警惕接盘）")
+    cross = _cross_evidence(fund or {}, sessions, minute_ticks, tick_amount)
 
     pct_vs_pre = None
     if pre_price and last_price and pre_price > 0:
@@ -573,7 +447,7 @@ def analyze_ticks(pack: dict[str, Any], fund: dict[str, Any] | None = None) -> d
         )
 
     session_out = []
-    for key in ("auction", "open30", "morning", "afternoon", "late", "close30", "other"):
+    for key in _SESSION_ORDER:
         s = sessions.get(key)
         if not s or not s["n"]:
             continue
@@ -594,7 +468,7 @@ def analyze_ticks(pack: dict[str, Any], fund: dict[str, Any] | None = None) -> d
     evidence = [
         f"分时成交 {len(ticks)} 笔，小单(≤{_SMALL_LOT}手) {small_n} 笔",
         f"小单买占比 {small_buy_share:.0%}" if small_buy_share is not None else "小单样本不足",
-        f"近5日小单净额 {_yi(small_5)} 亿" if small_5 is not None else "无小单资金序列",
+        f"小单净额 {_yi(small_net_amt)} 亿" if small_net_amt else "小单净额接近零",
     ]
     evidence.extend(cross)
 
@@ -616,6 +490,7 @@ def analyze_ticks(pack: dict[str, Any], fund: dict[str, Any] | None = None) -> d
         "auction_vol_lots": round(auction_vol, 1),
         "buy_amount_yi": _yi(buy_amt),
         "sell_amount_yi": _yi(sell_amt),
+        "tick_amount_yi": _yi(tick_amount),
         "pre_price": pre_price,
         "last_price": last_price,
         "last_time": last_time,
@@ -626,19 +501,71 @@ def analyze_ticks(pack: dict[str, Any], fund: dict[str, Any] | None = None) -> d
         "small_sell_count": small_sell_n,
         "small_buy_share": small_buy_share,
         "small_volume_lots": round(small_vol, 1),
+        "small_net_yi": _yi(small_net_amt),
         "price_bucket_count": len(price_buckets),
         "retail_proxy_score": small_n + len(price_buckets),
-        "small_net_1d_yi": _yi(snap_small if snap_small is not None else small_1),
-        "small_net_5d_yi": _yi(small_5),
         "lot_buckets": lot_out,
         "sessions": session_out,
         "peak_session": peak,
         "cross_evidence": cross,
         "evidence": evidence,
+        "deal_coverage": _deal_coverage(fund or {}, tick_amount),
     }
 
 
-# 兼容旧节点命名
+def _deal_coverage(fund: dict[str, Any], tick_amount: float) -> float | None:
+    buy = (fund.get("active_buy_yi") or 0) + (fund.get("passive_buy_yi") or 0)
+    sell = (fund.get("active_sell_yi") or 0) + (fund.get("passive_sell_yi") or 0)
+    deal_amt = ((buy or 0) + (sell or 0)) * 1e8
+    return _pct(deal_amt, tick_amount)
+
+
+def _cross_evidence(
+    fund: dict[str, Any],
+    sessions: dict[str, dict[str, float]],
+    minute_ticks: dict[str, dict[str, float]],
+    tick_amount: float,
+) -> list[str]:
+    cross: list[str] = []
+    deal_sess = fund.get("deal_sessions") or {}
+
+    def _session_cross(key: str, title: str) -> None:
+        open_deal = deal_sess.get(key) or {}
+        open_ab = open_deal.get("active_buy_yi") or 0
+        open_as = open_deal.get("active_sell_yi") or 0
+        tick = sessions.get(key) or {}
+        small_buy = _pct(tick.get("small_buy_n", 0), tick.get("small_n", 0) or 0)
+        if open_ab and open_as is not None and open_ab > open_as and small_buy is not None and small_buy < 0.45:
+            cross.append(f"{title}：大单偏主动买，小单买占比偏低（大单进、小单偏出）")
+        if open_as and open_ab is not None and open_as > open_ab and small_buy is not None and small_buy > 0.55:
+            cross.append(f"{title}：大单偏主动卖，小单买占比偏高（警惕接盘）")
+
+    _session_cross("open30", "开盘30分钟")
+    _session_cross("close30", "尾盘30分钟")
+
+    coverage = _deal_coverage(fund, tick_amount)
+    if coverage is not None:
+        cross.append(f"大单金额约占分时估算成交额 {coverage:.0%}")
+        if coverage < 0.05 and (fund.get("big_deal_count") or 0) > 0:
+            cross.append("大单覆盖率偏低，资金标签应降置信")
+
+    for ev in (fund.get("top_events") or [])[:3]:
+        hm = _hm(ev.get("time"))
+        minute = minute_ticks.get(hm)
+        if not minute or not minute["n"]:
+            continue
+        share = _pct(minute["buy_n"], minute["buy_n"] + minute["sell_n"])
+        first, last = minute.get("first"), minute.get("last")
+        move = ""
+        if isinstance(first, float) and isinstance(last, float) and first:
+            move = f"，该分钟价 {((last / first) - 1) * 100:+.2f}%"
+        share_s = f"{share:.0%}" if share is not None else "—"
+        side = f"{ev.get('aggressor') or ''}{ev.get('side') or ''}".strip()
+        cross.append(f"大单 {hm} {side} 同期分时买占比 {share_s}{move}")
+
+    return cross
+
+
 analyze_main_force = analyze_fund
 analyze_retail = analyze_ticks
 
@@ -647,53 +574,57 @@ def build_verdict(
     fund: dict[str, Any],
     ticks: dict[str, Any],
 ) -> dict[str, Any]:
-    """仅基于资金 + 分时的综合结论。"""
     main_label = str(fund.get("label") or "观望")
     retail_stance = str(ticks.get("stance") or "观望")
     relation = str(ticks.get("relation_to_main") or "")
     active_buy_share = fund.get("active_buy_share")
     streak = fund.get("streak") or {}
-    main_5 = fund.get("main_net_5d_yi")
     conf = 0.45
 
-    if main_label in {"吸筹", "派发"}:
+    if main_label in {"偏吸", "偏抛"}:
         conf = 0.55
     if streak.get("days", 0) >= 3:
-        conf = min(0.8, conf + 0.1)
+        conf = min(0.8, conf + 0.08)
     if active_buy_share is not None:
-        if main_label == "吸筹" and active_buy_share >= 0.55:
+        if main_label == "偏吸" and active_buy_share >= 0.55:
             conf = min(0.85, conf + 0.08)
-        if main_label == "派发" and active_buy_share <= 0.45:
+        if main_label == "偏抛" and active_buy_share <= 0.45:
             conf = min(0.85, conf + 0.08)
-    if fund.get("big_deal_count", 0) < 5 and (fund.get("daily_bars") or 0) < 5:
+    if fund.get("big_deal_count", 0) < 5:
         conf = max(0.3, conf - 0.15)
     if ticks.get("tick_count", 0) < 100:
         conf = max(0.3, conf - 0.1)
+    coverage = ticks.get("deal_coverage")
+    if isinstance(coverage, float) and coverage < 0.05 and (fund.get("big_deal_count") or 0) > 0:
+        conf = max(0.3, conf - 0.08)
 
     if relation == "接盘":
-        headline = "主力流出而分时小单偏买，警惕接盘"
+        headline = "大单偏抛而分时小单偏买，警惕接盘"
         lean = "谨慎偏空"
-    elif relation.startswith("背离") and main_label == "吸筹":
-        headline = "主力偏吸筹，但分时小单偏卖，资金与散户代理背离"
+    elif relation.startswith("背离") and main_label == "偏吸":
+        headline = "大单偏吸，但分时小单偏卖，资金与散户代理背离"
         lean = "谨慎偏多"
         conf = max(0.4, conf - 0.05)
-    elif main_label == "吸筹" and retail_stance != "偏卖":
-        headline = "主力偏吸筹、小单未明显接盘，短线资金偏积极"
+    elif main_label == "偏吸" and retail_stance != "偏卖":
+        headline = "大单偏吸、小单未明显接盘，短线资金偏积极"
         lean = "偏多"
         conf = min(0.85, conf + 0.05)
-    elif main_label == "派发" and retail_stance == "偏卖":
-        headline = "主力偏派发且小单同步偏卖，短线资金偏谨慎"
+    elif main_label == "偏抛" and retail_stance == "偏卖":
+        headline = "大单偏抛且小单同步偏卖，短线资金偏谨慎"
         lean = "偏空"
         conf = min(0.85, conf + 0.05)
-    elif main_label == "派发":
-        headline = "主力偏派发，需观察小单是否在接盘"
+    elif main_label == "偏抛":
+        headline = "大单偏抛，需观察小单是否在接盘"
         lean = "谨慎偏空"
     elif main_label in {"对倒", "分歧"}:
-        headline = "大单或主力资金方向分歧，等待资金信号明朗"
+        headline = "大单主动买卖分歧，等待方向明朗"
+        lean = "中性"
+    elif main_label == "观望":
+        headline = f"资金样本不足，分时小单{retail_stance}"
         lean = "中性"
     else:
-        headline = f"主力{main_label}、分时小单{retail_stance}"
-        lean = "中性" if main_label == "观望" else ("偏多" if main_label == "吸筹" else "偏空")
+        headline = f"大单{main_label}、分时小单{retail_stance}"
+        lean = "中性"
 
     return {
         "headline": headline,
@@ -704,7 +635,6 @@ def build_verdict(
         "retail_activity": ticks.get("activity"),
         "relation": relation,
         "invalidation": _invalidation(main_label, fund, ticks),
-        # 兼容旧字段名（前端/旧报告）
         "trend_bias": lean,
         "pattern": main_label,
         "resonance": relation or "—",
@@ -714,17 +644,17 @@ def build_verdict(
 def _invalidation(label: str, fund: dict[str, Any], ticks: dict[str, Any]) -> str:
     share = fund.get("active_buy_share")
     share_s = f"{share:.0%}" if isinstance(share, float) else "—"
-    if label == "吸筹":
+    if label == "偏吸":
         return (
-            f"若近2日主力转净流出，且大单主动买占比回落至45%以下（当前 {share_s}）"
-            "，或小单由偏卖翻为持续偏买并伴随主力转出（接盘强化）"
+            f"若随后30分钟主动买占比回落至45%以下（当前 {share_s}）"
+            "，或小单买占比升至55%以上并伴随大单转主动卖（接盘强化）"
         )
-    if label == "派发":
+    if label == "偏抛":
         return (
-            f"若近2日主力转净流入，且大单主动买占比升至55%以上（当前 {share_s}）"
+            f"若随后30分钟主动买占比升至55%以上（当前 {share_s}）"
             "，同时小单买占比回落"
         )
     if label in {"对倒", "分歧"}:
-        return "若近5日主力与超大单方向重新同向，且主动买/卖占比拉开超过15个百分点"
+        return "若开盘与尾盘主动净额重新同向，且主动买/卖占比拉开超过15个百分点"
     stance = ticks.get("stance") or "观望"
-    return f"方向确认前以主力近5日净额与大单主动买占比为主观察锚；当前小单动向 {stance}"
+    return f"方向确认前以当日主动买占比与开盘/尾盘交叉为主观察锚；当前小单动向 {stance}"

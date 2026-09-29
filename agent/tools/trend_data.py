@@ -1,4 +1,4 @@
-"""趋势分析数据包：仅资金动向 + 分时成交（无日线）。"""
+"""趋势分析数据包：仅资金动向列表 + 分时成交列表。"""
 
 from __future__ import annotations
 
@@ -32,32 +32,6 @@ def _safe(kind: str, fn, *args, **kwargs) -> dict[str, Any]:
         return _empty(kind, str(exc))
 
 
-def fetch_fund_daily(code: str, *, limit: int = 60, force: bool = False) -> dict[str, Any]:
-    from company.statistics.fundflow.fetcher import get_fund_flow
-
-    return _safe("fund_daily", get_fund_flow, code, scope="daily", limit=limit, force=force)
-
-
-def fetch_fund_minute(code: str, *, klt: int = 5, force: bool = False) -> dict[str, Any]:
-    from company.statistics.fundflow.fetcher import get_fund_flow
-
-    return _safe(
-        "fund_minute",
-        get_fund_flow,
-        code,
-        scope="minute",
-        limit=480,
-        klt=klt,
-        force=force,
-    )
-
-
-def fetch_fund_snapshot(code: str, *, force: bool = False) -> dict[str, Any]:
-    from company.statistics.fundflow.fetcher import get_fund_flow
-
-    return _safe("fund_snapshot", get_fund_flow, code, scope="snapshot", force=force)
-
-
 def fetch_ticks_day(code: str, *, day: str = "", force: bool = False) -> dict[str, Any]:
     from company.line.fetcher import fetch_ticks
 
@@ -79,19 +53,17 @@ def fetch_big_deal(
         code,
         scope="big_deal",
         source="tonghuashun",
-        limit=500,
+        limit=0,
         force=force,
         day=day or "",
         min_amount=min_amount,
     )
 
 
-def _pack_ok(key: str, pack: dict[str, Any]) -> tuple[bool, int, str]:
+def _pack_ok(pack: dict[str, Any]) -> tuple[bool, int, str]:
     err = str(pack.get("error") or "")
     items = pack.get("items")
     n = len(items) if isinstance(items, list) else int(pack.get("count") or 0)
-    if key == "fund_snapshot" and not err and pack.get("main_net") is not None:
-        n = max(n, 1)
     return (not err and n > 0), n, err
 
 
@@ -99,28 +71,17 @@ def build_trend_pack(
     code: str,
     *,
     day: str = "",
-    fund_limit: int = 60,
-    minute_klt: int = 5,
     min_deal_amount: float = 300_000,
     force: bool = False,
 ) -> dict[str, Any]:
-    """只拉资金动向与分时成交；单源失败不阻断。"""
-    fund_daily = fetch_fund_daily(code, limit=fund_limit, force=force)
-    fund_minute = fetch_fund_minute(code, klt=minute_klt, force=force)
-    fund_snap = fetch_fund_snapshot(code, force=force)
+    """只拉同花顺资金动向列表与东财分时成交列表；单源失败不阻断。"""
     ticks = fetch_ticks_day(code, day=day, force=force)
     big_deal = fetch_big_deal(code, day=day, force=force, min_amount=min_deal_amount)
 
     errors: list[str] = []
     sources: list[str] = []
-    for key, pack in (
-        ("fund_daily", fund_daily),
-        ("fund_minute", fund_minute),
-        ("fund_snapshot", fund_snap),
-        ("ticks", ticks),
-        ("big_deal", big_deal),
-    ):
-        ok, _n, err = _pack_ok(key, pack)
+    for key, pack in (("big_deal", big_deal), ("ticks", ticks)):
+        ok, _n, err = _pack_ok(pack)
         if err:
             errors.append(f"{key}: {err}")
         elif ok:
@@ -128,10 +89,8 @@ def build_trend_pack(
 
     return {
         "code": code,
-        "day": day or str(ticks.get("day") or ticks.get("session_day") or ""),
-        "fund_daily": fund_daily,
-        "fund_minute": fund_minute,
-        "fund_snapshot": fund_snap,
+        "day": day
+        or str(ticks.get("day") or ticks.get("session_day") or big_deal.get("session_day") or ""),
         "ticks": ticks,
         "big_deal": big_deal,
         "sources_used": sources,

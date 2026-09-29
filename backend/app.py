@@ -106,6 +106,7 @@ async def lifespan(_app: FastAPI):
 
     try:
 
+
         fund_service.start_build_index(force=False)
         print("已启动场内基金索引同步")
     except Exception as exc:  # noqa: BLE001

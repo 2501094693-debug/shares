@@ -157,7 +157,7 @@ ROE **28.56%**，ROIC **24.30%**。
         appendix = report[report.find("### 数据来源") :]
         self.assertEqual(appendix.count("- 东方财富盘口"), 1)
         self.assertIn("- 东方财富 F10", appendix)
-        self.assertIn("二次加工指标按表下计算公式生成", appendix)
+        self.assertIn("二次加工指标按「原始数据 → 计算公式 → 计算结果 → 结论」生成", appendix)
 
     def test_report_filename_does_not_double_code(self):
         self.assertEqual(

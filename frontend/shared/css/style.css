@@ -9464,6 +9464,12 @@ body.app-shell.screen-page-root .screen-page.market-page {
   text-decoration: underline;
 }
 
+.shares-expr-quick-presets {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.55em;
+}
+
 .shares-expr-chain {
   display: flex;
   flex-wrap: nowrap;
@@ -10025,6 +10031,10 @@ body.app-shell.screen-page-root .screen-page.market-page {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.shares-preset-pop__block .shares-preset-list {
+  margin-top: 0;
 }
 
 .shares-preset-pop__empty {

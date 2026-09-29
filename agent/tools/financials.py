@@ -699,7 +699,8 @@ def fetch_valuation_pack(code: str, name: str, stock: dict[str, Any], industry: 
             sys.path.insert(0, str(BACKEND_ROOT))
         from company.statistics.quote.fetch.pe_history import fetch_pe_history
 
-        pack = fetch_pe_history(code, limit=1200)
+        # ~250 trading days/year × 10y ≈ 2500; buffer for holidays / gaps
+        pack = fetch_pe_history(code, limit=2600)
         pe_items = list(pack.get("items") or []) if isinstance(pack, dict) else []
     except Exception as exc:  # noqa: BLE001
         logger.warning("历史估值失败 %s: %s", code, exc)

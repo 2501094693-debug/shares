@@ -1,4 +1,4 @@
-"""趋势分析智能体 — 状态。"""
+"""估值分析智能体 — 状态。"""
 
 from __future__ import annotations
 
@@ -6,12 +6,8 @@ import operator
 from typing import Annotated, Any, TypedDict
 
 
-class TrendState(TypedDict, total=False):
-    """个股趋势分析工作流状态（资金动向列表 + 分时成交列表）。"""
-
+class ValuationState(TypedDict, total=False):
     company: str
-    day: str
-    min_deal_amount: float
     skip_llm: bool
     force: bool
     data_cutoff_date: str
@@ -20,10 +16,12 @@ class TrendState(TypedDict, total=False):
     stock_market: str
 
     pack: dict[str, Any]
-    main_force: dict[str, Any]  # 资金动向（大单列表）统计
-    retail: dict[str, Any]  # 分时成交统计
-    verdict: dict[str, Any]
-    narrative: str
+    engine: dict[str, Any]
+    history_note: str
+    fundamentals_note: str
+    buffett_note: str
+    drivers_note: str
+    synthesis_note: str
     report: str
     report_path: str
 
