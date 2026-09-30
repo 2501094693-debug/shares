@@ -421,6 +421,7 @@ const els = {
   holderNumChart: document.getElementById("holderNumChart"),
   holderNumChartEmpty: document.getElementById("holderNumChartEmpty"),
   holdingsStatsMeta: document.getElementById("holdingsStatsMeta"),
+  holdingsStatsDate: document.getElementById("holdingsStatsDate"),
   holdingsStatsBar: document.getElementById("holdingsStatsBar"),
   holdingsStatsChartEmpty: document.getElementById("holdingsStatsChartEmpty"),
   holdingsStatsLegend: document.getElementById("holdingsStatsLegend"),
@@ -3219,6 +3220,77 @@ function syncFundHoldersDateOptions() {
     );
   }
   els.fundHoldersDate.innerHTML = options.join("");
+  syncHoldingsStatsDateOptions();
+}
+
+function holdingsStatsDateCandidates() {
+  const dates = [];
+  const seen = new Set();
+  for (const date of [
+    ...FUND_HOLDERS_REPORT_DATES,
+    ...(holdersState.reportDates || []),
+    holdersState.reportDate,
+    fundHoldersState.reportDate,
+  ]) {
+    const day = String(date || "").trim();
+    if (!day || seen.has(day)) continue;
+    seen.add(day);
+    dates.push(day);
+  }
+  dates.sort((a, b) => b.localeCompare(a));
+  return dates;
+}
+
+function syncHoldingsStatsDateOptions() {
+  if (!els.holdingsStatsDate) return;
+  const select = els.holdingsStatsDate;
+  const current = select.value || "";
+  const dates = holdingsStatsDateCandidates();
+  const nextValues = ["", ...dates];
+  const prevValues = [...select.options].map((opt) => opt.value);
+  const same =
+    prevValues.length === nextValues.length &&
+    prevValues.every((value, idx) => value === nextValues[idx]);
+  if (!same) {
+    select.innerHTML = [
+      '<option value="">最新</option>',
+      ...dates.map((date) => `<option value="${escapeHtml(date)}">${escapeHtml(date)}</option>`),
+    ].join("");
+  }
+  const holdersValue = els.holdersDate?.value || "";
+  const fundsValue = els.fundHoldersDate?.value || "";
+  if (holdersValue === fundsValue) {
+    select.value = holdersValue;
+  } else if (current && dates.includes(current)) {
+    select.value = current;
+  } else {
+    select.value = "";
+  }
+}
+
+async function loadHoldingsStatsByDate({ refresh = false } = {}) {
+  if (!code) return;
+  const reportDate = (els.holdingsStatsDate?.value || "").trim();
+  if (els.holdersDate) els.holdersDate.value = reportDate;
+  if (els.fundHoldersDate) els.fundHoldersDate.value = reportDate;
+  if (els.holdingsStatsDate) {
+    els.holdingsStatsDate.disabled = true;
+    els.holdingsStatsDate.value = reportDate;
+  }
+  try {
+    await Promise.all([
+      loadHolders({ refresh }),
+      loadFundHolders({ refresh }),
+    ]);
+  } finally {
+    if (els.holdingsStatsDate) {
+      els.holdingsStatsDate.disabled = false;
+      const holdersValue = els.holdersDate?.value || "";
+      const fundsValue = els.fundHoldersDate?.value || "";
+      if (holdersValue === fundsValue) els.holdingsStatsDate.value = holdersValue;
+      else els.holdingsStatsDate.value = reportDate;
+    }
+  }
 }
 
 function fundHolderSortValue(item, key = fundHoldersState.sortKey) {
@@ -3481,6 +3553,10 @@ function computeHoldingsStats() {
 
 function paintHoldingsStats() {
   const stats = computeHoldingsStats();
+  if (els.holdingsStatsDate) {
+    els.holdingsStatsDate.disabled = Boolean(stats.loading);
+  }
+  syncHoldingsStatsDateOptions();
   if (els.holdingsStatsMeta) {
     if (stats.loading) {
       els.holdingsStatsMeta.textContent = "正在汇总持股结构…";
@@ -3578,7 +3654,13 @@ function paintHoldingsStats() {
 }
 
 function setupHoldingsStatsChart() {
-  // no-op placeholder kept for existing setupFundHoldersBox() call
+  syncHoldingsStatsDateOptions();
+  if (els.holdingsStatsDate && els.holdingsStatsDate.dataset.bound !== "1") {
+    els.holdingsStatsDate.dataset.bound = "1";
+    els.holdingsStatsDate.addEventListener("change", () => {
+      void loadHoldingsStatsByDate({ refresh: false });
+    });
+  }
 }
 
 function holderChangeClass(item) {
@@ -3622,6 +3704,7 @@ function syncHoldersDateOptions() {
   }
   if (current && dates.includes(current)) select.value = current;
   else if (!current) select.value = "";
+  syncHoldingsStatsDateOptions();
 }
 
 function paintHolders() {

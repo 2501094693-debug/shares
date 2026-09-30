@@ -3,11 +3,11 @@
     { key: "market", href: "/market", title: "行业行情 · 涨跌与资金", ico: "▣", label: "行业行情" },
     { key: "shares", href: "/shares", title: "个股行情 · 涨幅排序", ico: "▤", label: "个股行情" },
     { key: "steep", href: "/steep", title: "涨跌停 · 多日名单", ico: "↕", label: "涨跌停" },
-    { key: "mine", href: "/mine", title: "我的 · 自选分组", ico: "★", label: "我的" },
+    { key: "analysis", href: "/analysis", title: "行情研判 · 行业 / 个股 / 涨跌停", ico: "▥", label: "行情研判" },
+    { key: "industry", href: "/industry", title: "行业树 · 地图与分类", ico: "◈", label: "行业树" },
     { key: "fund", href: "/fund", title: "基金 · ETF / LOF / 开放式", ico: "◉", label: "基金" },
     { key: "futures", href: "/futures", title: "期货 · 商品 / 金融六所", ico: "⬡", label: "期货" },
-    { key: "analysis", href: "/analysis", title: "研判 · 行业 / 个股 / 涨跌停", ico: "▥", label: "研判" },
-    { key: "industry", href: "/industry", title: "行业树 · 地图与分类", ico: "◈", label: "行业树" },
+    { key: "mine", href: "/mine", title: "我的 · 自选分组", ico: "★", label: "我的" },
   ];
 
   function currentKey() {
@@ -49,7 +49,7 @@
 
     const links = world
       ? linkHtml(
-          { key: "world", href: "/", title: "全球市场 · 股指利率国债原油", ico: "◎", label: "全球" },
+          { key: "world", href: "/", title: "全球市场 · 股指国债原油", ico: "◎", label: "全球" },
           true,
         )
       : [

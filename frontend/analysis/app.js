@@ -11,17 +11,17 @@
   const SHARES_COMPOSE_KEY = "orbit-judgment-shares-compose-draft";
   const VIEW_META = {
     limit: {
-      title: "ORBIT · 研判",
+      title: "ORBIT · 行情研判",
       sub: "按每日涨停池分批排名：阴跌 → 横盘 → 涨停，软评分排序并附日 K",
       from: "screen",
     },
     industry: {
-      title: "ORBIT · 研判",
+      title: "ORBIT · 行情研判",
       sub: "按交易日复盘申万三级行业轮动：上涨/待涨/领涨均按所选交易日切片；行情与主力净流入（当日/5日/10日）回溯至该日。点击行业进入行情树",
       from: "analysis",
     },
     shares: {
-      title: "ORBIT · 研判",
+      title: "ORBIT · 行情研判",
       sub: "筛选 · 形态 · 对比可独立使用，也可在「组合」里用且/或一次联评",
       from: "analysis",
     },

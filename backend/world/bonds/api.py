@@ -1,4 +1,4 @@
-"""国债与利率 HTTP 路由。"""
+"""国债 HTTP 路由。"""
 
 from __future__ import annotations
 
@@ -18,25 +18,6 @@ def global_bonds(
 ):
     try:
         data = service.bonds(
-            region=region.strip() or None,
-            limit=limit,
-            force=refresh == "1",
-        )
-        return ok(data)
-    except ValueError as exc:
-        return err(str(exc), 400)
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/global/rates")
-def global_rates(
-    region: str = Query("", description="地区代码，空=全部"),
-    limit: int = Query(36, ge=1, le=240),
-    refresh: str = Query("0"),
-):
-    try:
-        data = service.rates(
             region=region.strip() or None,
             limit=limit,
             force=refresh == "1",

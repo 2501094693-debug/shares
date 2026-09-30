@@ -7351,9 +7351,9 @@ body.app-shell.steep-page-root .steep-page.market-page {
   transition: flex-basis 0.18s ease, width 0.18s ease;
 }
 
-.steep-matrix-row.is-open .steep-day {
-  flex: 0 0 84px;
-  width: 84px;
+/* 展开时隐藏其余日期列，名单占满整行 */
+.steep-matrix-row.is-open .steep-day:not(.is-open) {
+  display: none;
 }
 
 .steep-day.is-open {
@@ -7384,6 +7384,35 @@ body.app-shell.steep-page-root .steep-page.market-page {
   flex: 0 0 84px;
   width: 84px;
   border-right: 1px solid var(--line);
+}
+
+/* 卡片视图：日期上移为顶栏，个股卡片横排占满 */
+.steep-matrix[data-view="cards"] .steep-day.is-open {
+  flex-direction: column;
+}
+
+.steep-matrix[data-view="cards"] .steep-day.is-open > .steep-day-head {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 6px 10px;
+  border-right: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.steep-matrix[data-view="cards"] .steep-day.is-open > .steep-day-head .steep-day-when {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.steep-matrix[data-view="cards"] .steep-day.is-open .steep-day-body {
+  width: 100%;
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .steep-day-head:hover {
@@ -8096,13 +8125,26 @@ body.app-shell.mine-page-root .mine-page.market-page {
   padding: 10px 14px 8px;
 }
 
+.holdings-stats-title-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .holdings-stats-head .chart-card__meta {
   margin: 0;
-  text-align: right;
-  max-width: 62%;
+  text-align: left;
+  max-width: none;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+.holdings-stats-head .holdings-date-field {
+  margin-left: auto;
 }
 
 .holdings-stats-body {
@@ -8251,7 +8293,12 @@ body.app-shell.mine-page-root .mine-page.market-page {
 
   .holdings-stats-head {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
+  }
+
+  .holdings-stats-head .holdings-date-field {
+    margin-left: 0;
+    align-self: flex-start;
   }
 
   .holdings-stats-head .chart-card__meta {
@@ -11790,33 +11837,6 @@ body.app-shell.world-page-root .app-stage {
   border-color: rgba(78, 201, 160, 0.58);
 }
 
-/* 央行利率卡片 */
-.world-card-rate {
-  width: 176px;
-  border-color: rgba(212, 175, 55, 0.3);
-  background: linear-gradient(160deg, rgba(36, 32, 12, 0.94), rgba(18, 14, 8, 0.92));
-  box-shadow: inset 3px 0 0 0 rgba(212, 175, 55, 0.75);
-}
-
-.world-card-rate .world-card-tag {
-  color: #fff4d4;
-  background: rgba(212, 175, 55, 0.24);
-}
-
-.world-card-rate .world-card-kicker {
-  color: #d4af37;
-}
-
-.world-card-rate::after {
-  border-right-color: rgba(212, 175, 55, 0.3);
-  border-bottom-color: rgba(212, 175, 55, 0.3);
-}
-
-.world-marker-label--rate:hover .world-card-rate,
-.world-marker-label--rate.is-active .world-card-rate {
-  border-color: rgba(212, 175, 55, 0.58);
-}
-
 .world-card-kicker {
   display: flex;
   align-items: center;
@@ -12528,10 +12548,6 @@ body.app-shell.world-page-root .world-map-controls {
     width: 160px;
   }
 
-  .world-card-rate {
-    width: 160px;
-  }
-
   body.app-shell.world-page-root .world-map-controls {
     top: 10px;
     right: 10px;
@@ -12827,4 +12843,225 @@ body.app-shell.world-page-root .world-map-controls {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(180px, 34vh) minmax(0, 1fr);
   }
+}
+
+/* —— 行情页：添加至分组 —— */
+.mine-add-btn {
+  padding: 3px 8px;
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.market-table td.mine-add-cell,
+.shares-table td.mine-add-cell {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.market-table th.mine-add-cell,
+.shares-table th.mine-add-cell {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.screen-card-meta .mine-add-btn {
+  margin-left: auto;
+}
+
+.mine-add-pop {
+  position: fixed;
+  z-index: 80;
+  max-width: calc(100vw - 16px);
+}
+
+.mine-add-pop[hidden] {
+  display: none !important;
+}
+
+.mine-add-pop__card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(70vh, 420px);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--bg-elevated);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.mine-add-pop__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mine-add-pop__head strong {
+  display: block;
+  font-family: var(--display);
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+}
+
+.mine-add-pop__sub {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+}
+
+.mine-add-pop__close {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.mine-add-pop__close:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.mine-add-pop__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mine-add-pop__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.mine-add-pop__item:hover {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.mine-add-pop__item-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.84rem;
+}
+
+.mine-add-pop__item-count {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.mine-add-pop__empty {
+  margin: 0;
+  padding: 12px 4px;
+  text-align: center;
+  font-size: 0.82rem;
+}
+
+.mine-add-pop__err {
+  color: var(--warn);
+}
+
+.mine-add-pop__create {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.mine-add-pop__create input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.mine-add-pop__create input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.mine-add-pop__go {
+  flex: 0 0 auto;
+  min-width: 52px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mine-add-pop__go:hover {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--line));
+}
+
+.mine-add-pop__hint {
+  margin: 0;
+  font-size: 0.7rem;
+}
+
+.mine-add-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 90;
+  transform: translateX(-50%);
+  max-width: min(420px, calc(100vw - 24px));
+  padding: 10px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--ink);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  font-size: 0.84rem;
+  pointer-events: none;
+}
+
+.mine-add-toast[hidden] {
+  display: none !important;
+}
+
+.mine-add-toast[data-kind="err"] {
+  border-color: color-mix(in srgb, var(--warn) 50%, var(--line-strong));
+  color: var(--warn);
+}
+
+.mine-add-toast[data-kind="flat"] {
+  color: var(--muted);
 }

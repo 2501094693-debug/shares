@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=holdings-stats-layout-20260924" />
+  <link rel="stylesheet" href="/css/style.css?v=holdings-stats-date-20260930" />
   <link rel="stylesheet" href="/css/ai-page.css?v=bazhang-step-20260928" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
@@ -984,9 +984,17 @@
                     <header class="chart-card__head holdings-stats-head">
                       <div class="chart-card__title">
                         <span class="chart-card__mark chart-card__mark--stats" aria-hidden="true"></span>
-                        <h3>持股结构</h3>
+                        <div class="holdings-stats-title-text">
+                          <h3>持股结构</h3>
+                          <p id="holdingsStatsMeta" class="chart-card__meta muted">切换到本页后加载</p>
+                        </div>
                       </div>
-                      <p id="holdingsStatsMeta" class="chart-card__meta muted">切换到本页后加载</p>
+                      <label class="cninfo-field fund-holders-date-field holdings-date-field">
+                        <span>报告期</span>
+                        <select id="holdingsStatsDate" class="chart-select cninfo-select" aria-label="持股结构报告期">
+                          <option value="">最新</option>
+                        </select>
+                      </label>
                     </header>
                     <div class="holdings-stats-body">
                       <div id="holdingsStatsBar" class="holdings-stats-bar" role="img" aria-label="持股结构占比" hidden></div>
@@ -1107,9 +1115,9 @@
 
   <script src="/js/shared/orbit-http.js?v=holders-date-20260919"></script>
   <script src="/js/shared/orbit-prefetch.js?v=holders-date-20260919"></script>
-  <script src="/js/shared/nav.js?v=mine-20260928"></script>
+  <script src="/js/shared/nav.js?v=nav-industry-20261001"></script>
   <script src="/js/shared/ai-modes.js?v=fundamentals-20260930"></script>
-  <script src="/js/shared/company-analysis.js?v=fundamentals-20260930"></script>
-  <script src="/js/company.js?v=fundamentals-20260930"></script>
+  <script src="/js/shared/company-analysis.js?v=holdings-stats-date-20260930"></script>
+  <script src="/js/company.js?v=holdings-stats-date-20260930"></script>
 </body>
 </html>

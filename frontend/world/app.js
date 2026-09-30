@@ -12,16 +12,6 @@ const REGION_COORDS = {
   cn: { lat: 31.2304, lng: 121.4737, city: "上海" },
   hk: { lat: 22.3193, lng: 114.1694, city: "香港" },
   in: { lat: 19.076, lng: 72.8777, city: "孟买" },
-  ca: { lat: 45.5017, lng: -73.5673, city: "多伦多" },
-  au: { lat: -33.8688, lng: 151.2093, city: "悉尼" },
-  nz: { lat: -36.8485, lng: 174.7633, city: "奥克兰" },
-  br: { lat: -23.5505, lng: -46.6333, city: "圣保罗" },
-  mx: { lat: 19.4326, lng: -99.1332, city: "墨西哥城" },
-  za: { lat: -26.2041, lng: 28.0473, city: "约翰内斯堡" },
-  ru: { lat: 55.7558, lng: 37.6173, city: "莫斯科" },
-  se: { lat: 59.3293, lng: 18.0686, city: "斯德哥尔摩" },
-  no: { lat: 59.9139, lng: 10.7522, city: "奥斯陆" },
-  ch: { lat: 46.2044, lng: 6.1432, city: "日内瓦" },
 };
 
 const OIL_COORDS = {
@@ -48,16 +38,6 @@ const MARKER_OFFSET = {
   "region:cn": [-120, -24],
   "region:hk": [48, 72],
   "region:in": [0, -14],
-  "region:ca": [0, -14],
-  "region:au": [0, -14],
-  "region:nz": [0, -14],
-  "region:br": [0, -14],
-  "region:mx": [0, -14],
-  "region:za": [0, -14],
-  "region:ru": [0, -14],
-  "region:se": [0, -14],
-  "region:no": [0, -14],
-  "region:ch": [0, -14],
   "oil:brent": [0, -14],
   "oil:wti": [72, 36],
   "oil:dubai": [-96, -24],
@@ -74,24 +54,6 @@ const MARKER_OFFSET = {
   "bond:cn": [56, -112],
   "bond:hk": [-96, -52],
   "bond:in": [84, 56],
-  "rate:us": [0, -14],
-  "rate:eu": [0, -14],
-  "rate:uk": [0, -14],
-  "rate:jp": [0, -14],
-  "rate:ca": [0, -14],
-  "rate:au": [0, -14],
-  "rate:nz": [0, -14],
-  "rate:kr": [0, -14],
-  "rate:in": [0, -14],
-  "rate:br": [0, -14],
-  "rate:mx": [0, -14],
-  "rate:za": [0, -14],
-  "rate:ru": [0, -14],
-  "rate:se": [0, -14],
-  "rate:no": [0, -14],
-  "rate:ch": [0, -14],
-  "rate:cn": [0, -14],
-  "rate:hk": [0, -14],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -105,11 +67,9 @@ const state = {
   oilHistorySource: {},
   bondHistory: {},
   bondHistorySource: {},
-  rateHistory: {},
-  rateHistorySource: {},
-  /** @type {"all"|"indices"|"oil"|"bonds"|"rates"} */
+  /** @type {"all"|"indices"|"oil"|"bonds"} */
   layerMode: "oil",
-  layers: { indices: false, oil: true, bonds: false, rates: false },
+  layers: { indices: false, oil: true, bonds: false },
   markerDefs: [],
   markers2d: [],
   selectedId: null,
@@ -117,8 +77,6 @@ const state = {
   oilCode: null,
   /** @type {string|null} region:tenor，如 us:10y */
   bondKey: null,
-  /** @type {string|null} region，如 us */
-  rateKey: null,
   pollTimer: 0,
 };
 
@@ -303,83 +261,6 @@ function bondQuoteDate(region, series) {
   const fromK = lastKlineDate(bondHistoryPoints(region, series?.id));
   if (fromK) return fromK;
   const q = bondQuote(series);
-  return fmtQuoteDate(q.date) || "—";
-}
-
-// ====================== 央行利率函数 ======================
-
-function fmtRate(value) {
-  if (value == null || value === "") return "—";
-  const n = Number(value);
-  if (!Number.isFinite(n)) return "—";
-  return `${n.toFixed(3)}%`;
-}
-
-/** 利率变动（百分点）。 */
-function fmtRateChg(value) {
-  if (value == null || value === "") return "—";
-  const n = Number(value);
-  if (!Number.isFinite(n)) return "—";
-  return `${n > 0 ? "+" : ""}${n.toFixed(3)}`;
-}
-
-function rateItems() {
-  return state.overview?.rates?.items || [];
-}
-
-function findRateRegion(region) {
-  return rateItems().find((row) => row.region === region) || null;
-}
-
-function rateHistoryKey(region) {
-  return region;
-}
-
-function rateHistoryPoints(region) {
-  return state.rateHistory?.[region] || [];
-}
-
-function rateQuote(row) {
-  const history = Array.isArray(row?.history) ? row.history : [];
-  const latest = row?.latest && Object.keys(row.latest).length ? row.latest : null;
-  let newest = latest;
-  let prev = null;
-  if (history.length) {
-    const first = history[0];
-    const last = history[history.length - 1];
-    const newestFirst =
-      !newest?.date ||
-      String(first?.date || "") === String(newest.date) ||
-      (String(first?.date || "") &&
-        String(last?.date || "") &&
-        String(first.date) >= String(last.date));
-    if (newestFirst) {
-      newest = newest || first;
-      prev = history[1] || null;
-    } else {
-      newest = newest || last;
-      prev = history.length >= 2 ? history[history.length - 2] : null;
-    }
-  }
-  const value = newest?.value ?? null;
-  const prevValue = prev?.value ?? null;
-  let change = null;
-  const c = Number(value);
-  const p = Number(prevValue);
-  if (Number.isFinite(c) && Number.isFinite(p)) change = c - p;
-  return {
-    value,
-    change,
-    date: newest?.date || "",
-    forecast: newest?.forecast ?? null,
-    previous: newest?.previous ?? null,
-  };
-}
-
-function rateQuoteDate(row) {
-  const fromK = lastKlineDate(rateHistoryPoints(row?.region));
-  if (fromK) return fromK;
-  const q = rateQuote(row);
   return fmtQuoteDate(q.date) || "—";
 }
 
@@ -913,25 +794,6 @@ function markerLabelHtml(marker) {
       </div>
     `;
   }
-  if (marker.category === "rates") {
-    const rateRow = marker.data.rate || {};
-    const q = rateQuote(rateRow);
-    return `
-      <div class="world-card world-card-rate">
-        <div class="world-card-kicker">
-          <span class="world-card-tag">利率</span>
-          <span>${esc(rateRow.bank_name || marker.title)}</span>
-          <span class="muted">${esc(marker.city || "")}</span>
-        </div>
-        <div class="world-card-name">${esc(rateRow.rate_name || rateRow.label || "央行利率")}</div>
-        <div class="world-card-row">
-          <strong class="world-card-px">${fmtRate(q.value)}</strong>
-          <em data-tone="${tone(q.change)}">${fmtRateChg(q.change)}</em>
-          <span class="world-card-date">${esc(rateQuoteDate(rateRow))}</span>
-        </div>
-      </div>
-    `;
-  }
   const indices = marker.data.indices || [];
   const multi = indices.length > 1;
   const single = indices[0];
@@ -961,7 +823,7 @@ function createMarker2d(marker) {
   if (!mapRuntime.map) return;
 
   const kind =
-    marker.category === "oil" ? "oil" : marker.category === "bonds" ? "bond" : marker.category === "rates" ? "rate" : "index";
+    marker.category === "oil" ? "oil" : marker.category === "bonds" ? "bond" : "index";
   const pos = toAmapPos(marker.lat, marker.lng);
 
   // 钉点钉在真实经纬度，不参与卡片避让偏移
@@ -1010,13 +872,12 @@ function groupIndicesByRegion(indices) {
 }
 
 function applyLayerMode(mode) {
-  const next = mode === "indices" || mode === "oil" || mode === "bonds" || mode === "rates" ? mode : "all";
+  const next = mode === "indices" || mode === "oil" || mode === "bonds" ? mode : "all";
   state.layerMode = next;
   state.layers = {
     indices: next === "all" || next === "indices",
     oil: next === "all" || next === "oil",
     bonds: next === "all" || next === "bonds",
-    rates: next === "all" || next === "rates",
   };
 }
 
@@ -1079,23 +940,6 @@ function buildMarkerDefs() {
         city: coord.city,
         title: item.name || region,
         data: { region, bond: item, tenorId: preferred },
-      });
-    }
-  }
-
-  if (state.layers.rates) {
-    for (const item of overview.rates?.items || []) {
-      const region = item.region;
-      const coord = REGION_COORDS[region];
-      if (!coord) continue;
-      defs.push({
-        id: `rate:${region}`,
-        category: "rates",
-        lat: coord.lat,
-        lng: coord.lng,
-        city: coord.city,
-        title: item.name || region,
-        data: { region, rate: item },
       });
     }
   }
@@ -1323,52 +1167,6 @@ function mountBondKline(card) {
   window.OrbitKline.mount(klineEl, {
     items: points,
     meta: klineMetaText(points, state.bondHistorySource?.[bondHistoryKey(region, tenorId)]),
-    showVolume: false,
-  });
-}
-
-function rateKlineBlock(region) {
-  return `<article class="chart-card chart-card--kline" data-kline-code="${esc(`rate:${region}`)}">
-    <header class="chart-card__head">
-      <div class="chart-card__head-main">
-        <div class="chart-card__title">
-          <span class="chart-card__mark" aria-hidden="true"></span>
-          <h3>走势</h3>
-        </div>
-        <div class="chart-kline-hover chart-hover-card hidden" aria-hidden="true"></div>
-      </div>
-      <p class="chart-card__meta muted">利率</p>
-      <div class="chart-card__controls">
-        <div class="chart-select-group">
-          <label class="chart-select-wrap" aria-label="周期">
-            <select class="chart-select" disabled>
-              <option selected>利率</option>
-            </select>
-          </label>
-        </div>
-      </div>
-    </header>
-    <div class="chart-card__stage">
-      <div class="chart-canvas-wrap">
-        <canvas width="720" height="360" aria-label="央行利率走势图"></canvas>
-        <p class="muted chart-empty hidden">暂无走势数据</p>
-      </div>
-    </div>
-    <footer class="chart-card__foot">
-      <div class="chart-axis-scroll is-disabled">
-        <input class="chart-scroll-bar" type="range" min="0" max="0" value="0" step="1" aria-label="时间轴滑动" disabled />
-      </div>
-    </footer>
-  </article>`;
-}
-
-function mountRateKline(card, region) {
-  const klineEl = card.querySelector(".chart-card--kline");
-  if (!klineEl || !region || !window.OrbitKline) return;
-  const points = rateHistoryPoints(region);
-  window.OrbitKline.mount(klineEl, {
-    items: points,
-    meta: klineMetaText(points, state.rateHistorySource?.[region]),
     showVolume: false,
   });
 }
@@ -1607,22 +1405,12 @@ function ensureBondSelection() {
   state.bondKey = first && series ? bondHistoryKey(first.region, series.id) : null;
 }
 
-function ensureRateSelection() {
-  if (state.rateKey) {
-    const row = findRateRegion(state.rateKey);
-    if (row) return;
-  }
-  const first = rateItems()[0];
-  state.rateKey = first ? first.region : null;
-}
-
 function rebuildMarkers() {
   buildMarkerDefs();
   syncMarkers2d();
   ensureIndexSelection();
   ensureOilSelection();
   ensureBondSelection();
-  ensureRateSelection();
   highlightMarkers();
 }
 
@@ -1735,47 +1523,6 @@ function renderChartPop(marker) {
     return;
   }
 
-  if (marker.category === "rates") {
-    const region = marker.data.region;
-    const rateRow = findRateRegion(region) || marker.data.rate || {};
-    state.rateKey = region;
-    const q = rateQuote(rateRow);
-    pop.innerHTML = `
-      <div class="world-pop-card-wrap">
-        ${closeBtn}
-        <article class="screen-card world-index-card world-rate-card" data-rate-region="${esc(region)}">
-          <button type="button" class="screen-card-head" title="定位到地图">
-            <div class="screen-card-name">
-              <strong>${esc(rateRow.bank_name || rateRow.name || region)}</strong>
-              <span>${esc(rateRow.rate_name || rateRow.label || "央行利率")}</span>
-              <em>${esc(marker.city || "")}</em>
-            </div>
-            <div class="screen-card-score">
-              <b data-tone="${tone(q.change)}">${fmtRateChg(q.change)}</b>
-              <span>${fmtRate(q.value)}</span>
-            </div>
-          </button>
-          ${rateKlineBlock(region)}
-          <footer class="screen-card-meta">
-            <span>前值 <b>${fmtRate(q.previous)}</b></span>
-            <span>预期 <b>${fmtRate(q.forecast)}</b></span>
-          </footer>
-        </article>
-      </div>
-    `;
-    const card = pop.querySelector(".world-rate-card");
-    const remount = () => {
-      if (card) mountRateKline(card, region);
-    };
-    remount();
-    requestAnimationFrame(() => requestAnimationFrame(remount));
-    pop.querySelector("[data-close]")?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      selectMarker(null, false);
-    });
-    return;
-  }
-
   const indices = marker.data.indices || [];
   const active = indices.find((row) => row.code === state.chartCode) || indices[0];
   if (!active) {
@@ -1874,19 +1621,6 @@ function selectMarker(id, focus = true) {
     return;
   }
 
-  if (marker.category === "rates") {
-    const region = marker.data.region || id.replace(/^rate:/, "");
-    state.selectedId = `rate:${region}`;
-    state.rateKey = region;
-    highlightMarkers();
-    renderChartPop(marker);
-    if (focus && mapRuntime.map) {
-      mapRuntime.map.panTo(toAmapPos(marker.lat, marker.lng));
-      if (mapRuntime.map.getZoom() < 3) mapRuntime.map.setZoom(3);
-    }
-    return;
-  }
-
   const indices = marker.data.indices || [];
   const active =
     indices.find((row) => row.code === state.chartCode) || indices[0];
@@ -1964,7 +1698,7 @@ const LAYER_MODE_KEY = "orbit-world-layer-mode-v2";
 function readLayerMode() {
   try {
     const raw = localStorage.getItem(LAYER_MODE_KEY) || "";
-    if (raw === "indices" || raw === "oil" || raw === "bonds" || raw === "rates" || raw === "all") return raw;
+    if (raw === "indices" || raw === "oil" || raw === "bonds" || raw === "all") return raw;
   } catch {
     /* ignore */
   }
@@ -2020,25 +1754,6 @@ async function fetchOptional(url, timeoutMs, extra = {}) {
   }
 }
 
-// 调试用：手动测试利率API
-window._debugRates = async function() {
-  try {
-    const resp = await fetch("/api/global/central-banks");
-    const json = await resp.json();
-    console.log("利率API原始响应:", json);
-    if (json.data?.items) {
-      console.log("利率数据条数:", json.data.items.length);
-      json.data.items.forEach(item => {
-        console.log(`  ${item.region}: ${item.name} - 最新值: ${item.latest?.value}`);
-      });
-    }
-    return json;
-  } catch (err) {
-    console.error("利率API调用失败:", err);
-    return null;
-  }
-};
-
 function apiUrl(path, params = {}) {
   const url = new URL(path, window.location.origin);
   for (const [key, value] of Object.entries(params)) {
@@ -2069,54 +1784,13 @@ function ingestBondPayload(bonds) {
   return { items };
 }
 
-// 数据源名称映射
-const RATE_SOURCE_LABELS = {
-  eastmoney: "东方财富",
-  tencent: "腾讯证券",
-  sina: "新浪财经",
-  xueqiu: "雪球",
-  jin10: "金10数据",
-  bok: "韩国央行",
-  static: "静态数据",
-};
-
-function ingestRatePayload(rates) {
-  const items = rates?.items || [];
-  const history = {};
-  const historySource = {};
-  for (const row of items) {
-    const region = row.region;
-    const points = row.history || [];
-    // 确保升序排列
-    if (points.length >= 2) {
-      const first = String(points[0]?.date || "");
-      const last = String(points[points.length - 1]?.date || "");
-      if (first && last && first > last) {
-        points.reverse();
-      }
-    }
-    history[region] = points;
-    // 使用用户友好的数据源名称
-    const rawSource = row.source || "";
-    historySource[region] = RATE_SOURCE_LABELS[rawSource] || rawSource || "未知";
-    // 弹窗/卡片用升序 history，与 K 线一致
-    row.history = points;
-    if (points.length) {
-      row.latest = points[points.length - 1];
-    }
-  }
-  state.rateHistory = history;
-  state.rateHistorySource = historySource;
-  return { items };
-}
-
 async function loadOverview(force = false, { poll = false } = {}) {
   setStatus("同步中…", "busy");
   setOilStatus("同步中…", "busy");
   const refresh = force ? { refresh: "1" } : {};
   const httpOpts = poll ? { bypassCache: true, writeCache: true } : {};
   try {
-    const [indices, oil, bonds, rates] = await Promise.all([
+    const [indices, oil, bonds] = await Promise.all([
       fetchOptional(apiUrl("/api/global/indices", refresh), 30_000, httpOpts),
       fetchOptional(apiUrl("/api/global/oil", refresh), 30_000, httpOpts),
       fetchOptional(
@@ -2124,25 +1798,11 @@ async function loadOverview(force = false, { poll = false } = {}) {
         60_000,
         httpOpts,
       ),
-      fetchOptional(
-        apiUrl("/api/global/central-banks", { ...refresh, limit: HISTORY_LIMIT }),
-        60_000,
-        httpOpts,
-      ),
     ]);
-    // 调试：检查利率数据
-    if (!rates) {
-      console.warn("[利率] API调用失败，可能需要检查后端服务或网络");
-    } else if (!rates.items || rates.items.length === 0) {
-      console.warn("[利率] API返回空数据，检查外部数据源是否可访问");
-    } else {
-      console.log(`[利率] 获取到 ${rates.items.length} 条数据:`, rates.items.map(i => `${i.region}:${i.name}`));
-    }
     state.overview = {
       indices: indices || { items: [] },
       oil: oil || { items: [] },
       bonds: ingestBondPayload(bonds),
-      rates: ingestRatePayload(rates),
     };
     rebuildMarkers();
 
@@ -2248,12 +1908,11 @@ function remountVisibleWorldKlines() {
   document.querySelectorAll("#worldIndexList .world-index-card").forEach((el) => mountIndexKline(el));
   document.querySelectorAll("#worldOilList .world-oil-card").forEach((el) => mountOilKline(el));
   const popCard = $("worldChartPop")?.querySelector(
-    ".world-index-card, .world-oil-card, .world-bond-card, .world-rate-card",
+    ".world-index-card, .world-oil-card, .world-bond-card",
   );
   if (popCard) {
     if (popCard.classList.contains("world-oil-card")) mountOilKline(popCard);
     else if (popCard.classList.contains("world-bond-card")) mountBondKline(popCard);
-    else if (popCard.classList.contains("world-rate-card")) mountRateKline(popCard, popCard.dataset.rateRegion);
     else mountIndexKline(popCard);
   }
 }

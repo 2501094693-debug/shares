@@ -104,7 +104,7 @@
   }
 
   function emptyRow(text) {
-    return `<tr class="is-empty"><td colspan="11">${text}</td></tr>`;
+    return `<tr class="is-empty"><td colspan="12">${text}</td></tr>`;
   }
 
   function industryText(row) {
@@ -307,11 +307,14 @@
   }
 
   function stockRow(row) {
-    return `<tr class="is-row is-stock" data-code="${escapeHtml(row.code || "")}" data-industry="${escapeHtml(row.l3_code || "")}">
+    const code = row.code || "";
+    const name = row.name || "";
+    const addBtn = window.OrbitMineAdd?.buttonHtml({ code, name }) || "";
+    return `<tr class="is-row is-stock" data-code="${escapeHtml(code)}" data-industry="${escapeHtml(row.l3_code || "")}">
       <td class="num shares-rank">${row.rank || "—"}</td>
       <td>
-        <span class="market-stock-name">${escapeHtml(row.name || "—")}</span>
-        <span class="market-stock-code">${escapeHtml(row.code || "")}</span>
+        <span class="market-stock-name">${escapeHtml(name || "—")}</span>
+        <span class="market-stock-code">${escapeHtml(code)}</span>
       </td>
       <td class="num" data-tone="${tone(row.change_pct)}">${fmtPct(row.change_pct)}</td>
       <td class="num">${fmtPrice(row.price)}</td>
@@ -322,6 +325,7 @@
       <td class="num market-fund-cell" data-tone="${tone(row.main_net_5d)}">${fmtYi(row.main_net_5d)}</td>
       <td class="num market-fund-cell" data-tone="${tone(row.main_net_10d)}">${fmtYi(row.main_net_10d)}</td>
       <td class="num">${fmtCap(row.market_cap)}</td>
+      <td class="mine-add-cell">${addBtn}</td>
     </tr>`;
   }
 
@@ -378,6 +382,7 @@
     const chgTone = tone(chg);
     const chgText = quote?.change_pct ? formatQuotePct(quote.change_pct) : fmtPct(chg);
     const priceText = quote?.price || fmtPrice(row.price);
+    const addBtn = window.OrbitMineAdd?.buttonHtml({ code, name: row.name || "" }) || "";
     return `<article class="screen-card is-stock" data-code="${escapeHtml(code)}" data-industry="${escapeHtml(row.l3_code || "")}" tabindex="0">
       <a class="screen-card-head" href="${escapeHtml(stockHref(row))}" title="打开公司详情">
         <span class="screen-rank">${row.rank || ""}</span>
@@ -399,6 +404,7 @@
         <span>今日 <b data-tone="${tone(row.main_net)}">${fmtYi(row.main_net)}</b></span>
         <span>5日 <b data-tone="${tone(row.main_net_5d)}">${fmtYi(row.main_net_5d)}</b></span>
         <span>10日 <b data-tone="${tone(row.main_net_10d)}">${fmtYi(row.main_net_10d)}</b></span>
+        ${addBtn}
       </footer>
     </article>`;
   }
@@ -507,9 +513,9 @@
     }
     const slice = windowSlice(rows);
     $("tableBody").innerHTML = `${
-      slice.top ? `<tr class="shares-pad" aria-hidden="true"><td colspan="11" style="height:${slice.top}px;padding:0;border:0"></td></tr>` : ""
+      slice.top ? `<tr class="shares-pad" aria-hidden="true"><td colspan="12" style="height:${slice.top}px;padding:0;border:0"></td></tr>` : ""
     }${slice.rows.map(stockRow).join("")}${
-      slice.bottom ? `<tr class="shares-pad" aria-hidden="true"><td colspan="11" style="height:${slice.bottom}px;padding:0;border:0"></td></tr>` : ""
+      slice.bottom ? `<tr class="shares-pad" aria-hidden="true"><td colspan="12" style="height:${slice.bottom}px;padding:0;border:0"></td></tr>` : ""
     }`;
   }
 
@@ -882,6 +888,7 @@
       const head = ev.target.closest(".screen-card-head");
       if (head) return;
       if (ev.target.closest(".chart-card")) return;
+      if (ev.target.closest("[data-add-group]")) return;
       const card = ev.target.closest("article.is-stock[data-code]");
       if (!card) return;
       const qs = new URLSearchParams({ code: card.dataset.code, from: "shares" });
@@ -972,7 +979,10 @@
     });
     window.OrbitPrefetch?.bindHover($("tableBody"), "tr.is-stock[data-code]");
     window.OrbitPrefetch?.bindHover(cards, "article.is-stock[data-code]");
+    window.OrbitMineAdd?.bindRoot($("tableBody"));
+    window.OrbitMineAdd?.bindRoot(cards);
     $("tableBody").addEventListener("click", (ev) => {
+      if (ev.target.closest("[data-add-group]")) return;
       const row = ev.target.closest("tr.is-stock[data-code]");
       if (!row) return;
       const qs = new URLSearchParams({ code: row.dataset.code, from: "shares" });

@@ -20,7 +20,6 @@ _TX_KLINE_SYMBOLS: dict[str, str] = {
     "000001": "sh000001",
     "399001": "sz399001",
     "000300": "sh000300",
-    "399006": "sz399006",
 }
 
 # 新浪 gi.finance 全球指数日 K（akshare index_global_hist_sina 同源）

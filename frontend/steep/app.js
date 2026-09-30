@@ -238,6 +238,7 @@
   function stockCard(row, kind) {
     const code = row.code || "";
     const chgTone = tone(row.change_pct);
+    const addBtn = window.OrbitMineAdd?.buttonHtml({ code, name: row.name || "" }) || "";
     return `<article class="screen-card is-stock" data-code="${code}" data-industry="${row.l3_code || ""}" tabindex="0">
       <a class="screen-card-head" href="${stockHref(row)}" title="打开公司详情">
         <div class="screen-card-name">
@@ -251,7 +252,7 @@
         </div>
       </a>
       ${klineBlock(code)}
-      <footer class="screen-card-meta">${stockMeta(row, kind)}</footer>
+      <footer class="screen-card-meta">${stockMeta(row, kind)}${addBtn}</footer>
     </article>`;
   }
 
@@ -517,8 +518,10 @@
     else state.open.add(key);
     render();
     if (state.open.has(key)) {
+      const scroll = $(kind === "up" ? "upScroll" : "downScroll");
+      if (scroll) scroll.scrollLeft = 0;
       const card = document.querySelector(`.steep-day[data-date="${dateRaw}"][data-kind="${kind}"]`);
-      card?.scrollIntoView({ inline: "nearest", block: "nearest" });
+      card?.scrollIntoView({ inline: "start", block: "nearest" });
       // 展开后立即用已有实时数据刷新 DOM（下一帧等卡片渲染好）
       if (Object.keys(state.liveQuotes || {}).length > 0) {
         requestAnimationFrame(() => patchLiveQuotes());
@@ -700,6 +703,8 @@
   function bind() {
     $("upTrack").addEventListener("click", onTrackClick);
     $("downTrack").addEventListener("click", onTrackClick);
+    window.OrbitMineAdd?.bindRoot($("upTrack"));
+    window.OrbitMineAdd?.bindRoot($("downTrack"));
     $("viewSeg")?.addEventListener("click", (ev) => {
       const btn = ev.target.closest("button[data-view]");
       if (btn) setView(btn.dataset.view);
@@ -733,6 +738,7 @@
   function onTrackClick(ev) {
     if (ev.target.closest(".screen-card-head")) return;
     if (ev.target.closest(".chart-card")) return;
+    if (ev.target.closest("[data-add-group]")) return;
     const stock = ev.target.closest(".is-stock[data-code]");
     if (stock) {
       window.location.href = stockHref({

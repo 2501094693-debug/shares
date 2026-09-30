@@ -10,8 +10,8 @@ INDICES: dict[str, dict[str, Any]] = {
         "name": "美国",
         "items": [
             {"code": "DJIA", "name": "道琼斯", "secid": "100.DJIA"},
-            {"code": "SPX", "name": "标普500", "secid": "100.SPX"},
             {"code": "NDX", "name": "纳斯达克", "secid": "100.NDX"},
+            {"code": "SPX", "name": "标普500", "secid": "100.SPX"},
         ],
     },
     "eu": {
@@ -56,7 +56,6 @@ INDICES: dict[str, dict[str, Any]] = {
             {"code": "000001", "name": "上证指数", "secid": "1.000001"},
             {"code": "399001", "name": "深证成指", "secid": "0.399001"},
             {"code": "000300", "name": "沪深300", "secid": "1.000300"},
-            {"code": "399006", "name": "创业板指", "secid": "0.399006"},
         ],
     },
     "hk": {

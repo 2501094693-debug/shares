@@ -1,4 +1,4 @@
-"""国债与利率数据服务。"""
+"""国债数据服务。"""
 
 from __future__ import annotations
 
@@ -7,9 +7,8 @@ from typing import Any
 
 from core.cache import TtlCache
 
-from world.bonds.catalog import BONDS, RATES
+from world.bonds.catalog import BONDS
 from world.bonds.fetcher import fetch_bond_region, fetch_bonds
-from world.bonds.rates import fetch_rate_series, fetch_rates
 
 _SERIES_TTL = 30 * 60.0
 
@@ -41,7 +40,7 @@ class BondsService:
             return data
 
     def catalog(self) -> dict[str, Any]:
-        return {"bonds": BONDS, "rates": RATES}
+        return {"bonds": BONDS}
 
     def bonds(
         self,
@@ -66,30 +65,6 @@ class BondsService:
             self._cache.put(key, data)
             return data
         return self._cached(key, lambda: fetch_bonds(limit=limit))
-
-    def rates(
-        self,
-        *,
-        region: str | None = None,
-        limit: int = 36,
-        force: bool = False,
-    ) -> dict[str, Any]:
-        if region:
-            if region not in RATES:
-                raise ValueError(f"未知地区: {region}")
-            key = f"rates:{region}:{limit}"
-            if force:
-                data = fetch_rate_series(region, limit=limit)
-                self._cache.put(key, data)
-                return data
-            return self._cached(key, lambda: fetch_rate_series(region, limit=limit))
-
-        key = f"rates:all:{limit}"
-        if force:
-            data = fetch_rates(limit=limit)
-            self._cache.put(key, data)
-            return data
-        return self._cached(key, lambda: fetch_rates(limit=limit))
 
 
 service = BondsService()

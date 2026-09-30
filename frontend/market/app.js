@@ -178,19 +178,25 @@
   function stockRows(items) {
     const rows = byChange(items);
     if (!rows.length) {
-      return emptyRow(histOnly() ? "历史日报只覆盖一、二级指数" : "点三级行业后展示成分股", colCount());
+      return emptyRow(histOnly() ? "历史日报只覆盖一、二级指数" : "点三级行业后展示成分股", stockColCount());
     }
     return rows
       .map((n) => {
+        const addBtn = window.OrbitMineAdd?.buttonHtml({ code: n.code, name: n.name || "" }) || "";
         return `<tr class="is-row is-stock" data-code="${n.code}" data-industry="${n.parent_code || ""}">
           <td><span class="market-stock-name">${n.name || "—"}</span><span class="market-stock-code">${n.code}</span></td>
           <td class="num" data-tone="${tone(n.change_pct)}">${fmtPct(n.change_pct)}</td>
           <td class="num">${fmtRatio(n.pe_ttm)}</td>
           <td class="num">${fmtRatio(n.pb)}</td>
           ${fundCells(n)}
+          <td class="mine-add-cell">${addBtn}</td>
         </tr>`;
       })
       .join("");
+  }
+
+  function stockColCount() {
+    return colCount() + 1;
   }
 
   function syncDateControls() {
@@ -249,7 +255,7 @@
     const stocks = l3 ? l3.children || [] : [];
     $("l4Body").innerHTML = l3
       ? stockRows(stocks)
-      : emptyRow(histOnly() ? "历史日报只覆盖一、二级指数" : "点三级行业后展示成分股", colCount());
+      : emptyRow(histOnly() ? "历史日报只覆盖一、二级指数" : "点三级行业后展示成分股", stockColCount());
     $("l4Hint").textContent = l3
       ? histOnly()
         ? `${l3.name} · 无历史成分股行情`
@@ -461,7 +467,9 @@
       if (row) selectL3(row.dataset.code);
     });
     window.OrbitPrefetch?.bindHover($("l4Body"), "tr.is-stock[data-code]");
+    window.OrbitMineAdd?.bindRoot($("l4Body"));
     $("l4Body").addEventListener("click", (ev) => {
+      if (ev.target.closest("[data-add-group]")) return;
       const row = ev.target.closest("tr.is-stock[data-code]");
       if (!row || histOnly()) return;
       const qs = new URLSearchParams({ code: row.dataset.code, from: "market" });
