@@ -1,5 +1,6 @@
 (() => {
   const POLL_MS = 15000;
+  const LIVE_POLL_MS = 15000;
 
   const state = {
     items: [],
@@ -14,6 +15,9 @@
     fetching: false,
     pendingLoad: null,
     pollTimer: 0,
+    liveQuoteTimer: 0,
+    liveQuoteStarted: false,
+    liveQuotes: {},
     totalCount: 0,
     lite: false,
     renderFrom: 0,
@@ -76,6 +80,15 @@
     const n = Number(value);
     if (!Number.isFinite(n)) return "—";
     return n.toFixed(2);
+  }
+
+  function formatQuotePct(text) {
+    const raw = String(text || "").trim();
+    if (!raw) return "";
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n)) return raw;
+    if (raw.startsWith("+") || raw.startsWith("-")) return raw;
+    return `${n > 0 ? "+" : ""}${raw}`;
   }
 
   function tone(value) {
@@ -360,7 +373,11 @@
 
   function stockCard(row) {
     const code = row.code || "";
-    const chgTone = tone(row.change_pct);
+    const quote = state.liveQuotes[code];
+    const chg = quote?.change_pct ? parseFloat(quote.change_pct) : row.change_pct;
+    const chgTone = tone(chg);
+    const chgText = quote?.change_pct ? formatQuotePct(quote.change_pct) : fmtPct(chg);
+    const priceText = quote?.price || fmtPrice(row.price);
     return `<article class="screen-card is-stock" data-code="${escapeHtml(code)}" data-industry="${escapeHtml(row.l3_code || "")}" tabindex="0">
       <a class="screen-card-head" href="${escapeHtml(stockHref(row))}" title="打开公司详情">
         <span class="screen-rank">${row.rank || ""}</span>
@@ -370,8 +387,8 @@
           <em>${escapeHtml(industryText(row))}</em>
         </div>
         <div class="screen-card-score">
-          <b data-tone="${chgTone}">${fmtPct(row.change_pct)}</b>
-          <span>${fmtPrice(row.price)}</span>
+          <b data-tone="${chgTone}">${chgText}</b>
+          <span>${escapeHtml(priceText)}</span>
         </div>
       </a>
       ${klineBlock(code)}
@@ -397,13 +414,17 @@
     if (rank) rank.textContent = String(row.rank || "");
     const name = el.querySelector(".screen-card-name strong");
     if (name) name.textContent = row.name || "—";
+    // 表头涨跌/现价优先用实时盘口，避免被列表缓存里的旧 change_pct 盖掉
+    const quote = state.liveQuotes[row.code || ""];
+    const chg = quote?.change_pct ? parseFloat(quote.change_pct) : row.change_pct;
+    const px = quote?.price ? parseFloat(quote.price) : row.price;
     const score = el.querySelector(".screen-card-score b");
     if (score) {
-      score.textContent = fmtPct(row.change_pct);
-      score.dataset.tone = tone(row.change_pct);
+      score.textContent = quote?.change_pct ? formatQuotePct(quote.change_pct) : fmtPct(chg);
+      score.dataset.tone = tone(chg);
     }
     const price = el.querySelector(".screen-card-score span");
-    if (price) price.textContent = fmtPrice(row.price);
+    if (price) price.textContent = quote?.price || fmtPrice(px);
     const metas = el.querySelectorAll(".screen-card-meta span b");
     if (metas[0]) metas[0].textContent = fmtRatio(row.pe_ttm);
     if (metas[1]) metas[1].textContent = fmtRatio(row.pb);
@@ -540,6 +561,9 @@
     if (fresh.length) {
       requestAnimationFrame(() => fresh.forEach(mountCardKline));
     }
+    if (Object.keys(state.liveQuotes || {}).length) {
+      requestAnimationFrame(() => patchLiveQuotes());
+    }
   }
 
   function renderViewSeg() {
@@ -592,6 +616,7 @@
     state.view = view;
     persistView();
     renderView({ resetScroll: true });
+    if (view === "cards") void fetchLiveQuotesNow();
   }
 
   function renderTable() {
@@ -701,6 +726,87 @@
       if (document.hidden) return;
       void load({ silent: true, live: true });
     }, POLL_MS);
+  }
+
+  function visibleQuoteCodes() {
+    if (state.view === "cards") {
+      const list = cardList();
+      if (!list) return [];
+      return [...list.querySelectorAll("article.is-stock[data-code]")]
+        .map((el) => el.dataset.code)
+        .filter(Boolean);
+    }
+    return filtered()
+      .slice(0, 80)
+      .map((row) => row.code)
+      .filter(Boolean);
+  }
+
+  function mergeLiveQuotes(quotes) {
+    const incoming = quotes || {};
+    const sane = {};
+    for (const [code, quote] of Object.entries(incoming)) {
+      if (!quote || typeof quote !== "object") continue;
+      const chg = parseFloat(quote.change_pct);
+      const px = parseFloat(quote.price);
+      // 过滤明显坏包，避免把表头刷成天文数字
+      if (Number.isFinite(chg) && Math.abs(chg) > 50) continue;
+      if (Number.isFinite(px) && !(px > 0 && px < 1e6)) continue;
+      sane[code] = quote;
+    }
+    state.liveQuotes = { ...state.liveQuotes, ...sane };
+    for (const row of state.items) {
+      const quote = sane[row.code || ""];
+      if (!quote) continue;
+      const chg = parseFloat(quote.change_pct);
+      if (Number.isFinite(chg)) row.change_pct = chg;
+      const px = parseFloat(quote.price);
+      if (Number.isFinite(px)) row.price = px;
+    }
+  }
+
+  function patchLiveQuotes() {
+    const list = cardList();
+    list?.querySelectorAll("article.is-stock[data-code]").forEach((card) => {
+      const quote = state.liveQuotes[card.dataset.code || ""];
+      if (!quote) return;
+      const scoreDiv = card.querySelector(".screen-card-score");
+      if (!scoreDiv) return;
+      const priceEl = scoreDiv.querySelector("span");
+      if (priceEl && quote.price) priceEl.textContent = quote.price;
+      const chgEl = scoreDiv.querySelector("b[data-tone]");
+      if (chgEl && quote.change_pct) {
+        const n = parseFloat(quote.change_pct);
+        chgEl.textContent = formatQuotePct(quote.change_pct);
+        chgEl.dataset.tone = !Number.isFinite(n) || n === 0 ? "flat" : n > 0 ? "up" : "down";
+      }
+    });
+  }
+
+  async function fetchLiveQuotesNow() {
+    const codes = visibleQuoteCodes();
+    if (!codes.length) return;
+    try {
+      const res = await fetch(`/api/stocks/quotes?codes=${codes.join(",")}`);
+      const json = await res.json();
+      if (json.ok && json.data) {
+        mergeLiveQuotes(json.data);
+        patchLiveQuotes();
+      }
+    } catch (err) {
+      console.warn("[shares] 实时行情获取失败", err);
+    }
+  }
+
+  async function fetchLiveQuotes() {
+    await fetchLiveQuotesNow();
+    state.liveQuoteTimer = setTimeout(fetchLiveQuotes, LIVE_POLL_MS);
+  }
+
+  function startLiveQuotesPoll() {
+    if (state.liveQuoteStarted) return;
+    state.liveQuoteStarted = true;
+    state.liveQuoteTimer = setTimeout(fetchLiveQuotes, 2000);
   }
 
   function bindCardGestures(list) {
@@ -853,9 +959,12 @@
       paintList(filtered());
     }, { passive: true });
     const cards = cardList();
+    let cardQuoteTimer = 0;
     cards?.addEventListener("scroll", () => {
       if (state.view !== "cards") return;
       paintCards(filtered());
+      window.clearTimeout(cardQuoteTimer);
+      cardQuoteTimer = window.setTimeout(() => void fetchLiveQuotesNow(), 400);
     }, { passive: true });
     if (cards) bindCardGestures(cards);
     window.addEventListener("resize", () => {
@@ -882,6 +991,7 @@
   window.OrbitPrefetch?.boot("shares");
   void load().then(() => {
     startPoll();
+    startLiveQuotesPoll();
     window.OrbitPrefetch?.intent({ stocks: filtered().slice(0, 3) });
   });
 })();

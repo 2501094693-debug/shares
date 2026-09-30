@@ -130,7 +130,7 @@ def _get_via_ip(
     last_error: Exception | None = None
     probe = _probe_timeout(timeout)
     for index, ip in enumerate(ips):
-        # 第一个（静态优先）用原超时；后续快速跳过坏节点
+        # 第一个（DNS 优先）用原超时；后续快速跳过坏节点
         wait = timeout if index == 0 else probe
         try:
             sess = _session(verify=False)
@@ -147,7 +147,7 @@ def _get_via_ip(
             return resp
         except Exception as exc:  # noqa: BLE001
             drop_ip(host, ip)
-            mark_bad_ip(ip)
+            mark_bad_ip(ip, host=host)
             last_error = exc
     forget_host(host)
     raise last_error or requests.ConnectionError(f"无法连接 {host}")

@@ -29,32 +29,30 @@ _PUSH2_FALLBACK_HOSTS = (
     "push2.eastmoney.com",
 )
 # DoH / 系统 DNS 全挂时兜底。只在当次请求使用，不写入缓存。
+# 注意：同一 IP 对不同 Host/SNI 可能 200 或 404，按主机分开维护。
 _PUSH2_STATIC_IPS = (
     "101.226.30.136",
     "103.220.167.67",
-    "61.129.249.5",
+    "43.144.251.121",
 )
 _PUSH2_STATIC_BY_HOST: dict[str, tuple[str, ...]] = {
-    PUSH2_DELAY_HOST: ("101.226.30.136", "103.220.167.67", "61.129.249.5"),
-    "push2.eastmoney.com": ("101.226.30.136", "103.220.167.67", "61.129.249.5"),
-    "push2ex.eastmoney.com": ("140.207.67.212", "61.129.249.5", "103.220.167.67"),
-    "push2his.eastmoney.com": ("140.207.67.156",),
+    # 61.129.249.5 对 delay 常 404；103.220.167.67 对 ex 常 404
+    PUSH2_DELAY_HOST: ("101.226.30.136", "103.220.167.67", "43.144.251.121"),
+    "push2.eastmoney.com": ("101.226.30.136", "43.144.251.121", "14.103.191.91"),
+    "push2ex.eastmoney.com": ("140.207.67.212", "43.137.75.211", "61.129.249.5"),
+    "push2his.eastmoney.com": ("140.207.67.156", "101.42.128.173"),
 }
 _ALL_STATIC_IPS = frozenset(
     ip for ips in _PUSH2_STATIC_BY_HOST.values() for ip in ips
 ) | frozenset(_PUSH2_STATIC_IPS)
+# 仅保留实测会 RemoteDisconnected 的节点；过宽黑名单会滤光系统 DNS，
+# 只剩静态 IP，静态不可达时（WinError 10065）资金流/涨跌停整页失败。
 _DEAD_IPS = frozenset(
     {
-        "61.129.129.48",
-        # 系统 DNS 偶发返回这些节点，TLS 握手后直接掐线（RemoteDisconnected）
-        "112.65.216.155",
-        "114.80.72.189",
-        "101.226.30.206",
         "61.152.229.217",
-        # 旧 push2 主节点，对 delay/ex 常掐线或 403
-        "61.129.129.196",
     }
 )
+# key: "ip" 或 "host|ip"；404/掐线按主机隔离，避免 delay 的坏点拖死 ex。
 _BAD_UNTIL: dict[str, float] = {}
 _BAD_TTL = 300.0
 _NUMERIC_PUSH2 = re.compile(r"^\d+\.push2\.eastmoney\.com$")
@@ -131,9 +129,20 @@ def drop_ip(host: str, ip: str) -> None:
         _CACHE.pop(host, None)
 
 
-def mark_bad_ip(ip: str, *, ttl: float | None = None) -> None:
-    """临时拉黑会掐线的 CDN 节点（不写死进 ``_DEAD_IPS``）。
+def _bad_key(ip: str, host: str | None = None) -> str:
+    host = (host or "").strip().lower().rstrip(".")
+    return f"{host}|{ip}" if host else ip
 
+
+def mark_bad_ip(
+    ip: str,
+    *,
+    host: str | None = None,
+    ttl: float | None = None,
+) -> None:
+    """临时拉黑会掐线 / 404 的 CDN 节点（不写死进 ``_DEAD_IPS``）。
+
+    尽量带 ``host``：同一 IP 对 ``push2delay`` 可用、对 ``push2ex`` 404 很常见。
     静态兜底节点用更短 TTL，避免并发失败后 5 分钟内 ``dial_ips`` 变空。
     """
     ip = (ip or "").strip()
@@ -141,7 +150,7 @@ def mark_bad_ip(ip: str, *, ttl: float | None = None) -> None:
         return
     if ttl is None:
         ttl = 60.0 if ip in _ALL_STATIC_IPS else _BAD_TTL
-    _BAD_UNTIL[ip] = time.monotonic() + max(30.0, float(ttl))
+    _BAD_UNTIL[_bad_key(ip, host)] = time.monotonic() + max(30.0, float(ttl))
 
 
 def forget_host(host: str) -> None:
@@ -160,23 +169,23 @@ def resolve_ipv4(host: str) -> list[str]:
     now = time.monotonic()
     hit = _CACHE.get(host)
     if hit and hit[0] > now and hit[1]:
-        kept = _usable(list(hit[1]))
+        kept = _usable(list(hit[1]), host=host)
         if kept:
             return kept
         _CACHE.pop(host, None)
     canon = canonical_push2_host(host)
     lookup_host = canon if canon != host else host
-    ips = _usable(_lookup_ips(lookup_host))
+    ips = _usable(_lookup_ips(lookup_host), host=host)
     if not ips and lookup_host != host:
-        ips = _usable(_lookup_ips(host))
+        ips = _usable(_lookup_ips(host), host=host)
     if not ips:
-        ips = _usable(_push2_parent_ips(lookup_host))
+        ips = _usable(_push2_parent_ips(lookup_host), host=host)
     if ips:
         _CACHE[host] = (now + _TTL, ips)
         if lookup_host != host:
             _CACHE[lookup_host] = (now + _TTL, ips)
         return ips
-    return _usable(list(_static_ips(lookup_host) or _static_ips(host)))
+    return _usable(list(_static_ips(lookup_host) or _static_ips(host)), host=host)
 
 
 def dial_ips(host: str) -> list[str]:
@@ -201,20 +210,23 @@ def dial_ips(host: str) -> list[str]:
     for ip in resolve_ipv4(host):
         if ip not in ordered:
             ordered.append(ip)
-    usable = _usable(ordered)
+    usable = _usable(ordered, host=host)
     if usable:
         return usable
     # 临时黑名单把候选滤光：忽略 _BAD_UNTIL，只排除永久死节点
     return [ip for ip in static if ip and ip not in _DEAD_IPS]
 
 
-def _usable(ips: list[str]) -> list[str]:
+def _usable(ips: list[str], host: str | None = None) -> list[str]:
     now = time.monotonic()
+    host = (host or "").strip().lower().rstrip(".") or None
     out: list[str] = []
     for ip in ips:
         if not ip or ip in _DEAD_IPS or ip in out:
             continue
         if _BAD_UNTIL.get(ip, 0.0) > now:
+            continue
+        if host and _BAD_UNTIL.get(_bad_key(ip, host), 0.0) > now:
             continue
         out.append(ip)
     return out
@@ -222,7 +234,7 @@ def _usable(ips: list[str]) -> list[str]:
 
 def _lookup_ips(host: str) -> list[str]:
     # 系统 DNS 若只返回死节点 / 临时黑名单，不能短路掉 DoH。
-    return _usable(_system_dns(host)) or _doh(host)
+    return _usable(_system_dns(host), host=host) or _doh(host)
 
 
 def _push2_parent_ips(host: str) -> list[str]:
@@ -246,7 +258,7 @@ def remember_host(host: str) -> None:
     hit = _CACHE.get(host)
     if hit and hit[0] > time.monotonic() and hit[1]:
         return
-    ips = _usable(_system_dns(host))
+    ips = _usable(_system_dns(host), host=host)
     if ips:
         _CACHE[host] = (time.monotonic() + _TTL, ips)
 
@@ -303,12 +315,12 @@ def _doh(host: str) -> list[str]:
         now = time.monotonic()
         hit = _CACHE.get(host)
         if hit and hit[0] > now and hit[1]:
-            kept = _usable(list(hit[1]))
+            kept = _usable(list(hit[1]), host=host)
             if kept:
                 return kept
             _CACHE.pop(host, None)
         for doh_ip, doh_host in _DOH_PROVIDERS:
-            ips = _usable(_doh_once(host, doh_ip, doh_host))
+            ips = _usable(_doh_once(host, doh_ip, doh_host), host=host)
             if ips:
                 _CACHE[host] = (now + _TTL, ips)
                 return ips
