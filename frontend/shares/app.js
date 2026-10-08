@@ -124,6 +124,29 @@
     return { l1: "", l2: "", l3: "" };
   }
 
+  function readIndustryFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    return {
+      l1: String(params.get("l1") || "").trim(),
+      l2: String(params.get("l2") || "").trim(),
+      l3: String(params.get("l3") || "").trim(),
+    };
+  }
+
+  function syncIndustryUrl() {
+    const url = new URL(window.location.href);
+    const { l1, l2, l3 } = state.industry;
+    if (l1) url.searchParams.set("l1", l1);
+    else url.searchParams.delete("l1");
+    if (l2) url.searchParams.set("l2", l2);
+    else url.searchParams.delete("l2");
+    if (l3) url.searchParams.set("l3", l3);
+    else url.searchParams.delete("l3");
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    const cur = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (next !== cur) window.history.replaceState(null, "", next);
+  }
+
   function isIndustrySelected(filter, l1, l2, l3) {
     return (filter.l1 || "") === (l1 || "")
       && (filter.l2 || "") === (l2 || "")
@@ -279,6 +302,7 @@
 
   function applyIndustryFilter(next) {
     state.industry = next;
+    syncIndustryUrl();
     expandSelectedPath();
     updateIndustryTrigger();
     renderIndustryTree();
@@ -286,8 +310,14 @@
   }
 
   function renderIndustries() {
-    if (!findIndustryNode(state.industries, state.industry) && industryPath(state.industry).length) {
+    if (
+      !state.lite
+      && state.industries.length
+      && !findIndustryNode(state.industries, state.industry)
+      && industryPath(state.industry).length
+    ) {
       state.industry = emptyIndustry();
+      syncIndustryUrl();
     }
     updateIndustryTrigger();
     if (state.menuOpen) renderIndustryTree();
@@ -332,6 +362,10 @@
   function stockHref(row) {
     const qs = new URLSearchParams({ code: row.code || "", from: "shares" });
     if (row.l3_code) qs.set("industry", row.l3_code);
+    const { l1, l2, l3 } = state.industry;
+    if (l1) qs.set("l1", l1);
+    if (l2) qs.set("l2", l2);
+    if (l3) qs.set("l3", l3);
     return `/company.html?${qs}`;
   }
 
@@ -891,9 +925,10 @@
       if (ev.target.closest("[data-add-group]")) return;
       const card = ev.target.closest("article.is-stock[data-code]");
       if (!card) return;
-      const qs = new URLSearchParams({ code: card.dataset.code, from: "shares" });
-      if (card.dataset.industry) qs.set("industry", card.dataset.industry);
-      window.location.href = `/company.html?${qs}`;
+      window.location.href = stockHref({
+        code: card.dataset.code,
+        l3_code: card.dataset.industry || "",
+      });
     });
 
     list.addEventListener("keydown", (ev) => {
@@ -901,9 +936,10 @@
       const card = ev.target.closest("article.is-stock[data-code]");
       if (!card) return;
       ev.preventDefault();
-      const qs = new URLSearchParams({ code: card.dataset.code, from: "shares" });
-      if (card.dataset.industry) qs.set("industry", card.dataset.industry);
-      window.location.href = `/company.html?${qs}`;
+      window.location.href = stockHref({
+        code: card.dataset.code,
+        l3_code: card.dataset.industry || "",
+      });
     });
   }
 
@@ -985,9 +1021,10 @@
       if (ev.target.closest("[data-add-group]")) return;
       const row = ev.target.closest("tr.is-stock[data-code]");
       if (!row) return;
-      const qs = new URLSearchParams({ code: row.dataset.code, from: "shares" });
-      if (row.dataset.industry) qs.set("industry", row.dataset.industry);
-      window.location.href = `/company.html?${qs}`;
+      window.location.href = stockHref({
+        code: row.dataset.code,
+        l3_code: row.dataset.industry || "",
+      });
     });
     $("refreshBtn").addEventListener("click", () => {
       void load({ silent: true, refresh: true, live: false });
@@ -997,6 +1034,8 @@
     });
   }
 
+  state.industry = readIndustryFromUrl();
+  expandSelectedPath();
   bind();
   window.OrbitPrefetch?.boot("shares");
   void load().then(() => {

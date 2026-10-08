@@ -3345,20 +3345,25 @@ function paintFundHolders() {
     if (st.reportDate) bits.push(`报告期 ${st.reportDate}`);
     if (st.count) bits.push(`${st.count} 只基金`);
     if (st.updatedAt) bits.push(`更新 ${st.updatedAt}`);
-    els.fundHoldersMeta.textContent = st.loading
-      ? "正在加载基金持股…"
-      : bits.join(" · ");
+    els.fundHoldersMeta.textContent =
+      st.loading && !st.items.length
+        ? "正在加载…"
+        : st.loading
+          ? `${bits.join(" · ") || "基金持股"} · 刷新中…`
+          : bits.join(" · ");
   }
   if (els.fundHoldersHint) {
-    els.fundHoldersHint.textContent = st.loading
-      ? "正在拉取基金持股…"
+    const hint = st.loading
+      ? ""
       : st.error
         ? st.error
         : `按${sortLabel}${sortDirLabel} · 点击表头切换 · 基金季报披露`;
+    els.fundHoldersHint.textContent = hint;
+    els.fundHoldersHint.hidden = !hint;
   }
   syncFundHoldersSortButtons();
   if (!els.fundHoldersBodyRows) return;
-  if (st.loading) {
+  if (st.loading && !st.items.length) {
     els.fundHoldersBodyRows.innerHTML = `<tr class="is-empty"><td colspan="7">正在加载…</td></tr>`;
     return;
   }
@@ -3558,8 +3563,10 @@ function paintHoldingsStats() {
   }
   syncHoldingsStatsDateOptions();
   if (els.holdingsStatsMeta) {
-    if (stats.loading) {
-      els.holdingsStatsMeta.textContent = "正在汇总持股结构…";
+    if (stats.loading && !stats.ready) {
+      els.holdingsStatsMeta.textContent = "正在加载…";
+    } else if (stats.loading) {
+      els.holdingsStatsMeta.textContent = "刷新中…";
     } else if (!stats.ready) {
       els.holdingsStatsMeta.textContent = stats.error || "暂无持股统计";
     } else {
@@ -3715,19 +3722,24 @@ function paintHolders() {
     if (st.count) bits.push(`${st.count} 人`);
     if (st.totalSharesFmt) bits.push(`总股本 ${st.totalSharesFmt}`);
     if (st.updatedAt) bits.push(`更新 ${st.updatedAt}`);
-    els.holdersMeta.textContent = st.loading
-      ? "正在加载前十大股东…"
-      : bits.join(" · ");
+    els.holdersMeta.textContent =
+      st.loading && !st.items.length
+        ? "正在加载…"
+        : st.loading
+          ? `${bits.join(" · ") || "前十大股东"} · 刷新中…`
+          : bits.join(" · ");
   }
   if (els.holdersHint) {
-    els.holdersHint.textContent = st.loading
-      ? "正在拉取前十大股东…"
+    const hint = st.loading
+      ? ""
       : st.error
         ? st.error
         : "按持股数量排名 · 定期报告披露";
+    els.holdersHint.textContent = hint;
+    els.holdersHint.hidden = !hint;
   }
   if (!els.holdersBodyRows) return;
-  if (st.loading) {
+  if (st.loading && !st.items.length) {
     els.holdersBodyRows.innerHTML = `<tr class="is-empty"><td colspan="7">正在加载…</td></tr>`;
     return;
   }
@@ -4019,7 +4031,7 @@ function renderHolderNumChart(hoverIndex = holderNumState.hoverIndex) {
 function refreshHolderNumMeta() {
   const st = holderNumState;
   if (st.loading) {
-    setHolderNumStatus("正在加载股东户数…");
+    setHolderNumStatus(st.items.length ? "刷新中…" : "正在加载…");
     return;
   }
   if (st.error) {
@@ -7769,9 +7781,18 @@ function setupBackLink() {
   if (ccode) searchQs.set("ccode", ccode);
   const searchSuffix = searchQs.toString();
 
+  const sharesQs = new URLSearchParams();
+  const sharesL1 = (params.get("l1") || "").trim();
+  const sharesL2 = (params.get("l2") || "").trim();
+  const sharesL3 = (params.get("l3") || "").trim();
+  if (sharesL1) sharesQs.set("l1", sharesL1);
+  if (sharesL2) sharesQs.set("l2", sharesL2);
+  if (sharesL3) sharesQs.set("l3", sharesL3);
+  const sharesHref = sharesQs.toString() ? `/shares?${sharesQs}` : "/shares";
+
   const targets = {
     market: { href: "/market", label: "返回行业行情" },
-    shares: { href: "/shares", label: "返回个股行情" },
+    shares: { href: sharesHref, label: "返回个股行情" },
     steep: { href: "/steep", label: "返回涨跌停" },
     industry: { href: industryHref, label: "返回行业树" },
     search: {

@@ -1,6 +1,10 @@
-"""个股股东户数走势：东财 ``RPT_HOLDERNUM_DET``。
+"""个股股东户数走势：东财 ``RPT_F10_EH_HOLDERNUM``。
 
 按报告期给出股东户数、环比变动、户均持股等，供前端画走势图。
+
+说明：数据中心 ``RPT_HOLDERNUM_DET`` 对部分标的（如黄山旅游 600054）
+仅残留 2015 年前旧数据，且东财 gdhs 详情页也可能为空；F10 报表与
+十大股东同族，覆盖正常，故以 ``RPT_F10_EH_HOLDERNUM`` 为主源。
 
     python -m company.statistics.holdings 600519 --holder-num
     python -m company.statistics.holdings 600519 --holder-num --limit 8 --json
@@ -20,7 +24,7 @@ from core.http import get_json
 logger = logging.getLogger(__name__)
 
 _API = "https://datacenter-web.eastmoney.com/api/data/v1/get"
-_REPORT = "RPT_HOLDERNUM_DET"
+_REPORT = "RPT_F10_EH_HOLDERNUM"
 _HEADERS = {"Referer": "https://data.eastmoney.com/"}
 _CACHE_TTL = 6 * 60 * 60
 _PAGE_SIZE = 200
@@ -85,18 +89,53 @@ def _parse_row(row: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(row, dict):
         return None
     day = _date(row.get("END_DATE"))
-    holder_num = to_float(row.get("HOLDER_NUM"))
+    holder_num = to_float(row.get("HOLDER_TOTAL_NUM"))
+    if holder_num is None:
+        holder_num = to_float(row.get("HOLDER_NUM"))
     if not day or holder_num is None:
         return None
-    change = to_float(row.get("HOLDER_NUM_CHANGE"))
-    change_ratio = to_float(row.get("HOLDER_NUM_RATIO"))
-    avg_hold = to_float(row.get("AVG_HOLD_NUM"))
-    avg_mcap = to_float(row.get("AVG_MARKET_CAP"))
+
+    change = to_float(row.get("HOLDER_TOTAL_NUMCHANGE"))
+    if change is None:
+        change = to_float(row.get("HOLDER_NUM_CHANGE"))
+
+    change_ratio = to_float(row.get("TOTAL_NUM_RATIO"))
+    if change_ratio is None:
+        change_ratio = to_float(row.get("CHANGEWITHLAST"))
+    if change_ratio is None:
+        change_ratio = to_float(row.get("HOLDER_NUM_RATIO"))
+
+    avg_hold = to_float(row.get("AVG_TOTAL_SHARES"))
+    if avg_hold is None:
+        avg_hold = to_float(row.get("AVGCURSHARE"))
+    if avg_hold is None:
+        avg_hold = to_float(row.get("AVG_HOLD_NUM"))
+
+    avg_mcap = to_float(row.get("AVG_HOLD_AMT"))
+    if avg_mcap is None:
+        avg_mcap = to_float(row.get("AVG_MARKET_CAP"))
+
+    pre_holder = to_float(row.get("PRE_HOLDER_NUM"))
+    if pre_holder is None and change is not None:
+        pre_holder = holder_num - change
+
+    total_shares = to_float(row.get("TOTAL_SHAREHOLD_NUM"))
+    if total_shares is None:
+        total_shares = to_float(row.get("TOTAL_HOLD_NUM"))
+    if total_shares is None:
+        total_shares = to_float(row.get("TOTAL_A_SHARES"))
+
+    close = to_float(row.get("PRICE"))
+    if close is None:
+        close = to_float(row.get("CLOSE_PRICE"))
+
+    notice = _date(row.get("NOTICE_DATE")) or _date(row.get("HOLD_NOTICE_DATE"))
+
     return {
         "time": day,
         "holder_num": int(holder_num) if holder_num == int(holder_num) else holder_num,
         "holder_num_fmt": _fmt_count(holder_num),
-        "pre_holder_num": to_float(row.get("PRE_HOLDER_NUM")),
+        "pre_holder_num": pre_holder,
         "change": change,
         "change_fmt": _fmt_signed_count(change),
         "change_ratio": change_ratio,
@@ -105,10 +144,10 @@ def _parse_row(row: dict[str, Any]) -> dict[str, Any] | None:
         "avg_hold_num_fmt": _fmt_count(avg_hold),
         "avg_market_cap": avg_mcap,
         "avg_market_cap_fmt": fmt_yi_wan(avg_mcap),
-        "total_a_shares": to_float(row.get("TOTAL_A_SHARES")),
-        "total_a_shares_fmt": fmt_shares(row.get("TOTAL_A_SHARES")),
-        "notice_date": _date(row.get("HOLD_NOTICE_DATE")),
-        "close": to_float(row.get("CLOSE_PRICE")),
+        "total_a_shares": total_shares,
+        "total_a_shares_fmt": fmt_shares(total_shares),
+        "notice_date": notice,
+        "close": close,
         "interval_chrate": to_float(row.get("INTERVAL_CHRATE")),
         "interval_chrate_fmt": fmt_pct(row.get("INTERVAL_CHRATE")),
     }
@@ -126,7 +165,8 @@ def fetch_holder_num(
         raise ValueError("缺少股票代码")
 
     cap = max(1, min(int(limit or _DEFAULT_LIMIT), _PAGE_SIZE * _MAX_PAGES))
-    cache_key = f"holder_num:{code}:{cap}"
+    # v2：切换 F10 报表后换 key，避免旧 DET 缓存继续展示到 2015
+    cache_key = f"holder_num:v2:{code}:{cap}"
     if not force:
         cached = _cache.get(cache_key)
         if cached:
