@@ -3,7 +3,8 @@
 - ``fetch_kline``：腾讯优先、东财兜底。
   腾讯没有季 / 半年 / 年 / 120 分钟，这些周期会直接走东财。
 - ``fetch_ticks``：东财优先、腾讯兜底。
-  盘中（09:15–15:31）每次全量查询覆盖当天文件；盘后 / 周末只读该交易日文件。
+  盘中（09:15–15:31）全量查询覆盖当天文件，增量查询合并进文件；
+  盘后 / 周末优先读该交易日文件，若未收齐到 15:00 则再打一次远程补齐。
 
 K 线磁盘缓存历史根；交易时段只拉最新几根合并；休市 / 午休走缓存，
 只要自最近一次收盘后已校验过就不再打远程（force 除外；对不上复权 / 缺口仍整段重拉）。
@@ -545,6 +546,76 @@ def _slice_ticks_pos(pack: dict[str, Any], pos: int) -> dict[str, Any]:
     return out
 
 
+def _ticks_time_key(value: Any) -> str:
+    """统一成 HH:MM:SS，便于比较是否已收到收盘附近成交。"""
+    text = str(value or "").strip()
+    if len(text) == 5 and text[2] == ":":
+        return f"{text}:00"
+    return text
+
+
+def _ticks_looks_complete(pack: dict[str, Any] | None) -> bool:
+    """盘后文件是否至少覆盖到常规收盘 15:00。"""
+    if not pack:
+        return False
+    items = pack.get("items") or []
+    if not items:
+        return False
+    last = _ticks_time_key(items[-1].get("time") or pack.get("last_time"))
+    return last >= "15:00:00"
+
+
+def _tick_row_key(row: dict[str, Any], *, relaxed: bool = False) -> str:
+    time = str(row.get("time") or "")
+    price = to_float(row.get("price"))
+    volume = to_float(row.get("volume")) or 0.0
+    base = f"{time}|{price}|{volume}"
+    if relaxed:
+        return base
+    return f"{base}|{row.get('count', '')}|{row.get('seq', '')}"
+
+
+def _merge_tick_items(
+    current: list[dict[str, Any]],
+    incoming: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """把增量逐笔接到已有全日列表后面（与前端 mergeTickItems 对齐）。"""
+    if not incoming:
+        return current
+    if not current:
+        return list(incoming)
+
+    def find_overlap(relaxed: bool) -> int:
+        last_key = _tick_row_key(current[-1], relaxed=relaxed)
+        for i in range(len(incoming) - 1, -1, -1):
+            if _tick_row_key(incoming[i], relaxed=relaxed) == last_key:
+                return i
+        key_to_index = {
+            _tick_row_key(row, relaxed=relaxed): i for i, row in enumerate(incoming)
+        }
+        for i in range(len(current) - 1, -1, -1):
+            hit = key_to_index.get(_tick_row_key(current[i], relaxed=relaxed))
+            if hit is not None:
+                return hit
+        return -1
+
+    idx = find_overlap(False)
+    if idx < 0:
+        idx = find_overlap(True)
+    if idx >= 0:
+        return current + incoming[idx + 1 :]
+
+    cur_last = _ticks_time_key(current[-1].get("time"))
+    inc_last = _ticks_time_key(incoming[-1].get("time"))
+    if inc_last > cur_last:
+        newer = [row for row in incoming if _ticks_time_key(row.get("time")) > cur_last]
+        if newer:
+            return current + newer
+    if len(current) >= len(incoming):
+        return current
+    return list(incoming)
+
+
 def _ticks_disk_path(code: str, day=None):
     ensure_cache_dirs()
     parsed = parse_session_day(day)
@@ -567,6 +638,7 @@ def _empty_ticks(code: str, *, day: str = "") -> dict[str, Any]:
         "cached": False,
         "session_day": iso,
         "cached_at": "",
+        "finalized": False,
     }
 
 
@@ -599,30 +671,44 @@ def _load_ticks_disk(code: str, day=None) -> dict[str, Any] | None:
         "cached": True,
         "session_day": str(payload.get("session_day") or data.get("day") or ""),
         "cached_at": str(payload.get("cached_at") or ""),
+        "finalized": bool(payload.get("finalized")),
     }
 
 
-def _save_ticks_disk(code: str, pack: dict[str, Any]) -> dict[str, Any]:
+def _save_ticks_disk(
+    code: str,
+    pack: dict[str, Any],
+    *,
+    finalized: bool | None = None,
+) -> dict[str, Any]:
     items = list(pack.get("items") or [])
     if not items:
         return pack
     day = session_day()
     iso = day.isoformat()
     stamp = cn_now().isoformat()
+    last = items[-1] if items else {}
+    last_time = last.get("time") or pack.get("last_time") or ""
+    last_price = last.get("price") if last else pack.get("last_price")
     data = {
         "code": pack.get("code") or code,
         "name": pack.get("name") or "",
         "pre_price": pack.get("pre_price"),
-        "last_time": pack.get("last_time") or "",
-        "last_price": pack.get("last_price"),
+        "last_time": last_time,
+        "last_price": last_price,
         "day": pack.get("day") or iso,
         "source": pack.get("source") or "",
         "items": items,
     }
+    done = bool(finalized) if finalized is not None else bool(pack.get("finalized"))
+    if done is False and _ticks_looks_complete({"items": items, "last_time": last_time}):
+        # 已覆盖到收盘时刻时，盘中也可视为可定稿，减少盘后重复补齐
+        done = not is_cn_session_open()
     body = {
         "version": _TICKS_DISK_VERSION,
         "session_day": iso,
         "cached_at": stamp,
+        "finalized": done,
         "count": len(items),
         "data": data,
     }
@@ -634,10 +720,19 @@ def _save_ticks_disk(code: str, pack: dict[str, Any]) -> dict[str, Any]:
         tmp.replace(path)
     out = dict(pack)
     out["day"] = data["day"]
+    out["last_time"] = last_time
+    out["last_price"] = last_price
+    out["count"] = len(items)
     out["session_day"] = iso
     out["cached_at"] = stamp
     out["cached"] = False
+    out["finalized"] = done
     return out
+
+
+def _finalize_ticks_disk(code: str, pack: dict[str, Any]) -> dict[str, Any]:
+    """盘后补齐结束（成功或无需更新）打标，避免反复打远程。"""
+    return _save_ticks_disk(code, pack, finalized=True)
 
 
 def _fetch_remote_ticks(code: str, *, pos: int | str = 0) -> dict[str, Any]:
@@ -681,7 +776,7 @@ def fetch_ticks(
     """拉取成交明细。东财优先，腾讯兜底。
 
     pos=0 当天全部；pos=-20（或 20）最近 20 笔。
-    不传 day：盘中覆盖当天磁盘缓存，盘后 / 周末直接读该交易日文件。
+    不传 day：盘中覆盖 / 合并当天磁盘缓存；盘后优先读文件，未收齐到 15:00 时再补一次远程。
     传入历史 day：只读对应缓存，没有则空包。
     """
     code = normalize_code(code)
@@ -702,6 +797,20 @@ def fetch_ticks(
     stored = None if force else _load_ticks_disk(code)
 
     if stored and not live:
+        if _ticks_looks_complete(stored) or stored.get("finalized"):
+            return _slice_ticks_pos(stored, pos_n)
+        # 盘后文件停在早盘/午盘（例如只缓存到 09:40）时补齐一次，避免分时成交显示不全
+        result = _fetch_remote_ticks(code, pos=0)
+        remote_items = list(result.get("items") or [])
+        if remote_items:
+            stored_items = list(stored.get("items") or [])
+            remote_last = _ticks_time_key(result.get("last_time") or remote_items[-1].get("time"))
+            stored_last = _ticks_time_key(stored.get("last_time") or (stored_items[-1].get("time") if stored_items else ""))
+            if len(remote_items) > len(stored_items) or remote_last > stored_last:
+                result = _save_ticks_disk(code, result, finalized=True)
+                _ticks_cache.put(f"{code}:{pos_n}", result, cached_at=now)
+                return _slice_ticks_pos(result, pos_n) if pos_n < 0 else result
+        stored = _finalize_ticks_disk(code, stored)
         return _slice_ticks_pos(stored, pos_n)
 
     cache_key = f"{code}:{pos_n}"
@@ -713,10 +822,22 @@ def fetch_ticks(
 
     if pos_n == 0:
         if result.get("items"):
-            result = _save_ticks_disk(code, result)
+            result = _save_ticks_disk(code, result, finalized=not live)
         elif stored:
             return stored
-    elif not result.get("items") and stored:
+    elif result.get("items"):
+        # 盘中增量也合并进磁盘，避免收盘后只剩早盘那一段
+        base = stored if stored and stored.get("items") else _load_ticks_disk(code)
+        if base and base.get("items"):
+            merged = _merge_tick_items(list(base["items"]), list(result["items"]))
+            if len(merged) > len(base["items"]):
+                pack = dict(base)
+                pack["items"] = merged
+                pack["source"] = result.get("source") or base.get("source") or ""
+                if result.get("pre_price") is not None:
+                    pack["pre_price"] = result.get("pre_price")
+                _save_ticks_disk(code, pack, finalized=False)
+    elif stored:
         return _slice_ticks_pos(stored, pos_n)
 
     _ticks_cache.put(cache_key, result, cached_at=now)

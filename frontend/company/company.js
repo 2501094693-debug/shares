@@ -11,14 +11,31 @@ const EXCHANGE_DEFAULT_DAYS = 365;
 const PRESS_DEFAULT_DAYS = 30;
 const PLATFORM_DEFAULT_DAYS = 30;
 const NEWS_GROUP_OFFICIAL = "official";
+const NEWS_GROUP_REPORTS = "reports";
 const NEWS_GROUP_FINANCIALS = "financials";
 const NEWS_GROUP_OTHER = "other";
 const NEWS_GROUP_LABELS = {
   official: "官方",
-  financials: "财报",
   other: "其他",
+  reports: "报告",
+  financials: "财报",
 };
-const NEWS_FINANCIALS_ALIASES = new Set(["reports", "financials", "financial", "financial-report", "caibao"]);
+const NEWS_REPORTS_ALIASES = new Set([
+  "reports",
+  "report",
+  "periodic",
+  "periodic-report",
+  "dingqi",
+  "定期",
+  "定期报告",
+]);
+const NEWS_FINANCIALS_ALIASES = new Set([
+  "financials",
+  "financial",
+  "financial-report",
+  "caibao",
+  "财报",
+]);
 const EMOTION_DEFAULT_DAYS = 3;
 const EMOTION_SOURCE = "eastmoney";
 const THS_EMOTION_SOURCE = "tonghuashun";
@@ -353,6 +370,15 @@ const els = {
   cninfoHint: document.getElementById("cninfoHint"),
   cninfoBody: document.getElementById("cninfoBody"),
   cninfoList: document.getElementById("cninfoList"),
+  periodicMeta: document.getElementById("periodicMeta"),
+  periodicBody: document.getElementById("periodicBody"),
+  periodicList: document.getElementById("periodicList"),
+  periodicTocList: document.getElementById("periodicTocList"),
+  periodicTocMeta: document.getElementById("periodicTocMeta"),
+  periodicDetail: document.getElementById("periodicDetail"),
+  periodicZoomIn: document.getElementById("periodicZoomIn"),
+  periodicZoomOut: document.getElementById("periodicZoomOut"),
+  periodicZoomVal: document.getElementById("periodicZoomVal"),
   emotionScoresMeta: document.getElementById("emotionScoresMeta"),
   emotionScoresTitle: document.getElementById("emotionScoresTitle"),
   emotionScoresHint: document.getElementById("emotionScoresHint"),
@@ -552,6 +578,52 @@ const pressState = {
   error: "",
   updatedAt: "",
 };
+const PERIODIC_ZOOM_MIN = 50;
+const PERIODIC_ZOOM_MAX = 200;
+const PERIODIC_ZOOM_STEP = 5;
+const PERIODIC_ZOOM_DEFAULT = 75;
+const PERIODIC_ZOOM_KEY = "company.periodic.zoom";
+
+function readPeriodicZoom() {
+  try {
+    const n = Number(localStorage.getItem(PERIODIC_ZOOM_KEY));
+    if (Number.isFinite(n)) {
+      return Math.min(PERIODIC_ZOOM_MAX, Math.max(PERIODIC_ZOOM_MIN, Math.round(n / PERIODIC_ZOOM_STEP) * PERIODIC_ZOOM_STEP));
+    }
+  } catch {
+    /* ignore */
+  }
+  return PERIODIC_ZOOM_DEFAULT;
+}
+
+const periodicState = {
+  loading: false,
+  items: [],
+  periods: [],
+  count: 0,
+  source: "",
+  periodKey: "",
+  selected: null,
+  latest: null,
+  error: "",
+  updatedAt: "",
+  zoom: readPeriodicZoom(),
+  doc: {
+    url: "",
+    pages: 0,
+    loaded: 0,
+    loading: false,
+    pumping: false,
+    error: "",
+    gen: 0,
+    outline: [],
+    currentPage: 0,
+    priorityPage: 0,
+    pendingJump: 0,
+    _processed: 0,
+  },
+};
+let periodicTocScrollRaf = 0;
 const platformTabs = { ths: "news", xueqiu: "news", eastmoney: "news" };
 const platformState = {
   ths: { loading: false, items: [], count: 0, total: 0, seDate: "", tab: "news", keyword: "", error: "", updatedAt: "" },
@@ -650,7 +722,7 @@ const xqEmotionState = {
   detail: { loading: false, postId: "", pack: null, error: "" },
 };
 let newsGroup = normalizeNewsGroup(params.get("news") || "");
-let newsBootstrapped = { official: false, financials: false, other: false };
+let newsBootstrapped = { official: false, other: false, reports: false, financials: false };
 let emotionBootstrapped = { eastmoney: false, tonghuashun: false, xueqiu: false };
 const ANALYSIS_PANELS = new Set(["business", "bazhang", "bazhang-rules", "buffett", "buffett-rules", "competition", "chain", "risk", "sentiment", "trend", "fundamentals", "valuation"]);
 const EARNINGS_VIEWS = new Set(["bazhang", "bazhang-rules", "buffett", "buffett-rules"]);
@@ -669,11 +741,13 @@ if (["list", "lhb", "longhu"].includes(tabParamRaw)) {
 } else if (["holders", "owner", "shareholders", "top10", "sdgd", "fund-holders", "funds", "fund", "holdings"].includes(tabParamRaw)) {
   othersSubTab = "holders";
 }
-if (
-  NEWS_FINANCIALS_ALIASES.has(tabParamRaw)
-  || NEWS_FINANCIALS_ALIASES.has(String(params.get("others") || "").trim().toLowerCase())
-) {
-  newsGroup = NEWS_GROUP_FINANCIALS;
+{
+  const othersParam = String(params.get("others") || "").trim().toLowerCase();
+  if (NEWS_REPORTS_ALIASES.has(tabParamRaw) || NEWS_REPORTS_ALIASES.has(othersParam)) {
+    newsGroup = NEWS_GROUP_REPORTS;
+  } else if (NEWS_FINANCIALS_ALIASES.has(tabParamRaw) || NEWS_FINANCIALS_ALIASES.has(othersParam)) {
+    newsGroup = NEWS_GROUP_FINANCIALS;
+  }
 }
 let judgmentSubTab = normalizeJudgmentSubTab(params.get("judgment") || "");
 if (isAnalysisPanel(tabParamRaw) || tabParamRaw === "analysis") {
@@ -727,6 +801,10 @@ function normalizeMainPanel(panelId) {
   if (
     panelId === "news"
     || panelId === "reports"
+    || panelId === "report"
+    || panelId === "periodic"
+    || panelId === "periodic-report"
+    || panelId === "dingqi"
     || panelId === "financials"
     || panelId === "financial"
     || panelId === "financial-report"
@@ -791,6 +869,7 @@ function normalizeOthersSubTab(view) {
 function normalizeNewsGroup(group) {
   const raw = String(group || "").trim().toLowerCase();
   if (raw === "other" || raw === "platform" || raw === "platforms" || raw === "media") return NEWS_GROUP_OTHER;
+  if (NEWS_REPORTS_ALIASES.has(raw)) return NEWS_GROUP_REPORTS;
   if (NEWS_FINANCIALS_ALIASES.has(raw)) return NEWS_GROUP_FINANCIALS;
   return NEWS_GROUP_OFFICIAL;
 }
@@ -2488,6 +2567,10 @@ async function loadNewsGroup(group = newsGroup, { refresh = false } = {}) {
     await loadFinancials({ refresh });
     return;
   }
+  if (group === NEWS_GROUP_REPORTS) {
+    await loadPeriodic({ refresh });
+    return;
+  }
   if (group === NEWS_GROUP_OTHER) {
     await loadOtherNews();
   } else {
@@ -2498,8 +2581,10 @@ async function loadNewsGroup(group = newsGroup, { refresh = false } = {}) {
 function syncNewsRefreshButtons() {
   const onNews = activeMainPanel === "news";
   const onFinancials = newsGroup === NEWS_GROUP_FINANCIALS;
+  const onReports = newsGroup === NEWS_GROUP_REPORTS;
   if (els.refreshNewsBtn) {
     els.refreshNewsBtn.hidden = !onNews || onFinancials;
+    els.refreshNewsBtn.textContent = onReports ? "刷新报告" : "刷新资讯";
   }
   if (els.refreshFinancialsBtn) {
     els.refreshFinancialsBtn.hidden = !onNews || !onFinancials;
@@ -4222,11 +4307,6 @@ const FINANCIALS_KPIS = [
     keys: ["NETCASH_OPERATE", "NETCASH_OPERATE_PK"],
     kind: "money",
   },
-  {
-    label: "ROE",
-    keys: ["ROEJQ", "WEIGHTAVG_ROE"],
-    kind: "pct",
-  },
 ];
 
 function financialsNormalizeSheet(sheet) {
@@ -4590,14 +4670,13 @@ function financialsAmtCell({ value, kind, yoy, mix, latest, read }) {
     return `<td class="num${latestClass}">—</td>`;
   }
   const main = financialsFmtLevel(n, kind, financialsState.unit);
-  const neg = kind !== "pct" && kind !== "ratio" && kind !== "x" && n < 0 ? " is-neg" : "";
   let sub = "";
   if (read === "yoy") {
     sub = `<span class="financials-amt-sub"${yoy ? ` data-tone="${yoy.tone}"` : ""}">${yoy ? escapeHtml(yoy.text) : ""}</span>`;
   } else if (read === "mix" && kind === "money") {
     sub = `<span class="financials-amt-sub">${mix == null ? "" : escapeHtml(`${mix.toFixed(1)}%`)}</span>`;
   }
-  return `<td class="num financials-amt${latestClass}${neg}">
+  return `<td class="num financials-amt${latestClass}">
     <span class="financials-amt-wrap">${sub}<span class="financials-amt-main">${escapeHtml(main)}</span></span>
   </td>`;
 }
@@ -6757,6 +6836,609 @@ function setupCninfoBox() {
   });
 }
 
+function periodicFindItem(periodKey) {
+  const key = String(periodKey || "").trim();
+  const items = periodicState.items;
+  if (!items.length) return null;
+  if (!key) return items[0];
+  return (
+    items.find((row) => String(row?.period_key || "") === key)
+    || items.find((row) => String(row?.period_label || "") === key)
+    || items[0]
+  );
+}
+
+function periodicKindShort(kind) {
+  const map = { annual: "年报", semi: "中报", q1: "一季", q3: "三季" };
+  return map[String(kind || "")] || "报告";
+}
+
+function periodicPdfUrl(item) {
+  return String(item?.pdf_url || item?.url || "").trim();
+}
+
+function periodicPageSrc(pdfUrl, page) {
+  const qs = new URLSearchParams({ url: pdfUrl, page: String(page) });
+  return `/api/stocks/periodic-report/pdf/page?${qs.toString()}`;
+}
+
+function renderPeriodicList(items, currentKey) {
+  if (!items.length) return `<li class="muted periodic-empty">暂无报告期</li>`;
+  return items
+    .map((row, index) => {
+      const key = String(row.period_key || "");
+      const active = key === currentKey ? " is-active" : "";
+      const label = escapeHtml(row.period_label || key);
+      const kind = escapeHtml(row.kind_label || periodicKindShort(row.kind));
+      const day = escapeHtml(String(row.published_date || "").slice(0, 10));
+      const latest = index === 0 ? `<span class="periodic-history-tag">最新</span>` : "";
+      return `
+        <li>
+          <button type="button" class="periodic-history-item${active}" data-period="${escapeHtml(key)}">
+            <span class="periodic-history-name">${label}${latest}</span>
+            <span class="periodic-history-time">${kind}${day ? ` · ${day}` : ""}</span>
+          </button>
+        </li>
+      `;
+    })
+    .join("");
+}
+
+function resetPeriodicToc(message = "选择报告期后显示目录") {
+  periodicState.doc.outline = [];
+  periodicState.doc.currentPage = 0;
+  if (els.periodicTocMeta) els.periodicTocMeta.textContent = "";
+  if (els.periodicTocList) {
+    els.periodicTocList.innerHTML = `<li class="muted periodic-empty">${escapeHtml(message)}</li>`;
+  }
+}
+
+function paintPeriodicToc() {
+  const list = els.periodicTocList;
+  if (!list) return;
+  const doc = periodicState.doc;
+  const outline = Array.isArray(doc.outline) ? doc.outline : [];
+  const pages = Number(doc.pages) || 0;
+  const current = Number(doc.currentPage) || 0;
+  let entries = outline;
+  let mode = "outline";
+  if (!entries.length && pages > 0) {
+    mode = "pages";
+    entries = Array.from({ length: pages }, (_, i) => ({
+      title: `第 ${i + 1} 页`,
+      page: i + 1,
+      level: 0,
+    }));
+  }
+  if (els.periodicTocMeta) {
+    if (!entries.length) els.periodicTocMeta.textContent = "";
+    else if (mode === "outline") els.periodicTocMeta.textContent = `${entries.length} 节`;
+    else els.periodicTocMeta.textContent = `${pages} 页`;
+  }
+  if (!entries.length) {
+    list.innerHTML = `<li class="muted periodic-empty">${doc.url ? "暂无目录" : "选择报告期后显示目录"}</li>`;
+    return;
+  }
+  list.innerHTML = entries
+    .map((row, index) => {
+      const page = Number(row.page) || 0;
+      const level = Math.min(5, Math.max(0, Number(row.level) || 0));
+      const title = escapeHtml(row.title || `条目 ${index + 1}`);
+      const disabled = !page;
+      const active = page && page === current ? " is-active" : "";
+      return `
+        <li>
+          <button type="button" class="periodic-toc-item${active}${disabled ? " is-disabled" : ""}" data-page="${page || ""}" data-level="${level}"${disabled ? " disabled" : ""}>
+            <span class="periodic-toc-title">${title}</span>
+            <span class="periodic-toc-page">${page || ""}</span>
+          </button>
+        </li>
+      `;
+    })
+    .join("");
+  syncPeriodicTocActive(current || 1);
+}
+
+function syncPeriodicTocActive(page) {
+  const list = els.periodicTocList;
+  const n = Number(page) || 0;
+  if (!list || !n) return;
+  const buttons = [...list.querySelectorAll(".periodic-toc-item[data-page]")];
+  buttons.forEach((btn) => btn.classList.remove("is-active"));
+  let best = null;
+  if (Array.isArray(periodicState.doc.outline) && periodicState.doc.outline.length) {
+    let bestPage = 0;
+    for (const btn of buttons) {
+      const p = Number(btn.dataset.page) || 0;
+      if (p && p <= n && p >= bestPage) {
+        best = btn;
+        bestPage = p;
+      }
+    }
+  } else {
+    best = list.querySelector(`.periodic-toc-item[data-page="${n}"]`);
+  }
+  if (!best) return;
+  best.classList.add("is-active");
+  best.scrollIntoView({ block: "nearest" });
+}
+
+function updatePeriodicCurrentPageFromScroll() {
+  const root = els.periodicDetail;
+  const article = root?.querySelector(".periodic-doc-body");
+  if (!root || !article) return;
+  const rootRect = root.getBoundingClientRect();
+  const marker = rootRect.top + Math.min(120, rootRect.height * 0.25);
+  let current = 1;
+  for (const fig of article.querySelectorAll(".periodic-page[data-page]")) {
+    const rect = fig.getBoundingClientRect();
+    if (rect.top <= marker) current = Number(fig.dataset.page) || current;
+    else break;
+  }
+  if (periodicState.doc.currentPage === current) return;
+  periodicState.doc.currentPage = current;
+  syncPeriodicTocActive(current);
+}
+
+function jumpPeriodicPage(page) {
+  const n = Number(page) || 0;
+  if (!n || !els.periodicDetail) return;
+  const doc = periodicState.doc;
+  const fig = els.periodicDetail.querySelector(`.periodic-page[data-page="${n}"]`);
+  if (fig?.dataset.ready === "1") {
+    fig.scrollIntoView({ block: "start", behavior: "smooth" });
+    doc.currentPage = n;
+    syncPeriodicTocActive(n);
+    return;
+  }
+  // 目标页尚未就绪：优先拉取，就绪后再滚过去（避免预造整本占位）
+  doc.priorityPage = n;
+  doc.pendingJump = n;
+  doc.currentPage = n;
+  syncPeriodicTocActive(n);
+  syncPeriodicLoadSentinel();
+  if (!doc.pumping) pumpPeriodicPages();
+}
+
+function applyPeriodicZoom(next) {
+  let zoom = Number(next);
+  if (!Number.isFinite(zoom)) zoom = periodicState.zoom;
+  zoom = Math.min(PERIODIC_ZOOM_MAX, Math.max(PERIODIC_ZOOM_MIN, Math.round(zoom / PERIODIC_ZOOM_STEP) * PERIODIC_ZOOM_STEP));
+  periodicState.zoom = zoom;
+  try {
+    localStorage.setItem(PERIODIC_ZOOM_KEY, String(zoom));
+  } catch {
+    /* ignore */
+  }
+  const root = els.periodicDetail;
+  const pad = 16; // .periodic-doc-body 左右 padding 合计
+  const base = root ? Math.max(120, (root.clientWidth || 0) - pad) : 0;
+  const width = base ? `${Math.round((base * zoom) / 100)}px` : `${zoom}%`;
+  const article = root?.querySelector(".periodic-doc-body");
+  if (article) article.style.setProperty("--periodic-page-width", width);
+  if (els.periodicZoomVal) els.periodicZoomVal.textContent = `${zoom}%`;
+  if (els.periodicZoomOut) els.periodicZoomOut.disabled = zoom <= PERIODIC_ZOOM_MIN;
+  if (els.periodicZoomIn) els.periodicZoomIn.disabled = zoom >= PERIODIC_ZOOM_MAX;
+}
+
+function nudgePeriodicZoom(delta) {
+  applyPeriodicZoom(periodicState.zoom + Number(delta || 0));
+}
+
+function ensurePeriodicDocShell() {
+  let article = els.periodicDetail?.querySelector(".periodic-doc-body");
+  if (!article) {
+    els.periodicDetail.innerHTML = `
+      <article class="periodic-doc-body" aria-label="报告页面"></article>
+      <div class="periodic-load-sentinel" aria-hidden="true"></div>
+    `;
+    article = els.periodicDetail.querySelector(".periodic-doc-body");
+  }
+  if (!els.periodicDetail.querySelector(".periodic-load-sentinel")) {
+    const tip = document.createElement("div");
+    tip.className = "periodic-load-sentinel";
+    tip.setAttribute("aria-hidden", "true");
+    els.periodicDetail.appendChild(tip);
+  }
+  applyPeriodicZoom(periodicState.zoom);
+  return article;
+}
+
+/** 按需插入单页槽位；不预造全书占位，避免长报告刷出大量「加载中」。 */
+function ensurePeriodicPageSlot(page) {
+  const article = ensurePeriodicDocShell();
+  if (!article) return null;
+  const n = Number(page) || 0;
+  if (n < 1) return null;
+  let fig = article.querySelector(`.periodic-page[data-page="${n}"]`);
+  if (fig) return fig;
+  fig = document.createElement("figure");
+  fig.className = "periodic-page";
+  fig.dataset.page = String(n);
+  fig.innerHTML = `<div class="periodic-page-placeholder muted">第 ${n} 页</div>`;
+  const figures = [...article.querySelectorAll(".periodic-page[data-page]")];
+  let placed = false;
+  for (const other of figures) {
+    if ((Number(other.dataset.page) || 0) > n) {
+      article.insertBefore(fig, other);
+      placed = true;
+      break;
+    }
+  }
+  if (!placed) article.appendChild(fig);
+  return fig;
+}
+
+function periodicPageIsPending(fig) {
+  if (!fig) return true;
+  const ready = fig.dataset.ready;
+  return ready !== "1" && ready !== "error" && fig.dataset.fetching !== "1";
+}
+
+function syncPeriodicLoadSentinel() {
+  const tip = els.periodicDetail?.querySelector(".periodic-load-sentinel");
+  if (!tip) return;
+  const doc = periodicState.doc;
+  const done = doc.pages > 0 && !doc.pumping && (doc._processed || 0) >= doc.pages;
+  if (!doc.pages || done) {
+    tip.textContent = doc.pages ? `共 ${doc.pages} 页` : "";
+    tip.classList.toggle("is-done", Boolean(doc.pages));
+    tip.classList.remove("is-loading");
+    return;
+  }
+  const jump = Number(doc.pendingJump) || 0;
+  const loading = Boolean(doc.loading || doc.pumping);
+  if (jump && loading) {
+    tip.textContent = `跳转加载 ${jump} / 已完成 ${doc.loaded}/${doc.pages}`;
+  } else {
+    tip.textContent = `${doc.loaded}/${doc.pages} 页`;
+  }
+  tip.classList.toggle("is-loading", loading);
+  tip.classList.remove("is-done");
+}
+
+function recountPeriodicLoaded() {
+  const article = els.periodicDetail?.querySelector(".periodic-doc-body");
+  const pages = periodicState.doc.pages || 0;
+  if (!article || !pages) {
+    periodicState.doc.loaded = 0;
+    periodicState.doc._processed = 0;
+    return 0;
+  }
+  let ok = 0;
+  let settled = 0;
+  for (let i = 1; i <= pages; i += 1) {
+    const ready = article.querySelector(`.periodic-page[data-page="${i}"]`)?.dataset.ready;
+    if (ready === "1") {
+      ok += 1;
+      settled += 1;
+    } else if (ready === "error") {
+      settled += 1;
+    }
+  }
+  periodicState.doc.loaded = ok;
+  periodicState.doc._processed = settled;
+  return ok;
+}
+
+const PERIODIC_PAGE_CONCURRENCY = 3;
+
+function pickNextPeriodicPages(limit = PERIODIC_PAGE_CONCURRENCY) {
+  const doc = periodicState.doc;
+  const article = els.periodicDetail?.querySelector(".periodic-doc-body");
+  if (!article || !doc.pages) return [];
+  const picks = [];
+  const take = (page) => {
+    if (picks.length >= limit) return;
+    if (!page || page < 1 || page > doc.pages) return;
+    if (picks.includes(page)) return;
+    const fig = article.querySelector(`.periodic-page[data-page="${page}"]`);
+    if (!periodicPageIsPending(fig)) {
+      if (Number(doc.priorityPage) === page) doc.priorityPage = 0;
+      return;
+    }
+    picks.push(page);
+  };
+  take(Number(doc.priorityPage) || 0);
+  const around = Number(doc.currentPage) || 1;
+  for (let d = 0; d < doc.pages && picks.length < limit; d += 1) {
+    take(around + d);
+    if (d > 0) take(around - d);
+  }
+  for (let i = 1; i <= doc.pages && picks.length < limit; i += 1) take(i);
+  return picks;
+}
+
+function settlePeriodicPendingJump(page) {
+  const doc = periodicState.doc;
+  if (Number(doc.pendingJump) !== Number(page)) return;
+  const fig = els.periodicDetail?.querySelector(`.periodic-page[data-page="${page}"]`);
+  const ready = fig?.dataset.ready;
+  if (ready !== "1" && ready !== "error") return;
+  doc.pendingJump = 0;
+  if (ready === "1" && fig) {
+    fig.scrollIntoView({ block: "start", behavior: "smooth" });
+    doc.currentPage = Number(page) || doc.currentPage;
+    syncPeriodicTocActive(doc.currentPage);
+  }
+}
+
+async function loadOnePeriodicPage(page, gen) {
+  const doc = periodicState.doc;
+  const pdfUrl = doc.url;
+  if (!pdfUrl || periodicState.doc.gen !== gen) return false;
+  const fig = ensurePeriodicPageSlot(page);
+  if (!fig) return false;
+  if (fig.dataset.ready === "1") return true;
+  if (fig.dataset.fetching === "1") return false;
+  fig.dataset.fetching = "1";
+  fig.classList.add("is-loading");
+  fig.innerHTML = `<div class="periodic-page-placeholder muted is-loading">加载第 ${page} 页…</div>`;
+  const src = periodicPageSrc(pdfUrl, page);
+  try {
+    await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.alt = `第 ${page} 页`;
+      img.decoding = "async";
+      img.onload = () => {
+        if (periodicState.doc.gen !== gen) {
+          resolve();
+          return;
+        }
+        fig.innerHTML = "";
+        fig.appendChild(img);
+        fig.dataset.ready = "1";
+        fig.classList.remove("is-loading");
+        delete fig.dataset.fetching;
+        resolve();
+      };
+      img.onerror = () => reject(new Error(`第 ${page} 页加载失败`));
+      img.src = src;
+    });
+    return fig.dataset.ready === "1";
+  } catch (err) {
+    delete fig.dataset.fetching;
+    fig.classList.remove("is-loading");
+    if (fig && periodicState.doc.gen === gen) {
+      fig.innerHTML = `<div class="periodic-page-placeholder news-error">${escapeHtml(err.message || "加载失败")}</div>`;
+      // 标记失败也算处理过，避免死循环卡在同一页
+      fig.dataset.ready = "error";
+    }
+    return false;
+  }
+}
+
+async function pumpPeriodicPages() {
+  const doc = periodicState.doc;
+  const gen = doc.gen;
+  if (doc.pumping) return;
+  doc.pumping = true;
+  doc.loading = true;
+  syncPeriodicLoadSentinel();
+  try {
+    while (periodicState.doc.gen === gen && doc.url && doc.pages) {
+      recountPeriodicLoaded();
+      const batch = pickNextPeriodicPages(PERIODIC_PAGE_CONCURRENCY);
+      if (!batch.length) break;
+      await Promise.all(batch.map((page) => loadOnePeriodicPage(page, gen)));
+      if (periodicState.doc.gen !== gen) return;
+      for (const page of batch) settlePeriodicPendingJump(page);
+      recountPeriodicLoaded();
+      syncPeriodicLoadSentinel();
+      await new Promise((r) => window.setTimeout(r, 0));
+    }
+    if (periodicState.doc.gen === gen) doc.error = "";
+  } finally {
+    if (periodicState.doc.gen === gen) {
+      doc.loading = false;
+      doc.pumping = false;
+      doc.priorityPage = 0;
+      recountPeriodicLoaded();
+      syncPeriodicLoadSentinel();
+    }
+  }
+}
+
+async function openPeriodicDocument(item) {
+  const pdfUrl = periodicPdfUrl(item);
+  const doc = periodicState.doc;
+  doc.gen += 1;
+  const gen = doc.gen;
+  doc.url = pdfUrl;
+  doc.pages = 0;
+  doc.loaded = 0;
+  doc.loading = false;
+  doc.pumping = false;
+  doc.error = "";
+  doc.outline = [];
+  doc.currentPage = 0;
+  doc.priorityPage = 0;
+  doc.pendingJump = 0;
+  doc._processed = 0;
+
+  if (!els.periodicDetail) return;
+  if (!pdfUrl) {
+    els.periodicDetail.innerHTML = `<p class="muted periodic-empty">该期没有可阅读的 PDF</p>`;
+    resetPeriodicToc("该期没有可阅读的 PDF");
+    return;
+  }
+
+  els.periodicDetail.innerHTML = `<p class="muted periodic-empty">正在打开报告…</p>`;
+  resetPeriodicToc("正在解析目录…");
+  try {
+    const qs = new URLSearchParams({ url: pdfUrl });
+    const json = await api(`/api/stocks/periodic-report/pdf/meta?${qs.toString()}`);
+    if (periodicState.doc.gen !== gen) return;
+    const pages = Number(json.data?.pages) || 0;
+    if (pages <= 0) throw new Error("报告没有页面");
+    doc.pages = pages;
+    doc.loaded = 0;
+    doc.outline = Array.isArray(json.data?.outline) ? json.data.outline : [];
+    doc.currentPage = 1;
+    els.periodicDetail.innerHTML = "";
+    ensurePeriodicDocShell();
+    els.periodicDetail.scrollTop = 0;
+    paintPeriodicToc();
+    syncPeriodicLoadSentinel();
+    // 按需逐页挂载，后台连续拉取；正文区不再预造全书占位
+    pumpPeriodicPages();
+  } catch (err) {
+    if (periodicState.doc.gen !== gen) return;
+    doc.error = err.message || String(err);
+    els.periodicDetail.innerHTML = `<p class="news-error">${escapeHtml(doc.error)}</p>`;
+    resetPeriodicToc(doc.error || "目录加载失败");
+  }
+}
+
+function paintPeriodic() {
+  if (!els.periodicDetail) return;
+  const st = periodicState;
+  if (els.periodicMeta) {
+    if (st.loading && !st.items.length) {
+      els.periodicMeta.textContent = "";
+    } else if (st.error && !st.items.length) {
+      els.periodicMeta.textContent = st.error;
+    } else {
+      const bits = [st.count ? `${st.count} 期` : null].filter(Boolean);
+      els.periodicMeta.textContent = bits.join(" · ");
+    }
+  }
+  if (els.periodicList) {
+    if (st.loading && !st.items.length) {
+      els.periodicList.innerHTML = `<li class="muted periodic-empty">正在加载报告期…</li>`;
+    } else if (st.error && !st.items.length) {
+      els.periodicList.innerHTML = `<li class="news-error">${escapeHtml(st.error)}</li>`;
+    } else {
+      els.periodicList.innerHTML = renderPeriodicList(st.items, st.periodKey);
+      const active = els.periodicList.querySelector(".periodic-history-item.is-active");
+      active?.scrollIntoView({ block: "nearest" });
+    }
+  }
+  if (st.loading && !st.items.length) {
+    els.periodicDetail.innerHTML = `<p class="muted periodic-empty">正在加载定期报告…</p>`;
+    if (els.periodicTocList) {
+      els.periodicTocList.innerHTML = "";
+    }
+    if (els.periodicTocMeta) els.periodicTocMeta.textContent = "";
+    return;
+  }
+  if (st.error && !st.items.length) {
+    els.periodicDetail.innerHTML = `<p class="news-error">${escapeHtml(st.error)}</p>`;
+    resetPeriodicToc(st.error);
+  }
+}
+
+function setPeriodicPeriod(periodKey, { paint = true, open = true } = {}) {
+  const item = periodicFindItem(periodKey);
+  const same =
+    item
+    && periodicState.selected
+    && String(item.period_key || "") === String(periodicState.selected.period_key || "")
+    && periodicPdfUrl(item) === periodicState.doc.url
+    && periodicState.doc.pages > 0;
+  periodicState.periodKey = item?.period_key || "";
+  periodicState.selected = item;
+  if (paint) paintPeriodic();
+  if (open && item && !same) openPeriodicDocument(item);
+}
+
+async function loadPeriodic({ refresh = false } = {}) {
+  if (!code || !els.periodicDetail || periodicState.loading) return;
+
+  const keepKey = periodicState.periodKey;
+  periodicState.loading = true;
+  periodicState.error = "";
+  paintPeriodic();
+
+  const qs = new URLSearchParams({ code });
+  if (refresh) qs.set("refresh", "1");
+
+  try {
+    const json = await api(`/api/stocks/periodic-report?${qs.toString()}`);
+    const data = json.data || {};
+    const items = Array.isArray(data.items) ? data.items : [];
+    periodicState.items = items;
+    periodicState.periods = Array.isArray(data.periods) && data.periods.length
+      ? data.periods
+      : items.map((row) => ({
+          period_key: row.period_key,
+          period_label: row.period_label,
+          report_year: row.report_year,
+          kind: row.kind,
+          kind_label: row.kind_label,
+        }));
+    periodicState.count = Number(data.count) || items.length;
+    periodicState.source = data.source || "";
+    periodicState.latest = data.latest || items[0] || null;
+    periodicState.error = data.error || "";
+    periodicState.updatedAt = new Date().toLocaleString("zh-CN", { hour12: false });
+    setPeriodicPeriod(
+      keepKey || data.selected?.period_key || periodicState.latest?.period_key || "",
+      { paint: false, open: true }
+    );
+  } catch (err) {
+    periodicState.items = [];
+    periodicState.periods = [];
+    periodicState.count = 0;
+    periodicState.latest = null;
+    periodicState.selected = null;
+    periodicState.periodKey = "";
+    periodicState.error = err.message || String(err);
+  } finally {
+    periodicState.loading = false;
+    paintPeriodic();
+  }
+}
+
+function setupPeriodicBox() {
+  if (!els.periodicList || els.periodicList.dataset.bound === "1") return;
+  els.periodicList.dataset.bound = "1";
+  els.periodicList.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-period]");
+    if (!btn || !els.periodicList.contains(btn)) return;
+    setPeriodicPeriod(btn.getAttribute("data-period") || "");
+  });
+  els.periodicTocList?.addEventListener("click", (event) => {
+    const btn = event.target.closest(".periodic-toc-item[data-page]");
+    if (!btn || btn.disabled || !els.periodicTocList.contains(btn)) return;
+    jumpPeriodicPage(btn.getAttribute("data-page") || "");
+  });
+  els.periodicZoomIn?.addEventListener("click", () => nudgePeriodicZoom(PERIODIC_ZOOM_STEP));
+  els.periodicZoomOut?.addEventListener("click", () => nudgePeriodicZoom(-PERIODIC_ZOOM_STEP));
+  els.periodicZoomVal?.addEventListener("click", () => applyPeriodicZoom(PERIODIC_ZOOM_DEFAULT));
+  applyPeriodicZoom(periodicState.zoom);
+  if (els.periodicDetail && els.periodicDetail.dataset.tocScrollBound !== "1") {
+    els.periodicDetail.dataset.tocScrollBound = "1";
+    els.periodicDetail.addEventListener(
+      "scroll",
+      () => {
+        if (periodicTocScrollRaf) return;
+        periodicTocScrollRaf = window.requestAnimationFrame(() => {
+          periodicTocScrollRaf = 0;
+          updatePeriodicCurrentPageFromScroll();
+        });
+      },
+      { passive: true }
+    );
+    els.periodicDetail.addEventListener(
+      "wheel",
+      (event) => {
+        if (!(event.ctrlKey || event.metaKey)) return;
+        event.preventDefault();
+        nudgePeriodicZoom(event.deltaY < 0 ? PERIODIC_ZOOM_STEP : -PERIODIC_ZOOM_STEP);
+      },
+      { passive: false }
+    );
+    window.addEventListener("resize", () => {
+      if (!els.periodicDetail?.querySelector(".periodic-doc-body")) return;
+      applyPeriodicZoom(periodicState.zoom);
+    });
+  }
+  if (els.periodicTocList && !els.periodicTocList.querySelector("li")) {
+    resetPeriodicToc();
+  }
+}
+
 function exchangeDaysMode() {
   return (els.exchangeDays?.value || String(EXCHANGE_DEFAULT_DAYS)).trim();
 }
@@ -7577,6 +8259,8 @@ function setupNewsFolding() {
   layout.dataset.foldBound = "1";
   const saved = new Set(readFoldedHubs());
   [...layout.querySelectorAll(".cninfo-hub")].forEach((hub) => {
+    // 定期报告只保留左右栏，不参与折叠
+    if (hub.classList.contains("periodic-hub")) return;
     const head = hub.querySelector(".cninfo-hub-head");
     if (!head) return;
     if (!head.querySelector(".news-fold-btn")) {
@@ -12534,8 +13218,10 @@ function setupChartsViewport() {
   const tabRaw = (params.get("tab") || "").trim();
   const othersRaw = (params.get("others") || "").trim().toLowerCase();
   let tab = normalizeMainPanel(tabRaw);
-  if (!tab && NEWS_FINANCIALS_ALIASES.has(othersRaw)) tab = "news";
-  if (tab === "others" && NEWS_FINANCIALS_ALIASES.has(othersRaw)) tab = "news";
+  if (!tab && (NEWS_FINANCIALS_ALIASES.has(othersRaw) || NEWS_REPORTS_ALIASES.has(othersRaw))) tab = "news";
+  if (tab === "others" && (NEWS_FINANCIALS_ALIASES.has(othersRaw) || NEWS_REPORTS_ALIASES.has(othersRaw))) {
+    tab = "news";
+  }
   if (tab) switchMainPanel(tab);
   fitChartsToViewport();
 }
@@ -12545,6 +13231,7 @@ setupExchangeBox();
 setupPressBox();
 setupPlatformBoxes();
 setupCninfoBox();
+setupPeriodicBox();
 setupEmotionBox();
 setupHoldersBox();
 setupFundHoldersBox();

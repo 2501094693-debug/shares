@@ -418,6 +418,14 @@ html.company-charts-on .company-panel[data-panel="news"] .news-open > .news-hub 
   background: var(--bg-elevated);
 }
 
+html.company-charts-on .company-panel[data-panel="news"] .news-open > .periodic-hub {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
 html.company-charts-on .company-panel[data-panel="emotion"] .emotion-open > .cninfo-hub {
   flex: unset;
   min-width: 0;
@@ -3898,8 +3906,381 @@ button.chart-legend-item.is-active {
 }
 
 .company-panel[data-panel="news"][data-news-source="official"] .cninfo-hub[data-news-group="other"],
-.company-panel[data-panel="news"][data-news-source="other"] .cninfo-hub[data-news-group="official"] {
+.company-panel[data-panel="news"][data-news-source="official"] .cninfo-hub[data-news-group="reports"],
+.company-panel[data-panel="news"][data-news-source="other"] .cninfo-hub[data-news-group="official"],
+.company-panel[data-panel="news"][data-news-source="other"] .cninfo-hub[data-news-group="reports"],
+.company-panel[data-panel="news"][data-news-source="reports"] .cninfo-hub[data-news-group="official"],
+.company-panel[data-panel="news"][data-news-source="reports"] .cninfo-hub[data-news-group="other"] {
   display: none !important;
+}
+
+.company-panel[data-panel="news"] .periodic-hub {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  overflow: hidden;
+}
+
+/* 报告期 | 目录 | 正文 */
+.periodic-board {
+  display: grid;
+  grid-template-columns: minmax(10rem, 13rem) minmax(11rem, 16rem) minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.periodic-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.periodic-pane-history,
+.periodic-pane-toc {
+  border-right: 1px solid rgba(70, 210, 190, 0.12);
+}
+
+.periodic-pane-head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px 8px;
+}
+
+.periodic-pane-head h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.periodic-pane-hint {
+  margin: 0;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.periodic-pane-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.periodic-pane-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.periodic-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 6px 12px;
+}
+
+.periodic-history-list li {
+  margin: 0;
+}
+
+.periodic-history-item {
+  appearance: none;
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.periodic-history-item:hover {
+  background: rgba(42, 212, 184, 0.06);
+}
+
+.periodic-history-item.is-active {
+  background: var(--accent-soft);
+}
+
+.periodic-history-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  word-break: break-all;
+}
+
+.periodic-history-tag {
+  flex: 0 0 auto;
+  font-size: 0.62rem;
+  color: var(--accent-hot);
+  letter-spacing: 0.04em;
+}
+
+.periodic-history-time {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--muted);
+}
+
+.periodic-toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 6px 12px;
+}
+
+.periodic-toc-list li {
+  margin: 0;
+}
+
+.periodic-toc-item {
+  appearance: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: baseline;
+  width: 100%;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.periodic-toc-item:hover {
+  background: rgba(42, 212, 184, 0.06);
+}
+
+.periodic-toc-item.is-active {
+  background: var(--accent-soft);
+}
+
+.periodic-toc-item.is-disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.periodic-toc-item[data-level="1"] {
+  padding-left: 1rem;
+}
+
+.periodic-toc-item[data-level="2"] {
+  padding-left: 1.55rem;
+}
+
+.periodic-toc-item[data-level="3"],
+.periodic-toc-item[data-level="4"],
+.periodic-toc-item[data-level="5"] {
+  padding-left: 2.1rem;
+}
+
+.periodic-toc-title {
+  font-size: 0.76rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.periodic-toc-page {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.periodic-report-tools {
+  border-bottom: 1px solid rgba(70, 210, 190, 0.1);
+}
+
+.periodic-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.periodic-zoom-btn,
+.periodic-zoom-val {
+  appearance: none;
+  margin: 0;
+  border: 1px solid rgba(70, 210, 190, 0.28);
+  background: rgba(8, 14, 22, 0.45);
+  color: var(--ink);
+  font-family: var(--mono);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.periodic-zoom-btn {
+  width: 1.7rem;
+  height: 1.55rem;
+  border-radius: var(--radius);
+  font-size: 0.95rem;
+  padding: 0;
+}
+
+.periodic-zoom-val {
+  min-width: 3.2rem;
+  height: 1.55rem;
+  padding: 0 0.35rem;
+  border-radius: var(--radius);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.periodic-zoom-btn:hover,
+.periodic-zoom-val:hover {
+  background: rgba(42, 212, 184, 0.1);
+  border-color: rgba(42, 212, 184, 0.45);
+}
+
+.periodic-zoom-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.periodic-report-scroll {
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.periodic-empty {
+  margin: 14px 16px;
+}
+
+.periodic-doc-body {
+  --periodic-page-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px 24px;
+  box-sizing: border-box;
+  width: max(100%, calc(var(--periodic-page-width) + 16px));
+}
+
+.periodic-page {
+  margin: 0;
+  width: var(--periodic-page-width, 100%);
+  max-width: none;
+  flex: 0 0 auto;
+  background: #f4f7f8;
+  border: 1px solid rgba(70, 210, 190, 0.14);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.periodic-page img {
+  display: block;
+  width: 100%;
+  height: auto;
+  vertical-align: top;
+  background: #fff;
+  image-rendering: auto;
+}
+
+.periodic-page-placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 2.5rem;
+  padding: 0.65rem 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  background: rgba(8, 14, 22, 0.35);
+  color: var(--muted);
+}
+
+/* 仅当前正在拉取的页用紧凑条，不再铺满 A4 空白「加载中」 */
+.periodic-page-placeholder.is-loading {
+  min-height: 3rem;
+  color: var(--accent);
+}
+
+.periodic-page-placeholder.news-error {
+  min-height: 6rem;
+}
+
+.periodic-load-sentinel {
+  flex: 0 0 auto;
+  margin: 0.25rem 0 1.25rem;
+  padding: 0.65rem 0.75rem;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.periodic-load-sentinel.is-loading {
+  color: var(--accent);
+}
+
+.periodic-load-sentinel.is-done {
+  opacity: 0.7;
+}
+
+/* 报告页：把高度锁在视口内，让 #periodicDetail 成为唯一滚动容器，避免外层裁切后只能看见前两页 */
+html.company-charts-on .company-panel[data-panel="news"][data-news-source="reports"] .news-open {
+  display: flex;
+  flex-direction: column;
+  grid-template-columns: none;
+  grid-template-rows: none;
+}
+
+html.company-charts-on .company-panel[data-panel="news"][data-news-source="reports"] .news-open > .periodic-hub {
+  flex: 1 1 0%;
+  width: 100%;
+  min-height: 0;
+  max-height: 100%;
+  height: auto;
+  overflow: hidden;
+}
+
+html.company-charts-on .company-panel[data-panel="news"][data-news-source="reports"] .periodic-hub,
+html.company-charts-on .company-panel[data-panel="news"][data-news-source="reports"] .periodic-board,
+html.company-charts-on .company-panel[data-panel="news"][data-news-source="reports"] .periodic-pane {
+  min-height: 0;
+  max-height: 100%;
+  height: 100%;
+}
+
+html.company-charts-on .company-panel[data-panel="news"][data-news-source="reports"] .periodic-report-scroll {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 900px) {
+  .periodic-board {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(6rem, 22%) minmax(6rem, 22%) minmax(0, 1fr);
+  }
+
+  .periodic-pane-history,
+  .periodic-pane-toc {
+    border-right: 0;
+    border-bottom: 1px solid rgba(70, 210, 190, 0.12);
+  }
 }
 
 .company-panel[data-panel="news"][data-news-source="financials"] .news-open,
@@ -8796,10 +9177,6 @@ html.company-charts-on .company-panel[data-panel="others"] .others-view[data-oth
 
 .financials-amt-sub[data-tone="down"] {
   color: var(--down);
-}
-
-.financials-table td.num.is-neg .financials-amt-main {
-  color: var(--warn);
 }
 
 .financials-line-indent {

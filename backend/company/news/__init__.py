@@ -12,6 +12,7 @@
   _items     条目规范化
   cache      磁盘缓存
   financialreport  东方财富 F10 财务报表
+  periodicreport   巨潮/交易所定期报告（年报/半年报/季报）
 """
 
 from company.news.feed import VALID_KINDS, collect_company_messages

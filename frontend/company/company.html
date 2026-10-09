@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=holdings-stats-date-20260930" />
+  <link rel="stylesheet" href="/css/style.css?v=periodic-load-ui-20261009c" />
   <link rel="stylesheet" href="/css/ai-page.css?v=bazhang-step-20260928" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
@@ -313,8 +313,9 @@
         <div class="news-layout">
         <nav id="newsSourceBar" class="emotion-source-bar news-source-bar" aria-label="资讯分类">
           <button type="button" class="emotion-source-btn is-active" data-source="official">官方</button>
-          <button type="button" class="emotion-source-btn" data-source="financials">财报</button>
           <button type="button" class="emotion-source-btn" data-source="other">其他</button>
+          <button type="button" class="emotion-source-btn" data-source="reports">报告</button>
+          <button type="button" class="emotion-source-btn" data-source="financials">财报</button>
         </nav>
         <div class="news-folded" hidden></div>
         <div class="news-open">
@@ -611,6 +612,41 @@
             <div class="news-list" data-platform-list>
               <p class="muted">正在加载雪球新闻…</p>
             </div>
+          </div>
+        </section>
+        <section class="company-section cninfo-hub periodic-hub" data-news-group="reports" aria-label="定期报告">
+          <div id="periodicBody" class="periodic-board">
+            <aside class="periodic-pane periodic-pane-history" aria-label="报告期">
+              <header class="periodic-pane-head">
+                <h2>报告期</h2>
+                <p id="periodicMeta" class="muted periodic-pane-hint"></p>
+              </header>
+              <div class="periodic-pane-scroll">
+                <ul id="periodicList" class="periodic-history-list"></ul>
+              </div>
+            </aside>
+            <aside class="periodic-pane periodic-pane-toc" aria-label="目录">
+              <header class="periodic-pane-head">
+                <h2>目录</h2>
+                <p id="periodicTocMeta" class="muted periodic-pane-hint"></p>
+              </header>
+              <div class="periodic-pane-scroll">
+                <ul id="periodicTocList" class="periodic-toc-list"></ul>
+              </div>
+            </aside>
+            <main class="periodic-pane periodic-pane-report" aria-label="报告正文">
+              <header class="periodic-pane-head periodic-report-tools">
+                <h2>正文</h2>
+                <div class="periodic-zoom" role="group" aria-label="正文缩放">
+                  <button type="button" id="periodicZoomOut" class="periodic-zoom-btn" title="缩小" aria-label="缩小">−</button>
+                  <button type="button" id="periodicZoomVal" class="periodic-zoom-val" title="重置为 75%" aria-label="当前缩放，点击重置">75%</button>
+                  <button type="button" id="periodicZoomIn" class="periodic-zoom-btn" title="放大" aria-label="放大">+</button>
+                </div>
+              </header>
+              <div id="periodicDetail" class="periodic-pane-scroll periodic-report-scroll" tabindex="0">
+                <p class="muted periodic-empty">切换到本页后加载最新定期报告…</p>
+              </div>
+            </main>
           </div>
         </section>
         </div>
@@ -1118,6 +1154,6 @@
   <script src="/js/shared/nav.js?v=nav-industry-20261001"></script>
   <script src="/js/shared/ai-modes.js?v=fundamentals-20260930"></script>
   <script src="/js/shared/company-analysis.js?v=holdings-stats-date-20260930"></script>
-  <script src="/js/company.js?v=holdings-loading-dedupe-20261008"></script>
+  <script src="/js/company.js?v=periodic-load-ui-20261009c"></script>
 </body>
 </html>
