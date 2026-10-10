@@ -29,6 +29,7 @@
         <button id="refreshFinancialsBtn" class="btn ghost" type="button" hidden>刷新财报</button>
         <button id="refreshListBtn" class="btn ghost" type="button" hidden>刷新龙虎榜</button>
         <button id="refreshHoldersBtn" class="btn ghost" type="button" hidden>刷新持股</button>
+        <button id="refreshQuotesBtn" class="btn ghost" type="button" onclick="window.refreshQuotesNow&&window.refreshQuotesNow()">刷新行情</button>
       </div>
     </header>
 
@@ -157,7 +158,6 @@
                 <span class="big-deal-chart-legend-item"><i class="big-deal-chart-swatch" data-type="passive_sell"></i>被动卖</span>
               </div>
               <p id="ticksChartMeta" class="chart-card__meta muted">加载中…</p>
-              <input id="ticksTapeDay" class="ticks-tape-date" type="date" aria-label="查看日期" />
               <div id="ticksChartHoverCard" class="chart-ticks-hover chart-hover-card hidden" aria-hidden="true"></div>
             </header>
             <div class="chart-card__stage">
@@ -1148,12 +1148,13 @@
     <div id="errorBox" class="error hidden"></div>
   </div>
   </div>
+  </div>
 
   <script src="/js/shared/orbit-http.js?v=holders-date-20260919"></script>
   <script src="/js/shared/orbit-prefetch.js?v=holders-date-20260919"></script>
   <script src="/js/shared/nav.js?v=nav-industry-20261001"></script>
   <script src="/js/shared/ai-modes.js?v=fundamentals-20260930"></script>
   <script src="/js/shared/company-analysis.js?v=holdings-stats-date-20260930"></script>
-  <script src="/js/company.js?v=periodic-load-ui-20261009c"></script>
-</body>
+  <script src="/js/company.js?v=periodic-load-ui-20261009m"></script>
+  <script src="</body>
 </html>

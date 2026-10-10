@@ -2873,6 +2873,7 @@ html.company-charts-on .company-page.app {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  flex-wrap: nowrap;
   gap: 8px;
   margin: 0 0 6px;
   padding-bottom: 4px;
@@ -2883,6 +2884,8 @@ html.company-charts-on .company-page.app {
   margin: 0;
   padding: 0;
   border: 0;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .ticks-tape-date {
@@ -2911,10 +2914,12 @@ html.company-charts-on .company-page.app {
 
 .ticks-tape-meta {
   margin: 0;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: right;
   font-size: 0.66rem;
   letter-spacing: 0.02em;
 }
@@ -3398,9 +3403,9 @@ button.chart-legend-item.is-active {
   align-self: center;
   margin-top: 0;
   max-width: none;
-  overflow: visible;
-  text-overflow: unset;
-  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chart-card--ticks .ticks-tape-date {
@@ -13442,3 +13447,5 @@ body.app-shell.world-page-root .world-map-controls {
 .mine-add-toast[data-kind="flat"] {
   color: var(--muted);
 }
+
+.ths-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#8494a8;margin-right:6px;vertical-align:1px}.ths-dot[data-state=ok]{background:#3dd68c}.ths-dot[data-state=pending]{background:#f0b429;animation:ths-blink 1s infinite alternate}@keyframes ths-blink{from{opacity:1}to{opacity:.3}}.ths-auth-modal{position:fixed;inset:0;background:rgba(2,6,12,.6);display:flex;align-items:center;justify-content:center;z-index:200}.ths-auth-modal.hidden{display:none}.ths-auth-card{background:#0d1622;border:1px solid rgba(42,212,184,.25);border-radius:12px;padding:20px 22px;max-width:360px;text-align:center}.ths-auth-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.ths-auth-head h3{margin:0}.ths-qr-img{width:260px;height:260px;object-fit:contain;background:#fff;border-radius:8px;margin:10px auto;display:block}.ths-auth-tip{font-size:12px;margin-top:10px}

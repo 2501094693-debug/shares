@@ -37,12 +37,13 @@ def fetch_time_and_sales(
       transaction_count}``，``volume`` 单位为股。
     """
     import thsdk
+    from company.line.tonghuashun import auth as _ths_auth
 
     norm = normalize_code(code)
     if not norm:
         raise ValueError("无效股票代码")
-    if not thsdk.auth_qrcode(timeout=10):
-        raise RuntimeError("thsdk 会话复用失败，请重新扫码登录")
+    if not _ths_auth.ensure(timeout=3):
+        raise RuntimeError("THS_NEED_QRCODE:同花顺需扫码登录，前端打开扫码弹窗后重试")
     security = _hq_security(norm)
 
     def _one(window: dict[str, Any]) -> list[dict[str, Any]]:
@@ -50,8 +51,21 @@ def fetch_time_and_sales(
         records = frame.to_dict("records") if hasattr(frame, "to_dict") else list(frame)
         return [dict(r) for r in records if isinstance(r, dict)]
 
+    def _live(count: int) -> list[dict[str, Any]]:
+        """盘中实时分时成交。``list_security_ticks`` 只给已收盘数据，
+        盘中用它会空，只有 ``list_security_time_and_sales_ticks`` 能拿到实时。"""
+        frame = thsdk.list_security_time_and_sales_ticks(security=security, count=count)
+        records = frame.to_dict("records") if hasattr(frame, "to_dict") else list(frame)
+        return [dict(r) for r in records if isinstance(r, dict)]
+
     if count and not (start or end):
-        records = _one({"count": max(int(count), 1)})
+        n = max(int(count), 1)
+        try:
+            records = _live(n)
+        except Exception:
+            records = []
+        if not records:
+            records = _one({"count": n})
         return "thsdk:ticks", [parsed for r in records
                                if (parsed := _parse_tick(norm, r))]
 
@@ -74,6 +88,9 @@ def fetch_time_and_sales(
             records = _one(window)
         except Exception as exc:  # noqa: BLE001
             if "no_data" in str(exc):
+                continue
+            # 单个切片编码失败时跳过该片、保留其他切片，避免整日无数据
+            if "encode" in str(exc).lower():
                 continue
             raise
         if len(records) >= 100 and hi - lo > 1:
@@ -105,13 +122,20 @@ def _tick_seq(row: dict[str, Any]) -> int:
         return 0
 
 
+def _tick_count(row: dict[str, Any]) -> int | None:
+    """逐笔成交笔数：同花顺原生没有该字段，返回 None（前端不显示 /N笔）。"""
+    return None
+
+
 def _parse_tick(code: str, row: dict[str, Any]) -> dict[str, Any] | None:
     from datetime import datetime, timezone, timedelta
 
     price = to_float(row.get("price"))
-    volume = to_float(row.get("volume"))
-    if price is None or not volume:
+    volume_shares = to_float(row.get("volume"))
+    if price is None or not volume_shares:
         return None
+    # 对外统一为手（东财 / 腾讯原生即手）；金额仍按股算。
+    volume = round(volume_shares / 100.0, 2)
     try:
         ts = int(float(row.get("time")))
     except (TypeError, ValueError):
@@ -129,11 +153,12 @@ def _parse_tick(code: str, row: dict[str, Any]) -> dict[str, Any] | None:
         "code": code,
         "price": price,
         "volume": volume,
-        "volume_lots": round(volume / 100.0, 2),
-        "amount": round(price * volume, 2),
+        "volume_lots": volume,
+        "amount": round(price * volume_shares, 2),
         "side": side,
         "side_label": label,
         "deal_type": deal,
+        "count": _tick_count(row),
         "seq": _tick_seq({"seq": row.get("transaction_count")}),
         "event_id": f"{ts}|{row.get('transaction_count')}",
     }

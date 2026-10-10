@@ -133,7 +133,8 @@ def get_session_orders(code: str, *, force: bool = False, day: str = "") -> dict
     live = is_session_open()
     cached = load_session_orders(norm)
 
-    if cached and not force and not live:
+    if cached and not live and not force:
+        # 盘后固定缓存：直接读文件，不再打远程；前端点刷新行情（force）则继续往下重拉。
         return {
             "items": [row for row in cached.get("items") or [] if isinstance(row, dict)],
             "note": str(cached.get("note") or "同花顺 HQ 个股大单（主/被）"),
@@ -141,7 +142,7 @@ def get_session_orders(code: str, *, force: bool = False, day: str = "") -> dict
             "session_day": str(cached.get("session_day") or session_day().isoformat()),
             "cached_at": str(cached.get("cached_at") or ""),
         }
-
+    # 盘中：force 或无缓存时打远程并覆盖当天文件；否则沿用缓存由上层增量合并。
     note = "同花顺 HQ 个股大单（主/被，游客登录）"
     try:
         items = fetch_hq_big_orders(norm)

@@ -654,3 +654,33 @@ def stocks_quotes(
         return err(str(exc), 400)
     except Exception as exc:  # noqa: BLE001
         return err(str(exc), 500)
+
+
+@router.get("/api/stocks/ths-auth/status")
+def ths_auth_status():
+    from company.line.tonghuashun import auth as _ths_auth
+
+    try:
+        return ok(_ths_auth.status())
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.post("/api/stocks/ths-auth/start")
+def ths_auth_start(timeout: float = Query(180, ge=30, le=600)):
+    from company.line.tonghuashun import auth as _ths_auth
+
+    try:
+        return ok(_ths_auth.start_login(timeout=timeout))
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.post("/api/stocks/ths-auth/cancel")
+def ths_auth_cancel():
+    from company.line.tonghuashun import auth as _ths_auth
+
+    try:
+        return ok(_ths_auth.cancel())
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)

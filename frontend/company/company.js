@@ -318,6 +318,7 @@ const els = {
   turnoverChartAxisScroll: document.getElementById("turnoverChartAxisScroll"),
   turnoverChartScrollBar: document.getElementById("turnoverChartScrollBar"),
   refreshNewsBtn: document.getElementById("refreshNewsBtn"),
+  refreshQuotesBtn: document.getElementById("refreshQuotesBtn"),
   panelNews: document.getElementById("panel-news"),
   newsSourceBar: document.getElementById("newsSourceBar"),
   refreshEmotionBtn: document.getElementById("refreshEmotionBtn"),
@@ -1078,6 +1079,12 @@ async function api(path, options = {}) {
   return json;
 }
 
+function toFiniteOrNull(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n !== 0 ? n : null;
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -1554,25 +1561,12 @@ function ticksViewDay() {
 }
 
 function isTicksHistoryView() {
-  return ticksViewDay() !== cnSessionDay();
+  return String(ticksState.viewDay || "") !== "" && ticksViewDay() !== cnSessionDay();
 }
 
-function syncTicksDayInput() {
-  const el = document.getElementById("ticksTapeDay");
-  if (!el) return;
-  if (document.activeElement === el) return;
-  el.value = ticksViewDay();
-  el.max = cnNowParts().dateStr;
-}
+function syncTicksDayInput() {}
 
-function bindTicksDayPicker() {
-  const el = document.getElementById("ticksTapeDay");
-  if (!el || el.dataset.bound === "1") return;
-  el.dataset.bound = "1";
-  el.addEventListener("change", () => {
-    void applyTicksViewDay(el.value);
-  });
-}
+function bindTicksDayPicker() {}
 
 async function applyTicksViewDay(iso) {
   const session = cnSessionDay();
@@ -1582,9 +1576,8 @@ async function applyTicksViewDay(iso) {
   if (next > today) next = today;
   const prev = ticksViewDay();
   ticksState.viewDay = next === session ? "" : next;
-  if (ticksViewDay() === prev && document.getElementById("ticksTapeDay")?.value === ticksViewDay()) {
-    syncTicksDayInput();
-    return;
+  if (ticksViewDay() === prev) {
+    return ticksViewDay();
   }
   ticksState.liveFetchGen += 1;
   ticksState.loadGen += 1;
@@ -2053,7 +2046,6 @@ function refreshTicksTapeList() {
     ticksState.cached ? "盘后缓存" : "",
     ticksState.source || "",
     total ? `${total}次分时成交` : "",
-    tradeTotal ? `共${tradeTotal}笔交易` : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -8402,6 +8394,9 @@ function switchMainPanel(panelId) {
   if (els.refreshEmotionBtn) {
     els.refreshEmotionBtn.hidden = next !== "emotion";
   }
+  if (els.refreshQuotesBtn) {
+    els.refreshQuotesBtn.hidden = !isQuotesPanel(next);
+  }
   syncNewsRefreshButtons();
   syncOthersRefreshButtons();
 
@@ -8448,6 +8443,9 @@ function setupMainTabs() {
 
   if (els.refreshEmotionBtn) {
     els.refreshEmotionBtn.hidden = activeMainPanel !== "emotion";
+  }
+  if (els.refreshQuotesBtn) {
+    els.refreshQuotesBtn.hidden = !isQuotesPanel(activeMainPanel);
   }
   syncNewsRefreshButtons();
   syncOthersRefreshButtons();
@@ -10725,11 +10723,13 @@ function fillKlineQuoteCard(absIndex) {
   };
 
   let pct = Number(d.pct_chg);
-  if (!Number.isFinite(pct) && absIndex > 0) {
+  if ((!Number.isFinite(pct) || pct === 0) && absIndex > 0) {
     const prevClose = Number(all[absIndex - 1].close);
     const close = Number(d.close);
     if (Number.isFinite(prevClose) && prevClose && Number.isFinite(close)) {
-      pct = ((close - prevClose) / prevClose) * 100;
+      const calc = ((close - prevClose) / prevClose) * 100;
+      if (Number.isFinite(calc) && calc !== 0) pct = calc;
+      else if (!Number.isFinite(pct)) pct = calc;
     }
   }
   const closeCls =
@@ -11101,9 +11101,7 @@ function refreshTicksChartWindowStatus() {
   if (sess.zoomed) {
     const a = formatClockMinutes(sessionOffsetToClock(sess.start));
     const b = formatClockMinutes(sessionOffsetToClock(sess.end));
-    zoomTip = ` · ${a}–${b} · 滚轮放大至秒级 · 拖动平移`;
-  } else if (total) {
-    zoomTip = " · 滚轮可放大至秒级 · 拖动平移";
+    zoomTip = ` · ${a}–${b}`;
   }
   if (sess.zoomed && plotCount) {
     zoomTip += ` · ${plotCount} 点`;
@@ -11122,7 +11120,7 @@ function refreshTicksChartWindowStatus() {
   if (ticksState.phase === "live") {
     const src = ticksState.source ? ` · ${ticksState.source}` : "";
     const clock = cnNowParts().clockStr;
-    setTicksChartStatus(`实时 · ${clock} · 每秒刷新${zoomTip}${src}`);
+    setTicksChartStatus(`实时 · ${clock} · 每秒刷新${src}`);
     return;
   }
   const src = ticksState.source ? ` · ${ticksState.source}` : "";
@@ -11498,9 +11496,8 @@ async function loadPreviousSessionTicks() {
   const data = json.data || {};
   const converted = minuteBarsToTicks(data.items || []);
   let preClose = converted.preClose;
-  if (!Number.isFinite(preClose)) {
-    const n = Number(data.pre_price);
-    preClose = Number.isFinite(n) ? n : null;
+  if (preClose == null) {
+    preClose = toFiniteOrNull(data.pre_price);
   }
   return {
     items: converted.items,
@@ -11553,7 +11550,7 @@ async function loadTicksChart({ silent = false, refresh = false } = {}) {
     if (gen !== ticksState.loadGen) return;
     const data = json.data || {};
     let rawItems = Array.isArray(data.items) ? data.items : [];
-    let preClose = Number(data.pre_price);
+    let preClose = toFiniteOrNull(data.pre_price);
     let source = data.source || "";
     let tradeDate = inferTicksTradeDate(data, rawItems) || ticksViewDay();
 
@@ -11561,13 +11558,13 @@ async function loadTicksChart({ silent = false, refresh = false } = {}) {
       const fallback = await loadPreviousSessionTicks();
       if (gen !== ticksState.loadGen) return;
       rawItems = fallback.items;
-      if (Number.isFinite(fallback.preClose)) preClose = fallback.preClose;
+      if (toFiniteOrNull(fallback.preClose) != null) preClose = Number(fallback.preClose);
       source = fallback.source || source;
       tradeDate = fallback.day || tradeDate;
     }
 
     applyTicksItems(rawItems, { resetViewport: history });
-    ticksState.preClose = Number.isFinite(preClose) ? preClose : null;
+    ticksState.preClose = toFiniteOrNull(preClose);
     ticksState.source = source;
     ticksState.cached = Boolean(data.cached);
     ticksState.tradeDate = tradeDate || inferTicksTradeDate(data, ticksState.allItems) || ticksViewDay();
@@ -11575,8 +11572,8 @@ async function loadTicksChart({ silent = false, refresh = false } = {}) {
     const count = ticksState.allItems.length;
     if (!count) {
       if (history) {
-        setTicksChartStatus("");
-        if (els.ticksChartEmpty) els.ticksChartEmpty.classList.add("hidden");
+        const msg = String(data.error || "").trim() || `${ticksViewDay()} 暂无逐笔数据（可尝试扫码登录同花顺后刷新）`;
+        setTicksChartStatus(msg, { empty: true });
         fillTicksQuoteCard(null);
         renderTicksChart();
         return;
@@ -11635,7 +11632,7 @@ async function pollTicksLive() {
 
     const data = json.data || {};
     let rawItems = Array.isArray(data.items) ? data.items : [];
-    let preClose = Number(data.pre_price);
+    let preClose = toFiniteOrNull(data.pre_price);
     let source = data.source || "";
     let tradeDate = inferTicksTradeDate(data, rawItems);
 
@@ -11645,7 +11642,7 @@ async function pollTicksLive() {
     if (!rawItems.length) return;
 
     applyTicksItems(rawItems);
-    if (Number.isFinite(preClose)) ticksState.preClose = preClose;
+    if (preClose != null) ticksState.preClose = preClose;
     if (source) ticksState.source = source;
     ticksState.cached = Boolean(data.cached);
     ticksState.tradeDate = tradeDate || inferTicksTradeDate(data, ticksState.allItems);
@@ -11732,6 +11729,7 @@ function bindChartPaneInteractions({
   layoutCompact = false,
   layoutTicksCombo = () => false,
   enablePanZoom = true,
+  onTap = null,
 }) {
   if (!canvas) return;
 
@@ -11804,6 +11802,9 @@ function bindChartPaneInteractions({
       hoverIdx = idx;
       updateHover(idx, evt);
       render(idx);
+      if (typeof onTap === "function") {
+        try { onTap(idx, evt); } catch { /* ignore */ }
+      }
     } else {
       hideHover();
       hoverIdx = null;
@@ -11874,7 +11875,7 @@ function bindChartPaneInteractions({
   }
 }
 
-async function loadChart(mode = chartState.mode) {
+async function loadChart(mode = chartState.mode, options = {}) {
   if (!code || !els.priceChart) return;
   const conf = CHART_MODES[mode] || CHART_MODES.day;
   chartState.mode = mode;
@@ -11893,6 +11894,7 @@ async function loadChart(mode = chartState.mode) {
       adjust: klineAdjustFor(mode),
       limit: String(conf.limit || 180),
     });
+    if (options.refresh) qs.set("refresh", "1");
     const json = await api(`/api/stocks/line?${qs.toString()}`);
     const data = json.data || {};
     resetChartViewport(data.items || [], conf);
@@ -11922,6 +11924,22 @@ async function loadChart(mode = chartState.mode) {
     renderChart();
   } finally {
     chartState.loading = false;
+  }
+}
+
+function handleKlineDayTap(viewIndex) {
+  const items = chartState.items || [];
+  if (viewIndex == null || viewIndex < 0 || viewIndex >= items.length) return;
+  const day = String(items[viewIndex]?.time || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
+  if (String(ticksState.viewDay || "") === day) {
+    void applyTicksViewDay(cnSessionDay());
+  } else {
+    void applyTicksViewDay(day);
+  }
+  const card = document.querySelector(".chart-card--ticks");
+  if (card && card.scrollIntoView) {
+    try { card.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch { /* ignore */ }
   }
 }
 
@@ -11960,6 +11978,7 @@ function setupChart() {
     setViewStart: setChartViewStart,
     zoomViewport: zoomChartViewport,
     syncScrollBar: syncChartScrollBar,
+    onTap: handleKlineDayTap,
   });
 }
 
@@ -13177,6 +13196,58 @@ function setupTurnoverChart() {
 els.refreshNewsBtn.addEventListener("click", () =>
   loadAllNews({ refresh: true })
 );
+async function refreshQuotesNow() {
+  if (window.__refreshingQuotes) { console.log("[quotes] 刷新进行中，忽略重复点击"); return; }
+  window.__refreshingQuotes = true;
+  const btn = (typeof els !== "undefined" && els.refreshQuotesBtn) || document.getElementById("refreshQuotesBtn");
+  console.log("[quotes] 手动刷新行情…");
+  if (btn) { btn.disabled = true; btn.dataset.label = btn.textContent; btn.textContent = "刷新中…"; }
+  let settled = false;
+  const safety = setTimeout(() => {
+    if (settled) return;
+    console.warn("[quotes] 90s 兜底：强制恢复按钮");
+    window.__refreshingQuotes = false;
+    if (btn) { btn.disabled = false; if (btn.dataset.label) btn.textContent = btn.dataset.label; }
+  }, 90000);
+  const mark = (s) => { try { document.title = "[刷新]" + s + " · " + document.title.replace(/^\[刷新\][^·]*·\s*/, ""); } catch (e) {} };
+  mark("开始");
+  try {
+    const withTimeout = (p, label) => {
+      let done = false;
+      const timer = new Promise((_, reject) => setTimeout(() => {
+        if (done) return;
+        mark(label + "超时");
+        reject(new Error(label + "超时(40s)，已跳过"));
+      }, 40000));
+      return Promise.race([p, timer]).finally(() => { done = true; });
+    };
+    const failed = [];
+    const runStep = async (label, p) => {
+      mark(label + "…");
+      try { await withTimeout(p, label); mark(label + "完成"); }
+      catch (e) { mark(label + "失败"); failed.push(label + ":" + (e?.message || e)); }
+    };
+    await runStep("盘口", loadProfile({ silent: true, refresh: true }));
+    await runStep("K线", loadChart(chartState.mode, { refresh: true }));
+    await runStep("实时", loadTicksChart({ silent: true, refresh: true }));
+    await runStep("大单", (async () => { void loadBigDeals({ refresh: true }); void loadBigDealChart({ refresh: true }); })());
+    mark("完成");
+    if (failed.length) setError("部分刷新失败：" + failed.join("；"));
+  } catch (err) {
+    console.warn("[quotes] 刷新失败", err);
+    mark("异常");
+    setError(err?.message || String(err));
+  } finally {
+    settled = true;
+    clearTimeout(safety);
+    window.__refreshingQuotes = false;
+    if (btn) { btn.disabled = false; if (btn.dataset.label) btn.textContent = btn.dataset.label; }
+  }
+}
+window.refreshQuotesNow = refreshQuotesNow;
+if (els.refreshQuotesBtn) {
+  els.refreshQuotesBtn.addEventListener("click", () => refreshQuotesNow());
+}
 if (els.refreshEmotionBtn) {
   els.refreshEmotionBtn.addEventListener("click", () =>
     loadAllEmotion({ refresh: true })

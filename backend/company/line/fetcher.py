@@ -1,8 +1,9 @@
 """K 线 / 逐笔的统一入口：三源 fallback + 增量缓存。
 
-- ``fetch_kline``：同花顺优先、腾讯其次、东财兜底。
+- ``fetch_kline``：已登录同花顺优先、腾讯其次、东财兜底；
+  未登录跳过同花顺、先腾讯、东财兜底。
   同花顺没有半年 K，该周期会直接走东财；腾讯没有季 / 半年 / 年 / 120 分钟，这些周期会直接走东财。
-- ``fetch_ticks``：同花顺优先、东财其次、腾讯兜底。
+- ``fetch_ticks``：已登录同花顺优先；未登录先东财、腾讯兜底（跳过同花顺）。
   盘中（09:15–15:31）全量查询覆盖当天文件，增量查询合并进文件；
   盘后 / 周末优先读该交易日文件，若未收齐到 15:00 则再打一次远程补齐。
 
@@ -20,6 +21,7 @@ import logging
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from datetime import datetime
 from typing import Any
 
@@ -45,14 +47,44 @@ from company.line.tonghuashun.kline import fetch_line as fetch_tonghuashun_line
 
 logger = logging.getLogger(__name__)
 
+# 同花顺可用性缓存：未登录时跳过 THS、直走腾讯/东财，避免每次都打一次
+# 必失败的扫码探活；登录成功后标记即时生效，TTL 内复查一次。
+_THS_READY_TTL = 60.0
+_ths_ready_cache: dict[str, Any] = {"ok": False, "at": 0.0}
+
+
+def _ths_ready() -> bool:
+    """同花顺已登录才返回 True；分时/日线仅作最后兜底，平时优先走东财/腾讯。"""
+    try:
+        from company.line.tonghuashun import auth as _ths_auth
+    except Exception:
+        return False
+    if _ths_auth.is_authenticated():
+        _ths_ready_cache["ok"] = True
+        _ths_ready_cache["at"] = time.time()
+        return True
+    if time.time() - float(_ths_ready_cache.get("at") or 0) < _THS_READY_TTL:
+        return bool(_ths_ready_cache.get("ok"))
+    ok = bool(_ths_auth.ensure())
+    _ths_ready_cache["ok"] = ok
+    _ths_ready_cache["at"] = time.time()
+    return ok
+
+
+def _kline_source_order() -> tuple[tuple[str, Any, bool], ...]:
+    """日线优先腾讯，其次东财，同花顺仅作最后兜底；未登录跳过 THS。"""
+    if _ths_ready():
+        return _KLINE_SOURCES
+    return tuple(s for s in _KLINE_SOURCES if s[0] != "tonghuashun")
+
 # 盘中合并结果短缓存，避免同一页多次请求各打一次尾盘。
 KLINE_LIVE_TTL = 8
 # 带 beg/end 的区间查询仍整段拉，短 TTL。
 KLINE_RANGE_TTL = 120
 TICKS_TTL = 1
 
-_KLINE_DISK_VERSION = 1
-_TICKS_DISK_VERSION = 1
+_KLINE_DISK_VERSION = 2
+_TICKS_DISK_VERSION = 2
 _KLINE_TAIL_DAY = 2
 _KLINE_TAIL_MINUTE_MAX = 80
 _MINUTE_PERIODS = frozenset(EM_MINUTE_PERIODS)
@@ -70,6 +102,21 @@ _kline_range_cache = TtlCache(KLINE_RANGE_TTL)
 _ticks_cache = TtlCache(TICKS_TTL)
 _kline_disk_lock = threading.Lock()
 _ticks_disk_lock = threading.Lock()
+
+# 同花顺 native 调用（klines / list_security_ticks）不接受超时参数，
+# 周末或网络异常时可能长时间阻塞。用独立线程跑并限时等待，超时即视为
+# 该源失败、继续 fallback，保证请求一定返回，孤儿线程由守护线程回收。
+_THS_SOURCE_TIMEOUT = 25.0
+_ths_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ths-src")
+
+
+def _call_ths_source(label: str, code: str, func: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
+    fut = _ths_executor.submit(func, code, **kwargs)
+    try:
+        return fut.result(timeout=_THS_SOURCE_TIMEOUT)
+    except FuturesTimeout:
+        logger.warning("%s ths %s 超时(>%ss)，fallback 到下一源", label, code, _THS_SOURCE_TIMEOUT)
+        return {}
 
 
 # ---------------------------------------------------------------------------
@@ -215,13 +262,31 @@ def _save_kline_disk(code: str, period: str, adjust: str, pack: dict[str, Any]) 
         path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
 
 
-# 按优先级排列的 K 线源。东财支持全周期放最后兜底，其 ValueError
-# 说明参数本身有问题（无效代码等），直接抛给调用方。
+# 按优先级排列的 K 线源。日线优先腾讯，其次东财，同花顺最后兜底。
 _KLINE_SOURCES: tuple[tuple[str, Any, bool], ...] = (
-    ("tonghuashun", fetch_tonghuashun_line, False),
     ("tencent", fetch_tencent_line, False),
     ("eastmoney", fetch_eastmoney_line, True),
+    ("tonghuashun", fetch_tonghuashun_line, False),
 )
+
+# 腾讯/东财在这台网络下偶发 501/连接重置，各给一次重试机会，
+# 避免一次抖动就整段掉到同花顺并污染磁盘缓存。
+_SOURCE_RETRIES = 2
+
+
+def _call_with_retry(func: Any, code: str, kwargs: dict[str, Any], *, label: str) -> dict[str, Any]:
+    """调腾讯/东财：ValueError 直接抛（不支持的周期），其他异常重试一次后返回空包。"""
+    last_exc: Exception | None = None
+    for attempt in range(_SOURCE_RETRIES):
+        try:
+            return func(code, **kwargs)
+        except ValueError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+    if last_exc is not None:
+        logger.info("%s failed %s (tried %d): %s", label, code, _SOURCE_RETRIES, last_exc)
+    return {}
 
 
 def _fetch_remote_kline(
@@ -233,7 +298,12 @@ def _fetch_remote_kline(
     beg: str = "",
     end: str = "",
 ) -> dict[str, Any]:
-    """按 ``_KLINE_SOURCES`` 顺序打远程，首个有数据的源即返回。空包不带 source。"""
+    """按登录状态排源：已登录 THS 优先；未登录跳过 THS。首个有数据的源即返回。
+
+    传了 beg/end 时只接受落在区间内的源，忽略区间的源视为无数据继续 fallback。
+    """
+    beg_s = re.sub(r"\D", "", str(beg or ""))[:8]
+    end_s = re.sub(r"\D", "", str(end or ""))[:8]
     kwargs = {
         "period": period,
         "adjust": adjust,
@@ -241,9 +311,12 @@ def _fetch_remote_kline(
         "beg": beg,
         "end": end,
     }
-    for source, func, reraise in _KLINE_SOURCES:
+    for source, func, reraise in _kline_source_order():
         try:
-            pack = func(code, **kwargs)
+            if source == "tonghuashun":
+                pack = _call_ths_source("kline", code, func, kwargs)
+            else:
+                pack = _call_with_retry(func, code, kwargs, label=f"{source} kline")
         except ValueError as exc:
             if reraise:
                 raise
@@ -255,6 +328,19 @@ def _fetch_remote_kline(
             logger.info("%s kline failed %s: %s", source, code, exc)
             continue
         if isinstance(pack, dict) and pack.get("items"):
+            if beg_s or end_s:
+                lo = beg_s[:4] + "-" + beg_s[4:6] + "-" + beg_s[6:8] if len(beg_s) >= 8 else ""
+                hi = end_s[:4] + "-" + end_s[4:6] + "-" + end_s[6:8] if len(end_s) >= 8 else ""
+                ranged = [
+                    it for it in pack["items"]
+                    if (not lo or str(it.get("time") or "")[:10] >= lo)
+                    and (not hi or str(it.get("time") or "")[:10] <= hi)
+                ]
+                # 该源不支持区间（如腾讯分钟线只给最近 N 根）时视为无数据，继续 fallback
+                if not ranged:
+                    continue
+                pack = dict(pack)
+                pack["items"] = ranged
             return _kline_payload(pack, source=source)
 
     return _empty_kline(
@@ -402,7 +488,7 @@ def fetch_kline(
     end: str = "",
     force: bool = False,
 ) -> dict[str, Any]:
-    """拉取 K 线。同花顺优先，腾讯其次，东财兜底。
+    """拉取 K 线。已登录同花顺优先，未登录跳过同花顺走腾讯/东财。
 
     交易时段：历史根走磁盘，只补最新几根。
     非交易时段：整段走缓存，定期用尾盘校验。
@@ -483,7 +569,11 @@ def fetch_kline(
 # ---------------------------------------------------------------------------
 
 def _ticks_payload(pack: dict[str, Any], *, source: str, cached: bool = False) -> dict[str, Any]:
-    """去掉各源多出来的字段，收成对外逐笔包。最后一条即最新成交。"""
+    """去掉各源多出来的字段，收成对外逐笔包。最后一条即最新成交。
+
+    ``volume`` / ``volume_lots`` 统一为手：东财 / 腾讯原生即手；
+    同花顺原生为股，已在解析时换算（金额仍按股算）。
+    """
     items = list(pack.get("items") or [])
     last = items[-1] if items else {}
     day = str(pack.get("day") or pack.get("session_day") or "")
@@ -508,7 +598,44 @@ def _ensure_ticks_day(result: dict[str, Any]) -> dict[str, Any]:
     if not result.get("day"):
         result["day"] = session_day().isoformat()
         result["session_day"] = result["day"]
+    if result.get("pre_price") is None:
+        pre = _ticks_prev_close(result.get("code") or "", result.get("day") or "")
+        if pre is not None:
+            result["pre_price"] = pre
     return result
+
+
+_ticks_prev_close_cache: dict[str, Any] = {"at": 0.0, "map": {}}
+
+
+def _ticks_prev_close(code: str, day: str) -> float | None:
+    """逐笔缺昨收时用日K前一收补齐，让分时纵轴有中心锚点。
+
+    失败返回 None（调用方保持原样）。结果按天缓存，避免每个逐笔请求都拉一次日K。
+    """
+    from core.fmt import to_float
+
+    code = (code or "").strip()
+    if not code:
+        return None
+    now = time.time()
+    cache = _ticks_prev_close_cache
+    if now - float(cache.get("at") or 0) > 600:
+        cache["at"] = now
+        cache["map"] = {}
+    key = f"{code}"
+    if key in cache["map"]:
+        return cache["map"][key]
+    try:
+        pack = _fetch_remote_kline(code, period="day", adjust="none", limit=2)
+    except Exception:
+        return None
+    items = pack.get("items") or []
+    if len(items) < 2:
+        return None
+    pre = to_float(items[-2].get("close"))
+    cache["map"][key] = pre
+    return pre
 
 
 def _normalize_ticks_pos(pos: int | str | None) -> int:
@@ -658,7 +785,7 @@ def _load_ticks_disk(code: str, day=None) -> dict[str, Any] | None:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if int(payload.get("version") or 0) != _TICKS_DISK_VERSION:
+    if int(payload.get("version") or 0) not in (1, _TICKS_DISK_VERSION):
         return None
     data = payload.get("data")
     if not isinstance(data, dict):
@@ -750,7 +877,16 @@ def _fetch_ths_ticks(code: str, *, pos: int = 0) -> dict[str, Any]:
     """
     limit = 0 if pos >= 0 else abs(pos)
     try:
-        _, ts_items = fetch_ths_time_and_sales(code, count=limit if limit else 300)
+        # 整日（pos=0）一律切片全拉，保证完整带子；只有明确要最近 N 笔才走 count。
+        fetch_kwargs: dict[str, Any] = {} if limit == 0 else {"count": limit}
+        fut = _ths_executor.submit(
+            fetch_ths_time_and_sales, code, **fetch_kwargs
+        )
+        try:
+            _, ts_items = fut.result(timeout=_THS_SOURCE_TIMEOUT)
+        except FuturesTimeout:
+            logger.warning("ticks ths %s 超时(>%ss)，fallback 到下一源", code, _THS_SOURCE_TIMEOUT)
+            return _ticks_payload({}, source="")
     except ValueError:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -765,35 +901,203 @@ def _fetch_ths_ticks(code: str, *, pos: int = 0) -> dict[str, Any]:
     return _ticks_payload({"code": code, "items": rows}, source="tonghuashun")
 
 
+# 非交易时间自动升级逐笔缓存到同花顺的失败退避：同 key 10 分钟内只试一次，
+# 避免每次打开页面都打一次几十片的整日拉取。
+_THS_TICKS_UPGRADE_TTL = 600.0
+_ths_ticks_upgrade_cooldown: dict[str, float] = {}
+
+
+def _upgrade_ticks_to_ths(code: str, stored: dict[str, Any]) -> dict[str, Any] | None:
+    """非交易时间把上个交易日整日逐笔升级到同花顺并落盘。
+
+    成功返回 THS 整包（调用方切片），失败返回 None（调用方继续用旧缓存）。
+    整日走切片拉取（非 count 分支），保证是完整带子而不是最近 300 笔。
+    """
+    day = str(stored.get("day") or stored.get("session_day") or "")
+    key = f"{code}:{day}"
+    now = time.time()
+    if now - _ths_ticks_upgrade_cooldown.get(key, 0) < _THS_TICKS_UPGRADE_TTL:
+        return None
+    _ths_ticks_upgrade_cooldown[key] = now
+    try:
+        fut = _ths_executor.submit(fetch_ths_time_and_sales, code)
+        _, ts_items = fut.result(timeout=120.0)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("tonghuashun ticks upgrade failed %s: %s", code, exc)
+        return None
+    rows = [r for r in ts_items or [] if isinstance(r, dict)]
+    if not rows:
+        return None
+    rows.sort(key=lambda r: (str(r.get("time") or ""), _tick_seq(r)))
+    # 跨源笔数不可比（东财是 3 秒快照约 4500 行，同花顺是真实成交），
+    # 只要求 THS 带覆盖到缓存末尾：都收到收盘即视为完整可替换。
+    stored_items = stored.get("items") or []
+    stored_last = _ticks_time_key(
+        stored.get("last_time") or (stored_items[-1].get("time") if stored_items else "")
+    )
+    remote_last = _ticks_time_key(rows[-1].get("time"))
+    if remote_last < stored_last:
+        return None
+    pack = _ensure_ticks_day(_ticks_payload({"code": code, "items": rows}, source="tonghuashun"))
+    logger.info("ticks ths upgrade %s: %s rows replacing %s", code, len(rows), len(stored_items))
+    return _save_ticks_disk(code, pack, finalized=True)
+
+
 def _fetch_remote_ticks(code: str, *, pos: int | str = 0) -> dict[str, Any]:
-    """同花顺优先、东财其次、腾讯兜底。首个有数据的源即返回。"""
+    """分时逐笔优先东财，其次腾讯，已登录同花顺仅作最后兜底。首个有数据的源即返回。"""
     pos_n = _normalize_ticks_pos(pos)
 
-    result = _fetch_ths_ticks(code, pos=pos_n)
-    if result.get("items"):
-        return _ensure_ticks_day(result)
-
     try:
-        pack: dict[str, Any] = fetch_eastmoney_ticks(code, pos=pos_n)
+        pack: dict[str, Any] = _call_with_retry(
+            fetch_eastmoney_ticks, code, {"pos": pos_n}, label="eastmoney ticks"
+        )
     except ValueError:
         raise
-    except Exception as exc:  # noqa: BLE001
-        logger.info("eastmoney ticks failed %s: %s", code, exc)
-        pack = {}
     if isinstance(pack, dict) and pack.get("items"):
         return _ensure_ticks_day(_ticks_payload(pack, source="eastmoney"))
 
-    try:
-        pack = fetch_tencent_ticks(code, pos=pos_n)
-    except Exception as exc:  # noqa: BLE001
-        logger.info("tencent ticks failed %s: %s", code, exc)
-        pack = {}
-    if not isinstance(pack, dict):
-        pack = {}
-    result = _ticks_payload(pack, source="tencent" if pack.get("items") else "")
+    pack = _call_with_retry(fetch_tencent_ticks, code, {"pos": pos_n}, label="tencent ticks")
+    if isinstance(pack, dict) and pack.get("items"):
+        return _ensure_ticks_day(_ticks_payload(pack, source="tencent"))
+
+    if _ths_ready():
+        result = _fetch_ths_ticks(code, pos=pos_n)
+        if result.get("items"):
+            return _ensure_ticks_day(result)
+
+    result = _ticks_payload({}, source="")
     if not result.get("code"):
         result["code"] = code
     return _ensure_ticks_day(result)
+
+
+def _json_safe_number(value: Any) -> Any:
+    """把 NaN/Inf 以及 numpy 标量收成 JSON 可编码的普通类型。"""
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    try:
+        import math
+
+        num = float(value)
+    except (TypeError, ValueError):
+        return value
+    if not math.isfinite(num):
+        return None
+    return num
+
+
+def _sanitize_ticks_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """逐笔行做 JSON 安全清洗，避免应答序列化失败（encode 失败）。"""
+    clean: list[dict[str, Any]] = []
+    for row in items or []:
+        if not isinstance(row, dict):
+            continue
+        out: dict[str, Any] = {}
+        for key, value in row.items():
+            if isinstance(value, float) or hasattr(value, "item"):
+                out[key] = _json_safe_number(value)
+            else:
+                out[key] = value
+        clean.append(out)
+    return clean
+
+
+def _history_ticks_from_minute_kline(code: str, iso: str) -> dict[str, Any]:
+    """历史逐笔兜底：用分钟 K 合成该日分时点（price/avg_price/volume）。
+
+    同花顺历史逐笔只保留最近一个交易日，更早的日期用分钟 K 合成：
+    依次试 1m / 5m / 15m / 30m / 60m 的日期区间（走三源 fallback），
+    1m 额外试最近 4000 根（覆盖腾讯约 2 天）。合成点粒度较粗，
+    分时成交明细仍为空，但分时图有线可画。
+    """
+    digits = re.sub(r"\D", "", iso or "")
+    if len(digits) < 8:
+        return _empty_ticks(code, day=iso)
+    day_key = f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+    day_compact = digits[:8]
+    pack: dict[str, Any] = {}
+    bars: list[dict[str, Any]] = []
+    used_period = "1m"
+    for period, allow_last in (("1m", True), ("5m", False), ("15m", False), ("30m", False), ("60m", False)):
+        try:
+            pack = _fetch_remote_kline(
+                code, period=period, adjust="none", limit=600,
+                beg=day_compact, end=day_compact,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.info("history minute fallback %s %s %s range failed: %s", code, iso, period, exc)
+            continue
+        bars = [b for b in (pack.get("items") or [])
+                if isinstance(b, dict) and str(b.get("time") or "")[:10] == day_key]
+        if bars:
+            used_period = period
+            break
+        if allow_last:
+            try:
+                pack = _fetch_remote_kline(code, period=period, adjust="none", limit=4000)
+            except Exception as exc:  # noqa: BLE001
+                logger.info("history minute fallback %s %s last-n failed: %s", code, iso, exc)
+                continue
+            bars = [b for b in (pack.get("items") or [])
+                    if isinstance(b, dict) and str(b.get("time") or "")[:10] == day_key]
+            if bars:
+                used_period = period
+                break
+    if not bars:
+        return _empty_ticks(code, day=iso)
+    prev = pack.get("pre_price")
+    try:
+        day_pack = _fetch_remote_kline(code, period="day", adjust="none", limit=5)
+        for i, b in enumerate(day_pack.get("items") or []):
+            if str(b.get("time") or "")[:10] == day_key and i > 0:
+                prev = (day_pack["items"][i - 1] or {}).get("close")
+                break
+    except Exception:  # noqa: BLE001
+        pass
+    use_amount = any(to_float(b.get("amount")) not in (None,) for b in bars)
+    pv = 0.0
+    shares = 0.0
+    items: list[dict[str, Any]] = []
+    for b in bars:
+        price = to_float(b.get("close"))
+        vol = to_float(b.get("volume")) or 0.0
+        amt = to_float(b.get("amount"))
+        if price is None:
+            continue
+        if use_amount and amt:
+            pv += amt
+            shares += vol * 100.0
+        elif vol > 0:
+            pv += price * vol
+            shares += vol
+        clock = str(b.get("time") or "")
+        m = re.search(r"(\d{2}:\d{2})(?::\d{2})?", clock)
+        items.append({
+            "time": f"{m.group(1)}:00" if m else clock,
+            "price": price,
+            "volume": vol,
+            "avg_price": (pv / shares) if shares else price,
+            "count": None,
+            "side": "",
+            "side_label": "",
+        })
+    if not items:
+        return _empty_ticks(code, day=iso)
+    return {
+        "code": code,
+        "name": pack.get("name") or "",
+        "pre_price": prev,
+        "last_time": items[-1]["time"],
+        "last_price": items[-1]["price"],
+        "day": day_key,
+        "source": f"{pack.get('source') or 'kline'}·{used_period}合成",
+        "count": len(items),
+        "items": items,
+        "cached": False,
+        "session_day": day_key,
+        "cached_at": "",
+        "synthetic": True,
+    }
 
 
 def fetch_ticks(
@@ -803,7 +1107,7 @@ def fetch_ticks(
     force: bool = False,
     day: str = "",
 ) -> dict[str, Any]:
-    """拉取成交明细。同花顺优先，东财其次，腾讯兜底。
+    """拉取成交明细。已登录同花顺优先，未登录先东财、腾讯兜底。
 
     pos=0 当天全部；pos=-20（或 20）最近 20 笔。
     不传 day：盘中覆盖 / 合并当天磁盘缓存；盘后优先读文件，未收齐到 15:00 时再补一次远程。
@@ -818,29 +1122,21 @@ def fetch_ticks(
     want_day = parse_session_day(day)
     today = session_day()
     if want_day is not None and want_day != today:
+        iso = want_day.isoformat()
         stored = _load_ticks_disk(code, want_day)
         if stored:
             return _slice_ticks_pos(stored, pos_n)
-        return _empty_ticks(code, day=want_day.isoformat())
+        out = _empty_ticks(code, day=iso)
+        out["error"] = f"{iso} 暂无逐笔缓存（历史日只读缓存，不再拉取同花顺）"
+        return out
 
     live = is_cn_session_open()
+    # 当天：force（前端刷新行情）时跳过磁盘缓存，重新拉远程并覆盖当天文件；
+    # 历史日已在上面只读返回，不受 force 影响。
     stored = None if force else _load_ticks_disk(code)
 
     if stored and not live:
-        if _ticks_looks_complete(stored) or stored.get("finalized"):
-            return _slice_ticks_pos(stored, pos_n)
-        # 盘后文件停在早盘/午盘（例如只缓存到 09:40）时补齐一次，避免分时成交显示不全
-        result = _fetch_remote_ticks(code, pos=0)
-        remote_items = list(result.get("items") or [])
-        if remote_items:
-            stored_items = list(stored.get("items") or [])
-            remote_last = _ticks_time_key(result.get("last_time") or remote_items[-1].get("time"))
-            stored_last = _ticks_time_key(stored.get("last_time") or (stored_items[-1].get("time") if stored_items else ""))
-            if len(remote_items) > len(stored_items) or remote_last > stored_last:
-                result = _save_ticks_disk(code, result, finalized=True)
-                _ticks_cache.put(f"{code}:{pos_n}", result, cached_at=now)
-                return _slice_ticks_pos(result, pos_n) if pos_n < 0 else result
-        stored = _finalize_ticks_disk(code, stored)
+        # 盘后固定缓存：直接读文件，不再补远程、不再升级同花顺。
         return _slice_ticks_pos(stored, pos_n)
 
     cache_key = f"{code}:{pos_n}"

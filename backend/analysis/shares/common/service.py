@@ -32,6 +32,9 @@ from analysis.shares.pattern import (
     screen_scheme,
 )
 from analysis.shares.screen import screen_shares
+from analysis.shares.limit_pullback import fingerprint as pullback_fingerprint
+from analysis.shares.limit_pullback import normalize_params as normalize_pullback_params
+from analysis.shares.limit_pullback import screen_pullback
 
 
 class SharesScreenService:
@@ -252,6 +255,26 @@ class SharesScreenService:
             thread_name="shares-compose-screen",
         )
 
+    def run_or_poll_pullback(
+        self,
+        *,
+        params: dict[str, Any] | None = None,
+        top: int = 50,
+        code: str = "",
+        force: bool = False,
+        workers: int = 8,
+    ) -> dict[str, Any]:
+        p = normalize_pullback_params(params)
+        fp = pullback_fingerprint(p)
+        return self._start_or_poll(
+            fingerprint=fp,
+            code=code,
+            top=top,
+            force=force,
+            worker_target=self._pullback_worker,
+            worker_args=(p, code, workers),
+            thread_name="shares-pullback-screen",
+        )
     def _worker(
         self,
         specs: list[dict[str, Any]],
@@ -400,6 +423,33 @@ class SharesScreenService:
                 top=None,
                 on_update=on_update,
             )
+            with self._lock:
+                slot = self._slots.get(key)
+                if not slot or slot.run_id != run_id:
+                    return
+                slot.result = result
+                slot.status = "done"
+                slot.finished_at = time.time()
+            save_disk(KIND_SHARES, key, result)
+        except Exception as exc:  # noqa: BLE001
+            with self._lock:
+                slot = self._slots.get(key)
+                if not slot or slot.run_id != run_id:
+                    return
+                slot.status = "error"
+                slot.error = str(exc)
+                slot.finished_at = time.time()
+
+
+    def _pullback_worker(self, params, code, workers, key, run_id) -> None:
+        def on_update(payload):
+            with self._lock:
+                slot = self._slots.get(key)
+                if not slot or slot.run_id != run_id:
+                    return
+                slot.result = payload
+        try:
+            result = screen_pullback(params=params, code=code, workers=workers, top=None, on_update=on_update)
             with self._lock:
                 slot = self._slots.get(key)
                 if not slot or slot.run_id != run_id:

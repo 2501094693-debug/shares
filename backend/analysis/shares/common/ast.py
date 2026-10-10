@@ -37,7 +37,8 @@ from core.fmt import to_float
 KIND_DAY = "day"
 KIND_COMP = "comp"
 KIND_GROUP = "group"
-KIND_CHOICES = (KIND_DAY, KIND_COMP, KIND_GROUP)
+KIND_PULLBACK = "pullback"
+KIND_CHOICES = (KIND_DAY, KIND_COMP, KIND_GROUP, KIND_PULLBACK)
 
 
 def _trade_dates(n: int = 22) -> list[str]:
@@ -130,6 +131,25 @@ def _normalize_comp_node(raw: dict[str, Any], *, index: int = 0) -> dict[str, An
     return node
 
 
+def _normalize_pullback_node(raw: dict[str, Any], *, index: int = 0) -> dict[str, Any] | None:
+    from analysis.shares.limit_pullback import normalize_params as normalize_pullback
+
+    params = normalize_pullback(raw.get("pullback") if isinstance(raw.get("pullback"), dict) else raw)
+    nid = str(raw.get("id") or raw.get("name") or f"pb{index}").strip() or f"pb{index}"
+    label = str(raw.get("label") or raw.get("name") or "涨停回踩").strip()
+    node: dict[str, Any] = {
+        "kind": KIND_PULLBACK,
+        "id": nid,
+        "label": label,
+        "pullback": params,
+    }
+    if raw.get("join") is not None:
+        node["join"] = normalize_join(raw.get("join"))
+    if _as_bool(raw.get("not"), False):
+        node["not"] = True
+    return node
+
+
 def _normalize_node(
     raw: Any,
     *,
@@ -156,6 +176,8 @@ def _normalize_node(
         return _normalize_day_node(raw, trade_dates=trade_dates, index=index)
     if kind == KIND_COMP:
         return _normalize_comp_node(raw, index=index)
+    if kind == KIND_PULLBACK or (not kind and (raw.get("pullback") is not None or raw.get("window") is not None and raw.get("dist_low_max") is not None)):
+        return _normalize_pullback_node(raw, index=index)
     if kind != KIND_GROUP:
         return None
 
@@ -319,6 +341,12 @@ def tree_fingerprint(tree: dict[str, Any]) -> str:
 def describe_node(node: dict[str, Any]) -> str:
     kind = node.get("kind")
     label = node.get("label") or node.get("id") or ""
+    if kind == KIND_PULLBACK:
+        pb = node.get("pullback") or {}
+        return (
+            f"[回踩 {label}] 近{pb.get('window', 15)}天≥{pb.get('limit_up_min', 1)}涨停；"
+            f"贴低≤{pb.get('dist_low_max', 5)}% / 贴开盘±{pb.get('dist_open_max', 5)}%（{pb.get('mode', 'either')}）"
+        )
     if kind == KIND_DAY:
         extra = " 且下影≥实体" if node.get("lower_ge_body") else ""
         return f"[日 {node.get('date')}] {describe_spec(node)}{extra}"
@@ -485,6 +513,10 @@ def normalize_compose_params(raw: dict[str, Any] | None = None) -> dict[str, Any
                 }
             )
 
+    pullback = src.get("pullback")
+    if isinstance(pullback, dict):
+        parts.append({**pullback, "kind": KIND_PULLBACK, "id": pullback.get("id") or "pullback", "label": pullback.get("label") or pullback.get("name") or "涨停回踩"})
+
     if parts:
         out = {
             "id": str(src.get("id") or "compose").strip(),
@@ -554,10 +586,27 @@ def _eval_node(
     *,
     by_date: dict[str, int],
     cache: dict[int, dict[str, Any] | None],
+    code: str = "",
+    name: str = "",
 ) -> tuple[bool | None, dict[str, Any] | None]:
     kind = node.get("kind")
     if kind == KIND_DAY:
         return _eval_day_leaf(bars, by_date, node)
+
+    if kind == KIND_PULLBACK:
+        from analysis.shares.limit_pullback import match_pullback
+
+        hit = match_pullback(bars, code=code, name=name, params=node.get("pullback"))
+        if hit is None:
+            return False, None
+        if node.get("not"):
+            return False, None
+        return True, {
+            "kind": KIND_PULLBACK,
+            "id": node.get("id"),
+            "label": node.get("label") or "涨停回踩",
+            **hit,
+        }
 
     if kind == KIND_COMP:
         payload = {**node, "kind": node.get("comp_kind") or "pair"}
@@ -577,7 +626,7 @@ def _eval_node(
     child_flags: list[bool | None] = []
     child_hits: list[dict[str, Any]] = []
     for child in children:
-        ok, hit = _eval_node(bars, trade_dates, child, by_date=by_date, cache=cache)
+        ok, hit = _eval_node(bars, trade_dates, child, by_date=by_date, cache=cache, code=code, name=name)
         child_flags.append(ok)
         if ok and hit is not None:
             child_hits.append(hit)
@@ -610,6 +659,8 @@ def evaluate_tree(
     tree: dict[str, Any],
     *,
     trade_dates: list[str] | None = None,
+    code: str = "",
+    name: str = "",
 ) -> dict[str, Any] | None:
     """按统一树匹配；未命中返回 None。"""
     nodes = list(tree.get("nodes") or [])
@@ -628,7 +679,7 @@ def evaluate_tree(
     flags: list[bool | None] = []
     hits: list[dict[str, Any]] = []
     for node in nodes:
-        ok, hit = _eval_node(bars, dates, node, by_date=by_date, cache=cache)
+        ok, hit = _eval_node(bars, dates, node, by_date=by_date, cache=cache, code=code, name=name)
         flags.append(ok)
         if ok and hit is not None:
             hits.append(hit)
@@ -652,6 +703,9 @@ def evaluate_tree(
         kind = hit.get("kind")
         if kind == KIND_DAY:
             day_hits.append(hit)
+        elif kind == KIND_PULLBACK:
+            comp_hits.append(hit)
+            branch_ids.append(str(hit.get("id") or "pullback"))
         elif kind == KIND_COMP:
             comp_hits.append(hit)
         elif kind == KIND_GROUP:
@@ -685,6 +739,9 @@ def evaluate_tree(
 
     score = float(len(hits))
     for hit in comp_hits:
+        if hit.get("kind") == KIND_PULLBACK:
+            score += float(hit.get("score") or 0) / 20.0
+            continue
         ck = hit.get("comp_kind") or hit.get("kind")
         if ck == "trend" or hit.get("pair_hits") is not None:
             need = max(1, int(hit.get("pair_need") or 1))

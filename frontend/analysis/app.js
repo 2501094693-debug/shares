@@ -31,8 +31,12 @@
     { id: "screen", label: "筛选", hint: "多日区间，日与日且/或" },
     { id: "pattern", label: "形态", hint: "多组分支，组间 OR / 组内 M/N" },
     { id: "compare", label: "对比", hint: "跨日比大小 / 趋势" },
-    { id: "compose", label: "组合", hint: "把筛选/形态/对比草稿一次联评" },
+    { id: "compose", label: "组合", hint: "筛选/形态/对比/回踩一次联评" },
   ];
+
+  const SHARES_PULLBACK_DEFAULT = { window: 15, mode: "either", dist_low_max: 5, dist_open_max: 5 };
+
+  const SHARES_PULLBACK_PRESETS = [];
 
   const LOWER_SHADOW_DAY = { lower_ratio_min: 0.35, lower_ge_body: true };
   const LOWER_SHADOW_WINDOW = [0, 1, 2, 3, 4].map((offset) => ({
@@ -114,6 +118,26 @@
           })),
         },
       ],
+    },
+    {
+      id: "pullback_15_either",
+      name: "涨停回踩15天+缩实体",
+      brief: "回踩 AND 缩实体",
+      kind: "compose",
+      logic: "and",
+      top: 50,
+      pullback: { window: 15, mode: "either", dist_low_max: 5, dist_open_max: 5 },
+      pattern: { id: "quiet_body", name: "缩实体", logic: "and", groups: [{ id: "quiet_body", label: "近五日缩实体", min_hits: 3, days: [0, 1, 2, 3, 4].map(function(o){ return { offset: o, body_abs_pct_max: 1.2 }; }) }] },
+    },
+    {
+      id: "pullback_10_strict",
+      name: "涨停回踩10天严格",
+      brief: "回踩 AND T0下影",
+      kind: "compose",
+      logic: "and",
+      top: 50,
+      pullback: { window: 10, mode: "both", dist_low_max: 3, dist_open_max: 3 },
+      pattern: { id: "t0_shadow", name: "T0下影", logic: "and", groups: [{ id: "lower_shadow", label: "T0下影", logic: "and", days: [{ offset: 0 }] }] },
     },
   ];
 
@@ -283,6 +307,7 @@
     /** 组合：顶层且/或，以及是否纳入各模式草稿 */
     composeLogic: "and",
     composeInclude: { screen: true, pattern: true, compare: true },
+    pullback: { window: 15, mode: "either", dist_low_max: 5, dist_open_max: 5 },
     status: "idle",
     dayRows: [],
     selectedDate: "",
@@ -964,6 +989,8 @@
 
   function normalizeSharesMode(raw) {
     const v = String(raw || "").toLowerCase();
+    // 兼容旧缓存：pullback 已并入组合
+    if (v === "pullback" || v === "lpb" || v === "回踩") return "compose";
     if (v === "pattern" || v === "scheme" || v === "形态") return "pattern";
     if (v === "compare" || v === "cmp" || v === "对比") return "compare";
     if (v === "compose" || v === "ast" || v === "组合" || v === "combo") return "compose";
@@ -1973,6 +2000,28 @@
     const top = Number(raw.top);
     const brief = String(raw.brief || "").trim().slice(0, 80);
 
+    if (raw.kind === "pullback" || raw.pullback) {
+      const src = raw.pullback && typeof raw.pullback === "object" ? raw.pullback : raw;
+      const w = Number(src.window) === 10 ? 10 : 15;
+      const m = String(src.mode || "either");
+      const dl = Number(src.dist_low_max);
+      const dopen = Number(src.dist_open_max);
+      return {
+        id,
+        name,
+        kind: "pullback",
+        brief: brief || `近${w}天涨停回踩`,
+        updatedAt: String(raw.updatedAt || new Date().toISOString()),
+        top: Number.isFinite(top) ? top : undefined,
+        pullback: {
+          window: w,
+          mode: ["low", "open", "either", "both"].includes(m) ? m : "either",
+          dist_low_max: Number.isFinite(dl) && dl >= 0 ? dl : 5,
+          dist_open_max: Number.isFinite(dopen) && dopen >= 0 ? dopen : 5,
+        },
+      };
+    }
+
     if (isCompareLike(raw) || raw.kind === "compare") {
       const compsRaw = raw.comps || raw.compares || raw.comparisons || [];
       const comps = (Array.isArray(compsRaw) ? compsRaw : [])
@@ -2256,6 +2305,24 @@
       return false;
     }
 
+    if (shares.mode === "pullback") {
+      const pb = { ...(shares.pullback || { window: 15, mode: "either", dist_low_max: 5, dist_open_max: 5 }) };
+      const existing = shares.presets.find((p) => p.name === name);
+      upsertSharesPreset({
+        id: existing?.id || `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+        name,
+        kind: "pullback",
+        brief: `近${pb.window || 15}天 · ${pb.mode || "either"} · 低≤${pb.dist_low_max ?? 5}% · 开盘±${pb.dist_open_max ?? 5}%`,
+        updatedAt: new Date().toISOString(),
+        top: shares.top,
+        pullback: pb,
+      });
+      persistSharesPresets();
+      shares.presetHint = existing ? `已覆盖回踩方案「${name}」` : `已保存回踩方案「${name}」`;
+      renderSharesPresetBar();
+      return true;
+    }
+
     if (shares.mode === "pattern") {
       const scheme = buildPatternScheme();
       if (!patternHasRules()) {
@@ -2384,6 +2451,37 @@
   function applySharesPreset(id) {
     const preset = findSharesPreset(id);
     if (!preset) return;
+    if (preset.kind === "pullback" || preset.pullback) {
+      const src = preset.pullback || {};
+      shares.mode = "pullback";
+      persistSharesMode();
+      shares.pullback = {
+        window: Number(src.window) === 10 ? 10 : 15,
+        mode: ["low", "open", "either", "both"].includes(src.mode) ? src.mode : "either",
+        dist_low_max: Number.isFinite(Number(src.dist_low_max)) ? Number(src.dist_low_max) : 5,
+        dist_open_max: Number.isFinite(Number(src.dist_open_max)) ? Number(src.dist_open_max) : 5,
+      };
+      if (Number.isFinite(Number(preset.top))) {
+        shares.top = Number(preset.top);
+        renderSeg();
+      }
+      stopPoll(shares);
+      shares.started = false;
+      shares.status = "idle";
+      shares.items = [];
+      shares.resultCount = 0;
+      shares.analyzedCount = 0;
+      shares.message = "";
+      const panel = $("sharesCondPanel");
+      if (panel) panel.dataset.date = "";
+      shares.presetHint = `已套用回踩「${preset.name}」，点「开始筛选」运行`;
+      shares.presetMenuOpen = false;
+      shares.presetImportOpen = false;
+      renderAll();
+      showError("");
+      setLive("idle");
+      return;
+    }
     if (preset.kind === "compare" || isCompareLike(preset)) {
       applyImportedCompare(preset);
       return;
@@ -2520,13 +2618,16 @@
     shares.presetImportDraft = importDraft;
 
     const kindLabel = (p) => {
+      if (p.kind === "pullback") return "回踩";
       if (p.kind === "compare" || isCompareLike(p)) return "对比";
       if (p.kind === "scheme" || isSchemeLike(p)) return "形态";
       return "筛选";
     };
-    const groups = { screen: [], pattern: [], compare: [] };
+    const groups = { screen: [], pattern: [], compare: [], pullback: [], compose: [] };
     for (const p of shares.presets || []) {
-      if (p.kind === "compare" || isCompareLike(p)) groups.compare.push(p);
+      if (p.kind === "pullback" || (p.kind === "compose" && p.pullback)) groups.pullback.push(p);
+      else if (p.kind === "compose") groups.compose.push(p);
+      else if (p.kind === "compare" || isCompareLike(p)) groups.compare.push(p);
       else if (p.kind === "scheme" || isSchemeLike(p)) groups.pattern.push(p);
       else groups.screen.push(p);
     }
@@ -2553,6 +2654,7 @@
     };
     const builtin = renderGroup("", sharesBuiltinPresets(), { builtin: true });
     const saved =
+      renderGroup("回踩", groups.pullback) +
       renderGroup("筛选", groups.screen) +
       renderGroup("形态", groups.pattern) +
       renderGroup("对比", groups.compare);
@@ -3477,15 +3579,18 @@
       const parts = composePartsStatus();
       const logic = normalizeSharesLogic(shares.composeLogic || "and");
       const joinWord = logic === "or" ? "或" : "且";
+      const pb = shares.pullback || { ...SHARES_PULLBACK_DEFAULT };
       const rows = parts
         .map((part) => {
           const state = !part.ready ? "空" : part.included ? "纳入" : "已排除";
           const tone = !part.ready ? "muted" : part.included ? "on" : "off";
+          const extra = "";
           return `<div class="shares-compose-row" data-tone="${tone}">
             <div class="shares-compose-row__main">
               <strong>${esc(part.label)}</strong>
               <span>${esc(part.brief)}</span>
               <em>${esc(state)}</em>
+              ${extra}
             </div>
             <div class="shares-compose-row__actions">
               <button type="button" class="shares-tool-btn${part.included ? " is-active" : ""}" data-compose-toggle="${esc(part.id)}" ${part.ready ? "" : "disabled"}>${part.included ? "排除" : "纳入"}</button>
@@ -3650,9 +3755,13 @@
     const useScore =
       row.score != null &&
       (row.matched_nodes != null ||
+        row.limit_count != null ||
         (Array.isArray(row.branches) && row.branches.length) ||
         (Array.isArray(row.comps) && row.comps.length));
     const scoreLabel = (() => {
+      if (row.limit_count != null) {
+        return `${row.limit_count}板 · ${row.days_since_limit ?? 0}天前`;
+      }
       if (row.matched_nodes != null) return "组合分";
       if (Array.isArray(row.branches) && row.branches.length) {
         const counted = Number(row.shadow_count);
@@ -3689,6 +3798,7 @@
       </a>
       ${klineBlock(row.code || "")}
       <footer class="screen-card-meta">
+        ${row.limit_count != null ? `<span>涨停日 <b>${esc(row.last_limit_date || "")}</b></span><span>距低 <b data-tone="${tone(-Math.abs(Number(row.dist_low) || 0))}">${fmtNum(row.dist_low, 1)}</b>%</span><span>距开盘 <b data-tone="${tone(-Math.abs(Number(row.dist_open) || 0))}">${fmtNum(row.dist_open, 1)}</b>%</span><span>回撤 <b data-tone="${tone(row.drawdown)}">${fmtNum(row.drawdown, 1)}</b>%</span>` : ""}
         <span>涨跌 <b data-tone="${tone(m.pct_chg)}">${fmtPct(m.pct_chg)}</b></span>
         <span>最大涨 <b data-tone="${tone(m.max_gain)}">${fmtPct(m.max_gain)}</b></span>
         <span>最大跌 <b data-tone="${tone(m.max_drop)}">${fmtPct(m.max_drop)}</b></span>
@@ -3713,6 +3823,7 @@
       const useScore =
         row.score != null &&
         (row.matched_nodes != null ||
+          row.limit_count != null ||
           (Array.isArray(row.branches) && row.branches.length) ||
           (Array.isArray(row.comps) && row.comps.length));
       score.textContent = String(
@@ -5051,6 +5162,31 @@
       return true;
     }
 
+    $("sharesWorkbench")?.addEventListener("change", (ev) => {
+      if (view !== "shares") return;
+      const t = ev.target.closest("[data-pb]");
+      if (!t) return;
+      const k = t.dataset.pb;
+      const pb = (shares.pullback = shares.pullback || { window: 15, mode: "either", dist_low_max: 5, dist_open_max: 5 });
+      if (k === "window") pb.window = Number(t.value) === 10 ? 10 : 15;
+      else if (k === "mode") pb.mode = String(t.value || "either");
+      else if (k === "dist_low_max" || k === "dist_open_max") {
+        const n = Number(t.value);
+        pb[k] = Number.isFinite(n) && n >= 0 ? n : 5;
+      }
+      renderSharesSummary();
+      renderSharesHead();
+    });
+    $("sharesWorkbench")?.addEventListener("input", (ev) => {
+      if (view !== "shares") return;
+      const t = ev.target.closest("[data-pb]");
+      if (!t) return;
+      const k = t.dataset.pb;
+      if (k !== "dist_low_max" && k !== "dist_open_max") return;
+      const n = Number(t.value);
+      const pb = (shares.pullback = shares.pullback || { window: 15, mode: "either", dist_low_max: 5, dist_open_max: 5 });
+      pb[k] = Number.isFinite(n) && n >= 0 ? n : 5;
+    });
     $("sharesWorkbench")?.addEventListener("click", (ev) => {
       if (view !== "shares") return;
       const modeBtn = ev.target.closest("button[data-shares-mode]");
@@ -5063,6 +5199,7 @@
         loadShares(true);
         return;
       }
+      if (shares.mode === "pullback") return;
       const applyPreset = ev.target.closest("[data-preset-apply]");
       if (applyPreset) {
         applySharesPreset(applyPreset.dataset.presetApply);

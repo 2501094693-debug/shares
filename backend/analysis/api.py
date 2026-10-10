@@ -306,6 +306,30 @@ def post_shares_compare(payload: dict[str, Any] = Body(...)):
         return err(str(exc), 500)
 
 
+@router.post("/api/screen/shares/pullback")
+def post_shares_pullback(payload: dict[str, Any] = Body(...)):
+    """涨停回踩：N天内有涨停 + 贴近窗口低点/涨停开盘。Body: {window, mode, dist_low_max, dist_open_max, top}"""
+    if not isinstance(payload, dict):
+        return err("body 须为对象", 400)
+    try:
+        top = int(payload.get("top") if payload.get("top") is not None else 50)
+    except (TypeError, ValueError):
+        return err("top 无效", 400)
+    try:
+        workers = int(payload.get("workers") if payload.get("workers") is not None else 8)
+    except (TypeError, ValueError):
+        workers = 8
+    refresh = str(payload.get("refresh") or "0").strip()
+    code = normalize_code(str(payload.get("code") or ""))
+    try:
+        result = shares_service.run_or_poll_pullback(params=payload, top=top, code=code, force=refresh == "1", workers=workers)
+        if result.get("status") == "error" and "data" not in result:
+            return err(str(result.get("error") or "筛选失败"), 400)
+        return ok(result)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
 @router.post("/api/screen/shares/scheme")
 def post_shares_scheme(payload: dict[str, Any] = Body(...)):
     """统一 AST 组合筛选：一次扫盘同时评估 day / group / comp。

@@ -48,14 +48,23 @@ def analyze_one_compose(meta: dict[str, Any], tree: dict[str, Any]) -> dict[str,
     if not bars:
         return {**base, "name": name, "error": "日 K 为空"}
 
-    hit = evaluate_tree(bars, tree)
+    hit = evaluate_tree(bars, tree, code=code, name=name)
     if hit is None:
         return None
+
+    # 回踩节点细节透出，卡片可直接展示
+    pb = next((h for h in (hit.get("comps") or []) if h.get("kind") == "pullback"), None) or {}
 
     return {
         **base,
         "name": name,
         "as_of": hit["as_of"],
+        "limit_count": pb.get("limit_count"),
+        "last_limit_date": pb.get("last_limit_date"),
+        "days_since_limit": pb.get("days_since_limit"),
+        "dist_low": pb.get("dist_low"),
+        "dist_open": pb.get("dist_open"),
+        "drawdown": pb.get("drawdown"),
         "nodes": hit["nodes"],
         "groups": hit.get("groups") or [],
         "branches": hit.get("branches") or [],

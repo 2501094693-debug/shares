@@ -125,8 +125,14 @@ def _date(value: str) -> str:
 
 def _fmt_time(raw: Any, *, minute: bool) -> str:
     text = re.sub(r"\D", "", str(raw or ""))
-    if minute and len(text) >= 12:
-        return f"{text[0:4]}-{text[4:6]}-{text[6:8]} {text[8:10]}:{text[10:12]}"
+    if minute:
+        # 分钟线 time 应为 YYYYMMDDHHMM；SDK 偶发返回纯序号（如 132795322），
+        # 此时无法还原日期，返回空由上层丢弃该行，避免污染走势。
+        if len(text) >= 12 and text.startswith(("19", "20")):
+            return f"{text[0:4]}-{text[4:6]}-{text[6:8]} {text[8:10]}:{text[10:12]}"
+        if len(text) >= 8 and text.startswith(("19", "20")):
+            return f"{text[0:4]}-{text[4:6]}-{text[6:8]}"
+        return ""
     if len(text) >= 8:
         return f"{text[0:4]}-{text[4:6]}-{text[6:8]}"
     return str(raw or "").strip()
@@ -147,13 +153,15 @@ def _parse_row(row: dict[str, Any], *, minute: bool) -> dict[str, Any] | None:
     low = to_float(_row_get(row, "low", "lowprice", "low_price", "min"))
     if close is None and open_ is None:
         return None
+    raw_volume = to_float(_row_get(row, "volume", "vol", "dealvolume"))
     return {
         "time": _fmt_time(_row_get(row, "time", "date", "datetime"), minute=minute),
         "open": open_,
         "close": close,
         "high": high,
         "low": low,
-        "volume": to_float(_row_get(row, "volume", "vol", "dealvolume")),
+        # 对外统一为手（腾讯 / 东财原生即手；同花顺原生为股）。金额仍为元。
+        "volume": round(raw_volume / 100.0, 2) if raw_volume is not None else None,
         "amount": to_float(_row_get(row, "amount", "turnover", "dealamount", "money")),
         "change": to_float(_row_get(row, "change", "pricechange", "updown")),
         "pct_chg": to_float(_row_get(row, "pct_chg", "pctchange", "changepercent", "涨跌幅")),
@@ -171,8 +179,16 @@ def _fill_change(items: list[dict[str, Any]]) -> None:
         low = to_float(item.get("low"))
         if prev not in (None, 0):
             if close is not None:
-                item.setdefault("change", round(close - prev, 4))
-                item.setdefault("pct_chg", round((close / prev - 1.0) * 100, 4))
+                chg = round(close - prev, 4)
+                pct = round((close / prev - 1.0) * 100, 4)
+                if item.get("change") in (None, 0) and chg != 0:
+                    item["change"] = chg
+                else:
+                    item.setdefault("change", chg)
+                if item.get("pct_chg") in (None, 0) and pct != 0:
+                    item["pct_chg"] = pct
+                else:
+                    item.setdefault("pct_chg", pct)
             if (
                 high is not None
                 and low is not None
@@ -200,6 +216,7 @@ def fetch_line(
     未登录时抛 ``RuntimeError``，由上层 fallback 到东财 / 腾讯。
     """
     import thsdk
+    from company.line.tonghuashun import auth as _ths_auth
 
     norm = normalize_code(code)
     if not norm:
@@ -217,8 +234,8 @@ def fetch_line(
     security = _hq_security(norm)
     if not security:
         raise ValueError("无效股票代码")
-    if not thsdk.auth_qrcode(timeout=10):
-        raise RuntimeError("thsdk 会话复用失败，请重新扫码登录")
+    if not _ths_auth.ensure(timeout=3):
+        raise RuntimeError("THS_NEED_QRCODE:同花顺需扫码登录，前端打开扫码弹窗后重试")
 
     interval = PERIOD_INTERVAL[canon]
     if beg_s or end_s:

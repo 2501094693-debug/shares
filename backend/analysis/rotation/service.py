@@ -13,6 +13,7 @@ from analysis.rotation.calendar import (
     refresh_fund_flows,
     screen_rotation,
 )
+from company.line.session import market_phase
 from market.industry.service import service as industry_service
 from analysis.rotation.config import CACHE_TAG, DEFAULT_LOOKBACK_DAYS, KLINE_WORKERS
 
@@ -26,7 +27,7 @@ class RotationScreenService:
     def _make_key(days: int) -> str:
         return f"d{days}_{CACHE_TAG}"
 
-    def _snapshot(self, slot: JobSlot, top: int) -> dict[str, Any]:
+    def _snapshot(self, slot: JobSlot, top: int, *, live: bool = False) -> dict[str, Any]:
         elapsed = 0.0
         if slot.started_at:
             end = slot.finished_at or time.time()
@@ -39,8 +40,13 @@ class RotationScreenService:
             payload["error"] = slot.error or "分析失败"
             return payload
         if slot.result is not None and slot.status in ("running", "done"):
-            slot.result = refresh_fund_flows(slot.result) or slot.result
-            payload["data"] = apply_top(slot.result, None)
+            data = slot.result
+            # 盘中实时刷新资金流；收盘后固定不变，不再刷新。
+            if live:
+                data = refresh_fund_flows(data) or data
+                slot.result = data
+            payload["data"] = apply_top(data, None)
+            payload["sealed"] = not live
         if slot.status == "running":
             payload["message"] = slot.message or "正在统计三级行业每天谁轮到了…"
         return payload
@@ -53,25 +59,28 @@ class RotationScreenService:
         force: bool = False,
         workers: int = KLINE_WORKERS,
     ) -> dict[str, Any]:
+        live = market_phase() in ("live", "lunch")
         key = self._make_key(days)
         with self._lock:
             slot = self._slots.get(key)
-            if not force and slot and slot.status == "done" and slot.result is not None:
-                return self._snapshot(slot, top)
+            # 收盘后：算过一次就固定，直接返回内存/落盘结果。
+            # 盘中：实时分析，不复用已完成的结果；正在跑则轮询。
+            if not force and not live and slot and slot.status == "done" and slot.result is not None:
+                return self._snapshot(slot, top, live=live)
             if slot and slot.status == "running":
-                return self._snapshot(slot, top)
-            if not force:
+                return self._snapshot(slot, top, live=live)
+            if not force and not live:
                 cached = load_disk(KIND_ROTATION, key)
                 if cached is not None:
                     cached_at, data = cached
                     if is_fresh(cached_at):
                         slot = slot or JobSlot()
                         slot.status = "done"
-                        slot.result = refresh_fund_flows(data) or data
+                        slot.result = data
                         slot.started_at = cached_at
                         slot.finished_at = cached_at
                         self._slots[key] = slot
-                        return self._snapshot(slot, top)
+                        return self._snapshot(slot, top, live=live)
             slot = slot or JobSlot()
             slot.status = "running"
             slot.error = None
@@ -125,7 +134,7 @@ class RotationScreenService:
 
         threading.Thread(target=work, daemon=True, name="rotation-calendar").start()
         with self._lock:
-            return self._snapshot(self._slots[key], top)
+            return self._snapshot(self._slots[key], top, live=live)
 
 
 service = RotationScreenService()

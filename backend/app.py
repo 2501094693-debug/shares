@@ -438,6 +438,15 @@ def js_company():
     )
 
 
+@app.get("/js/company/ths-auth.js")
+def js_ths_auth():
+    return FileResponse(
+        FRONTEND / "company" / "ths-auth.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
 @app.get("/ai")
 @app.get("/ai.html")
 @app.get("/earnings")
@@ -468,7 +477,107 @@ app.mount(
 )
 
 
+_INSTANCE_LOCK_HANDLE = None
+
+
+def _acquire_single_instance() -> None:
+    """单实例锁：已有服务在跑时直接退出，避免多进程抢 5000 端口导致新旧代码混跑。
+
+    用系统级文件锁（进程退出自动释放，不怕残留）；reload 模式下由父进程持有，
+    子进程只 import 模块不走这里，不受影响。
+    """
+    global _INSTANCE_LOCK_HANDLE
+    lock_path = _BACKEND_DIR / ".server.lock"
+    try:
+        fh = open(lock_path, "a+b")
+    except OSError as exc:
+        print(f"无法创建实例锁文件 {lock_path}: {exc}")
+        raise SystemExit(1)
+    try:
+        try:
+            import msvcrt  # Windows
+
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        except ImportError:
+            import fcntl  # POSIX
+
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        print("Another server instance is already running. This launch is cancelled.")
+        print("已有服务正在运行，本次启动已取消；如确认无服务在跑，请先结束残留 python.exe 进程。")
+        raise SystemExit(1)
+    _INSTANCE_LOCK_HANDLE = fh  # 保持句柄打开，锁随进程持有
+
+
+def _kill_port_listeners(port: int) -> None:
+    """干掉占用端口的旧服务，新启动的实例接管。只杀 LISTENING 态且不是自己的进程。"""
+    import re
+    import shutil
+    import socket
+    import subprocess
+    import time
+
+    me = os.getpid()
+
+    def _port_busy() -> bool:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.bind(("127.0.0.1", port))
+            return False
+        except OSError:
+            return True
+        finally:
+            s.close()
+
+    if not _port_busy():
+        return
+
+    if os.name == "nt":
+        try:
+            out = subprocess.run(
+                ["netstat", "-ano", "-p", "TCP"],
+                capture_output=True, text=True, timeout=15,
+            ).stdout
+        except Exception as exc:  # noqa: BLE001
+            print(f"netstat failed: {exc}")
+            out = ""
+        pids = set()
+        for line in out.splitlines():
+            if "LISTENING" not in line or f":{port}" not in line:
+                continue
+            parts = line.split()
+            if len(parts) >= 5 and parts[-1].isdigit():
+                pid = int(parts[-1])
+                if pid != me:
+                    pids.add(pid)
+        for pid in sorted(pids):
+            print(f"Killing stale server PID {pid} on port {port} ...")
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                           capture_output=True, timeout=30)
+    else:
+        for tool, args in (
+            ("fuser", ["fuser", "-k", f"{port}/tcp"]),
+            ("lsof", ["sh", "-c", f"kill -9 $(lsof -ti tcp:{port})"]),
+        ):
+            if shutil.which(tool) is None:
+                continue
+            try:
+                subprocess.run(args, capture_output=True, timeout=30)
+            except Exception:  # noqa: BLE001
+                pass
+
+    for _ in range(50):
+        if not _port_busy():
+            print(f"Port {port} is free now.")
+            return
+        time.sleep(0.2)
+    print(f"WARNING: port {port} still busy after killing old processes.")
+
+
 if __name__ == "__main__":
+    _kill_port_listeners(5000)
+    _acquire_single_instance()
     # 调试器下关闭 reload，避免 Program Files 路径空格导致二次启动失败
     use_reload = not _running_under_debugger()
     reload_dirs = [str(_BACKEND_DIR), str(_ROOT_DIR / "agent")] if use_reload else None
