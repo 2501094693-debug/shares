@@ -16,7 +16,7 @@ from company.statistics.fundflow.eastmoney._common import (
     fetch_fflow_klines,
     parse_daily_line,
 )
-from company.line.eastmoney_kline import resolve_secid
+from company.line.eastmoney.kline import resolve_secid
 from core.codes import normalize_code
 from core.paths import ANALYSIS_CACHE_DIR, ensure_cache_dirs
 

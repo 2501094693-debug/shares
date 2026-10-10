@@ -1,6 +1,4 @@
-"""腾讯 ``fqkline`` / ``mkline`` K 线接入。
-
-日 / 周 / 月：``https://ifzq.gtimg.cn/appstock/app/fqkline/get``
+"""/ 周 / 月：``https://ifzq.gtimg.cn/appstock/app/fqkline/get``
 - param: ``sh600519,day,start,end,limit,qfq``
 - 周期：day / week / month
 - 复权：空=不复权，``qfq`` 前复权，``hfq`` 后复权（指数通常只有不复权）
@@ -13,11 +11,11 @@
 
 腾讯没有季 / 半年 / 年 / 120 分钟。个股日 K 常见上限约 640 根。
 
-    python company/line/tencent_kline.py 600519
-    python company/line/tencent_kline.py sh000001 --period day --limit 5
-    python company/line/tencent_kline.py 000001 --period week
-    python company/line/tencent_kline.py 600519 --period 5m --limit 10
-    python company/line/tencent_kline.py 600519 --period day --beg 20240101 --end 20241231
+    python -m company.line.tencent.kline 600519
+    python -m company.line.tencent.kline sh000001 --period day --limit 5
+    python -m company.line.tencent.kline 000001 --period week
+    python -m company.line.tencent.kline 600519 --period 5m --limit 10
+    python -m company.line.tencent.kline 600519 --period day --beg 20240101 --end 20241231
 """
 
 from __future__ import annotations
@@ -31,7 +29,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-_BACKEND = Path(__file__).resolve().parents[2]
+_BACKEND = Path(__file__).resolve().parents[3]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 

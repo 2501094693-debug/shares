@@ -12,6 +12,8 @@ venv/
 .env
 .env.local
 .env.*.local
+*.session
+backend/account.session
 
 # App caches
 backend/cache/

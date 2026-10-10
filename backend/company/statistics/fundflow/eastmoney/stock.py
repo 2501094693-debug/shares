@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from company.line.eastmoney_kline import resolve_secid
+from company.line.eastmoney.kline import resolve_secid
 from company.statistics.fundflow.eastmoney._common import (
     _DAILY_FIELDS2,
     _MINUTE_FIELDS2,

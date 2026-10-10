@@ -1,15 +1,15 @@
-"""K 线 / 逐笔的统一入口：双源 fallback + 增量缓存。
+"""K 线 / 逐笔的统一入口：三源 fallback + 增量缓存。
 
-- ``fetch_kline``：腾讯优先、东财兜底。
-  腾讯没有季 / 半年 / 年 / 120 分钟，这些周期会直接走东财。
-- ``fetch_ticks``：东财优先、腾讯兜底。
+- ``fetch_kline``：同花顺优先、腾讯其次、东财兜底。
+  同花顺没有半年 K，该周期会直接走东财；腾讯没有季 / 半年 / 年 / 120 分钟，这些周期会直接走东财。
+- ``fetch_ticks``：同花顺优先、东财其次、腾讯兜底。
   盘中（09:15–15:31）全量查询覆盖当天文件，增量查询合并进文件；
   盘后 / 周末优先读该交易日文件，若未收齐到 15:00 则再打一次远程补齐。
 
 K 线磁盘缓存历史根；交易时段只拉最新几根合并；休市 / 午休走缓存，
 只要自最近一次收盘后已校验过就不再打远程（force 除外；对不上复权 / 缺口仍整段重拉）。
 
-两边返回字段不完全一样，K 线 / 逐笔会先收成同一套再给 API / 统计用。
+各源返回字段不完全一样，K 线 / 逐笔会先收成同一套再给 API / 统计用。
 不提供分时 trends2。区间涨跌见 ``company.statistics.quote.derived.period_returns``。
 """
 
@@ -27,9 +27,9 @@ from core.cache import TtlCache
 from core.codes import normalize_code
 from core.fmt import to_float
 from core.paths import KLINE_CACHE_DIR, TICKS_CACHE_DIR, ensure_cache_dirs
-from company.line.eastmoney_kline import MINUTE_PERIODS as EM_MINUTE_PERIODS
-from company.line.eastmoney_kline import fetch_line as fetch_eastmoney_line
-from company.line.eastmoney_ticks import fetch_ticks as fetch_eastmoney_ticks
+from company.line.eastmoney.kline import MINUTE_PERIODS as EM_MINUTE_PERIODS
+from company.line.eastmoney.kline import fetch_line as fetch_eastmoney_line
+from company.line.eastmoney.ticks import fetch_ticks as fetch_eastmoney_ticks
 from company.line.session import (
     cn_now,
     is_cn_market_live,
@@ -38,8 +38,10 @@ from company.line.session import (
     parse_session_day,
     session_day,
 )
-from company.line.tencent_kline import fetch_line as fetch_tencent_line
-from company.line.tencent_ticks import fetch_ticks as fetch_tencent_ticks
+from company.line.tencent.kline import fetch_line as fetch_tencent_line
+from company.line.tencent.ticks import fetch_ticks as fetch_tencent_ticks
+from company.line.tonghuashun.hq_ticks import fetch_time_and_sales as fetch_ths_time_and_sales
+from company.line.tonghuashun.kline import fetch_line as fetch_tonghuashun_line
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +72,27 @@ _kline_disk_lock = threading.Lock()
 _ticks_disk_lock = threading.Lock()
 
 
-def _kline_payload(pack: dict[str, Any], *, source: str) -> dict[str, Any]:
-    """去掉腾讯 / 东财各自多出来的字段，收成对外 K 线包。"""
+# ---------------------------------------------------------------------------
+# 通用小工具
+# ---------------------------------------------------------------------------
+
+def _cache_get(cache: TtlCache, key: str, force: bool) -> Any | None:
+    """force=True 跳过缓存，用于手动刷新。"""
+    if force:
+        return None
+    return cache.get(key)
+
+
+def _disk_key_part(value: str, fallback: str) -> str:
+    return re.sub(r"[^\w.-]+", "_", (value or "").strip()) or fallback
+
+
+# ---------------------------------------------------------------------------
+# K 线
+# ---------------------------------------------------------------------------
+
+def _kline_payload(pack: dict[str, Any], *, source: str = "") -> dict[str, Any]:
+    """去掉各源多出来的字段，收成对外 K 线包。source 非空则覆盖。"""
     items = list(pack.get("items") or [])
     return {
         "code": pack.get("code") or "",
@@ -85,32 +106,27 @@ def _kline_payload(pack: dict[str, Any], *, source: str) -> dict[str, Any]:
     }
 
 
-def _ticks_payload(pack: dict[str, Any], *, source: str, cached: bool = False) -> dict[str, Any]:
-    """去掉腾讯 / 东财各自多出来的字段，收成对外逐笔包。最后一条即最新成交。"""
-    items = list(pack.get("items") or [])
-    last = items[-1] if items else {}
-    day = str(pack.get("day") or pack.get("session_day") or "")
+def _slice_payload(pack: dict[str, Any], cap: int) -> dict[str, Any]:
+    out = _kline_payload(pack)
+    items = out["items"]
+    if cap > 0 and len(items) > cap:
+        items = items[-cap:]
+        out["items"] = items
+        out["count"] = len(items)
+    return out
+
+
+def _empty_kline(code: str, period: str, adjust: str) -> dict[str, Any]:
     return {
-        "code": pack.get("code") or "",
-        "name": pack.get("name") or "",
-        "pre_price": pack.get("pre_price"),
-        "last_time": last.get("time") or pack.get("last_time") or "",
-        "last_price": last.get("price") if last else pack.get("last_price"),
-        "day": day,
-        "source": source or pack.get("source") or "",
-        "count": len(items),
-        "items": items,
-        "cached": cached,
-        "session_day": str(pack.get("session_day") or day),
-        "cached_at": str(pack.get("cached_at") or ""),
+        "code": code,
+        "name": "",
+        "period": period,
+        "adjust": adjust,
+        "pre_price": None,
+        "source": "",
+        "count": 0,
+        "items": [],
     }
-
-
-def _cache_get(cache: TtlCache, key: str, force: bool) -> Any | None:
-    """force=True 跳过缓存，用于手动刷新。"""
-    if force:
-        return None
-    return cache.get(key)
 
 
 def _bar_time(item: dict[str, Any]) -> str:
@@ -134,47 +150,6 @@ def _same_sealed_bar(cached: dict[str, Any], remote: dict[str, Any]) -> bool:
         _close_enough(cached.get(key), remote.get(key))
         for key in ("open", "close", "high", "low")
     )
-
-
-def _public_kline(pack: dict[str, Any]) -> dict[str, Any]:
-    items = list(pack.get("items") or [])
-    return {
-        "code": pack.get("code") or "",
-        "name": pack.get("name") or "",
-        "period": pack.get("period") or "",
-        "adjust": pack.get("adjust") or "",
-        "pre_price": pack.get("pre_price"),
-        "source": pack.get("source") or "",
-        "count": len(items),
-        "items": items,
-    }
-
-
-def _slice_payload(pack: dict[str, Any], cap: int) -> dict[str, Any]:
-    out = _public_kline(pack)
-    items = out["items"]
-    if cap > 0 and len(items) > cap:
-        items = items[-cap:]
-        out["items"] = items
-        out["count"] = len(items)
-    return out
-
-
-def _empty_kline(code: str, period: str, adjust: str) -> dict[str, Any]:
-    return {
-        "code": code,
-        "name": "",
-        "period": period,
-        "adjust": adjust,
-        "pre_price": None,
-        "source": "",
-        "count": 0,
-        "items": [],
-    }
-
-
-def _disk_key_part(value: str, fallback: str) -> str:
-    return re.sub(r"[^\w.-]+", "_", (value or "").strip()) or fallback
 
 
 def _kline_disk_path(code: str, period: str, adjust: str):
@@ -240,6 +215,15 @@ def _save_kline_disk(code: str, period: str, adjust: str, pack: dict[str, Any]) 
         path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
 
 
+# 按优先级排列的 K 线源。东财支持全周期放最后兜底，其 ValueError
+# 说明参数本身有问题（无效代码等），直接抛给调用方。
+_KLINE_SOURCES: tuple[tuple[str, Any, bool], ...] = (
+    ("tonghuashun", fetch_tonghuashun_line, False),
+    ("tencent", fetch_tencent_line, False),
+    ("eastmoney", fetch_eastmoney_line, True),
+)
+
+
 def _fetch_remote_kline(
     code: str,
     *,
@@ -249,7 +233,7 @@ def _fetch_remote_kline(
     beg: str = "",
     end: str = "",
 ) -> dict[str, Any]:
-    """腾讯优先、东财兜底。空包不带 source。"""
+    """按 ``_KLINE_SOURCES`` 顺序打远程，首个有数据的源即返回。空包不带 source。"""
     kwargs = {
         "period": period,
         "adjust": adjust,
@@ -257,34 +241,27 @@ def _fetch_remote_kline(
         "beg": beg,
         "end": end,
     }
-    pack: dict[str, Any] = {}
-    try:
-        pack = fetch_tencent_line(code, **kwargs)
-        if pack.get("items"):
-            return _kline_payload(pack, source="tencent")
-    except ValueError as exc:
-        if "不支持" not in str(exc):
-            logger.info("tencent kline skip %s: %s", code, exc)
-    except Exception as exc:  # noqa: BLE001
-        logger.info("tencent kline failed %s: %s", code, exc)
+    for source, func, reraise in _KLINE_SOURCES:
+        try:
+            pack = func(code, **kwargs)
+        except ValueError as exc:
+            if reraise:
+                raise
+            # “不支持”说明该源没这个周期，静默过到下一个；其他 ValueError 记一笔。
+            if "不支持" not in str(exc):
+                logger.info("%s kline skip %s: %s", source, code, exc)
+            continue
+        except Exception as exc:  # noqa: BLE001
+            logger.info("%s kline failed %s: %s", source, code, exc)
+            continue
+        if isinstance(pack, dict) and pack.get("items"):
+            return _kline_payload(pack, source=source)
 
-    try:
-        pack = fetch_eastmoney_line(code, **kwargs)
-    except ValueError:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        logger.info("eastmoney kline failed %s: %s", code, exc)
-        pack = {}
-
-    source = "eastmoney" if pack.get("items") else ""
-    result = _kline_payload(pack if isinstance(pack, dict) else {}, source=source)
-    if not result.get("code"):
-        result["code"] = code
-    if not result.get("period"):
-        result["period"] = (period or "day").strip().lower()
-    if not result.get("adjust"):
-        result["adjust"] = str(adjust if adjust is not None else "qfq").strip().lower()
-    return result
+    return _empty_kline(
+        code,
+        (period or "day").strip().lower(),
+        str(adjust if adjust is not None else "qfq").strip().lower(),
+    )
 
 
 def _tail_limit(period: str, last_time: str) -> int:
@@ -373,7 +350,7 @@ def _refresh_with_tail(
     tail_items = list(tail.get("items") or [])
     if not tail_items:
         logger.info("kline tail empty %s %s, keep cache", code, period)
-        return _public_kline(stored)
+        return _kline_payload(stored)
 
     merged, reason = _merge_tail(items, tail_items)
     if merged is None:
@@ -382,7 +359,7 @@ def _refresh_with_tail(
         result = _fetch_remote_kline(code, period=period, adjust=adjust, limit=fetch_n)
         if result.get("items"):
             _save_kline_disk(code, period, disk_adjust, result)
-        return _public_kline(result)
+        return _kline_payload(result)
 
     result = {
         "code": tail.get("code") or stored.get("code") or code,
@@ -397,7 +374,7 @@ def _refresh_with_tail(
         "items": merged,
     }
     _save_kline_disk(code, period, disk_adjust, result)
-    return _public_kline(result)
+    return _kline_payload(result)
 
 
 def load_kline_disk(
@@ -425,7 +402,7 @@ def fetch_kline(
     end: str = "",
     force: bool = False,
 ) -> dict[str, Any]:
-    """拉取 K 线。腾讯优先，东财兜底。
+    """拉取 K 线。同花顺优先，腾讯其次，东财兜底。
 
     交易时段：历史根走磁盘，只补最新几根。
     非交易时段：整段走缓存，定期用尾盘校验。
@@ -471,17 +448,8 @@ def fetch_kline(
         verified_at = float(stored.get("verified_at") or 0)
         # 非交易时段：收盘后已校验过的磁盘缓存直接用，避免隔半小时又全市场尾盘刷新。
         sealed_after_close = verified_at >= last_session_close().timestamp()
-        if live:
-            result = _refresh_with_tail(
-                stored,
-                code=code,
-                period=period_key,
-                adjust=adjust,
-                disk_adjust=fqt,
-                cap=cap,
-            )
-        elif sealed_after_close:
-            result = _public_kline(stored)
+        if not live and sealed_after_close:
+            result = _kline_payload(stored)
         else:
             result = _refresh_with_tail(
                 stored,
@@ -506,8 +474,41 @@ def fetch_kline(
     elif stored and stored.get("items"):
         return _slice_payload(stored, cap)
     elif not result.get("items"):
-        return result if result else _empty_kline(code, period_key, fqt)
+        return _empty_kline(code, period_key, fqt)
     return _slice_payload(result, cap)
+
+
+# ---------------------------------------------------------------------------
+# 逐笔
+# ---------------------------------------------------------------------------
+
+def _ticks_payload(pack: dict[str, Any], *, source: str, cached: bool = False) -> dict[str, Any]:
+    """去掉各源多出来的字段，收成对外逐笔包。最后一条即最新成交。"""
+    items = list(pack.get("items") or [])
+    last = items[-1] if items else {}
+    day = str(pack.get("day") or pack.get("session_day") or "")
+    return {
+        "code": pack.get("code") or "",
+        "name": pack.get("name") or "",
+        "pre_price": pack.get("pre_price"),
+        "last_time": last.get("time") or pack.get("last_time") or "",
+        "last_price": last.get("price") if last else pack.get("last_price"),
+        "day": day,
+        "source": source or pack.get("source") or "",
+        "count": len(items),
+        "items": items,
+        "cached": cached,
+        "session_day": str(pack.get("session_day") or day),
+        "cached_at": str(pack.get("cached_at") or ""),
+    }
+
+
+def _ensure_ticks_day(result: dict[str, Any]) -> dict[str, Any]:
+    """远程逐笔包补上当天 session_day，避免下游按空日期归档。"""
+    if not result.get("day"):
+        result["day"] = session_day().isoformat()
+        result["session_day"] = result["day"]
+    return result
 
 
 def _normalize_ticks_pos(pos: int | str | None) -> int:
@@ -565,6 +566,13 @@ def _ticks_looks_complete(pack: dict[str, Any] | None) -> bool:
     return last >= "15:00:00"
 
 
+def _tick_seq(row: dict[str, Any]) -> int:
+    try:
+        return int(row.get("seq") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _tick_row_key(row: dict[str, Any], *, relaxed: bool = False) -> str:
     time = str(row.get("time") or "")
     price = to_float(row.get("price"))
@@ -603,7 +611,7 @@ def _merge_tick_items(
     if idx < 0:
         idx = find_overlap(True)
     if idx >= 0:
-        return current + incoming[idx + 1 :]
+        return current + incoming[idx + 1:]
 
     cur_last = _ticks_time_key(current[-1].get("time"))
     inc_last = _ticks_time_key(incoming[-1].get("time"))
@@ -735,35 +743,57 @@ def _finalize_ticks_disk(code: str, pack: dict[str, Any]) -> dict[str, Any]:
     return _save_ticks_disk(code, pack, finalized=True)
 
 
-def _fetch_remote_ticks(code: str, *, pos: int | str = 0) -> dict[str, Any]:
-    pack: dict[str, Any] = {}
+def _fetch_ths_ticks(code: str, *, pos: int = 0) -> dict[str, Any]:
+    """同花顺秒级逐笔，收成统一逐笔包。失败返回空包，由上层继续兜底。
+
+    无效代码的 ValueError 会直接抛给调用方。
+    """
+    limit = 0 if pos >= 0 else abs(pos)
     try:
-        pack = fetch_eastmoney_ticks(code, pos=pos)
-        if pack.get("items"):
-            result = _ticks_payload(pack, source="eastmoney")
-            if not result.get("day"):
-                result["day"] = session_day().isoformat()
-                result["session_day"] = result["day"]
-            return result
+        _, ts_items = fetch_ths_time_and_sales(code, count=limit if limit else 300)
+    except ValueError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.info("tonghuashun ticks failed %s: %s", code, exc)
+        return _ticks_payload({}, source="")
+    rows = [r for r in ts_items or [] if isinstance(r, dict)]
+    rows.sort(key=lambda r: (str(r.get("time") or ""), _tick_seq(r)))
+    if limit and len(rows) > limit:
+        rows = rows[-limit:]
+    if not rows:
+        return _ticks_payload({}, source="")
+    return _ticks_payload({"code": code, "items": rows}, source="tonghuashun")
+
+
+def _fetch_remote_ticks(code: str, *, pos: int | str = 0) -> dict[str, Any]:
+    """同花顺优先、东财其次、腾讯兜底。首个有数据的源即返回。"""
+    pos_n = _normalize_ticks_pos(pos)
+
+    result = _fetch_ths_ticks(code, pos=pos_n)
+    if result.get("items"):
+        return _ensure_ticks_day(result)
+
+    try:
+        pack: dict[str, Any] = fetch_eastmoney_ticks(code, pos=pos_n)
     except ValueError:
         raise
     except Exception as exc:  # noqa: BLE001
         logger.info("eastmoney ticks failed %s: %s", code, exc)
+        pack = {}
+    if isinstance(pack, dict) and pack.get("items"):
+        return _ensure_ticks_day(_ticks_payload(pack, source="eastmoney"))
 
     try:
-        pack = fetch_tencent_ticks(code, pos=pos)
+        pack = fetch_tencent_ticks(code, pos=pos_n)
     except Exception as exc:  # noqa: BLE001
         logger.info("tencent ticks failed %s: %s", code, exc)
         pack = {}
-
-    source = "tencent" if pack.get("items") else ""
-    result = _ticks_payload(pack if isinstance(pack, dict) else {}, source=source)
+    if not isinstance(pack, dict):
+        pack = {}
+    result = _ticks_payload(pack, source="tencent" if pack.get("items") else "")
     if not result.get("code"):
         result["code"] = code
-    if not result.get("day"):
-        result["day"] = session_day().isoformat()
-        result["session_day"] = result["day"]
-    return result
+    return _ensure_ticks_day(result)
 
 
 def fetch_ticks(
@@ -773,7 +803,7 @@ def fetch_ticks(
     force: bool = False,
     day: str = "",
 ) -> dict[str, Any]:
-    """拉取成交明细。东财优先，腾讯兜底。
+    """拉取成交明细。同花顺优先，东财其次，腾讯兜底。
 
     pos=0 当天全部；pos=-20（或 20）最近 20 笔。
     不传 day：盘中覆盖 / 合并当天磁盘缓存；盘后优先读文件，未收齐到 15:00 时再补一次远程。

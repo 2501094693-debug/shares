@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 
-from company.line.eastmoney_kline import fetch_line
+from company.line.eastmoney.kline import fetch_line
 from company.line.session import cn_now, is_cn_market_live, last_session_close
 from core.paths import KLINE_CACHE_DIR
 
@@ -45,7 +45,7 @@ def _from_disk() -> list[str]:
 def _from_index(limit: int) -> list[str]:
     cap = max(limit, 1)
     try:
-        from company.line.tencent_kline import fetch_line as fetch_tx
+        from company.line.tencent.kline import fetch_line as fetch_tx
 
         dates = _dates_from_items(
             fetch_tx("sh000001", period="day", adjust="none", limit=cap).get("items")

@@ -12,9 +12,9 @@
 方向：``1`` 买盘、``2`` 卖盘、``4`` 集合竞价。
 昨收在 ``prePrice``。
 
-    python company/line/eastmoney_ticks.py 600519
-    python company/line/eastmoney_ticks.py 600519 --pos -20
-    python company/line/eastmoney_ticks.py 000001 --limit 8
+    python -m company.line.eastmoney.ticks 600519
+    python -m company.line.eastmoney.ticks 600519 --pos -20
+    python -m company.line.eastmoney.ticks 000001 --limit 8
 """
 
 from __future__ import annotations
@@ -26,14 +26,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-_BACKEND = Path(__file__).resolve().parents[2]
+_BACKEND = Path(__file__).resolve().parents[3]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
 from core.codes import normalize_code
 from core.fmt import to_float
 from core.http import get_json
-from company.line.eastmoney_kline import resolve_secid
+from company.line.eastmoney.kline import resolve_secid
 
 logger = logging.getLogger(__name__)
 

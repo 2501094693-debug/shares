@@ -12,9 +12,9 @@
 - 负数：最近 ``|pos|`` 笔，例如 ``-20``
 - 正数：当作最近 N 笔（``20`` 等同 ``-20``）
 
-    python company/line/tencent_ticks.py 600519
-    python company/line/tencent_ticks.py 600519 --pos -20
-    python company/line/tencent_ticks.py 000001 --limit 8
+    python -m company.line.tencent.ticks 600519
+    python -m company.line.tencent.ticks 600519 --pos -20
+    python -m company.line.tencent.ticks 000001 --limit 8
 """
 
 from __future__ import annotations
@@ -28,13 +28,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-_BACKEND = Path(__file__).resolve().parents[2]
+_BACKEND = Path(__file__).resolve().parents[3]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
 from core.fmt import to_float
 from core.http import get_text
-from company.line.tencent_kline import resolve_symbol
+from company.line.tencent.kline import resolve_symbol
 
 logger = logging.getLogger(__name__)
 

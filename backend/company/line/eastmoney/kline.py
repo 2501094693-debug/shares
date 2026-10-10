@@ -12,11 +12,11 @@
 
 ``secid`` 支持个股、指数、ETF、板块。历史 K 线以 ``push2his`` 为准。
 
-    python company/line/eastmoney_kline.py 600519
-    python company/line/eastmoney_kline.py 1.000001 --period day --limit 5
-    python company/line/eastmoney_kline.py 90.BK0477 --period week
-    python company/line/eastmoney_kline.py 600519 --period 5m --limit 10
-    python company/line/eastmoney_kline.py 600519 --period quarter --beg 20200101
+    python -m company.line.eastmoney.kline 600519
+    python -m company.line.eastmoney.kline 1.000001 --period day --limit 5
+    python -m company.line.eastmoney.kline 90.BK0477 --period week
+    python -m company.line.eastmoney.kline 600519 --period 5m --limit 10
+    python -m company.line.eastmoney.kline 600519 --period quarter --beg 20200101
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-_BACKEND = Path(__file__).resolve().parents[2]
+_BACKEND = Path(__file__).resolve().parents[3]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
