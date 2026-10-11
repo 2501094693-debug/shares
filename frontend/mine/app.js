@@ -9,6 +9,14 @@
     suggestTimer: 0,
     suggestItems: [],
     suggestOpen: false,
+    klineObserver: null,
+    view: (() => {
+      try {
+        return localStorage.getItem("mine-stock-view") === "card" ? "card" : "list";
+      } catch {
+        return "list";
+      }
+    })(),
   };
 
   const $ = (id) => document.getElementById(id);
@@ -293,6 +301,133 @@
     if (syncBtn) syncBtn.disabled = !on;
   }
 
+  function applyView() {
+    const isCard = state.view === "card";
+    const scroll = document.querySelector(".mine-stock-scroll");
+    const cards = $("stockCards");
+    if (scroll) scroll.hidden = isCard;
+    if (cards) cards.hidden = !isCard;
+    const listBtn = $("viewListBtn");
+    const cardBtn = $("viewCardBtn");
+    if (listBtn) listBtn.classList.toggle("is-on", !isCard);
+    if (cardBtn) cardBtn.classList.toggle("is-on", isCard);
+  }
+
+  function setView(view) {
+    state.view = view === "card" ? "card" : "list";
+    try {
+      localStorage.setItem("mine-stock-view", state.view);
+    } catch {
+      /* 忽略无痕模式等写入失败 */
+    }
+    applyView();
+    renderStocks();
+  }
+
+  function klineBlock(code) {
+    return `<article class="chart-card chart-card--kline" data-kline-code="${esc(code)}">
+      <header class="chart-card__head">
+        <div class="chart-card__head-main">
+          <div class="chart-card__title">
+            <span class="chart-card__mark" aria-hidden="true"></span>
+            <h3>走势</h3>
+          </div>
+          <div class="chart-kline-hover chart-hover-card hidden" aria-hidden="true"></div>
+        </div>
+        <p class="chart-card__meta muted">日K · 前复权</p>
+        <div class="chart-card__controls">
+          <div class="chart-select-group">
+            <label class="chart-select-wrap" aria-label="周期">
+              <select class="chart-select" disabled>
+                <option selected>日K</option>
+              </select>
+            </label>
+            <label class="chart-select-wrap" aria-label="复权">
+              <select class="chart-select" disabled>
+                <option selected>前复权</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </header>
+      <div class="chart-card__stage">
+        <div class="chart-canvas-wrap">
+          <canvas width="960" height="360" aria-label="行情走势图"></canvas>
+          <p class="muted chart-empty hidden">暂无走势数据</p>
+        </div>
+      </div>
+      <footer class="chart-card__foot">
+        <div class="chart-axis-scroll is-disabled">
+          <input class="chart-scroll-bar" type="range" min="0" max="0" value="0" step="1" aria-label="时间轴滑动" disabled />
+        </div>
+      </footer>
+    </article>`;
+  }
+
+  function mountCardKline(card) {
+    const kline = card.querySelector(".chart-card--kline");
+    const code = kline && kline.dataset.klineCode;
+    if (kline && code && window.OrbitKline) window.OrbitKline.mount(kline, { code, carousel: true });
+  }
+
+  function observeCardKlines() {
+    const cards = $("stockCards");
+    if (!cards) return;
+    if (state.klineObserver) state.klineObserver.disconnect();
+    if (state.view !== "card" || !window.OrbitKline) return;
+    const pending = new Set(cards.querySelectorAll(".screen-card[data-kline-new]"));
+    if (!pending.size) return;
+    state.klineObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const card = entry.target;
+          state.klineObserver.unobserve(card);
+          card.removeAttribute("data-kline-new");
+          mountCardKline(card);
+        }
+      },
+      { root: cards, rootMargin: "200px" }
+    );
+    pending.forEach((card) => state.klineObserver.observe(card));
+  }
+
+  function renderCards(rows) {
+    const cards = $("stockCards");
+    if (!cards) return;
+    cards.innerHTML = rows
+      .map((row) => {
+        const code = esc(row.code);
+        const chgTone = tone(row.change_pct);
+        return `<article class="screen-card is-stock" data-code="${code}" data-industry="${esc(row.l3_code || "")}" data-kline-new="1" tabindex="0">
+      <a class="screen-card-head" href="${esc(stockHref(row))}" title="打开公司详情">
+        <span class="screen-rank">${row.rank || ""}</span>
+        <div class="screen-card-name">
+          <strong>${esc(row.name || "—")}</strong>
+          <span>${code}</span>
+          <em>${esc(industryText(row))}</em>
+        </div>
+        <div class="screen-card-score">
+          <b data-tone="${chgTone}">${fmtPct(row.change_pct)}</b>
+          <span>${fmtPrice(row.price)}</span>
+        </div>
+      </a>
+      ${klineBlock(row.code || "")}
+      <footer class="screen-card-meta">
+        <span>PE <b>${fmtRatio(row.pe_ttm)}</b></span>
+        <span>PB <b>${fmtRatio(row.pb)}</b></span>
+        <span>市值 <b>${fmtCap(row.market_cap)}</b></span>
+        <span>今日 <b data-tone="${tone(row.main_net)}">${fmtYi(row.main_net)}</b></span>
+        <span>5日 <b data-tone="${tone(row.main_net_5d)}">${fmtYi(row.main_net_5d)}</b></span>
+        <span>10日 <b data-tone="${tone(row.main_net_10d)}">${fmtYi(row.main_net_10d)}</b></span>
+        <button type="button" class="btn ghost sm mine-danger" data-remove="${code}" title="移出分组">移除</button>
+      </footer>
+    </article>`;
+      })
+      .join("");
+    observeCardKlines();
+  }
+
   function renderStocks() {
     const body = $("stockBody");
     const empty = $("stockEmpty");
@@ -303,6 +438,7 @@
       title.textContent = "股票";
       meta.textContent = "选择左侧分组";
       body.innerHTML = "";
+      renderCards([]);
       empty.textContent = state.groups.length ? "选择左侧分组查看成分" : "暂无分组，先在左侧新建一个";
       empty.hidden = false;
       setStockPaneEnabled(false);
@@ -319,18 +455,22 @@
 
     if (!all.length) {
       body.innerHTML = "";
+      renderCards([]);
       empty.textContent = "分组为空，在上方搜索并添加股票";
       empty.hidden = false;
       return;
     }
     if (!rows.length) {
       body.innerHTML = "";
+      renderCards([]);
       empty.textContent = "没有匹配的股票";
       empty.hidden = false;
       return;
     }
 
     empty.hidden = true;
+    renderCards(rows);
+    applyView();
     body.innerHTML = rows
       .map((row, index) => {
         const code = esc(row.code);
@@ -600,6 +740,9 @@
       renderStocks();
     });
 
+    $("viewListBtn").addEventListener("click", () => setView("list"));
+    $("viewCardBtn").addEventListener("click", () => setView("card"));
+
     $("addInput").addEventListener("input", () => {
       const value = $("addInput").value;
       window.clearTimeout(state.suggestTimer);
@@ -681,10 +824,47 @@
       window.location.href = `/company.html?${qs}`;
     });
 
+    $("stockCards").addEventListener("click", async (event) => {
+      const btn = event.target.closest("[data-remove]");
+      if (btn) {
+        event.preventDefault();
+        event.stopPropagation();
+        const code = btn.dataset.remove;
+        setLive("busy");
+        try {
+          await removeCode(code);
+          showError("");
+          setLive("live");
+        } catch (err) {
+          showError(err.message || String(err));
+          setLive("idle");
+        }
+        return;
+      }
+      if (event.target.closest("a,button,select,input")) return;
+      if (event.target.closest(".chart-card")) return;
+      const card = event.target.closest(".screen-card[data-code]");
+      if (!card) return;
+      const qs = new URLSearchParams({ code: card.dataset.code, from: "mine" });
+      if (card.dataset.industry) qs.set("industry", card.dataset.industry);
+      window.location.href = `/company.html?${qs}`;
+    });
+
+    $("stockCards").addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      const card = event.target.closest(".screen-card[data-code]");
+      if (!card || event.target.closest("a,button")) return;
+      event.preventDefault();
+      const qs = new URLSearchParams({ code: card.dataset.code, from: "mine" });
+      if (card.dataset.industry) qs.set("industry", card.dataset.industry);
+      window.location.href = `/company.html?${qs}`;
+    });
+
     window.OrbitPrefetch?.bindHover($("stockBody"), "tr.is-stock[data-code]");
   }
 
   bind();
+  applyView();
   state.selectedId = readGroupFromUrl();
   void refreshAll();
 })();

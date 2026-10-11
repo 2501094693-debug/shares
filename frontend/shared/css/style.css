@@ -13459,3 +13459,27 @@ body.app-shell.world-page-root .world-map-controls {
 .mine-sync-btn{flex:0 0 auto;opacity:.55}
 .mine-group-row:hover .mine-sync-btn,.mine-group-row.is-active .mine-sync-btn{opacity:1}
 .mine-sync-btn[data-busy]{opacity:.4;pointer-events:none}
+/* 我的：股票列表/卡片切换 + 股票卡片 */
+.mine-view-toggle{display:flex;gap:4px}
+.mine-view-toggle .btn.is-on{background:var(--accent-soft);border-color:var(--line-strong)}
+.mine-cards{display:flex;gap:12px;padding:4px 2px 12px;flex:1;min-height:0;overflow-x:auto;overflow-y:hidden;align-items:stretch;scrollbar-width:thin;scrollbar-color:rgba(42, 212, 184, 0.45) rgba(7, 11, 18, 0.35)}
+.mine-cards::-webkit-scrollbar{height:10px}
+.mine-cards::-webkit-scrollbar-thumb{background:rgba(42, 212, 184, 0.4);border-radius:4px}
+.mine-cards::-webkit-scrollbar-track{background:rgba(7, 11, 18, 0.35);border-radius:4px}
+.mine-cards[hidden]{display:none}
+/* —— 我的：分组股票卡片（宽度与个股行情页 screen-card 同公式） —— */
+body.app-shell.mine-page-root {
+  --company-quotes-inner: calc(100vw - var(--rail-w) - 24px);
+  --company-hero-w: clamp(280px, calc(var(--company-quotes-inner) * 0.34), 380px);
+  --company-kline-w: calc((var(--company-quotes-inner) - var(--company-hero-w) - 20px) * 1.2 / 2.2);
+}
+.mine-cards .screen-card{flex:0 0 var(--company-kline-w);width:var(--company-kline-w);min-width:var(--company-kline-w);max-width:none;height:auto;max-height:100%;aspect-ratio:auto;align-self:stretch}
+.mine-cards .screen-card .chart-card.chart-card--kline{flex:1 1 0%;width:100%;min-height:0}
+.mine-cards .screen-card .chart-card__stage{flex:1 1 0%;height:auto;min-height:0}
+.mine-cards .screen-card .chart-canvas-wrap{flex:1;min-height:0}
+.mine-page-root .screen-card-score b[data-tone="up"]{color:var(--up)}
+.mine-page-root .screen-card-score b[data-tone="down"]{color:var(--down)}
+.mine-page-root .screen-card-score b[data-tone="flat"]{color:var(--ink)}
+.mine-cards .screen-card-meta b[data-tone="up"]{color:var(--up)}
+.mine-cards .screen-card-meta b[data-tone="down"]{color:var(--down)}
+.mine-cards .chart-card--kline{min-height:220px}

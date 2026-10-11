@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=mine-shares-cols-20260928" />
+  <link rel="stylesheet" href="/css/style.css?v=mine-scrollbar-20261011" />
 </head>
 <body class="app-shell company-page-root market-page-root mine-page-root" data-nav="mine">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
@@ -60,6 +60,10 @@
               <p id="stockMeta" class="muted">选择左侧分组</p>
             </div>
             <div class="mine-stock-tools">
+              <div class="mine-view-toggle" role="group" aria-label="展示方式">
+                <button id="viewListBtn" class="btn ghost sm is-on" type="button">列表</button>
+                <button id="viewCardBtn" class="btn ghost sm" type="button">卡片</button>
+              </div>
               <label class="search-box mine-filter-box">
                 <span class="sr-only">筛选</span>
                 <input id="filterInput" type="search" placeholder="筛选名称 / 代码 / 行业…" autocomplete="off" disabled />
@@ -108,6 +112,7 @@
                 <tbody id="stockBody"></tbody>
               </table>
             </div>
+            <div id="stockCards" class="mine-cards" hidden></div>
             <p id="stockEmpty" class="mine-empty muted">暂无分组，先在左侧新建一个</p>
           </div>
         </section>
@@ -119,6 +124,7 @@
   <script src="/js/shared/orbit-prefetch.js?v=mine-20260928"></script>
   <script src="/js/shared/nav.js?v=nav-industry-20261001"></script>
   <div id="thsAuthModal" class="ths-auth-modal hidden" role="dialog" aria-label="同花顺扫码登录"><div class="ths-auth-card"><header class="ths-auth-head"><h3>同花顺扫码登录</h3><button id="thsAuthClose" class="btn ghost sm" type="button">关闭</button></header><p id="thsQrHint" class="muted">正在生成二维码…</p><img id="thsQrImg" class="ths-qr-img" alt="qr" style="display:none" /><a id="thsQrScan" class="btn ghost sm" href="#" target="_blank" rel="noopener" hidden></a><p class="muted ths-auth-tip">一次扫码后会话保存在仓库 cache/thsdk/account.session，多天有效；过期才需重扫。扫码页不要开代理/VPN。</p><button id="thsAuthCancel" class="btn ghost sm" type="button">取消登录</button></div></div><script src="/js/company/ths-auth.js?v=ths-auth-20261010c"></script>
-<script src="/js/mine.js?v=mine-ths-sync-20261011"></script>
+<script src="/js/shared/kline-draw.js?v=screen-20260909-kpan"></script>
+<script src="/js/mine.js?v=mine-screen-card-20261011"></script>
 </body>
 </html>
