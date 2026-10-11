@@ -5,6 +5,7 @@
     group: null,
     filter: "",
     fetching: false,
+    syncing: false,
     suggestTimer: 0,
     suggestItems: [],
     suggestOpen: false,
@@ -180,6 +181,87 @@
     $("groupMeta").textContent = `${totalGroups} 个`;
   }
 
+  function needThsLogin(message) {
+    return String(message || "").indexOf("THS_NEED_QRCODE") >= 0;
+  }
+
+  function handleSyncError(err) {
+    const message = err && err.message ? err.message : String(err);
+    if (needThsLogin(message)) {
+      showError("同花顺未登录，已弹出扫码框，扫码成功后请重试同步");
+      if (window.ThsAuth && typeof window.ThsAuth.openModal === "function") {
+        window.ThsAuth.openModal();
+      } else {
+        window.dispatchEvent(new CustomEvent("ths:need-auth"));
+      }
+    } else {
+      showError(message);
+    }
+  }
+
+  async function syncGroup(groupId, btn) {
+    if (!groupId || state.syncing) return null;
+    state.syncing = true;
+    setLive("busy");
+    if (btn) {
+      btn.disabled = true;
+      btn.dataset.busy = "1";
+    }
+    try {
+      const json = await api(`/api/mine/synchro/ths/push/${encodeURIComponent(groupId)}`, {
+        method: "POST",
+      });
+      const d = json.data || {};
+      if (d.result === "skipped_empty") {
+        showError(`分组「${d.name || groupId}」为空，已跳过（同花顺不支持空分组）`);
+      } else {
+        showError("");
+      }
+      setLive("live");
+      return d;
+    } catch (err) {
+      handleSyncError(err);
+      setLive("idle");
+      return null;
+    } finally {
+      state.syncing = false;
+      if (btn) {
+        btn.disabled = false;
+        delete btn.dataset.busy;
+      }
+      paint();
+    }
+  }
+
+  async function syncAll() {
+    if (state.syncing) return;
+    state.syncing = true;
+    setLive("busy");
+    const btn = $("syncAllBtn");
+    if (btn) btn.disabled = true;
+    try {
+      const json = await api("/api/mine/synchro/ths/push", { method: "POST" });
+      const d = json.data || {};
+      const items = d.items || [];
+      const failed = items.filter((i) => i.result !== "ok" && i.result !== "skipped_empty");
+      if (!items.length) {
+        showError("没有可同步的分组");
+      } else if (failed.length) {
+        showError(`同步完成：${d.ok || 0}/${d.total || items.length} 成功，失败：${failed.map((i) => i.name || i.group_id).join("、")}`);
+      } else {
+        showError("");
+      }
+      setLive("live");
+    } catch (err) {
+      handleSyncError(err);
+      setLive("idle");
+    } finally {
+      state.syncing = false;
+      if (btn) btn.disabled = false;
+      paint();
+    }
+  }
+
   function renderGroups() {
     const root = $("groupList");
     if (!state.groups.length) {
@@ -189,12 +271,15 @@
     root.innerHTML = state.groups
       .map((g) => {
         const active = g.id === state.selectedId ? " is-active" : "";
-        return `<button type="button" class="mine-group-item${active}" role="option" aria-selected="${
+        return `<div class="mine-group-row${active}" role="option" aria-selected="${
           g.id === state.selectedId ? "true" : "false"
         }" data-group-id="${esc(g.id)}">
-          <span class="mine-group-name">${esc(g.name)}</span>
-          <span class="mine-group-count">${Number(g.count || 0)}</span>
-        </button>`;
+          <button type="button" class="mine-group-item" data-select="${esc(g.id)}" title="查看分组">
+            <span class="mine-group-name">${esc(g.name)}</span>
+            <span class="mine-group-count">${Number(g.count || 0)}</span>
+          </button>
+          <button type="button" class="btn ghost sm mine-sync-btn" data-sync="${esc(g.id)}" title="同步「${esc(g.name)}」到同花顺账号">同步</button>
+        </div>`;
       })
       .join("");
   }
@@ -204,6 +289,8 @@
     $("addInput").disabled = !on;
     $("addStockBtn").disabled = !on;
     $("deleteGroupBtn").disabled = !on;
+    const syncBtn = $("syncGroupBtn");
+    if (syncBtn) syncBtn.disabled = !on;
   }
 
   function renderStocks() {
@@ -475,9 +562,25 @@
     });
 
     $("groupList").addEventListener("click", (event) => {
-      const btn = event.target.closest("[data-group-id]");
-      if (!btn) return;
-      void selectGroup(btn.dataset.groupId);
+      const syncBtn = event.target.closest("[data-sync]");
+      if (syncBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        void syncGroup(syncBtn.dataset.sync, syncBtn);
+        return;
+      }
+      const sel = event.target.closest("[data-select]");
+      const row = sel || event.target.closest("[data-group-id]");
+      if (!row) return;
+      void selectGroup(sel ? sel.dataset.select : row.dataset.groupId);
+    });
+
+    $("syncGroupBtn").addEventListener("click", async (event) => {
+      await syncGroup(state.selectedId, event.currentTarget);
+    });
+
+    $("syncAllBtn").addEventListener("click", () => {
+      void syncAll();
     });
 
     $("deleteGroupBtn").addEventListener("click", async () => {

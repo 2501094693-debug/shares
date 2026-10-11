@@ -13449,3 +13449,13 @@ body.app-shell.world-page-root .world-map-controls {
 }
 
 .ths-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#8494a8;margin-right:6px;vertical-align:1px}.ths-dot[data-state=ok]{background:#3dd68c}.ths-dot[data-state=pending]{background:#f0b429;animation:ths-blink 1s infinite alternate}@keyframes ths-blink{from{opacity:1}to{opacity:.3}}.ths-auth-modal{position:fixed;inset:0;background:rgba(2,6,12,.6);display:flex;align-items:center;justify-content:center;z-index:200}.ths-auth-modal.hidden{display:none}.ths-auth-card{background:#0d1622;border:1px solid rgba(42,212,184,.25);border-radius:12px;padding:20px 22px;max-width:360px;text-align:center}.ths-auth-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.ths-auth-head h3{margin:0}.ths-qr-img{width:260px;height:260px;object-fit:contain;background:#fff;border-radius:8px;margin:10px auto;display:block}.ths-auth-tip{font-size:12px;margin-top:10px}
+/* 我的分组：每行同步按钮 */
+.mine-group-row{display:flex;align-items:center;gap:6px;padding:2px;border:1px solid transparent;border-radius:var(--radius)}
+.mine-group-row:hover{background:var(--accent-soft);border-color:var(--line)}
+.mine-group-row.is-active{background:var(--accent-soft);border-color:var(--line-strong);box-shadow:inset 2px 0 0 var(--accent)}
+.mine-group-row .mine-group-item{flex:1;min-width:0}
+.mine-group-row .mine-group-item:hover{background:transparent;border-color:transparent}
+.mine-group-row.is-active .mine-group-item{background:transparent;border-color:transparent;box-shadow:none}
+.mine-sync-btn{flex:0 0 auto;opacity:.55}
+.mine-group-row:hover .mine-sync-btn,.mine-group-row.is-active .mine-sync-btn{opacity:1}
+.mine-sync-btn[data-busy]{opacity:.4;pointer-events:none}

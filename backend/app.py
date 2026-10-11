@@ -207,6 +207,12 @@ app.include_router(futures_router)
 app.include_router(ai_router)
 app.include_router(screen_router)
 app.include_router(mine_router)
+try:
+    from mine.synchro.api import router as mine_synchro_router
+
+    app.include_router(mine_synchro_router)
+except ImportError:
+    pass
 
 
 @app.get("/api/health")
