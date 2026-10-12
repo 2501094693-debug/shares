@@ -4149,16 +4149,17 @@ async function loadHolderNum({ refresh = false } = {}) {
     holderNumState.source = data.source || "";
     holderNumState.updatedAt = data.updated_at || "";
     holderNumState.hoverIndex = null;
+    holderNumState.loading = false;
     refreshHolderNumMeta();
     renderHolderNumChart();
   } catch (err) {
     holderNumState.items = [];
     holderNumState.latest = null;
     holderNumState.error = err.message || String(err);
+    holderNumState.loading = false;
     refreshHolderNumMeta();
     renderHolderNumChart();
   } finally {
-    holderNumState.loading = false;
     if (els.refreshHoldersBtn) {
       els.refreshHoldersBtn.disabled = holdersState.loading || fundHoldersState.loading;
     }
