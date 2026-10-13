@@ -3,8 +3,9 @@
 ``company.statistics.quote.live.fetcher.fetch_stock_quote`` 并行调用这里的函数，再拼成一张字段表。
 单个源失败返回 ``{}``，不抛给上层，由编排层用乐咕成分股字段兜底。
 
-数据源分工：
-- 实时盘口：东财 push2，失败再腾讯 qt.gtimg.cn
+数据源分工（公司详情-实时）：
+- 交易时段 / 盘后：东财 push2 优先，失败再同花顺，最后腾讯 qt.gtimg.cn
+- 盘前 1 小时（工作日 8:15~9:15）：腾讯优先，失败再东财、同花顺
 - 区间涨幅：``company.statistics.quote.derived.period_returns.fetch_period_returns``（腾讯日 K 优先，东财补充）
 - 历史/52 周高低：腾讯前复权日 K（按年并行）
 - 现手：``company.line.fetcher.fetch_ticks`` 最近一笔
@@ -81,8 +82,10 @@ class RealtimeQuote:
 
     source:
       - ``eastmoney``：``raw`` 是 push2 原始字段，调用方再 ``map_push2``
-      - ``tencent``：``mapped`` 已是规范化字段（东财不可用时的回退）
-      - ``""``：两边都失败
+      - ``tonghuashun``：``mapped`` 已是规范化字段（东财不可用时的第二回退）
+      - ``tencent``：``mapped`` 已是规范化字段（东财/同花顺不可用时的回退；
+        盘前 1 小时则为首选）
+      - ``""``：三边都失败
     """
 
     source: str = ""
@@ -169,8 +172,21 @@ def fetch_tencent_quote(code: str) -> dict[str, Any]:
     return drop_empty(out)
 
 
-def fetch_realtime_quote(code: str) -> RealtimeQuote:
-    """东财 push2 优先；全部 host 失败再腾讯。不抛异常。"""
+def is_preopen_hour(now=None) -> bool:
+    """是否处于盘前 1 小时（工作日 8:15~9:15，腾讯优先窗口）。"""
+    try:
+        from company.line.session import cn_now
+    except Exception:  # noqa: BLE001
+        return False
+    stamp = cn_now(now)
+    if stamp.weekday() >= 5:
+        return False
+    minutes = stamp.hour * 60 + stamp.minute + stamp.second / 60
+    return 8 * 60 + 15 <= minutes < 9 * 60 + 15
+
+
+def _fetch_eastmoney_raw(code: str) -> dict[str, Any]:
+    """东财 push2 单票原始字段，全部 host 失败返回 ``{}``。"""
     params = {
         "fltt": "2",
         "invt": "2",
@@ -192,20 +208,159 @@ def fetch_realtime_quote(code: str) -> RealtimeQuote:
             ) or {}
             data = payload.get("data")
             if isinstance(data, dict) and data:
-                return RealtimeQuote(source="eastmoney", raw=data)
+                return data
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
             continue
-
-    try:
-        tx = fetch_tencent_quote(code)
-        if tx:
-            logger.info("push2 fallback to tencent quote for %s", code)
-            return RealtimeQuote(source="tencent", mapped=tx)
-    except Exception as exc:  # noqa: BLE001
-        logger.info("tencent quote fallback failed %s: %s", code, exc)
     if last_exc:
         logger.info("push2 unavailable %s: %s", code, last_exc)
+    return {}
+
+
+def _ths_mapped_from_snapshot(code: str, snap: dict[str, Any]) -> dict[str, Any]:
+    """同花顺快照（HTTP/thsdk 归一化后）→ 规范化字段（与 ``map_push2`` 子集对齐）。"""
+    def _pick(*keys: str) -> Any:
+        for key in keys:
+            value = snap.get(key)
+            if value is not None and value != "":
+                return value
+        return None
+
+    price = to_float(_pick("price", "last_px", "lastPrice", "close", "now"))
+    prev = to_float(_pick("prev_close", "preClose", "pre_close", "last_close"))
+    open_p = to_float(_pick("open", "open_px", "openPrice"))
+    high = to_float(_pick("high", "high_px"))
+    low = to_float(_pick("low", "low_px"))
+    volume = to_float(_pick("volume", "vol", "business_volume"))
+    amount = to_float(_pick("amount", "business_amount", "turnover_value"))
+    turnover = to_float(_pick("turnover", "turnover_rate", "change_ratio"))
+    change_pct = to_float(_pick("change_pct", "change", "rise_and_fall_ratio"))
+    change_amt = to_float(_pick("change_amt", "rise_and_fall_price", "up_down"))
+    solid = ""
+    if price is not None and open_p is not None and prev not in (None, 0):
+        solid = fmt_pct((price - open_p) / prev * 100)
+    out: dict[str, Any] = {
+        "price": fmt_price(price),
+        "prev_close": fmt_price(prev),
+        "open": fmt_price(open_p),
+        "high": fmt_price(high),
+        "low": fmt_price(low),
+        "volume": fmt_volume_hands(volume),
+        "amount": fmt_yi_wan(amount),
+        "turnover": fmt_pct(turnover),
+        "change_1d": fmt_pct(change_pct),
+        "change_amt": fmt_signed(change_amt),
+        "solid_change": solid,
+        "_price_raw": price,
+        "_turnover_raw": turnover,
+    }
+    for key in ("outer_vol", "inner_vol", "bid_vol", "ask_vol"):
+        value = to_float(snap.get(key))
+        if value is not None:
+            out[key] = fmt_volume_hands(value) if "vol" in key else fmt_signed(value, 0)
+    return drop_empty(out)
+
+
+def fetch_ths_quote(code: str) -> dict[str, Any]:
+    """同花顺实时行情（东财失败时的第二优先，盘前为第三优先）。
+
+    顺序：HTTP 免登接口 → thsdk 快照（需扫码登录，有则用、无则跳过）。
+    返回已格式化的字段（与 ``map_push2`` 子集对齐），失败返回 ``{}`` 不抛异常。
+    """
+    norm = normalize_code(code)
+    if not norm:
+        return {}
+    market = "1" if str(secid(norm)).startswith("1.") else "2"
+    headers = {"Referer": "https://stockpage.10jqka.com.cn/"}
+    for url in (
+        f"https://stockpage.10jqka.com.cn/spService/{market}{norm}/Header/realHeader",
+        f"https://stockpage.10jqka.com.cn/api/stock/detail?code={market}{norm}",
+    ):
+        try:
+            payload = get_json(url, headers=headers, timeout=10) or {}
+        except Exception:  # noqa: BLE001
+            continue
+        snap: dict[str, Any] = {}
+        if isinstance(payload, dict):
+            data = payload.get("data")
+            if isinstance(data, dict):
+                stock = data.get("stock")
+                snap = stock if isinstance(stock, dict) else data
+            elif isinstance(payload.get("stock"), dict):
+                snap = payload["stock"]
+            else:
+                snap = {k: v for k, v in payload.items() if not isinstance(v, (dict, list))}
+        if snap and any(snap.get(k) is not None for k in ("price", "last_px", "close", "now")):
+            mapped = _ths_mapped_from_snapshot(norm, snap)
+            if mapped.get("price"):
+                return mapped
+    try:
+        import thsdk  # type: ignore
+
+        from company.statistics.fundflow.tonghuashun.hq import hq_security
+
+        security = hq_security(norm)
+        frame = None
+        for attr in ("get_security_quotes", "get_security_quote", "list_security_quotes"):
+            fn = getattr(thsdk, attr, None)
+            if callable(fn):
+                try:
+                    frame = fn(security=security)
+                    break
+                except Exception:  # noqa: BLE001
+                    continue
+        rows: list[dict[str, Any]] = []
+        if frame is not None:
+            try:
+                rows = frame.to_dict("records") if hasattr(frame, "to_dict") else list(frame)
+            except Exception:  # noqa: BLE001
+                rows = []
+        if rows and isinstance(rows[0], dict):
+            mapped = _ths_mapped_from_snapshot(norm, rows[0])
+            if mapped.get("price"):
+                return mapped
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ths quote skip %s: %s", code, exc)
+    return {}
+
+
+def fetch_realtime_quote(code: str) -> RealtimeQuote:
+    """实时盘口多源优先级（交易时段与盘后一致）：盘前1小时腾讯优先，其余东财优先。"""
+    preopen = is_preopen_hour()
+
+    def _tencent() -> RealtimeQuote | None:
+        try:
+            tx = fetch_tencent_quote(code)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("tencent quote fallback failed %s: %s", code, exc)
+            return None
+        if tx:
+            logger.info("realtime fallback to tencent quote for %s (preopen=%s)", code, preopen)
+            return RealtimeQuote(source="tencent", mapped=tx)
+        return None
+
+    def _eastmoney() -> RealtimeQuote | None:
+        raw = _fetch_eastmoney_raw(code)
+        if raw:
+            return RealtimeQuote(source="eastmoney", raw=raw)
+        return None
+
+    def _ths() -> RealtimeQuote | None:
+        try:
+            mapped = fetch_ths_quote(code)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("ths quote fallback failed %s: %s", code, exc)
+            return None
+        if mapped:
+            logger.info("realtime fallback to tonghuashun quote for %s", code)
+            return RealtimeQuote(source="tonghuashun", mapped=mapped)
+        return None
+
+    order = (_tencent, _eastmoney, _ths) if preopen else (_eastmoney, _ths, _tencent)
+    for step in order:
+        hit = step()
+        if hit is not None:
+            return hit
     return RealtimeQuote()
 
 

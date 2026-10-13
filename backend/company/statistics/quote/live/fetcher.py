@@ -212,7 +212,7 @@ def _load_realtime(code: str) -> tuple[dict[str, Any], str]:
     """实时盘口字段 + 上市日。失败返回空 dict。"""
     try:
         realtime = fetch_realtime_quote(code)
-        if realtime.source == "tencent":
+        if realtime.source in ("tencent", "tonghuashun"):
             mapped = dict(realtime.mapped or {})
             return mapped, str(mapped.get("list_date") or "")
         if realtime.source == "eastmoney" and realtime.raw:
