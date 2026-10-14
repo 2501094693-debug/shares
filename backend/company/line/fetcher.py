@@ -22,7 +22,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from core.cache import TtlCache
@@ -73,6 +73,8 @@ def _ths_ready() -> bool:
 
 # 腾讯日 K 实际只给最近约 640 根，更早的会被截断；东财单次可给全历史。
 # 大窗口（日线全历史回滚到上市）优先走东财，避免被腾讯短截断污染磁盘缓存。
+# 默认窗口：无明确时间段时日线只看最近两年（约 500 根），不整段全量
+_DEFAULT_DAY_WINDOW = 500
 _FULL_HISTORY_LIMIT = 640
 _FULL_HISTORY_PERIODS = frozenset({"day", "week", "month", "quarter", "halfyear", "year"})
 
@@ -100,7 +102,12 @@ TICKS_TTL = 1
 
 _KLINE_DISK_VERSION = 2
 _TICKS_DISK_VERSION = 2
-_KLINE_TAIL_DAY = 2
+_KLINE_TAIL_DAY = 10
+
+# FILL_OVERLAP: 缺口补齐时前后各多带 N 根已密封 bar 做校验重叠
+_KLINE_FILL_OVERLAP = 5
+# STALE_DAYS: 尾部落后超 N 天视为盘过时，直接全量重建
+_KLINE_STALE_DAYS = 60
 _KLINE_TAIL_MINUTE_MAX = 80
 _MINUTE_PERIODS = frozenset(EM_MINUTE_PERIODS)
 _PERIOD_MINUTES = {
@@ -415,8 +422,8 @@ def _fetch_full_history(code, *, period, adjust, cap):
         pass
     _rounds = max(_FULL_ROUNDS, int(cap or 0) // 640 + 2)
     for _ in range(_rounds):
-        if cur_end:
-            time.sleep(3.0)
+        if cur_end and out:
+            time.sleep(1.0)
         try:
             pack = _fetch_remote_kline(code, period=period, adjust=adjust, limit=_FULL_PAGE, beg="", end=cur_end)
         except Exception as exc:
@@ -485,19 +492,44 @@ def _fetch_full_history(code, *, period, adjust, cap):
     return last_pack
 
 
-def _tail_limit(period: str, last_time: str) -> int:
-    """盘中 / 校验时拉多少根尾盘。日线 2 根；分钟按缺口估，上限 80。"""
-    key = (period or "day").strip().lower()
-    if key not in _MINUTE_PERIODS:
-        return _KLINE_TAIL_DAY
-    step = _PERIOD_MINUTES.get(key) or 1
-    parsed = _parse_bar_dt(last_time)
-    if parsed is None:
-        return min(_KLINE_TAIL_MINUTE_MAX, 16)
-    delta_min = max(0.0, (datetime.now() - parsed).total_seconds() / 60.0)
-    guessed = int(delta_min / step) + 4
-    return max(4, min(_KLINE_TAIL_MINUTE_MAX, guessed))
+def _tail_window(period: str, last_time: str) -> tuple[int, str]:
+    """Tail fill window: 缺几天补几天 + 前后 OVERLAP 根校验重叠。
 
+    Returns (limit, beg): beg covers the gap plus pre-overlap sealed bars,
+    limit covers estimated missing sessions + overlap + margin.
+    """
+    key = (period or "day").strip().lower()
+    if key in _MINUTE_PERIODS:
+        step = _PERIOD_MINUTES.get(key) or 1
+        parsed = _parse_bar_dt(last_time)
+        if parsed is None:
+            return min(_KLINE_TAIL_MINUTE_MAX, 16), ""
+        delta_min = max(0.0, (datetime.now() - parsed).total_seconds() / 60.0)
+        guessed = int(delta_min / step) + 4
+        return max(4, min(_KLINE_TAIL_MINUTE_MAX, guessed)), ""
+    try:
+        last_d = datetime.strptime(str(last_time or "")[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return _KLINE_TAIL_DAY, ""
+    try:
+        today = session_day()
+    except Exception:
+        today = last_d
+    if last_d >= today:
+        return 4, ""
+    miss = 0
+    d = last_d + timedelta(days=1)
+    while d <= today:
+        if d.weekday() < 5:
+            miss += 1
+        d += timedelta(days=1)
+    beg = (last_d - timedelta(days=_KLINE_FILL_OVERLAP + 4)).strftime("%Y%m%d")
+    return max(6, min(90, miss + _KLINE_FILL_OVERLAP + 4)), beg
+
+
+def _tail_limit(period: str, last_time: str) -> int:
+    limit, _beg = _tail_window(period, last_time)
+    return limit
 
 def _parse_bar_dt(text: str) -> datetime | None:
     raw = (text or "").strip()
@@ -583,22 +615,46 @@ def _refresh_with_tail(
     """用最新几根更新缓存；对不上则整段重拉。尾盘失败则退回旧缓存。"""
     items = list(stored.get("items") or [])
     last_time = _bar_time(items[-1]) if items else ""
-    tail_n = _tail_limit(period, last_time)
-    tail = _fetch_remote_kline(code, period=period, adjust=adjust, limit=tail_n)
+    tail_n, tail_beg = _tail_window(period, last_time)
+    try:
+        if tail_beg:
+            tail = _fetch_remote_kline(code, period=period, adjust=adjust, limit=tail_n, beg=tail_beg, end="")
+        else:
+            tail = _fetch_remote_kline(code, period=period, adjust=adjust, limit=tail_n)
+    except Exception as exc:
+        logger.info("kline tail fetch %s failed: %s", code, exc)
+        return _kline_payload(stored)
     tail_items = list(tail.get("items") or [])
     if not tail_items:
         logger.info("kline tail empty %s %s, keep cache", code, period)
         return _kline_payload(stored)
-
+    have = {_bar_time(b) for b in items if _bar_time(b)}
+    overlap = sum(1 for b in tail_items if _bar_time(b) in have)
+    if overlap < 2 and items:
+        logger.info("kline tail overlap %s %s = %d, widen and retry", code, period, overlap)
+        try:
+            _w_n, _w_beg = _tail_window(period, _bar_time(items[0]) if items else "")
+            tail = _fetch_remote_kline(code, period=period, adjust=adjust, limit=max(tail_n, _w_n),
+                                       beg=_w_beg or tail_beg, end="")
+            tail_items = list(tail.get("items") or [])
+        except Exception as exc:
+            logger.info("kline tail widen %s failed: %s", code, exc)
+            return _kline_payload(stored)
     merged, reason = _merge_tail(items, tail_items)
     if merged is None:
         # 缺段只补缺段：gap/adjust 时用日期区间拉 [cached_last, today]，不整段 limit 重拉
         logger.info("kline cache refresh %s %s: %s", code, period, reason)
         try:
-            last_d = str((items[-1] or {}).get("time") or "")[:10].replace("-", "")
-            seg = _fetch_remote_kline(code, period=period, adjust=adjust, limit=max(cap, 800), beg=last_d, end="")
+            _seg_n, _seg_beg = _tail_window(period, _bar_time(items[-1]) if items else "")
+            seg = _fetch_remote_kline(code, period=period, adjust=adjust, limit=_seg_n,
+                                      beg=_seg_beg or str((items[-1] or {}).get("time") or "")[:10].replace("-", ""), end="")
             seg_items = list(seg.get("items") or [])
             if seg_items:
+                _have2 = {_bar_time(b) for b in items if _bar_time(b)}
+                _ov2 = sum(1 for b in seg_items if _bar_time(b) in _have2)
+                if _ov2 < 2 and items:
+                    logger.info("kline seg overlap %s = %d, keep cache", code, _ov2)
+                    return _kline_payload(stored)
                 fixed = _merge_sorted(items, seg_items)
                 result = dict(seg)
                 result["items"] = fixed
@@ -608,17 +664,28 @@ def _refresh_with_tail(
                 return _kline_payload(result)
         except Exception as exc:
             logger.info("kline segment补尾 %s %s 失败: %s", code, period, exc)
-        result = _fetch_remote_kline(code, period=period, adjust=adjust, limit=tail_n)
-        if result.get("items"):
-            fixed = _merge_sorted(items, list(result.get("items") or []))
-            result = dict(result)
-            result["items"] = fixed
-            result["count"] = len(fixed)
-            result["source"] = _resolve_source(str(stored.get("source") or ""), str(result.get("source") or ""), len(fixed) > len(items))
-            _save_kline_disk(code, period, disk_adjust, result)
-        return _kline_payload(result)
+        return _kline_payload(stored)
 
-    merged, _gap_src = _backfill_middle_gaps(merged, code=code, period=period, adjust=adjust, cap=cap, stored_source=str(stored.get("source") or ""))
+    _needs_backfill = False
+    try:
+        _ts = sorted({str(b.get("time") or "")[:10] for b in merged if str(b.get("time") or "")[:10]})
+        _th = _GAP_THRESH_DAYS.get((period or "day").strip().lower(), 0)
+        for _a, _b in zip(_ts, _ts[1:]):
+            try:
+                _dd = (datetime.strptime(_b, "%Y-%m-%d") - datetime.strptime(_a, "%Y-%m-%d")).days
+            except ValueError:
+                continue
+            if _dd > _th:
+                _needs_backfill = True
+                break
+        if False and _ts and _ts[0] > "1995-01-01":
+            # 头部可能没到上市，同样值得探一次（节流仍在函数内生效）
+            _needs_backfill = True
+    except Exception:
+        _needs_backfill = True
+    _gap_src = None
+    if _needs_backfill:
+        merged, _gap_src = _backfill_middle_gaps(merged, code=code, period=period, adjust=adjust, cap=cap, stored_source=str(stored.get("source") or ""))
     result = {
         "code": tail.get("code") or stored.get("code") or code,
         "name": tail.get("name") or stored.get("name") or "",
@@ -654,6 +721,17 @@ _GAP_THRESH_DAYS = {"day": 45, "week": 200, "month": 600, "quarter": 1500, "half
 _gapcheck_at: dict[str, float] = {}
 
 
+def _head_open(items) -> bool:
+    """头部是否还没到上市（值得向前探一次）。空则 True。"""
+    try:
+        ts = sorted({str(b.get("time") or "")[:10] for b in items if str(b.get("time") or "")[:10]})
+    except Exception:
+        return True
+    if not ts:
+        return True
+    return ts[0] > "1995-01-01"
+
+
 def _backfill_middle_gaps(items, *, code, period, adjust, cap, stored_source):
     """检测 K 线中间断段（如 2006→2023 这种大缺口）并远程补齐，顺带向前探头部
     （最早一根之前可能还有，如东财 600773 只到 2000-07，腾讯有 1996 起）。
@@ -681,6 +759,9 @@ def _backfill_middle_gaps(items, *, code, period, adjust, cap, stored_source):
             gaps.append((a, b, delta))
     if gaps:
         logger.info("kline middle gaps %s %s: %s", code, period, [(a, b) for a, b, _ in gaps])
+    if not gaps and not _head_open(items):
+        _gapcheck_at[key] = now
+        return items, None
     gaps.sort(key=lambda g: -g[2])
     merged = list(items)
     seg_source = None
@@ -701,7 +782,7 @@ def _backfill_middle_gaps(items, *, code, period, adjust, cap, stored_source):
         for ga, gb in chunks:
             try:
                 seg = _fetch_remote_kline(code, period=period, adjust=adjust,
-                                          limit=2000, beg=ga, end=gb)
+                                          limit=640, beg=ga, end=gb)
             except Exception as exc:
                 logger.info("kline gapfill %s %s [%s,%s] failed: %s", code, period, ga, gb, exc)
                 continue
@@ -725,7 +806,8 @@ def _backfill_middle_gaps(items, *, code, period, adjust, cap, stored_source):
         except ValueError:
             break
         try:
-            hpack = _fetch_remote_kline(code, period=period, adjust=adjust, limit=2000, beg="", end=he)
+            hpack = _fetch_remote_kline(code, period=period, adjust=adjust,
+                                          limit=_KLINE_FILL_OVERLAP + 4, beg="", end=he)
         except Exception as exc:
             logger.info("kline headfill %s %s end=%s failed: %s", code, period, he, exc)
             break
@@ -772,10 +854,15 @@ def fetch_kline(
 
     period_key = (period or "day").strip().lower()
     fqt = str(adjust if adjust is not None else "qfq").strip().lower()
-    cap = int(limit or 320)
     beg_s = (beg or "").replace("-", "").strip()
     end_s = (end or "").replace("-", "").strip()
     now = time.time()
+    # 默认窗口：无 beg/end 时日线只看最近两年（约 500 根），不整段全量；
+    # 全量只在明确指定时间段（beg/end）或强制刷新时才走
+    if not beg_s and not end_s and not force and period_key in _FULL_HISTORY_PERIODS and period_key == "day":
+        cap = _DEFAULT_DAY_WINDOW
+    else:
+        cap = int(limit or 320)
 
     # 日期区间查询：优先复用磁盘全量缓存，命中则内存切片返回；
     # 未覆盖才远程整段拉 + 短 TTL。
@@ -927,7 +1014,14 @@ def fetch_kline(
 
     if not beg_s and not end_s and cap > _FULL_HISTORY_LIMIT and period_key in _FULL_HISTORY_PERIODS and not force:
         need_full = (not stored) or len(stored.get("items") or []) < cap or not stored.get("full_history")
-        if not need_full and stored:
+        tail_stale = False
+        if stored and stored.get("items") and stored.get("full_history"):
+            try:
+                stored_last0 = str((stored["items"][-1] or {}).get("time") or "")[:10]
+                tail_stale = bool(stored_last0) and stored_last0 < session_day().isoformat()
+            except Exception:
+                tail_stale = False
+        if (not need_full and stored) and not tail_stale:
             verified_at = float(stored.get("verified_at") or 0)
             if (not live) and verified_at >= last_session_close().timestamp():
                 result = _kline_payload(stored)
@@ -935,7 +1029,23 @@ def fetch_kline(
                 rr = dict(result)
                 rr["full_history"] = True
                 return _slice_payload(rr, cap)
-        if need_full:
+        if tail_stale and not need_full:
+            _quick = None
+            try:
+                _quick = _refresh_with_tail(
+                    stored, code=code, period=period_key,
+                    adjust=adjust, disk_adjust=fqt, cap=cap,
+                )
+            except Exception as exc:
+                logger.info("quick tail fill %s failed, fallback full: %s", code, exc)
+            if _quick and _quick.get("items"):
+                try:
+                    _save_kline_disk(code, period_key, fqt, _quick)
+                except Exception:
+                    pass
+                _kline_live_cache.put(mem_key, _quick, cached_at=now)
+                return _slice_payload(_quick, cap)
+        if need_full or tail_stale:
             try:
                 result = _fetch_full_history(code, period=period_key, adjust=adjust, cap=cap)
                 if result.get("items"):
@@ -945,7 +1055,52 @@ def fetch_kline(
             except Exception as exc:
                 logger.info("full history failed %s: %s", code, exc)
 
-    if stored and len(stored.get("items") or []) >= cap:
+    stored_n = len(stored.get("items") or []) if stored else 0
+    _stale = False
+    if stored_n and period_key in ("day", "week", "month"):
+        try:
+            _sl = str(((stored.get("items") or [])[-1] or {}).get("time") or "")[:10]
+            _sd = session_day().isoformat() if period_key == "day" else _sl
+            if _sl and _sd and _sl < _sd:
+                from datetime import date as _date
+                _stale = (_date.fromisoformat(_sd) - _date.fromisoformat(_sl)).days > _KLINE_STALE_DAYS
+        except Exception:
+            _stale = False
+    if _stale and not force:
+        try:
+            result = _fetch_full_history(code, period=period_key, adjust=adjust, cap=cap)
+            if result.get("items"):
+                _save_kline_disk(code, period_key, fqt, result)
+                _kline_live_cache.put(mem_key, result, cached_at=now)
+                return _slice_payload(result, cap)
+        except Exception as exc:
+            logger.info("stale full rebuild %s failed: %s", code, exc)
+    if stored_n:
+        stored_last = str(((stored.get("items") or [])[-1] or {}).get("time") or "")[:10]
+        try:
+            expect_last = session_day().isoformat()
+        except Exception:
+            expect_last = ""
+        tail_ok = bool(stored_last) and (not expect_last or stored_last >= expect_last)
+        if tail_ok and live and period_key == "day":
+            # 交易时段：当日 bar 未密封，必须拉远程刷新（小窗口+重叠校验），不能直返旧盘
+            try:
+                result = _refresh_with_tail(
+                    stored, code=code, period=period_key,
+                    adjust=adjust, disk_adjust=fqt, cap=cap,
+                )
+            except Exception as exc:
+                logger.info("live tail refresh %s failed, use cache: %s", code, exc)
+                result = _kline_payload(stored)
+                result["full_history"] = bool(stored.get("full_history"))
+            if result.get("items"):
+                _kline_live_cache.put(mem_key, result, cached_at=now)
+                return _slice_payload(result, cap)
+        if tail_ok and not live:
+            result = _kline_payload(stored)
+            result["full_history"] = bool(stored.get("full_history"))
+            _kline_live_cache.put(mem_key, result, cached_at=now)
+            return _slice_payload(result, cap)
         verified_at = float(stored.get("verified_at") or 0)
         # 非交易时段：收盘后已校验过的磁盘缓存直接用，避免隔半小时又全市场尾盘刷新。
         sealed_after_close = verified_at >= last_session_close().timestamp()
