@@ -969,7 +969,7 @@ const CHART_MODES = {
   "15m": { label: "15分", kind: "kline", period: "15m", limit: 360, viewSize: 80, adjust: "none" },
   "30m": { label: "30分", kind: "kline", period: "30m", limit: 360, viewSize: 80, adjust: "none" },
   "60m": { label: "60分", kind: "kline", period: "60m", limit: 240, viewSize: 72, adjust: "none" },
-  day: { label: "日K", kind: "kline", period: "day", limit: 10000, viewSize: 90, adjust: "qfq" },
+  day: { label: "日K", kind: "kline", period: "day", limit: 320, viewSize: 90, adjust: "qfq" },
   week: { label: "周K", kind: "kline", period: "week", limit: 360, viewSize: 80, adjust: "qfq" },
   month: { label: "月K", kind: "kline", period: "month", limit: 240, viewSize: 72, adjust: "qfq" },
 };
@@ -2229,12 +2229,12 @@ function renderFundamentals(stock = metricsStock) {
   ]);
   const capital = flattenMetricRows([
     [
-      ["上市时间", stock.list_date],
-      ["注册资本", stock.registered_capital],
-      ["发行股本", stock.issued_shares],
       ["总股本", stock.total_shares],
       ["流通股", stock.float_shares],
       ["自由流通股", stock.free_float_shares],
+      ["上市时间", stock.list_date],
+      ["注册资本", stock.registered_capital],
+      ["发行股本", stock.issued_shares],
     ],
     [
       ["总市值", mcap],
@@ -2962,6 +2962,7 @@ function renderEmotionRankList(data) {
 function paintEmotionScores() {
   if (isXqEmotion()) return paintXqEmotionScores();
   if (isThsEmotion()) return paintThsEmotionScores();
+  if (!isEmEmotion()) return;
   const st = emotionState.scores;
   if (els.emotionScoresMeta) {
     const bits = ["千股千评", st.data?.name || stockDisplayName || code, st.updatedAt || "-"].filter(Boolean);
@@ -2987,6 +2988,7 @@ function paintEmotionScores() {
 function paintEmotionRank() {
   if (isThsEmotion()) return;
   if (isXqEmotion()) return paintXqEmotionRank();
+  if (!isEmEmotion()) return;
   const st = emotionState.rank;
   const currentRank = st.data?.rank;
   if (els.emotionRankMeta) {
@@ -3019,6 +3021,7 @@ function paintEmotionPosts() {
   if (!isThsEmotion()) paintThsVoteSlot("");
   if (isXqEmotion()) return paintXqEmotionPosts();
   if (isThsEmotion()) return paintThsEmotionPosts();
+  if (!isEmEmotion()) return;
   const st = emotionState.posts;
   if (els.emotionPostsMeta) {
     const bits = [
@@ -3059,6 +3062,7 @@ function paintEmotionPosts() {
 function paintEmotionSearch() {
   if (isThsEmotion()) return;
   if (isXqEmotion()) return paintXqEmotionSearch();
+  if (!isEmEmotion()) return;
   const st = emotionState.search;
   if (els.emotionSearchMeta) {
     const bits = [
@@ -4748,6 +4752,8 @@ const FINANCIALS_TREND_CHARTS = [
 
 /* 四张走势图共享同一窗口：count 为可见年数，start 为起始下标（相对全部年份）。 */
 const financialsTrendView = { count: 12, start: 0 };
+/* 四张图等大：每轮重画前按最宽卡片算一个共享高度，四张都用它 */
+let _trendSharedH = 240;
 
 const financialsTrendState = { loading: false, loaded: false, items: [], meta: null, error: "" };
 
@@ -4807,13 +4813,13 @@ function drawGroupedBars(canvasId, wrapId, legendId, years, flatValues, flatCum,
   const values = (flatValues || []).map(numOrNull);
   const cums = (flatCum || []).map(numOrNull);
   if (legendEl) {
-    legendEl.innerHTML = TREND_Q
-      .map((q, qi) => `<span class="financials-trend-item"><i style="background:${color};opacity:${TREND_Q_ALPHA[qi]}"></i>${escapeHtml(label)}${q}</span>`)
+    legendEl.innerHTML = `<span class="financials-trend-item"><i style="background:${color};opacity:.18;border:1px dashed ${color};height:8px;width:8px;"></i>年</span>` + TREND_Q
+      .map((q, qi) => `<span class="financials-trend-item"><i style="background:${color};opacity:${TREND_Q_ALPHA[qi]}"></i>${q}</span>`)
       .join("");
   }
   const dpr = window.devicePixelRatio || 1;
   const cssW = Math.max(280, wrapEl.clientWidth || 600);
-  const cssH = 220;
+  const cssH = _trendSharedH || 240;
   canvas.style.width = "100%";
   canvas.style.height = `${cssH}px`;
   canvas.width = Math.floor(cssW * dpr);
@@ -4822,12 +4828,29 @@ function drawGroupedBars(canvasId, wrapId, legendId, years, flatValues, flatCum,
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const colors = typeof chartColors === "function" ? chartColors() : { grid: "rgba(42,212,184,.08)", muted: "#8494a8" };
   ctx.clearRect(0, 0, cssW, cssH);
-  const pad = { l: 52, r: 10, t: 12, b: 26 };
+  const pad = { l: 46, r: 8, t: 10, b: 24 };
   const W = cssW - pad.l - pad.r;
   const H = cssH - pad.t - pad.b;
   const totalYears = (years || []).length;
   const view = financialsTrendClampView(totalYears);
   const visYears = (years || []).slice(view.start, view.start + view.count);
+  // 年包裹季：每年 4 根季度柱外面包一根年柱。
+  // 年值 = 该年最后一个有数的年内累计（Q4 在则为全年，无则退到 Q3/Q2/Q1）；都没有才按季度求和兜底。
+  // 最新一年缺季度也照样画年柱。
+  const visAnnuals = visYears.map((_, yi) => {
+    const base = (view.start + yi) * 4;
+    for (let q = 3; q >= 0; q -= 1) {
+      const v = cums[base + q];
+      if (v != null) return v;
+    }
+    let s = 0;
+    let any = false;
+    for (let q = 0; q < 4; q += 1) {
+      const v = values[base + q];
+      if (v != null) { s += v; any = true; }
+    }
+    return any ? s : null;
+  });
   const visValues = [];
   const visCums = [];
   visYears.forEach((_, yi) => {
@@ -4837,7 +4860,7 @@ function drawGroupedBars(canvasId, wrapId, legendId, years, flatValues, flatCum,
       visCums.push(cums[gi] ?? null);
     }
   });
-  const allVals = visValues.filter((v) => v != null);
+  const allVals = [...visValues, ...visAnnuals].filter((v) => v != null);
   let lo = Math.min(...allVals);
   let hi = Math.max(...allVals);
   if (lo === hi) { lo -= Math.abs(lo) * 0.1 || 1; hi += Math.abs(hi) * 0.1 || 1; }
@@ -4846,7 +4869,7 @@ function drawGroupedBars(canvasId, wrapId, legendId, years, flatValues, flatCum,
   if (lo > 0) lo = 0;
   if (hi < 0) hi = 0;
   const band = W / Math.max(1, visValues.length);
-  const barW = Math.min(band * 0.72, 44);
+  const barW = Math.min(Math.max(band * 0.6, 3), 26);
   const yAt = (v) => pad.t + ((hi - v) / (hi - lo)) * H;
   const yZero = yAt(0);
   ctx.strokeStyle = colors.grid; ctx.lineWidth = 1;
@@ -4870,6 +4893,44 @@ function drawGroupedBars(canvasId, wrapId, legendId, years, flatValues, flatCum,
   ctx.beginPath(); ctx.moveTo(pad.l, yZero); ctx.lineTo(pad.l + W, yZero); ctx.stroke(); ctx.restore();
   const hoverSlot = typeof canvas._trendHover === "number" ? canvas._trendHover : -1;
   ctx.fillStyle = color;
+  const roundBar = (x, y, w, h) => {
+    const r = Math.min(3, w / 2, Math.max(1, h / 2));
+    ctx.beginPath();
+    if (typeof ctx.roundRect === "function") ctx.roundRect(x, y, w, h, r);
+    else ctx.rect(x, y, w, h);
+    ctx.fill();
+  };
+  // 先画年柱（底）：每年的背景大柱，把 4 根季度柱包在里面。
+  // 宽度跟着缩放走：永远是当年带宽的 0.88，不封顶，季度柱左右各留一点边距，缩再大也包得住。
+  const yearBandW = band * 4;
+  const yearBarW = yearBandW * 0.88;
+  visAnnuals.forEach((av, yi) => {
+    // 纵向也要包住：盒子从 min(年, 四季最小, 0) 到 max(年, 四季最大, 0)，正负值都不会冒出来
+    const qs = [values[(view.start + yi) * 4], values[(view.start + yi) * 4 + 1], values[(view.start + yi) * 4 + 2], values[(view.start + yi) * 4 + 3]].filter((v) => v != null);
+    if (av == null && !qs.length) return;
+    const topV = Math.max(0, av ?? -Infinity, ...qs);
+    const botV = Math.min(0, av ?? Infinity, ...qs);
+    const gx = pad.l + yearBandW * yi + (yearBandW - yearBarW) / 2;
+    const yTop = yAt(topV);
+    const yBot = yAt(botV);
+    const top = Math.min(yTop, yBot);
+    const h = Math.max(2, Math.abs(yBot - yTop));
+    ctx.save();
+    ctx.globalAlpha = 0.16;
+    ctx.fillStyle = color;
+    roundBar(gx, top, yearBarW, h);
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    if (typeof ctx.roundRect === "function") ctx.roundRect(gx, top, yearBarW, h, 5);
+    else ctx.rect(gx, top, yearBarW, h);
+    ctx.stroke();
+    ctx.restore();
+  });
   visValues.forEach((v, i) => {
     if (v == null) return;
     const slot = view.start * 4 + i;
@@ -4879,13 +4940,14 @@ function drawGroupedBars(canvasId, wrapId, legendId, years, flatValues, flatCum,
     const h = Math.max(1, Math.abs(y - yZero));
     ctx.save();
     ctx.globalAlpha = TREND_Q_ALPHA[i % 4];
-    ctx.fillRect(gx, top, barW, h);
+    ctx.fillStyle = color;
+    roundBar(gx, top, barW, h);
     ctx.restore();
     if (slot === hoverSlot) {
       ctx.save();
       ctx.strokeStyle = "rgba(255,255,255,.9)";
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(gx, top, barW, h);
+      ctx.strokeRect(gx - 0.5, top - 0.5, barW + 1, h + 1);
       ctx.restore();
     }
   });
@@ -4923,7 +4985,8 @@ function financialsTrendShowTip(canvas, slotIdx, cssX, cssY) {
   const wrapW = wrapEl.clientWidth || 600;
   const flip = cssX > wrapW - 210;
   tip.style.left = `${flip ? Math.max(0, cssX - 198) : cssX + 12}px`;
-  tip.style.top = `${Math.max(0, Math.min(cssY - 10, 220 - tip.offsetHeight - 8))}px`;
+  const wrapH = wrapEl.clientHeight || 260;
+  tip.style.top = `${Math.max(0, Math.min(cssY - 10, wrapH - tip.offsetHeight - 8))}px`;
 }
 
 function financialsTrendHideTip(canvas) {
@@ -5022,6 +5085,24 @@ function paintFinancialsTrend() {
   }
   const years = st.items.map((r) => String(r.year || ""));
   financialsTrendClampView(years.length);
+  // 等大占满：取四个卡片里最宽的，算一个共享高度（宽*0.62，最小 240），四张图都用它
+  try {
+    const ws = FINANCIALS_TREND_CHARTS.map((c) => {
+      const w = document.getElementById(c.wrapId);
+      return (w && w.clientWidth) || 0;
+    });
+    const maxW = Math.max(280, ...ws);
+    _trendSharedH = Math.max(240, Math.round(maxW * 0.62));
+  } catch { _trendSharedH = 240; }
+  // 高度改为占满剩余空间：容器两行等分，画布用卡片实际剩余高度，四张取最大保证等高
+  try {
+    const hs = FINANCIALS_TREND_CHARTS.map((c) => {
+      const w = document.getElementById(c.wrapId);
+      return (w && w.clientHeight) || 0;
+    });
+    const maxH = Math.max(...hs, 0);
+    if (maxH > 200) _trendSharedH = Math.round(maxH);
+  } catch { /* ignore */ }
   const numOrNull = (raw) => (typeof raw === "number" && Number.isFinite(raw) ? raw : null);
   FINANCIALS_TREND_CHARTS.forEach((c) => {
     bindFinancialsTrendCanvas(c.canvasId);
@@ -5453,6 +5534,7 @@ function syncEmPostSelection() {
 function paintEmotionDetail() {
   if (isXqEmotion()) return paintXqEmotionDetail();
   if (isThsEmotion()) return paintThsEmotionDetail();
+  if (!isEmEmotion()) return;
   const st = emotionState.detail;
   const pack = st.pack || {};
   if (!els.emotionDetail) return;
@@ -5891,15 +5973,14 @@ function renderThsVoteCard(vote) {
     return `
       <div class="ths-vote-option">
         <span>${escapeHtml(opt.text || "")}</span>
-        <b>${count}${total > 0 ? ` · ${pct}%` : ""}</b>
+        <div class="ths-vote-sub"><em>${count}票</em><b>${pct}%</b></div>
         <i style="width:${pct}%"></i>
       </div>`;
   }).join("");
   return `
     <article class="news-item ths-vote-card">
-      <div class="ths-vote-head"><span>投票</span><span>${total} 人参与</span></div>
-      <h3>${escapeHtml(vote.title)}</h3>
-      ${options}
+      <div class="ths-vote-head"><span class="ths-vote-badge">投票</span><h3>${escapeHtml(vote.title)}</h3><span class="ths-vote-total">${total}人参与</span></div>
+      <div class="ths-vote-options">${options}</div>
     </article>`;
 }
 
@@ -5954,6 +6035,7 @@ function findThsEmotionPost(postId) {
 }
 
 function paintThsEmotionScores() {
+  if (!isThsEmotion()) return;
   const st = thsEmotionState.scores;
   if (els.emotionScoresMeta) {
     const bits = ["讨论热度", st.data?.name || stockDisplayName || code, st.updatedAt || "-"].filter(Boolean);
@@ -5977,6 +6059,7 @@ function paintThsEmotionScores() {
 }
 
 function paintThsEmotionPosts() {
+  if (!isThsEmotion()) return;
   const st = thsEmotionState.posts;
   if (els.emotionPostsMeta) {
     const bits = [
@@ -6168,6 +6251,7 @@ function syncThsPostSelection() {
 }
 
 function paintThsEmotionDetail() {
+  if (!isThsEmotion()) return;
   const st = thsEmotionState.detail;
   const pack = st.pack || {};
   if (!els.emotionDetail) return;
@@ -6457,6 +6541,7 @@ function applyXqEmotionPack(pack = {}) {
 }
 
 function paintXqEmotionScores() {
+  if (!isXqEmotion()) return;
   const st = xqEmotionState.scores;
   if (els.emotionScoresMeta) {
     const bits = [st.data?.name || stockDisplayName || code, st.updatedAt || "-"].filter(Boolean);
@@ -6478,6 +6563,7 @@ function paintXqEmotionScores() {
 }
 
 function paintXqEmotionRank() {
+  if (!isXqEmotion()) return;
   const st = xqEmotionState.rank;
   const currentRank = st.data?.rank;
   const marketLabel = xqEmotionMarketLabel(st.data?.market_label || st.market);
@@ -6508,6 +6594,7 @@ function paintXqEmotionRank() {
 }
 
 function paintXqEmotionPosts() {
+  if (!isXqEmotion()) return;
   const st = xqEmotionState.posts;
   if (els.emotionPostsMeta) {
     const bits = [
@@ -6556,6 +6643,7 @@ function paintXqEmotionPosts() {
 }
 
 function paintXqEmotionSearch() {
+  if (!isXqEmotion()) return;
   const st = xqEmotionState.search;
   if (els.emotionSearchMeta) {
     const bits = [
@@ -6833,6 +6921,7 @@ function syncXqPostSelection() {
 }
 
 function paintXqEmotionDetail() {
+  if (!isXqEmotion()) return;
   const st = xqEmotionState.detail;
   const pack = st.pack || {};
   if (!els.emotionDetail) return;
@@ -8971,7 +9060,11 @@ function zoomChartViewport(anchorRatio, factor, { render = true } = {}) {
   const ratio = Math.min(1, Math.max(0, Number(anchorRatio) || 0.5));
   let nextSize = Math.round(win.size * factor);
   nextSize = Math.max(minSize, Math.min(total, nextSize));
-  if (nextSize === win.size) return false;
+  if (nextSize === win.size) {
+    // 已经顶到本地边界但远没到上市：缩放手势也触发补历史
+    if (factor > 1 && chartState.mode === "day" && kiteHistoryMore()) void loadOlderKline();
+    return false;
+  }
 
   const anchorIndex = win.start + ratio * win.size;
   let nextStart = Math.round(anchorIndex - ratio * nextSize);
@@ -8984,6 +9077,26 @@ function zoomChartViewport(anchorRatio, factor, { render = true } = {}) {
   refreshChartWindowStatus();
   if (render) renderChart();
   propagateLinkedAxis("kline");
+  // 缩放也要能拉历史：放大(看更多)顶到已有边界时，后台再往前补一页
+  if (factor > 1 && chartState.mode === "day" && kiteHistoryMore()) {
+    const capped = nextSize >= total || nextStart <= 15 || nextStart + nextSize >= total - 5;
+    if (capped) {
+      const before = total;
+      void loadOlderKline().then(() => {
+        const nt = (chartState.allItems || []).length;
+        const added = nt - before;
+        if (added > 0) {
+          chartState.viewSize = Math.min(nt, (Number(chartState.viewSize) || nextSize) + added);
+          chartState.viewStart = Math.max(0, Math.min(chartState.viewStart + added, nt - chartState.viewSize));
+          chartState.items = chartViewWindow().items;
+          syncChartScrollBar();
+          refreshChartWindowStatus();
+          renderChart();
+          propagateLinkedAxis("kline");
+        }
+      });
+    }
+  }
   return true;
 }
 
@@ -9028,7 +9141,7 @@ async function loadOlderKline() {
       code,
       period: "day",
       adjust: klineAdjustFor(chartState.mode),
-      limit: "10000",
+      limit: "2000",
       end: endDay || first,
     });
     const json = await api(`/api/stocks/line?${qs.toString()}`);
@@ -9036,6 +9149,7 @@ async function loadOlderKline() {
       (d) => String(d?.time || "").slice(0, 10) < first
     );
     if (!older.length) {
+      if (json.data?.source) chartState.source = json.data.source;
       if (json.data && json.data.full_history) chartState.historyExhausted = true;
     } else {
       const seen = new Set(older.map((d) => String(d?.time || "").slice(0, 10)));
@@ -9045,6 +9159,7 @@ async function loadOlderKline() {
       chartState.viewStart = older.length;
       chartState.viewSize = keepSize;
       chartState.items = chartViewWindow().items;
+      if (json.data?.source) chartState.source = json.data.source;
       if (json.data && json.data.full_history) chartState.historyExhausted = true;
     }
   } catch {

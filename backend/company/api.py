@@ -92,7 +92,7 @@ def stocks_line(
     end: str = Query("", description="结束日期 YYYYMMDD 或 YYYY-MM-DD"),
     refresh: str = Query("0"),
 ):
-    """日/周/月/分钟 K 线。腾讯优先，东财兜底。``/kline`` 为旧路径别名。"""
+    """日/周/月/分钟 K 线。腾讯优先，东财其次，同花顺兜底。``/kline`` 为旧路径别名。先查缓存，只补缺段，前端分段请求（首屏320，左滑按end分页补老段）。"""
     code = code.strip()
     if not code:
         return err("缺少参数 code", 400)

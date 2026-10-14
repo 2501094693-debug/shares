@@ -469,43 +469,100 @@ html.company-charts-on .company-panel[data-panel="emotion"] .cninfo-body::-webki
 }
 
 html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .emotion-open > .cninfo-hub[data-emotion="scores"] {
-  padding: 10px 12px 12px;
+  padding: 8px 12px 10px;
   min-height: 0;
   height: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .emotion-hub[data-emotion="scores"] .cninfo-hub-head {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .emotion-hub[data-emotion="scores"] .news-hub-meta {
   margin-left: auto;
+  display: none;
 }
 
 html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .emotion-scores-body {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.8fr);
+  grid-template-columns: minmax(0, 1fr) minmax(440px, 600px);
   gap: 10px;
+  align-items: stretch;
   overflow: hidden;
-  max-height: 168px;
+  max-height: none;
+  flex: none;
+  min-height: 0;
+  height: 80px;
+}
+/* 同花顺热度区整体压紧：标题脚注与头部重复，藏掉；英雄区与指标卡收窄 */
+html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .ths-heat-board .emotion-score-foot {
+  display: none;
+}
+html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .ths-heat-hero {
+  flex-basis: 200px;
+  padding: 6px 12px 8px;
+}
+html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .ths-heat-rank {
+  font-size: 1.15rem;
+}
+html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .ths-heat-bar {
+  margin-top: 6px;
+}
+html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .ths-heat-metrics .emotion-score-metric {
+  padding: 6px 10px;
+}
+html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .ths-vote-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 0.9rem;
+}
+html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .ths-vote-card h3 {
+  margin: 0 0 4px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .ths-vote-head {
+  font-size: 0.75rem;
+  margin-bottom: 4px;
 }
 
 html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .emotion-scores-body:not(:has(.ths-vote-slot:not([hidden]))) {
   grid-template-columns: minmax(0, 1fr);
   max-height: none;
+  height: auto;
 }
 
 html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .emotion-scores-content {
   flex: none;
   min-width: 0;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
+}
+html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .ths-heat-board {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .ths-vote-slot:not([hidden]) {
   flex: none;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .emotion-open > .cninfo-hub[data-emotion="posts"] {
@@ -1327,23 +1384,57 @@ html.company-charts-on body.app-shell .app.company-page {
 
 .ths-vote-head {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   margin-bottom: 6px;
   color: var(--muted);
   font-size: 0.76rem;
 }
+.ths-vote-head .ths-vote-badge {
+  background: rgba(232, 72, 72, 0.16);
+  color: #ff9d9d;
+  border-radius: 20px;
+  padding: 1px 10px;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.ths-vote-head h3 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.3;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ths-vote-head .ths-vote-total {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 
+.ths-vote-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
 .ths-vote-option {
   position: relative;
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 6px 0;
-  padding: 7px 8px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  margin: 0;
+  padding: 4px 8px;
   overflow: hidden;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.04);
+  min-height: 0;
 }
 
 .ths-vote-option i {
@@ -1351,12 +1442,37 @@ html.company-charts-on body.app-shell .app.company-page {
   left: 0;
   top: 0;
   bottom: 0;
+  border-radius: 6px;
   background: rgba(232, 72, 72, 0.28);
 }
 
-.ths-vote-option span,
-.ths-vote-option b {
+.ths-vote-option span {
   position: relative;
+  z-index: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+}
+.ths-vote-option .ths-vote-sub {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+.ths-vote-option .ths-vote-sub em {
+  font-style: normal;
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ths-vote-option .ths-vote-sub b {
+  font-size: 0.85rem;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .emotion-post-title {
@@ -1398,6 +1514,7 @@ html.company-charts-on body.app-shell .app.company-page {
 .emotion-scores-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -8949,29 +9066,57 @@ html.company-charts-on .company-panel[data-panel="others"] .others-view[data-oth
 }
 
 .financials-trend {
-  padding: 8px 12px 4px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
   border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+  /* 两行占满剩余空间：每张图高 = 剩余空间的二分之一 */
+  height: calc(100dvh - 220px);
+  min-height: 520px;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+.financials-trend[hidden] { display: none; }
+#financialsTrendMeta { display: none; }
+.financials-trend-chart-block {
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 10px 6px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 .financials-trend-chart-block + .financials-trend-chart-block {
-  margin-top: 10px;
+  margin-top: 0;
   padding-top: 10px;
-  border-top: 1px dashed var(--line);
+  border-top: 1px solid var(--line);
 }
 .financials-trend-head {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 4px;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
 }
 .financials-trend-title {
-  font-size: 0.8rem;
-  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
 }
 .financials-trend-legend {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   margin-left: auto;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--muted);
 }
 .financials-trend-item {
@@ -8987,6 +9132,8 @@ html.company-charts-on .company-panel[data-panel="others"] .others-view[data-oth
 }
 .financials-trend-canvas-wrap {
   width: 100%;
+  flex: 1;
+  min-height: 0;
   position: relative;
 }
 .financials-trend-canvas-wrap canvas {

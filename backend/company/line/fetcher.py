@@ -1,8 +1,8 @@
 """K 线 / 逐笔的统一入口：三源 fallback + 增量缓存。
 
-- ``fetch_kline``：已登录同花顺优先、腾讯其次、东财兜底；
-  未登录跳过同花顺、先腾讯、东财兜底。
+- ``fetch_kline``：腾讯优先、东财其次、同花顺最后兜底（未登录跳过）。
   同花顺没有半年 K，该周期会直接走东财；腾讯没有季 / 半年 / 年 / 120 分钟，这些周期会直接走东财。
+  缓存优先：先读磁盘全量，只远程拉缺失段（缺老段拉 [beg, cached_first)，缺新段刷新尾部），合并后存盘，不整段重拉（force/复权对不上除外）。
 - ``fetch_ticks``：已登录同花顺优先；未登录先东财、腾讯兜底（跳过同花顺）。
   盘中（09:15–15:31）全量查询覆盖当天文件，增量查询合并进文件；
   盘后 / 周末优先读该交易日文件，若未收齐到 15:00 则再打一次远程补齐。
@@ -47,14 +47,14 @@ from company.line.tonghuashun.kline import fetch_line as fetch_tonghuashun_line
 
 logger = logging.getLogger(__name__)
 
-# 同花顺可用性缓存：未登录时跳过 THS、直走腾讯/东财，避免每次都打一次
+# 同花顺可用性缓存：未登录时跳过 THS、直走东财/腾讯，避免每次都打一次
 # 必失败的扫码探活；登录成功后标记即时生效，TTL 内复查一次。
 _THS_READY_TTL = 60.0
 _ths_ready_cache: dict[str, Any] = {"ok": False, "at": 0.0}
 
 
 def _ths_ready() -> bool:
-    """同花顺已登录才返回 True；分时/日线仅作最后兜底，平时优先走东财/腾讯。"""
+    """同花顺已登录才返回 True；K线排第二，仅登录后参与fallback。"""
     try:
         from company.line.tonghuashun import auth as _ths_auth
     except Exception:
@@ -80,10 +80,7 @@ _FULL_HISTORY_PERIODS = frozenset({"day", "week", "month", "quarter", "halfyear"
 def _kline_source_order(
     period: str = "", limit: int = 0
 ) -> tuple[tuple[str, Any, bool], ...]:
-    """日线优先腾讯，其次东财，同花顺仅作最后兜底；未登录跳过 THS。
-
-    大窗口（limit>640 的日/周/月及以上）优先东财，保证一次拉到上市首日。
-    """
+    """K线优先腾讯，其次东财，同花顺最后兜底（未登录跳过）。"""
     base = _KLINE_SOURCES if _ths_ready() else tuple(s for s in _KLINE_SOURCES if s[0] != "tonghuashun")
     try:
         cap = int(limit or 0)
@@ -91,7 +88,7 @@ def _kline_source_order(
         cap = 0
     key = (period or "").strip().lower()
     if cap > _FULL_HISTORY_LIMIT and key in _FULL_HISTORY_PERIODS:
-        order = {"eastmoney": 0, "tencent": 1, "tonghuashun": 2}
+        order = {"tencent": 0, "eastmoney": 1, "tonghuashun": 2}
         return tuple(sorted(base, key=lambda s: order.get(s[0], 9)))
     return base
 
@@ -263,6 +260,29 @@ def _save_kline_disk(code: str, period: str, adjust: str, pack: dict[str, Any]) 
     if not items:
         return
     path = _kline_disk_path(code, period, adjust)
+    try:
+        old_body = json.loads(path.read_text(encoding="utf-8"))
+        old_items = (old_body.get("data") or {}).get("items") or []
+    except Exception:
+        old_body, old_items = {}, []
+    if old_items:
+        # 防覆盖：新包只是一小段（如强制刷新 limit=320）时，与旧盘按日期并集，
+        # 同日期新数据赢。这样再也不会把多年历史洗成 320 根。
+        by_time = {str(b.get("time") or "")[:10]: b for b in old_items if str(b.get("time") or "")[:10]}
+        for b in items:
+            t = str(b.get("time") or "")[:10]
+            if t:
+                by_time[t] = b
+        if len(by_time) > len(items):
+            items = sorted(by_time.values(), key=lambda b: str(b.get("time") or ""))
+            try:
+                old_first = min(str(b.get("time") or "")[:10] for b in old_items if str(b.get("time") or "")[:10])
+                old_last = max(str(b.get("time") or "")[:10] for b in old_items if str(b.get("time") or "")[:10])
+                covers = str(items[0].get("time") or "")[:10] <= old_first and str(items[-1].get("time") or "")[:10] >= old_last
+            except (ValueError, IndexError):
+                covers = False
+            pack = dict(pack)
+            pack["full_history"] = bool(pack.get("full_history")) or (bool((old_body or {}).get("full_history")) and covers)
     data = {
         "code": pack.get("code") or code,
         "name": pack.get("name") or "",
@@ -283,20 +303,20 @@ def _save_kline_disk(code: str, period: str, adjust: str, pack: dict[str, Any]) 
         path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
 
 
-# 按优先级排列的 K 线源。日线优先腾讯，其次东财，同花顺最后兜底。
+# 按优先级排列的 K 线源。腾讯优先，东财其次，同花顺最后兜底。
 _KLINE_SOURCES: tuple[tuple[str, Any, bool], ...] = (
     ("tencent", fetch_tencent_line, False),
     ("eastmoney", fetch_eastmoney_line, True),
     ("tonghuashun", fetch_tonghuashun_line, False),
 )
 
-# 腾讯/东财在这台网络下偶发 501/连接重置，各给一次重试机会，
-# 避免一次抖动就整段掉到同花顺并污染磁盘缓存。
+# 东财/腾讯在这台网络下偶发 501/连接重置，各给一次重试机会，
+# 避免一次抖动就直接fallback并污染磁盘缓存。
 _SOURCE_RETRIES = 2
 
 
 def _call_with_retry(func: Any, code: str, kwargs: dict[str, Any], *, label: str) -> dict[str, Any]:
-    """调腾讯/东财：ValueError 直接抛（不支持的周期），其他异常重试一次后返回空包。"""
+    """调东财/腾讯：ValueError 直接抛（不支持的周期），其他异常重试一次后返回空包。"""
     last_exc: Exception | None = None
     for attempt in range(_SOURCE_RETRIES):
         try:
@@ -319,7 +339,7 @@ def _fetch_remote_kline(
     beg: str = "",
     end: str = "",
 ) -> dict[str, Any]:
-    """按登录状态排源：已登录 THS 优先；未登录跳过 THS。首个有数据的源即返回。
+    """按腾讯->东财->同花顺(登录才用)排源。首个有数据的源即返回。
 
     传了 beg/end 时只接受落在区间内的源，忽略区间的源视为无数据继续 fallback。
     """
@@ -442,6 +462,17 @@ def _fetch_full_history(code, *, period, adjust, cap):
         except ValueError:
             break
     items = sorted(out, key=lambda b: str(b.get("time") or ""))
+    items, _gsrc = _backfill_middle_gaps(items, code=code, period=period, adjust=adjust, cap=cap,
+                                         stored_source=str((last_pack or {}).get("source") or ""))
+    if _gsrc:
+        last_pack["source"] = _gsrc
+        try:
+            _save_kline_disk(code, (period or 'day').strip().lower(),
+                             str(adjust if adjust is not None else 'qfq').strip().lower(),
+                             {'code': code, 'items': sorted(items, key=lambda b: str(b.get('time') or '')),
+                              'source': _gsrc, 'full_history': False})
+        except Exception:
+            pass
     if cap > 0:
         items = items[-cap:]
     last_pack["items"] = items
@@ -519,6 +550,23 @@ def _merge_tail(
     return kept + list(tail_items), "ok"
 
 
+def _merge_sorted(old: list[dict[str, Any]], seg: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按 time 去重合并两段，只用于缺段补齐，不整段重排以外的事。"""
+    have = {_bar_time(b) for b in old if _bar_time(b)}
+    merged = list(old) + [b for b in (seg or []) if _bar_time(b) and _bar_time(b) not in have]
+    merged.sort(key=lambda b: str(b.get("time") or ""))
+    return merged
+
+
+def _resolve_source(stored_src: str, remote_src: str, added_new: bool) -> str:
+    """合并后 source 跟着真正提供新K线的那家走，避免旧牌子一直挂着。"""
+    remote_src = (remote_src or "").strip()
+    stored_src = (stored_src or "").strip()
+    if added_new and remote_src:
+        return remote_src
+    return remote_src or stored_src
+
+
 def _refresh_with_tail(
     stored: dict[str, Any],
     *,
@@ -540,13 +588,33 @@ def _refresh_with_tail(
 
     merged, reason = _merge_tail(items, tail_items)
     if merged is None:
-        fetch_n = max(cap, len(items))
+        # 缺段只补缺段：gap/adjust 时用日期区间拉 [cached_last, today]，不整段 limit 重拉
         logger.info("kline cache refresh %s %s: %s", code, period, reason)
-        result = _fetch_remote_kline(code, period=period, adjust=adjust, limit=fetch_n)
+        try:
+            last_d = str((items[-1] or {}).get("time") or "")[:10].replace("-", "")
+            seg = _fetch_remote_kline(code, period=period, adjust=adjust, limit=max(cap, 800), beg=last_d, end="")
+            seg_items = list(seg.get("items") or [])
+            if seg_items:
+                fixed = _merge_sorted(items, seg_items)
+                result = dict(seg)
+                result["items"] = fixed
+                result["count"] = len(fixed)
+                result["source"] = _resolve_source(str(stored.get("source") or ""), str(seg.get("source") or ""), len(fixed) > len(items))
+                _save_kline_disk(code, period, disk_adjust, result)
+                return _kline_payload(result)
+        except Exception as exc:
+            logger.info("kline segment补尾 %s %s 失败: %s", code, period, exc)
+        result = _fetch_remote_kline(code, period=period, adjust=adjust, limit=tail_n)
         if result.get("items"):
+            fixed = _merge_sorted(items, list(result.get("items") or []))
+            result = dict(result)
+            result["items"] = fixed
+            result["count"] = len(fixed)
+            result["source"] = _resolve_source(str(stored.get("source") or ""), str(result.get("source") or ""), len(fixed) > len(items))
             _save_kline_disk(code, period, disk_adjust, result)
         return _kline_payload(result)
 
+    merged, _gap_src = _backfill_middle_gaps(merged, code=code, period=period, adjust=adjust, cap=cap, stored_source=str(stored.get("source") or ""))
     result = {
         "code": tail.get("code") or stored.get("code") or code,
         "name": tail.get("name") or stored.get("name") or "",
@@ -555,7 +623,7 @@ def _refresh_with_tail(
         "pre_price": tail.get("pre_price")
         if tail.get("pre_price") is not None
         else stored.get("pre_price"),
-        "source": tail.get("source") or stored.get("source") or "",
+        "source": _gap_src or _resolve_source(str(stored.get("source") or ""), str(tail.get("source") or ""), len(merged) > len(items)),
         "count": len(merged),
         "items": merged,
     }
@@ -578,6 +646,76 @@ def load_kline_disk(
     return _load_kline_disk(code, period_key, fqt)
 
 
+_GAP_THRESH_DAYS = {"day": 45, "week": 200, "month": 600, "quarter": 1500, "halfyear": 2500, "year": 4000}
+_gapcheck_at: dict[str, float] = {}
+
+
+def _backfill_middle_gaps(items, *, code, period, adjust, cap, stored_source):
+    """检测 K 线中间断段（如 2006→2023 这种大缺口）并远程补齐。
+
+    尾部合并只管尾巴，中间缺段以前永远修不好，这里补上。
+    返回 (items, 新source|None)；12h 内同一标的只查一次，避免每次加载都多打网。
+    """
+    from datetime import timedelta
+    period_key = (period or "day").strip().lower()
+    thresh = _GAP_THRESH_DAYS.get(period_key, 0)
+    if not thresh or not items or len(items) < 2:
+        return items, None
+    key = f"{code}:{period_key}:{str(adjust).lower()}"
+    now = time.time()
+    if now - _gapcheck_at.get(key, 0) < 12 * 3600:
+        return items, None
+    times = sorted({str(b.get("time") or "")[:10] for b in items if str(b.get("time") or "")[:10]})
+    gaps = []
+    for a, b in zip(times, times[1:]):
+        try:
+            delta = (datetime.strptime(b, "%Y-%m-%d") - datetime.strptime(a, "%Y-%m-%d")).days
+        except ValueError:
+            continue
+        if delta > thresh:
+            gaps.append((a, b, delta))
+    if not gaps:
+        _gapcheck_at[key] = now
+        return items, None
+    logger.info("kline middle gaps %s %s: %s", code, period, [(a, b) for a, b, _ in gaps])
+    gaps.sort(key=lambda g: -g[2])
+    merged = list(items)
+    seg_source = None
+    added_total = 0
+    for a, b, _d in gaps[:2]:
+        try:
+            _ga = datetime.strptime(a, "%Y-%m-%d") + timedelta(days=1)
+            _gb = datetime.strptime(b, "%Y-%m-%d") - timedelta(days=1)
+        except ValueError:
+            continue
+        # 大缺口按 ≤6 年一切，避免单次 limit 被源头截断越补越偏
+        chunks = []
+        _cur = _ga
+        while _cur <= _gb:
+            _ce = min(_gb, _cur + timedelta(days=6 * 365))
+            chunks.append((_cur.strftime("%Y%m%d"), _ce.strftime("%Y%m%d")))
+            _cur = _ce + timedelta(days=1)
+        for ga, gb in chunks:
+            try:
+                seg = _fetch_remote_kline(code, period=period, adjust=adjust,
+                                          limit=max(2000, int(cap or 0)), beg=ga, end=gb)
+            except Exception as exc:
+                logger.info("kline gapfill %s %s [%s,%s] failed: %s", code, period, ga, gb, exc)
+                continue
+            seg_items = list(seg.get("items") or [])
+            if not seg_items:
+                continue
+            before = len(merged)
+            merged = _merge_sorted(merged, seg_items)
+            if len(merged) > before:
+                added_total += len(merged) - before
+                seg_source = str(seg.get("source") or "") or seg_source
+    if not added_total:
+        _gapcheck_at[key] = now
+        return items, None
+    return merged, _resolve_source(stored_source, seg_source or "", True)
+
+
 def fetch_kline(
     code: str,
     *,
@@ -588,7 +726,7 @@ def fetch_kline(
     end: str = "",
     force: bool = False,
 ) -> dict[str, Any]:
-    """拉取 K 线。已登录同花顺优先，未登录跳过同花顺走腾讯/东财。
+    """拉取 K 线。腾讯优先、东财其次、同花顺最后兜底(未登录跳过)。先查缓存，只补缺段。
 
     交易时段：历史根走磁盘，只补最新几根。
     非交易时段：整段走缓存，定期用尾盘校验。
@@ -669,6 +807,8 @@ def fetch_kline(
                 _first2 = str((_items2[0] or {}).get("time") or "")[:10]
                 _last2 = str((_items2[-1] or {}).get("time") or "")[:10]
                 _merged2 = None
+                _seg_source2 = ""
+                _gap_src2 = None
                 if lo and _first2 and lo < _first2:
                     from datetime import timedelta as _td
                     try:
@@ -685,9 +825,12 @@ def fetch_kline(
                             _merged2 = sorted(
                                 [b for b in _seg_items if str(b.get("time") or "")[:10] not in _have] + _items2,
                                 key=lambda b: str(b.get("time") or ""))
+                            _seg_source2 = str(_seg.get("source") or "")
+                            _merged2, _gap_src2 = _backfill_middle_gaps(_merged2, code=code, period=period_key, adjust=adjust, cap=cap, stored_source=str(_stored2.get("source") or ""))
+                            _merged_src2 = _gap_src2 or _resolve_source(str(_stored2.get("source") or ""), _seg_source2, True)
                             _save_kline_disk(code, period_key, fqt,
                                              {"code": code, "items": _merged2,
-                                              "source": _seg.get("source") or _stored2.get("source") or "",
+                                              "source": _merged_src2,
                                               "full_history": False})
                     except Exception as exc:
                         logger.info("kline segment fill %s [%s,%s): %s", code, lo, _first2, exc)
@@ -708,7 +851,10 @@ def fetch_kline(
                     if _ranged2:
                         if cap > 0 and len(_ranged2) > cap:
                             _ranged2 = _ranged2[-cap:]
-                        _result2 = _kline_payload({**_stored2, "items": _ranged2})
+                        _base_src2 = _gap_src2 or _seg_source2 or str(_stored2.get("source") or "")
+                        if isinstance(_stored2, dict) and _base_src2:
+                            _stored2 = {**_stored2, "source": _base_src2}
+                        _result2 = _kline_payload({**_stored2, "items": _ranged2}, source=_base_src2)
                         _result2["full_history"] = bool(_stored2.get("full_history"))
                         _kline_range_cache.put(cache_key, _result2, cached_at=now)
                         return _result2
@@ -716,6 +862,26 @@ def fetch_kline(
             code, period=period, adjust=adjust, limit=cap, beg=beg_s, end=end_s
         )
         if result.get("items"):
+            # 纯往前翻（只有 end，没有 beg）：把这页老段拼进硬盘，以后首屏直接就是新牌子
+            try:
+                _disk3 = None if force else _load_kline_disk(code, period_key, fqt)
+                if _disk3 and _disk3.get("items") and not beg_s and end_s:
+                    _d3 = list(_disk3["items"])
+                    _f3 = str((_d3[0] or {}).get("time") or "")[:10]
+                    _h3 = (end_s[:4] + "-" + end_s[4:6] + "-" + end_s[6:8]) if len(end_s) >= 8 else ""
+                    if _h3 and _h3 < _f3:
+                        _have3 = {_bar_time(b) for b in _d3 if _bar_time(b)}
+                        _new3 = [b for b in (result.get("items") or []) if _bar_time(b) and _bar_time(b) not in _have3]
+                        if _new3:
+                            _full3 = sorted(_new3 + _d3, key=lambda b: str(b.get("time") or ""))
+                            _save_kline_disk(code, period_key, fqt,
+                                             {"code": code, "items": _full3,
+                                              "source": _resolve_source(str(_disk3.get("source") or ""), str(result.get("source") or ""), True),
+                                              "full_history": False})
+                            result = dict(result)
+                            result["source"] = _resolve_source(str(_disk3.get("source") or ""), str(result.get("source") or ""), True)
+            except Exception:
+                pass
             _kline_range_cache.put(cache_key, result, cached_at=now)
         return result
 
