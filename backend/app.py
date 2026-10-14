@@ -369,6 +369,15 @@ def js_analysis():
     )
 
 
+@app.get("/js/analysis-select.js")
+def js_analysis_select():
+    return FileResponse(
+        FRONTEND / "analysis" / "select.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
 @app.get("/fund")
 @app.get("/fund.html")
 def fund_page():

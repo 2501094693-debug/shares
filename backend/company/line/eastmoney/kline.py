@@ -349,6 +349,7 @@ def fetch_line(
                 params=params,
                 headers=_HEADERS,
                 timeout=12,
+                retries=2,
             )
 
             data = payload.get("data") if isinstance(payload, dict) else None

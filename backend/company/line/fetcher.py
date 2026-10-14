@@ -71,11 +71,29 @@ def _ths_ready() -> bool:
     return ok
 
 
-def _kline_source_order() -> tuple[tuple[str, Any, bool], ...]:
-    """日线优先腾讯，其次东财，同花顺仅作最后兜底；未登录跳过 THS。"""
-    if _ths_ready():
-        return _KLINE_SOURCES
-    return tuple(s for s in _KLINE_SOURCES if s[0] != "tonghuashun")
+# 腾讯日 K 实际只给最近约 640 根，更早的会被截断；东财单次可给全历史。
+# 大窗口（日线全历史回滚到上市）优先走东财，避免被腾讯短截断污染磁盘缓存。
+_FULL_HISTORY_LIMIT = 640
+_FULL_HISTORY_PERIODS = frozenset({"day", "week", "month", "quarter", "halfyear", "year"})
+
+
+def _kline_source_order(
+    period: str = "", limit: int = 0
+) -> tuple[tuple[str, Any, bool], ...]:
+    """日线优先腾讯，其次东财，同花顺仅作最后兜底；未登录跳过 THS。
+
+    大窗口（limit>640 的日/周/月及以上）优先东财，保证一次拉到上市首日。
+    """
+    base = _KLINE_SOURCES if _ths_ready() else tuple(s for s in _KLINE_SOURCES if s[0] != "tonghuashun")
+    try:
+        cap = int(limit or 0)
+    except (TypeError, ValueError):
+        cap = 0
+    key = (period or "").strip().lower()
+    if cap > _FULL_HISTORY_LIMIT and key in _FULL_HISTORY_PERIODS:
+        order = {"eastmoney": 0, "tencent": 1, "tonghuashun": 2}
+        return tuple(sorted(base, key=lambda s: order.get(s[0], 9)))
+    return base
 
 # 盘中合并结果短缓存，避免同一页多次请求各打一次尾盘。
 KLINE_LIVE_TTL = 8
@@ -155,6 +173,7 @@ def _kline_payload(pack: dict[str, Any], *, source: str = "") -> dict[str, Any]:
 
 def _slice_payload(pack: dict[str, Any], cap: int) -> dict[str, Any]:
     out = _kline_payload(pack)
+    out["full_history"] = bool(pack.get("full_history"))
     items = out["items"]
     if cap > 0 and len(items) > cap:
         items = items[-cap:]
@@ -235,6 +254,7 @@ def _load_kline_disk(code: str, period: str, adjust: str) -> dict[str, Any] | No
         "count": len(items),
         "items": list(items),
         "verified_at": float(payload.get("verified_at") or payload.get("cached_at") or 0),
+        "full_history": bool(payload.get("full_history") or (data.get("full_history"))),
     }
 
 
@@ -256,6 +276,7 @@ def _save_kline_disk(code: str, period: str, adjust: str, pack: dict[str, Any]) 
         "version": _KLINE_DISK_VERSION,
         "cached_at": time.time(),
         "verified_at": time.time(),
+        "full_history": bool(pack.get("full_history")),
         "data": data,
     }
     with _kline_disk_lock:
@@ -311,7 +332,7 @@ def _fetch_remote_kline(
         "beg": beg,
         "end": end,
     }
-    for source, func, reraise in _kline_source_order():
+    for source, func, reraise in _kline_source_order(period, limit):
         try:
             if source == "tonghuashun":
                 pack = _call_ths_source("kline", code, func, kwargs)
@@ -348,6 +369,85 @@ def _fetch_remote_kline(
         (period or "day").strip().lower(),
         str(adjust if adjust is not None else "qfq").strip().lower(),
     )
+
+
+_FULL_PAGE = 2000
+_FULL_ROUNDS = 6
+
+def _fetch_full_history(code, *, period, adjust, cap):
+    out, seen, cur_end = [], set(), ""
+    last_pack, sealed = {}, False
+    from datetime import timedelta
+    try:
+        disk = _load_kline_disk(code, (period or 'day').strip().lower(),
+                                str(adjust if adjust is not None else 'qfq').strip().lower())
+        if disk and disk.get('items') and not disk.get('full_history'):
+            out = list(disk['items'])
+            for b in out:
+                seen.add(str(b.get('time') or '')[:10])
+            first = str(out[0].get('time') or '')[:10]
+            try:
+                cur_end = (datetime.strptime(first, '%Y-%m-%d') - timedelta(days=1)).strftime('%Y%m%d')
+            except ValueError:
+                cur_end = ''
+            last_pack = dict(disk)
+    except Exception:
+        pass
+    for _ in range(_FULL_ROUNDS):
+        if cur_end:
+            time.sleep(3.0)
+        try:
+            pack = _fetch_remote_kline(code, period=period, adjust=adjust, limit=_FULL_PAGE, beg="", end=cur_end)
+        except Exception as exc:
+            logger.info("full history page failed %s end=%s: %s", code, cur_end, exc)
+            break
+        last_pack = pack
+        items = sorted(pack.get("items") or [], key=lambda b: str(b.get("time") or ""))
+        fresh = [b for b in items if str(b.get("time") or "")[:10] not in seen]
+        if not fresh:
+            sealed = False
+            if not out:
+                last_pack = {"items": [], "count": 0, "source": "", "full_history": False}
+            break
+        for b in fresh:
+            seen.add(str(b.get("time") or "")[:10])
+        out = fresh + out
+        try:
+            if out:
+                _save_kline_disk(code, (period or 'day').strip().lower(),
+                                 str(adjust if adjust is not None else 'qfq').strip().lower(),
+                                 {'code': code, 'items': sorted(out, key=lambda b: str(b.get('time') or '')),
+                                  'source': pack.get('source') or '', 'full_history': False})
+        except Exception:
+            pass
+        if len(out) >= cap:
+            sealed = False
+            break
+        if len(fresh) < 500:
+            sealed = True
+            break
+        new_first = str(fresh[0].get("time") or "")[:10]
+        new_last = str(fresh[-1].get("time") or "")[:10]
+        old_first = str(out[-1].get("time") or "")[:10] if len(out) > len(fresh) else ""
+        if new_last == old_first or (cur_end and new_last >= cur_end.replace("-", "")[:8] if False else False):
+            pass
+        first = str(fresh[0].get("time") or "")[:10]
+        if cur_end and out and len(out) > len(fresh):
+            prev_first = str(out[len(fresh)].get("time") or "")[:10] if len(out) > len(fresh) else ""
+            if first >= prev_first:
+                sealed = False
+                break
+        try:
+            cur_end = (datetime.strptime(first, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y%m%d")
+        except ValueError:
+            break
+    items = sorted(out, key=lambda b: str(b.get("time") or ""))
+    if cap > 0:
+        items = items[-cap:]
+    last_pack["items"] = items
+    last_pack["count"] = len(items)
+    last_pack["full_history"] = sealed
+    return last_pack
 
 
 def _tail_limit(period: str, last_time: str) -> int:
@@ -508,12 +608,110 @@ def fetch_kline(
     end_s = (end or "").replace("-", "").strip()
     now = time.time()
 
-    # 日期区间查询无法做「只补最新一根」，仍整段拉 + 短 TTL。
+    # 日期区间查询：优先复用磁盘全量缓存，命中则内存切片返回；
+    # 未覆盖才远程整段拉 + 短 TTL。
     if beg_s or end_s:
         cache_key = f"{code}:{period_key}:{fqt}:{cap}:{beg_s}:{end_s}"
         hit = _cache_get(_kline_range_cache, cache_key, force)
         if hit is not None:
             return hit
+        lo = (beg_s[:4] + "-" + beg_s[4:6] + "-" + beg_s[6:8]) if len(beg_s) >= 8 else ""
+        hi = (end_s[:4] + "-" + end_s[4:6] + "-" + end_s[6:8]) if len(end_s) >= 8 else ""
+        if not force:
+            stored = _load_kline_disk(code, period_key, fqt)
+            if stored and stored.get("items"):
+                items = list(stored["items"])
+                first_d = str((items[0] or {}).get("time") or "")[:10]
+                last_d = str((items[-1] or {}).get("time") or "")[:10]
+                # 有重叠即可复用：hi 可能是今天/未来等尚无 K 线的日期，
+                # 缺的尾部由下面的 _refresh_with_tail 补（盘后已校验则直接切片）。
+                if lo and hi:
+                    covers = first_d <= lo and last_d >= lo
+                elif lo:
+                    covers = last_d >= lo
+                elif hi:
+                    covers = first_d <= hi
+                else:
+                    covers = True
+                if covers:
+                    live = is_cn_market_live()
+                    verified_at = float(stored.get("verified_at") or 0)
+                    sealed = (not live) and verified_at >= last_session_close().timestamp()
+                    base = stored
+                    if not sealed:
+                        try:
+                            base = _refresh_with_tail(
+                                stored, code=code, period=period_key,
+                                adjust=adjust, disk_adjust=fqt, cap=max(cap, len(items)),
+                            )
+                            items = list(base.get("items") or items)
+                        except Exception:
+                            items = list(stored["items"])
+                    ranged = [it for it in items
+                              if (not lo or str(it.get("time") or "")[:10] >= lo)
+                              and (not hi or str(it.get("time") or "")[:10] <= hi)]
+                    if ranged:
+                        if cap > 0 and len(ranged) > cap:
+                            ranged = ranged[-cap:]
+                        result = _kline_payload({**base, "items": ranged})
+                        result["full_history"] = bool(base.get("full_history"))
+                        _kline_range_cache.put(cache_key, result, cached_at=now)
+                        return result
+        # 分段补齐：缓存缺老段时只拉 [lo, first_d) 一段，合并存盘后再切片；
+        # 缺新段走尾部刷新；都不命中才整段远程。
+        if not force:
+            try:
+                _stored2 = _load_kline_disk(code, period_key, fqt)
+            except Exception:
+                _stored2 = None
+            if _stored2 and _stored2.get("items"):
+                _items2 = list(_stored2["items"])
+                _first2 = str((_items2[0] or {}).get("time") or "")[:10]
+                _last2 = str((_items2[-1] or {}).get("time") or "")[:10]
+                _merged2 = None
+                if lo and _first2 and lo < _first2:
+                    from datetime import timedelta as _td
+                    try:
+                        _seg_end = (datetime.strptime(_first2, "%Y-%m-%d") - _td(days=1)).strftime("%Y%m%d")
+                    except ValueError:
+                        _seg_end = ""
+                    try:
+                        _seg = _fetch_remote_kline(code, period=period, adjust=adjust,
+                                                  limit=cap, beg=beg_s, end=_seg_end or end_s)
+                        _seg_items = [it for it in (_seg.get("items") or [])
+                                      if str(it.get("time") or "")[:10] >= (lo or "")]
+                        if _seg_items:
+                            _have = {str(b.get("time") or "")[:10] for b in _items2}
+                            _merged2 = sorted(
+                                [b for b in _seg_items if str(b.get("time") or "")[:10] not in _have] + _items2,
+                                key=lambda b: str(b.get("time") or ""))
+                            _save_kline_disk(code, period_key, fqt,
+                                             {"code": code, "items": _merged2,
+                                              "source": _seg.get("source") or _stored2.get("source") or "",
+                                              "full_history": False})
+                    except Exception as exc:
+                        logger.info("kline segment fill %s [%s,%s): %s", code, lo, _first2, exc)
+                elif hi and _last2 and hi > _last2:
+                    try:
+                        _base2 = _refresh_with_tail(_stored2, code=code, period=period_key,
+                                                    adjust=adjust, disk_adjust=fqt,
+                                                    cap=max(cap, len(_items2)))
+                        if _base2.get("items"):
+                            _merged2 = list(_base2["items"])
+                            _stored2 = dict(_base2)
+                    except Exception as exc:
+                        logger.info("kline tail fill %s: %s", code, exc)
+                if _merged2:
+                    _ranged2 = [it for it in _merged2
+                                if (not lo or str(it.get("time") or "")[:10] >= lo)
+                                and (not hi or str(it.get("time") or "")[:10] <= hi)]
+                    if _ranged2:
+                        if cap > 0 and len(_ranged2) > cap:
+                            _ranged2 = _ranged2[-cap:]
+                        _result2 = _kline_payload({**_stored2, "items": _ranged2})
+                        _result2["full_history"] = bool(_stored2.get("full_history"))
+                        _kline_range_cache.put(cache_key, _result2, cached_at=now)
+                        return _result2
         result = _fetch_remote_kline(
             code, period=period, adjust=adjust, limit=cap, beg=beg_s, end=end_s
         )
@@ -529,6 +727,26 @@ def fetch_kline(
 
     stored = None if force else _load_kline_disk(code, period_key, fqt)
     live = is_cn_market_live()
+
+    if not beg_s and not end_s and cap > _FULL_HISTORY_LIMIT and period_key in _FULL_HISTORY_PERIODS and not force:
+        need_full = (not stored) or len(stored.get("items") or []) < cap or not stored.get("full_history")
+        if not need_full and stored:
+            verified_at = float(stored.get("verified_at") or 0)
+            if (not live) and verified_at >= last_session_close().timestamp():
+                result = _kline_payload(stored)
+                _kline_live_cache.put(mem_key, result, cached_at=now)
+                rr = dict(result)
+                rr["full_history"] = True
+                return _slice_payload(rr, cap)
+        if need_full:
+            try:
+                result = _fetch_full_history(code, period=period_key, adjust=adjust, cap=cap)
+                if result.get("items"):
+                    _save_kline_disk(code, period_key, fqt, result)
+                    _kline_live_cache.put(mem_key, result, cached_at=now)
+                    return _slice_payload(result, cap)
+            except Exception as exc:
+                logger.info("full history failed %s: %s", code, exc)
 
     if stored and len(stored.get("items") or []) >= cap:
         verified_at = float(stored.get("verified_at") or 0)

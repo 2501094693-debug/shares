@@ -1,5 +1,104 @@
 /** 智能分析模块配置 */
 window.AI_MODES = {
+  compare: {
+    id: "compare",
+    kind: "engine",
+    label: "对比分析",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "对比分析",
+    subtitle: "个股相对指数的 OHLC 四图偏离度：每图一分 + 加权总分，可设指数与区间",
+    startBtn: "重新计算",
+    historyHead: "历史报告",
+    reportTitle: "对比分析",
+    reportMetaDefault: "设置参数后计算",
+    historyMeta: "历史报告",
+    emptyReports: "暂无历史报告",
+    resumeFail: "恢复对比分析失败",
+    apiRoot: "/api/analysis/compare",
+    jobStoreKey: "orbit.compare.pack",
+    reportNameRe: /$^/,
+    agentDefs: [],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">⇄</div>
+        <h3>先定指数与区间，再看偏离</h3>
+        <p>计算个股相对指数在开/高/低/收四个维度上的平均偏离（逆向加权1.5倍），再按权重合成总分。默认对比上证指数、近一年。</p>
+        <ul class="ai-empty-tips">
+          <li>总分 &lt;0.5 紧贴，&lt;1.0 轻度偏离，&lt;2.0 明显偏离</li>
+          <li>股涨指跌 / 股跌指涨按 1.5 倍加权</li>
+          <li>收盘权重最高（0.40）</li>
+        </ul>
+      </div>`,
+    resultTitle(pack) {
+      const meta = pack.meta || {};
+      return `${meta.stock_name || meta.stock || ""} 对比分析`.trim();
+    },
+    resultMeta(pack) {
+      const meta = pack.meta || {};
+      const total = pack.total || {};
+      return [
+        meta.index_name || meta.index ? `指数 ${meta.index_name || meta.index}` : "",
+        total.value != null ? `总分 ${total.value}` : "",
+        total.level || "",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 对比分析`;
+    },
+    startQuery(company) {
+      return { company };
+    },
+  },
+
+
+  chip: {
+    id: "chip",
+    kind: "engine",
+    label: "筹码分析",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "筹码分析",
+    subtitle: "目标日 OHLC 在区间同类价格中的位置：排名 + 百分位，可设区间与目标日",
+    startBtn: "重新计算",
+    historyHead: "历史报告",
+    reportTitle: "筹码分析",
+    reportMetaDefault: "设置参数后计算",
+    historyMeta: "历史报告",
+    emptyReports: "暂无历史报告",
+    resumeFail: "恢复筹码分析失败",
+    apiRoot: "/api/analysis/chip",
+    jobStoreKey: "orbit.chip.pack",
+    reportNameRe: /$^/,
+    agentDefs: [],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">◈</div>
+        <h3>先定区间，再看位置</h3>
+        <p>计算目标日开/高/低/收在所选区间同类价格中的排名与百分位（0%=区间最小，100%=区间最大）。默认近一年、目标日为区间末端。</p>
+        <ul class="ai-empty-tips">
+          <li>百分位越高，目标价越接近区间上沿</li>
+          <li>rank 从大到小第几（1=最高），可切 asc 看从小到大</li>
+          <li>目标日非交易日自动取前一个交易日</li>
+        </ul>
+      </div>`,
+    resultTitle(pack) {
+      return `${pack.symbol || ""} 筹码分析`.trim();
+    },
+    resultMeta(pack) {
+      return [
+        pack.target ? `目标日 ${pack.target}` : "",
+        pack.N ? `样本 ${pack.N}` : "",
+        pack.order ? `排序 ${pack.order}` : "",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 筹码分析`;
+    },
+    startQuery(company) {
+      return { company };
+    },
+  },
+
+
   business: {
     id: "business",
     label: "业务简述",
@@ -661,7 +760,7 @@ window.AI_MODES = {
   },
 };
 
-window.AI_MODE_ORDER = ["business", "bazhang", "bazhang-rules", "buffett", "buffett-rules", "competition", "chain", "risk", "trend", "fundamentals", "valuation", "sentiment"];
+window.AI_MODE_ORDER = ["business", "bazhang", "bazhang-rules", "buffett", "buffett-rules", "competition", "chain", "risk", "trend", "fundamentals", "valuation", "sentiment", "chip", "compare"];
 
 window.AI_MODE_ALIASES = {
   business: "business",
@@ -707,6 +806,12 @@ window.AI_MODE_ALIASES = {
   "valuation-analysis": "valuation",
   "估值分析": "valuation",
   "估值": "valuation",
+  chip: "chip",
+  "筹码分析": "chip",
+  "筹码": "chip",
+  compare: "compare",
+  "对比分析": "compare",
+  "对比": "compare",
   fundamentals: "fundamentals",
   "fundamentals-analysis": "fundamentals",
   finval: "fundamentals",

@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 
 from company.news.financialreport.fetcher import get_financial_report
+from company.news.financialreport.trend import build_trend
 from core.api import err, ok
 
 router = APIRouter()
@@ -32,6 +33,23 @@ def stocks_financial_report(
             force=refresh == "1",
         )
         return ok(data)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/stocks/financial-trend")
+def stocks_financial_trend(
+    code: str = Query("", description="股票代码，如 600519"),
+    refresh: str = Query("0"),
+):
+    """某公司自上市以来的主要财务数据走势（年报口径，东方财富）。"""
+    code = code.strip()
+    if not code:
+        return err("缺少参数 code", 400)
+    try:
+        return ok(build_trend(code, force=refresh == "1"))
     except ValueError as exc:
         return err(str(exc), 400)
     except Exception as exc:  # noqa: BLE001

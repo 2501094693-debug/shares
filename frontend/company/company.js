@@ -463,13 +463,21 @@ const els = {
   financialsMeta: document.getElementById("financialsMeta"),
   financialsHint: document.getElementById("financialsHint"),
   financialsSheetSeg: document.getElementById("financialsSheetSeg"),
+  financialsToggles: document.getElementById("financialsToggles"),
   financialsFilterSeg: document.getElementById("financialsFilterSeg"),
   financialsRangeSeg: document.getElementById("financialsRangeSeg"),
   financialsRangeShortBtn: document.getElementById("financialsRangeShortBtn"),
   financialsReadSeg: document.getElementById("financialsReadSeg"),
   financialsUnitSeg: document.getElementById("financialsUnitSeg"),
   financialsDensitySeg: document.getElementById("financialsDensitySeg"),
-  financialsKpis: document.getElementById("financialsKpis"),
+  financialsTrendWrap: document.getElementById("financialsTrendWrap"),
+  financialsTrendChart: document.getElementById("financialsTrendChart"),
+  financialsTrendCanvasWrap: document.getElementById("financialsTrendCanvasWrap"),
+  financialsTrendChart2: document.getElementById("financialsTrendChart2"),
+  financialsTrendCanvasWrap2: document.getElementById("financialsTrendCanvasWrap2"),
+  financialsTrendLegend: document.getElementById("financialsTrendLegend"),
+  financialsTrendLegend2: document.getElementById("financialsTrendLegend2"),
+  financialsTrendMeta: document.getElementById("financialsTrendMeta"),
   financialsBody: document.getElementById("financialsBody"),
   financialsHead: document.getElementById("financialsHead"),
   financialsBodyRows: document.getElementById("financialsBodyRows"),
@@ -523,7 +531,7 @@ const fundHoldersState = {
 let financialsBootstrapped = false;
 const financialsState = {
   loading: false,
-  sheet: "balance",
+  sheet: "chart",
   items: [],
   income: [],
   balance: [],
@@ -725,7 +733,7 @@ const xqEmotionState = {
 let newsGroup = normalizeNewsGroup(params.get("news") || "");
 let newsBootstrapped = { official: false, other: false, reports: false, financials: false };
 let emotionBootstrapped = { eastmoney: false, tonghuashun: false, xueqiu: false };
-const ANALYSIS_PANELS = new Set(["business", "bazhang", "bazhang-rules", "buffett", "buffett-rules", "competition", "chain", "risk", "sentiment", "trend", "fundamentals", "valuation"]);
+const ANALYSIS_PANELS = new Set(["business", "bazhang", "bazhang-rules", "buffett", "buffett-rules", "competition", "chain", "risk", "sentiment", "trend", "fundamentals", "valuation", "chip", "compare"]);
 const EARNINGS_VIEWS = new Set(["bazhang", "bazhang-rules", "buffett", "buffett-rules"]);
 const EARNINGS_FAMILY = new Set(["earnings", "财报简述", ...EARNINGS_VIEWS]);
 let lastEarningsView = "bazhang";
@@ -905,6 +913,8 @@ const chartState = {
   source: "",
   meta: "",
   hoverAbsIndex: null,
+  historyExhausted: false,
+  historyLoading: false,
 };
 
 /** 走势 combo 底部指标：pe 估值 | fundflow 资金流 | margin 融资融券 */
@@ -959,7 +969,7 @@ const CHART_MODES = {
   "15m": { label: "15分", kind: "kline", period: "15m", limit: 360, viewSize: 80, adjust: "none" },
   "30m": { label: "30分", kind: "kline", period: "30m", limit: 360, viewSize: 80, adjust: "none" },
   "60m": { label: "60分", kind: "kline", period: "60m", limit: 240, viewSize: 72, adjust: "none" },
-  day: { label: "日K", kind: "kline", period: "day", limit: 720, viewSize: 90, adjust: "qfq" },
+  day: { label: "日K", kind: "kline", period: "day", limit: 10000, viewSize: 90, adjust: "qfq" },
   week: { label: "周K", kind: "kline", period: "week", limit: 360, viewSize: 80, adjust: "qfq" },
   month: { label: "月K", kind: "kline", period: "month", limit: 240, viewSize: 72, adjust: "qfq" },
 };
@@ -4284,28 +4294,14 @@ const FINANCIALS_SHEETS = {
   },
 };
 
-const FINANCIALS_KPIS = [
-  {
-    label: "营业收入",
-    keys: ["OPERATE_INCOME", "TOTAL_OPERATE_INCOME", "TOTALOPERATEREVE", "OPERATE_INCOME_PK"],
-    kind: "money",
-  },
-  {
-    label: "归母净利润",
-    keys: ["PARENT_NETPROFIT", "PARENTNETPROFIT"],
-    kind: "money",
-  },
-  {
-    label: "经营现金流",
-    keys: ["NETCASH_OPERATE", "NETCASH_OPERATE_PK"],
-    kind: "money",
-  },
-];
-
 function financialsNormalizeSheet(sheet) {
   const raw = String(sheet || "").trim().toLowerCase();
-  if (raw === "income" || raw === "cashflow") return raw;
+  if (raw === "income" || raw === "cashflow" || raw === "chart") return raw;
   return "balance";
+}
+
+function financialsIsChart(sheet = financialsState.sheet) {
+  return financialsNormalizeSheet(sheet) === "chart";
 }
 
 function financialsSheetHasDensity(sheet) {
@@ -4501,46 +4497,13 @@ function syncFinancialsToolbar() {
       btn.classList.toggle("is-active", btn.getAttribute("data-density") === st.density);
     });
   }
+  if (els.financialsToggles) {
+    els.financialsToggles.hidden = financialsIsChart(st.sheet);
+  }
 }
 
 function financialsEmptyRow(colspan, text) {
   return `<tr class="is-empty"><td colspan="${colspan}">${escapeHtml(text)}</td></tr>`;
-}
-
-function paintFinancialsKpis(rows) {
-  if (!els.financialsKpis) return;
-  const latest = rows[0];
-  if (!latest) {
-    els.financialsKpis.hidden = true;
-    els.financialsKpis.innerHTML = "";
-    return;
-  }
-  const day = financialsDate(latest);
-  const merged = (Array.isArray(financialsState.items) ? financialsState.items : []).find(
-    (row) => financialsDate(row) === day,
-  ) || latest;
-  const index = financialsPeriodIndex(financialsState.items.length ? financialsState.items : rows);
-  const prior = financialsPriorRow(merged, index);
-  const unit = financialsState.unit;
-  els.financialsKpis.hidden = false;
-  els.financialsKpis.innerHTML = FINANCIALS_KPIS.map((kpi) => {
-    const curr = financialsNum(financialsPick(merged, ...(kpi.keys || [])));
-    const prev = prior ? financialsNum(financialsPick(prior, ...(kpi.keys || []))) : null;
-    const yoy = financialsYoyPack(curr, prev, kpi.kind);
-    const value = kpi.kind === "money" && curr != null
-      ? `${financialsFmtMoney(curr, unit)} ${unit === "wan" ? "万" : "亿"}`
-      : financialsFmtLevel(curr, kpi.kind, unit);
-    const chg = yoy
-      ? `<span class="financials-kpi-chg" data-tone="${yoy.tone}">${escapeHtml(yoy.text)}</span>`
-      : `<span class="financials-kpi-chg">—</span>`;
-    return `<div class="financials-kpi">
-      <div class="financials-kpi-label">${escapeHtml(kpi.label)}</div>
-      <div class="financials-kpi-row">
-        <span class="financials-kpi-value">${escapeHtml(value)}</span>
-        ${chg}
-      </div>
-    </div>`;
-  }).join("");
 }
 
 function financialsLineEmpty(line, periods) {
@@ -4756,10 +4719,349 @@ function paintFinancialsStatement(sheet, rows) {
     .join("");
 }
 
+const FINANCIALS_TREND_CHARTS = [
+  {
+    legendId: "financialsTrendLegend",
+    canvasId: "financialsTrendChart",
+    wrapId: "financialsTrendCanvasWrap",
+    series: [{ id: "revenue", label: "营业收入", color: "#2ad4b8" }],
+  },
+  {
+    legendId: "financialsTrendLegend2",
+    canvasId: "financialsTrendChart2",
+    wrapId: "financialsTrendCanvasWrap2",
+    series: [{ id: "parent_profit", label: "归母净利润", color: "#f0b429" }],
+  },
+  {
+    legendId: "financialsTrendLegend3",
+    canvasId: "financialsTrendChart3",
+    wrapId: "financialsTrendCanvasWrap3",
+    series: [{ id: "operate_cash", label: "经营现金流", color: "#5b9dff" }],
+  },
+  {
+    legendId: "financialsTrendLegend4",
+    canvasId: "financialsTrendChart4",
+    wrapId: "financialsTrendCanvasWrap4",
+    series: [{ id: "invest_cash", label: "投资现金流", color: "#b57bff" }],
+  },
+];
+
+/* 四张走势图共享同一窗口：count 为可见年数，start 为起始下标（相对全部年份）。 */
+const financialsTrendView = { count: 12, start: 0 };
+
+const financialsTrendState = { loading: false, loaded: false, items: [], meta: null, error: "" };
+
+async function loadFinancialsTrend() {
+  const wrap = els.financialsTrendWrap || document.getElementById("financialsTrendWrap");
+  if (financialsTrendState.loaded || financialsTrendState.loading) {
+    if (wrap && financialsIsChart()) {
+      wrap.hidden = false;
+      paintFinancialsTrend();
+    }
+    return;
+  }
+  financialsTrendState.loading = true;
+  setFinancialsTrendMeta("正在加载上市以来财务数据…");
+  try {
+    const json = await api(`/api/stocks/financial-trend?code=${encodeURIComponent(code)}`);
+    const data = json.data || {};
+    financialsTrendState.items = Array.isArray(data.items) ? data.items : [];
+    financialsTrendState.meta = data;
+    financialsTrendState.error = "";
+    financialsTrendState.loaded = true;
+    financialsTrendView.count = Math.min(10, financialsTrendState.items.length || 10);
+    financialsTrendView.start = Math.max(0, financialsTrendState.items.length - financialsTrendView.count);
+  } catch (errApi) {
+    financialsTrendState.error = String((errApi && errApi.message) || errApi || "加载失败");
+    financialsTrendState.items = [];
+  } finally {
+    financialsTrendState.loading = false;
+  }
+  if (financialsIsChart()) {
+    if (wrap) wrap.hidden = false;
+    paintFinancialsTrend();
+  }
+}
+
+function setFinancialsTrendMeta(text) {
+  if (els.financialsTrendMeta) els.financialsTrendMeta.textContent = text;
+  else { const m = document.getElementById("financialsTrendMeta"); if (m) m.textContent = text; }
+}
+
+function financialsTrendClampView(total) {
+  const view = financialsTrendView;
+  view.count = Math.max(4, Math.min(Math.max(1, total), Math.round(view.count) || 10));
+  view.start = Math.max(0, Math.min(Math.max(0, total - view.count), Math.round(view.start) || 0));
+  return view;
+}
+
+const TREND_Q = ["Q1", "Q2", "Q3", "Q4"];
+const TREND_Q_ALPHA = [0.38, 0.58, 0.78, 1];
+
+function drawGroupedBars(canvasId, wrapId, legendId, years, flatValues, flatCum, color, label) {
+  const canvas = document.getElementById(canvasId);
+  const wrapEl = document.getElementById(wrapId);
+  const legendEl = document.getElementById(legendId);
+  if (!canvas || !wrapEl) return;
+  const numOrNull = (raw) => (typeof raw === "number" && Number.isFinite(raw) ? raw : null);
+  const values = (flatValues || []).map(numOrNull);
+  const cums = (flatCum || []).map(numOrNull);
+  if (legendEl) {
+    legendEl.innerHTML = TREND_Q
+      .map((q, qi) => `<span class="financials-trend-item"><i style="background:${color};opacity:${TREND_Q_ALPHA[qi]}"></i>${escapeHtml(label)}${q}</span>`)
+      .join("");
+  }
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = Math.max(280, wrapEl.clientWidth || 600);
+  const cssH = 220;
+  canvas.style.width = "100%";
+  canvas.style.height = `${cssH}px`;
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const colors = typeof chartColors === "function" ? chartColors() : { grid: "rgba(42,212,184,.08)", muted: "#8494a8" };
+  ctx.clearRect(0, 0, cssW, cssH);
+  const pad = { l: 52, r: 10, t: 12, b: 26 };
+  const W = cssW - pad.l - pad.r;
+  const H = cssH - pad.t - pad.b;
+  const totalYears = (years || []).length;
+  const view = financialsTrendClampView(totalYears);
+  const visYears = (years || []).slice(view.start, view.start + view.count);
+  const visValues = [];
+  const visCums = [];
+  visYears.forEach((_, yi) => {
+    for (let q = 0; q < 4; q += 1) {
+      const gi = (view.start + yi) * 4 + q;
+      visValues.push(values[gi] ?? null);
+      visCums.push(cums[gi] ?? null);
+    }
+  });
+  const allVals = visValues.filter((v) => v != null);
+  let lo = Math.min(...allVals);
+  let hi = Math.max(...allVals);
+  if (lo === hi) { lo -= Math.abs(lo) * 0.1 || 1; hi += Math.abs(hi) * 0.1 || 1; }
+  const span = (hi - lo) || 1;
+  lo -= span * 0.08; hi += span * 0.1;
+  if (lo > 0) lo = 0;
+  if (hi < 0) hi = 0;
+  const band = W / Math.max(1, visValues.length);
+  const barW = Math.min(band * 0.72, 44);
+  const yAt = (v) => pad.t + ((hi - v) / (hi - lo)) * H;
+  const yZero = yAt(0);
+  ctx.strokeStyle = colors.grid; ctx.lineWidth = 1;
+  ctx.fillStyle = colors.muted; ctx.font = "11px sans-serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let g = 0; g <= 4; g += 1) {
+    const v = hi - ((hi - lo) * g) / 4;
+    const y = pad.t + (H * g) / 4;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + W, y); ctx.stroke();
+    ctx.fillText(fmtVol(v), pad.l - 6, y);
+  }
+  canvas._trendGeom = { padL: pad.l, band, startSlot: view.start * 4, cssW: W };
+  canvas._trendData = { years: visYears, startYear: view.start, values: visValues, cums: visCums, color, label };
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  const step = Math.max(1, Math.ceil(visYears.length / 12));
+  visYears.forEach((yr, yi) => {
+    if (yi % step === 0 || yi === visYears.length - 1) {
+      ctx.fillText(String(yr), pad.l + band * (yi * 4 + 2), pad.t + H + 6);
+    }
+  });
+  ctx.save(); ctx.strokeStyle = "rgba(132,148,168,.5)"; ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(pad.l, yZero); ctx.lineTo(pad.l + W, yZero); ctx.stroke(); ctx.restore();
+  const hoverSlot = typeof canvas._trendHover === "number" ? canvas._trendHover : -1;
+  ctx.fillStyle = color;
+  visValues.forEach((v, i) => {
+    if (v == null) return;
+    const slot = view.start * 4 + i;
+    const gx = pad.l + band * (i + 0.5) - barW / 2;
+    const y = yAt(v);
+    const top = Math.min(y, yZero);
+    const h = Math.max(1, Math.abs(y - yZero));
+    ctx.save();
+    ctx.globalAlpha = TREND_Q_ALPHA[i % 4];
+    ctx.fillRect(gx, top, barW, h);
+    ctx.restore();
+    if (slot === hoverSlot) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,255,255,.9)";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(gx, top, barW, h);
+      ctx.restore();
+    }
+  });
+}
+
+function financialsTrendTipEl(wrapEl) {
+  let tip = wrapEl.querySelector(":scope > .financials-trend-tip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.className = "financials-trend-tip";
+    tip.hidden = true;
+    wrapEl.appendChild(tip);
+  }
+  return tip;
+}
+
+function financialsTrendShowTip(canvas, slotIdx, cssX, cssY) {
+  const wrapEl = canvas.parentElement;
+  if (!wrapEl) return;
+  const tip = financialsTrendTipEl(wrapEl);
+  const data = canvas._trendData;
+  if (!data) { tip.hidden = true; return; }
+  const rel = slotIdx - data.startYear * 4;
+  const yi = Math.floor(rel / 4);
+  const qi = rel - yi * 4;
+  if (yi < 0 || yi >= data.years.length || qi < 0 || qi > 3) { tip.hidden = true; return; }
+  const v = data.values[rel];
+  const cum = data.cums[rel];
+  if (v == null) { tip.hidden = true; return; }
+  const cumTxt = cum == null ? "—" : fmtVol(cum);
+  tip.innerHTML = `<div class="financials-trend-tip-year">${escapeHtml(String(data.years[yi]))} ${TREND_Q[qi]}</div>`
+    + `<div class="financials-trend-tip-row"><i style="background:${data.color}"></i><span>单季${escapeHtml(data.label)}</span><b>${escapeHtml(fmtVol(v))}</b></div>`
+    + `<div class="financials-trend-tip-row"><i style="background:${data.color};opacity:.45"></i><span>年内累计</span><b>${escapeHtml(cumTxt)}</b></div>`;
+  tip.hidden = false;
+  const wrapW = wrapEl.clientWidth || 600;
+  const flip = cssX > wrapW - 210;
+  tip.style.left = `${flip ? Math.max(0, cssX - 198) : cssX + 12}px`;
+  tip.style.top = `${Math.max(0, Math.min(cssY - 10, 220 - tip.offsetHeight - 8))}px`;
+}
+
+function financialsTrendHideTip(canvas) {
+  const wrapEl = canvas.parentElement;
+  if (!wrapEl) return;
+  const tip = wrapEl.querySelector(":scope > .financials-trend-tip");
+  if (tip) tip.hidden = true;
+}
+
+function bindFinancialsTrendCanvas(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || canvas.dataset.trendBound === "1") return;
+  canvas.dataset.trendBound = "1";
+  const posOf = (event) => {
+    const rect = canvas.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
+  const idxAt = (x) => {
+    const g = canvas._trendGeom;
+    if (!g || !g.band) return -1;
+    return g.startSlot + Math.floor((x - g.padL) / g.band);
+  };
+  canvas.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const total = (canvas._trendFullN || financialsTrendState.items.length) | 0;
+    if (total < 1) return;
+    const view = financialsTrendView;
+    const { x } = posOf(event);
+    const g = canvas._trendGeom;
+    const frac = g && g.cssW ? Math.max(0, Math.min(1, (x - g.padL) / g.cssW)) : 1;
+    const anchor = view.start + frac * view.count;
+    const factor = event.deltaY > 0 ? 1.2 : 0.84;
+    view.count = Math.max(4, Math.min(total, Math.round(view.count * factor)));
+    financialsTrendClampView(total);
+    view.start = Math.max(0, Math.min(total - view.count, Math.round(anchor - frac * view.count)));
+    paintFinancialsTrend();
+  }, { passive: false });
+  let dragX = null;
+  let dragStart = 0;
+  canvas.addEventListener("pointerdown", (event) => {
+    dragX = event.clientX;
+    dragStart = financialsTrendView.start;
+    try { canvas.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    const g = canvas._trendGeom;
+    if (dragX != null && g && g.band) {
+      const total = (canvas._trendFullN || financialsTrendState.items.length) | 0;
+      financialsTrendView.start = dragStart - Math.round((event.clientX - dragX) / g.band);
+      financialsTrendClampView(total);
+      paintFinancialsTrend();
+      return;
+    }
+    const { x, y } = posOf(event);
+    const idx = idxAt(x);
+    FINANCIALS_TREND_CHARTS.forEach((o) => {
+      if (o.canvasId === canvasId) return;
+      const other = document.getElementById(o.canvasId);
+      if (other && other._trendHover !== -1) {
+        other._trendHover = -1;
+        financialsTrendHideTip(other);
+      }
+    });
+    canvas._trendHover = idx;
+    paintFinancialsTrend();
+    financialsTrendShowTip(canvas, idx, x, y);
+  });
+  const endDrag = () => { dragX = null; };
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("pointerleave", () => {
+    dragX = null;
+    canvas._trendHover = -1;
+    financialsTrendHideTip(canvas);
+    paintFinancialsTrend();
+  });
+}
+
+function paintFinancialsTrend() {
+  const st = financialsTrendState;
+  const wrap = els.financialsTrendWrap || document.getElementById("financialsTrendWrap");
+  if (!wrap) return;
+  if (st.loading) {
+    setFinancialsTrendMeta("正在加载上市以来财务数据…");
+    return;
+  }
+  if (st.error || !st.items.length) {
+    setFinancialsTrendMeta(st.error ? `走势加载失败：${st.error}` : "暂无上市以来财务数据");
+    FINANCIALS_TREND_CHARTS.forEach((c) => {
+      const cv = document.getElementById(c.canvasId);
+      const lg = document.getElementById(c.legendId);
+      if (lg) lg.innerHTML = "";
+      if (cv) { const cx = cv.getContext("2d"); if (cx) cx.clearRect(0, 0, cv.width || 0, cv.height || 0); }
+    });
+    return;
+  }
+  const years = st.items.map((r) => String(r.year || ""));
+  financialsTrendClampView(years.length);
+  const numOrNull = (raw) => (typeof raw === "number" && Number.isFinite(raw) ? raw : null);
+  FINANCIALS_TREND_CHARTS.forEach((c) => {
+    bindFinancialsTrendCanvas(c.canvasId);
+    const cv = document.getElementById(c.canvasId);
+    if (cv) cv._trendFullN = years.length;
+    const field = c.series[0];
+    const flat = [];
+    const flatCum = [];
+    st.items.forEach((it) => {
+      const qs = Array.isArray(it.quarters) ? it.quarters : [];
+      for (let q = 0; q < 4; q += 1) {
+        const entry = qs[q] || {};
+        flat.push(entry.has_data ? numOrNull(entry[field.id]) : null);
+        flatCum.push(entry.has_data ? numOrNull(entry[`${field.id}_cum`]) : null);
+      }
+    });
+    drawGroupedBars(c.canvasId, c.wrapId, c.legendId, years, flat, flatCum, field.color, field.label);
+  });
+  const meta = st.meta || {};
+  const scopeTxt = meta.start_year && meta.end_year
+    ? `${meta.start_year}–${meta.end_year}共${meta.count || st.items.length}年`
+    : `${st.items.length}年`;
+  setFinancialsTrendMeta(`单位：元（单季度值，年内累计见悬浮）· ${scopeTxt} · 数据源：东方财富 · 滚轮缩放 / 拖拽左右滚动 / 悬浮查看数值`);
+}
+
 function paintFinancials() {
   const st = financialsState;
   const sheet = financialsNormalizeSheet(st.sheet);
   st.sheet = sheet;
+  const isChart = sheet === "chart";
+  if (isChart) {
+    if (els.financialsMeta) {
+      els.financialsMeta.textContent = st.loading ? "加载中…" : "图表 · 上市以来分季度 · 东方财富";
+    }
+    if (els.financialsBody) els.financialsBody.style.display = "none";
+    const trendWrapChart = els.financialsTrendWrap || document.getElementById("financialsTrendWrap");
+    if (trendWrapChart) trendWrapChart.hidden = false;
+    void loadFinancialsTrend();
+    return;
+  }
   const spec = FINANCIALS_SHEETS[sheet] || FINANCIALS_SHEETS.income;
   const rows = financialsVisibleItems();
   const colspan = Math.max(1, rows.length + 1);
@@ -4771,7 +5073,9 @@ function paintFinancials() {
     bits.push(cadenceLabel);
     bits.push(financialsUnitLabel());
     bits.push(readLabel);
-    if (financialsSheetHasDensity(sheet)) bits.push(st.density === "full" ? "完整" : "精读");
+    if (financialsSheetHasDensity(sheet)) {
+      bits.push(st.density === "full" ? "完整" : "精读");
+    }
     els.financialsMeta.textContent = st.loading
       ? "加载中…"
       : st.error
@@ -4780,16 +5084,17 @@ function paintFinancials() {
   }
   if (!els.financialsBodyRows) return;
   if (st.loading || st.error || !rows.length) {
-    if (els.financialsKpis) {
-      els.financialsKpis.hidden = true;
-      els.financialsKpis.innerHTML = "";
-    }
+    if (els.financialsBody) els.financialsBody.style.display = "";
+    const trendWrap0 = els.financialsTrendWrap || document.getElementById("financialsTrendWrap");
+    if (trendWrap0) trendWrap0.hidden = true;
     if (els.financialsHead) els.financialsHead.innerHTML = "";
     const text = st.loading ? "正在加载…" : st.error || `暂无${spec.title}数据`;
     els.financialsBodyRows.innerHTML = financialsEmptyRow(colspan, text);
     return;
   }
-  paintFinancialsKpis(rows);
+  const trendWrap = els.financialsTrendWrap || document.getElementById("financialsTrendWrap");
+  if (els.financialsBody) els.financialsBody.style.display = "";
+  if (trendWrap) trendWrap.hidden = true;
   paintFinancialsStatement(sheet, rows);
 }
 
@@ -4900,6 +5205,18 @@ function setupFinancialsBox() {
       const pack = financialsEnsureCollapsed(financialsState.sheet);
       pack[label] = !pack[label];
       paintFinancials();
+    });
+  }
+  if (!window.__financialsTrendResizeBound) {
+    window.__financialsTrendResizeBound = true;
+    let _t = 0;
+    window.addEventListener("resize", () => {
+      window.clearTimeout(_t);
+      _t = window.setTimeout(() => {
+        if (financialsState.items?.length && financialsIsChart() && !document.getElementById("panel-news")?.hidden) {
+          try { paintFinancialsTrend(); } catch { /* ignore */ }
+        }
+      }, 150);
     });
   }
 }
@@ -8585,7 +8902,7 @@ function dayBreakIndices(items) {
 }
 
 function setChartSource(text) {
-  if (els.chartMeta) els.chartMeta.textContent = text || "";
+  if (els.chartMeta) { els.chartMeta.textContent = text || ""; els.chartMeta.title = text || ""; }
 }
 
 function setChartStatus(message, { empty = false } = {}) {
@@ -8620,7 +8937,10 @@ function chartMinViewSize(total, { ticks = false } = {}) {
 
 function refreshChartWindowStatus() {
   if (!(chartState.allItems || []).length) return;
-  setChartSource(chartState.source || "");
+  const first = String((chartState.allItems[0] || {}).time || "").slice(0, 10);
+  const tail = chartState.historyExhausted && chartState.mode === "day" && first ? (" \u00b7 \u81ea " + first + "\u4e0a\u5e02\u8d77") : "";
+  const loading = chartState.historyLoading ? " \u00b7 \u6b63\u5728\u52a0\u8f7d\u66f4\u65e9\u65e5\u7ebf\u2026" : "";
+  setChartSource((chartState.source || "") + tail + loading);
 }
 
 function setChartViewStart(nextStart, { render = true, hoverIndex = null } = {}) {
@@ -8629,6 +8949,7 @@ function setChartViewStart(nextStart, { render = true, hoverIndex = null } = {})
   if (start === chartState.viewStart && chartState.items.length) {
     syncChartScrollBar();
     if (render) renderChart(hoverIndex);
+    if (start <= 15) void loadOlderKline();
     return start;
   }
   chartState.viewStart = start;
@@ -8637,6 +8958,7 @@ function setChartViewStart(nextStart, { render = true, hoverIndex = null } = {})
   syncChartScrollBar();
   if (render) renderChart(hoverIndex);
   propagateLinkedAxis("kline");
+  if (start <= 15) void loadOlderKline();
   return start;
 }
 
@@ -8671,7 +8993,7 @@ function syncChartScrollBar() {
   if (!bar) return;
   const { maxStart, start, total, size } = chartViewWindow();
   const canScroll = total > size && maxStart > 0;
-  if (wrap) wrap.classList.toggle("is-disabled", !canScroll);
+  if (wrap) wrap.classList.toggle("is-disabled", !canScroll && !chartState.historyLoading && !kiteHistoryMore(chartState.mode));
   bar.disabled = !canScroll;
   bar.min = "0";
   bar.max = String(Math.max(0, maxStart));
@@ -8682,8 +9004,67 @@ function syncChartScrollBar() {
   bar.style.setProperty("--thumb-w", `${thumbPx}px`);
 }
 
+/** 日K可回滚到上市首日：到最左时自动向前补一段更早数据。 */
+function kiteHistoryMore(mode = chartState.mode) {
+  return mode === "day" && !chartState.historyExhausted;
+}
+
+async function loadOlderKline() {
+  if (!code || chartState.historyLoading || chartState.historyExhausted) return;
+  if (chartState.mode !== "day") return;
+  const all = chartState.allItems || [];
+  if (!all.length) return;
+  const first = String(all[0]?.time || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(first)) {
+    chartState.historyExhausted = true;
+    refreshChartWindowStatus();
+    return;
+  }
+  chartState.historyLoading = true;
+  refreshChartWindowStatus();
+  try {
+    const endDay = shiftIsoDate(first, -1);
+    const qs = new URLSearchParams({
+      code,
+      period: "day",
+      adjust: klineAdjustFor(chartState.mode),
+      limit: "10000",
+      end: endDay || first,
+    });
+    const json = await api(`/api/stocks/line?${qs.toString()}`);
+    const older = (json.data?.items || []).filter(
+      (d) => String(d?.time || "").slice(0, 10) < first
+    );
+    if (!older.length) {
+      if (json.data && json.data.full_history) chartState.historyExhausted = true;
+    } else {
+      const seen = new Set(older.map((d) => String(d?.time || "").slice(0, 10)));
+      const merged = [...older, ...all.filter((d) => !seen.has(String(d?.time || "").slice(0, 10)))];
+      const keepSize = Number(chartState.viewSize) || 90;
+      chartState.allItems = merged;
+      chartState.viewStart = older.length;
+      chartState.viewSize = keepSize;
+      chartState.items = chartViewWindow().items;
+      if (json.data && json.data.full_history) chartState.historyExhausted = true;
+    }
+  } catch {
+    /* 到最左加载失败就停住，不打扰当前视图 */
+  } finally {
+    chartState.historyLoading = false;
+    syncChartScrollBar();
+    if (chartState.allItems.length) {
+      refreshChartWindowStatus();
+      renderChart();
+      propagateLinkedAxis("kline");
+    }
+  }
+}
+
 function resetChartViewport(allItems, modeConf) {
   chartState.allItems = Array.isArray(allItems) ? allItems : [];
+  chartState.historyExhausted = chartState.mode !== "day" ? true : false;
+  chartState._pendingFullHistory = null;
+  chartState.historyLoading = false;
   const total = chartState.allItems.length;
   let viewSize = Number(modeConf?.viewSize);
   if (!Number.isFinite(viewSize) || viewSize <= 0) {
@@ -11899,6 +12280,7 @@ async function loadChart(mode = chartState.mode, options = {}) {
     const json = await api(`/api/stocks/line?${qs.toString()}`);
     const data = json.data || {};
     resetChartViewport(data.items || [], conf);
+    if (chartState.mode === "day") chartState.historyExhausted = Boolean(data.full_history);
     chartState.preClose = null;
     chartState.source = data.source || "";
 

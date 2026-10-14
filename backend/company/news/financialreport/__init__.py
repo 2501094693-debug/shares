@@ -7,9 +7,12 @@
 
 from company.news.financialreport.fetcher import get_financial_report
 from company.news.financialreport.statements import fetch_all_statements, fetch_statement
+from company.news.financialreport.trend import build_trend, fetch_trend_rows
 
 __all__ = [
+    "build_trend",
     "fetch_all_statements",
     "fetch_statement",
+    "fetch_trend_rows",
     "get_financial_report",
 ]

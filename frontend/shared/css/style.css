@@ -3184,7 +3184,13 @@ html.company-charts-on .company-page.app {
   justify-self: end;
   align-self: center;
   margin-top: 0;
-  max-width: 9rem;
+  max-width: 18rem;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .chart-card--kline .chart-card__controls {
@@ -8942,6 +8948,95 @@ html.company-charts-on .company-panel[data-panel="others"] .others-view[data-oth
   flex-shrink: 0;
 }
 
+.financials-trend {
+  padding: 8px 12px 4px;
+  border-top: 1px solid var(--line);
+}
+.financials-trend-chart-block + .financials-trend-chart-block {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+.financials-trend-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.financials-trend-title {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.financials-trend-legend {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.financials-trend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.financials-trend-item i {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.financials-trend-canvas-wrap {
+  width: 100%;
+  position: relative;
+}
+.financials-trend-canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+.financials-trend-canvas-wrap canvas:active {
+  cursor: grabbing;
+}
+.financials-trend-tip {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  min-width: 150px;
+  max-width: 230px;
+  background: color-mix(in srgb, var(--panel) 92%, #000);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.financials-trend-tip[hidden] {
+  display: none;
+}
+.financials-trend-tip-year {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.financials-trend-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.financials-trend-tip-row i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.financials-trend-tip-row b {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
 .financials-chrome {
   padding: 8px 12px 0;
 }
@@ -8963,6 +9058,11 @@ html.company-charts-on .company-panel[data-panel="others"] .others-view[data-oth
 
 .financials-toggles {
   gap: 10px;
+}
+
+.financials-toggles[hidden],
+.financials-seg[hidden] {
+  display: none;
 }
 
 .financials-tabs button,
@@ -9546,6 +9646,13 @@ body.app-shell.screen-page-root .screen-page.market-page {
 .screen-page-root[data-screen-mode="industry"] .judgment-shares-panel,
 .screen-page-root[data-screen-mode="industry"] .judgment-query,
 .screen-page-root[data-screen-mode="industry"] .screen-layout,
+.screen-page-root[data-screen-mode="select"] .judgment-limit,
+.screen-page-root[data-screen-mode="select"] .judgment-shares,
+.screen-page-root[data-screen-mode="select"] .judgment-shares-panel,
+.screen-page-root[data-screen-mode="select"] .judgment-industry,
+.screen-page-root[data-screen-mode="select"] .judgment-query,
+.screen-page-root[data-screen-mode="select"] .screen-layout,
+.screen-page-root[data-screen-mode="select"] #refreshBtn,
 .screen-page-root:not([data-screen-mode="industry"]) .rot-board {
   display: none;
 }
@@ -13483,3 +13590,87 @@ body.app-shell.mine-page-root {
 .mine-cards .screen-card-meta b[data-tone="up"]{color:var(--up)}
 .mine-cards .screen-card-meta b[data-tone="down"]{color:var(--down)}
 .mine-cards .chart-card--kline{min-height:220px}
+
+/* 股票分析（select）：输入筛选 + 输出筛选 + 结果占满剩余高度 */
+.screen-page-root[data-screen-mode="select"] .app.company-page{flex:1;min-height:0;height:100%;display:flex;flex-direction:column;overflow:hidden}
+.screen-page-root[data-screen-mode="select"] .topbar{flex:none}
+.screen-page-root[data-screen-mode="select"] .market-toolbar{flex:none}
+.select-panel{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+.select-panel.hidden{display:none}
+.select-cards{display:grid;grid-template-columns:1fr 1.4fr;gap:8px;flex:none}
+.select-card{background:transparent;border:0;border-radius:0;padding:4px 6px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.select-card-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.select-card-head h3{margin:0;font-size:13px;font-weight:600}
+.sel-count{font-size:12px;color:var(--accent);font-weight:600}
+.select-card textarea{background:color-mix(in srgb,#000 25%,var(--panel));border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:9px 11px;font-size:13px;width:100%;box-sizing:border-box;resize:vertical;min-height:88px;font-family:var(--mono,"JetBrains Mono",monospace)}
+.select-card textarea:focus{outline:none;border-color:var(--accent)}
+.select-hint{margin:0;font-size:11.5px;color:var(--muted)}
+.sel-presets{display:flex;gap:6px;flex-wrap:wrap}
+.sel-presets button,.select-quick button{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:99px;font-size:12px;padding:4px 11px;cursor:pointer;transition:all .15s}
+.sel-presets button:hover,.select-quick button:hover{color:var(--ink);border-color:var(--accent)}
+.sel-presets button.is-active{background:color-mix(in srgb,var(--accent) 22%,transparent);border-color:var(--accent);color:var(--ink)}
+.select-field{display:grid;grid-template-columns:64px 1fr;align-items:center;gap:8px;font-size:13px}
+.select-filters{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px}
+.select-field>span:first-child{color:var(--muted)}
+.select-field input,.select-field select{background:color-mix(in srgb,#000 25%,var(--panel));border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:7px 10px;font-size:13px;width:100%;box-sizing:border-box}
+.select-field input:focus,.select-field select:focus{outline:none;border-color:var(--accent)}
+.select-dates{display:flex;align-items:center;gap:6px}
+.select-dates i{color:var(--muted);font-style:normal}
+.select-quick{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--muted);padding-top:2px}
+.select-actions{display:flex;align-items:center;gap:10px;flex:none;padding:2px 6px}
+.select-actions .btn.primary{padding:7px 22px;font-size:13px}
+.sel-pass-count{font-size:12.5px;color:var(--accent)}
+.sel-progress{display:flex;align-items:center;gap:10px;background:transparent;border:0;padding:2px 6px}
+.sel-progress.hidden{display:none}
+.sel-progress-bar{flex:1;height:8px;border-radius:99px;background:color-mix(in srgb,var(--line) 60%,transparent);overflow:hidden}
+.sel-progress-bar i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accent),#3dd68c);transition:width .2s}
+.sel-result-head{display:flex;align-items:center;gap:12px;padding:2px 4px}
+.sel-result-head.hidden{display:none}
+.sel-result-head strong{font-size:14px}
+.sel-toggle{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);cursor:pointer}
+#selResult.sel-cards{display:flex;flex-direction:row;flex-wrap:nowrap;gap:10px;overflow-x:auto;overflow-y:hidden;flex:1 1 0%;min-height:0;height:auto;cursor:grab;touch-action:pan-x pan-y;user-select:none;-webkit-user-select:none;scroll-snap-type:x proximity;padding:6px;scrollbar-width:thin;border-top:1px solid var(--line)}
+#selResult.sel-cards .screen-empty{flex:0 0 auto}
+#selResult.sel-cards .screen-card{flex:0 0 var(--company-kline-w);width:var(--company-kline-w);min-width:var(--company-kline-w);max-width:none;max-height:100%;min-height:0;overflow:hidden;cursor:grab}
+#selResult.sel-cards .screen-card .chart-card.chart-card--kline{flex:1 1 0%;width:100%;min-height:0}
+#selResult.sel-cards .screen-card .chart-card__stage{flex:1 1 0%;min-height:0}
+#selResult.sel-cards .screen-card .chart-canvas-wrap{height:auto;min-height:0;flex:1 1 0%}
+@media (max-width:720px){#selResult.sel-cards{height:440px;min-height:440px}}
+#selRunBtn.is-loading{opacity:.65;pointer-events:none}
+.select-result{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:6px 6px 2px}
+.select-result .rot-scroll{max-height:560px;overflow:auto}
+.select-result .rot-table{width:100%}
+.select-result .rot-table thead th{position:sticky;top:0;background:var(--panel);z-index:1}
+.select-result .rot-table td.num,.select-result .rot-table th.num{text-align:right;font-variant-numeric:tabular-nums}
+.sel-pill{display:inline-block;border-radius:99px;font-size:11.5px;padding:2px 10px;border:1px solid}
+.sel-pill.pass{color:#3dd68c;border-color:color-mix(in srgb,#3dd68c 55%,transparent);background:color-mix(in srgb,#3dd68c 12%,transparent)}
+.sel-pill.fail{color:var(--muted);border-color:var(--line)}
+.sel-bar{height:6px;border-radius:99px;background:color-mix(in srgb,var(--line) 60%,transparent);margin-top:4px;overflow:hidden;min-width:64px}
+.sel-bar i{display:block;height:100%;border-radius:99px}
+.sel-bar.hi i{background:linear-gradient(90deg,#0f9d63,#3dd68c)}
+.sel-bar.lo i{background:linear-gradient(90deg,#8494a8,#c3cfdd)}
+.sel-meta-line{display:flex;gap:14px;align-items:center;padding:8px 10px 4px;font-size:12.5px;color:var(--muted)}
+.sel-meta-line b{color:var(--ink)}
+.sel-skel{display:flex;flex-direction:column;gap:8px;padding:12px}
+.sel-skel i{display:block;height:34px;border-radius:8px;background:linear-gradient(90deg,color-mix(in srgb,var(--line) 40%,transparent) 25%,color-mix(in srgb,var(--line) 75%,transparent) 50%,color-mix(in srgb,var(--line) 40%,transparent) 75%);background-size:200% 100%;animation:selShimmer 1.2s infinite}
+@keyframes selShimmer{to{background-position:-200% 0}}
+@media (max-width:1080px){.select-cards{grid-template-columns:1fr 1fr}.select-card--symbols{grid-column:1/-1}}
+@media (max-width:720px){.select-cards{grid-template-columns:1fr}.select-hero{flex-direction:column;align-items:flex-start}}
+
+/* 公司详情研判 · 筹码分析 */
+.chip-params{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:flex-end;margin-bottom:10px}
+.chip-params label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
+.chip-params input,.chip-params select{background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:7px 9px;font-size:13px}
+.chip-bar{height:8px;border-radius:99px;background:color-mix(in srgb,var(--line) 60%,transparent);min-width:90px;overflow:hidden}
+.chip-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--down),var(--up))}
+
+/* 对比分析四图 */
+.cmp-charts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cmp-charts figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;position:relative}
+.cmp-charts figcaption{font-size:12px;color:var(--muted);margin-bottom:6px}
+.cmp-charts canvas{display:block;width:100%;cursor:grab;touch-action:none}
+.cmp-charts canvas:active{cursor:grabbing}
+.cmp-legend{white-space:nowrap}
+.cmp-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin:0 3px 0 8px;vertical-align:baseline}
+.cmp-tip{position:absolute;z-index:5;pointer-events:none;background:color-mix(in srgb,var(--panel) 92%,#000);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12px;line-height:1.6;color:var(--ink);box-shadow:0 4px 14px rgba(0,0,0,.35);white-space:nowrap}
+.cmp-tip.hidden{display:none}
+@media (max-width:720px){.cmp-charts{grid-template-columns:1fr}}

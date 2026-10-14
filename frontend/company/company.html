@@ -56,6 +56,8 @@
             <button type="button" class="emotion-source-btn" data-source="fundamentals" aria-selected="false">财务估值</button>
             <button type="button" class="emotion-source-btn" data-source="valuation" aria-selected="false">估值分析</button>
             <button type="button" class="emotion-source-btn" data-source="sentiment" aria-selected="false">情绪分析</button>
+            <button type="button" class="emotion-source-btn" data-source="chip" aria-selected="false">筹码分析</button>
+            <button type="button" class="emotion-source-btn" data-source="compare" aria-selected="false">对比分析</button>
           </nav>
           <nav id="earningsSourceBar" class="emotion-source-bar judgment-source-bar judgment-sub-bar" aria-label="财报简述视角" hidden>
             <button type="button" class="emotion-source-btn is-active" data-source="bazhang" aria-selected="true">张新民视角</button>
@@ -654,11 +656,12 @@
           <div class="financials-chrome">
             <div class="financials-toolbar">
               <div id="financialsSheetSeg" class="financials-tabs" role="tablist" aria-label="报表">
-                <button type="button" data-sheet="balance" class="is-active" aria-selected="true">资产负债</button>
+                <button type="button" data-sheet="chart" class="is-active" aria-selected="true">图表</button>
+                <button type="button" data-sheet="balance" aria-selected="false">资产负债</button>
                 <button type="button" data-sheet="income" aria-selected="false">利润表</button>
                 <button type="button" data-sheet="cashflow" aria-selected="false">现金流</button>
               </div>
-              <div class="financials-toggles">
+              <div class="financials-toggles" id="financialsToggles">
                 <div id="financialsFilterSeg" class="financials-seg" role="group" aria-label="口径">
                   <button type="button" data-cadence="quarterly" class="is-active">季报</button>
                   <button type="button" data-cadence="annual">年报</button>
@@ -683,7 +686,45 @@
               </div>
               <p id="financialsMeta" class="financials-meta"></p>
             </div>
-            <div id="financialsKpis" class="financials-kpis" hidden></div>
+            <div class="financials-trend" id="financialsTrendWrap" hidden>
+              <div class="financials-trend-chart-block">
+                <div class="financials-trend-head">
+                  <span class="financials-trend-title">营业收入</span>
+                  <span class="financials-trend-legend" id="financialsTrendLegend"></span>
+                </div>
+                <div class="financials-trend-canvas-wrap" id="financialsTrendCanvasWrap">
+                  <canvas id="financialsTrendChart" height="220" aria-label="营业收入柱状图"></canvas>
+                </div>
+              </div>
+              <div class="financials-trend-chart-block">
+                <div class="financials-trend-head">
+                  <span class="financials-trend-title">归母净利润</span>
+                  <span class="financials-trend-legend" id="financialsTrendLegend2"></span>
+                </div>
+                <div class="financials-trend-canvas-wrap" id="financialsTrendCanvasWrap2">
+                  <canvas id="financialsTrendChart2" height="220" aria-label="归母净利润柱状图"></canvas>
+                </div>
+              </div>
+              <div class="financials-trend-chart-block">
+                <div class="financials-trend-head">
+                  <span class="financials-trend-title">经营现金流</span>
+                  <span class="financials-trend-legend" id="financialsTrendLegend3"></span>
+                </div>
+                <div class="financials-trend-canvas-wrap" id="financialsTrendCanvasWrap3">
+                  <canvas id="financialsTrendChart3" height="220" aria-label="经营现金流柱状图"></canvas>
+                </div>
+              </div>
+              <div class="financials-trend-chart-block">
+                <div class="financials-trend-head">
+                  <span class="financials-trend-title">投资现金流</span>
+                  <span class="financials-trend-legend" id="financialsTrendLegend4"></span>
+                </div>
+                <div class="financials-trend-canvas-wrap" id="financialsTrendCanvasWrap4">
+                  <canvas id="financialsTrendChart4" height="220" aria-label="投资现金流柱状图"></canvas>
+                </div>
+              </div>
+              <p id="financialsTrendMeta" class="financials-meta muted"></p>
+            </div>
           </div>
           <div id="financialsBody" class="financials-body" tabindex="0">
             <table class="market-table financials-table">
@@ -1155,6 +1196,6 @@
   <script src="/js/shared/nav.js?v=nav-industry-20261001"></script>
   <script src="/js/shared/ai-modes.js?v=fundamentals-20260930"></script>
   <script src="/js/shared/company-analysis.js?v=holdings-stats-date-20260930"></script>
-  <script src="/js/company.js?v=periodic-load-ui-20261009m"></script>
-  <script src="</body>
+  <script src="/js/company.js?v=financials-trend-20261014j"></script>
+</body>
 </html>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, Body, Query
@@ -430,3 +431,294 @@ def post_shares_scheme(payload: dict[str, Any] = Body(...)):
         return ok(result)
     except Exception as exc:  # noqa: BLE001
         return err(str(exc), 500)
+@router.post("/api/analysis/select/screen")
+def post_select_screen(payload: dict = Body(...)):
+    """精选股票分析：按 compare/price/jetton 参数批量分析并按结果筛选。"""
+    if not isinstance(payload, dict):
+        return err("body error", 400)
+    symbols = payload.get("symbols")
+    if not isinstance(symbols, list) or not symbols:
+        return err("symbols is required", 400)
+    if len(symbols) > 500:
+        return err("symbols max 500", 400)
+    try:
+        from analysis.select.params import SelectParams
+        from analysis.select.screener import screen_stocks
+        raw = payload.get("params") if isinstance(payload.get("params"), dict) else payload
+        params = SelectParams.from_dict(raw)
+        result = screen_stocks([str(s) for s in symbols], params)
+        return ok(result)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:
+        return err(str(exc), 500)
+
+
+@router.post("/api/analysis/select/analyze")
+def post_select_analyze(payload: dict = Body(...)):
+    """精选股票分析：单只股票跑启用的分析并返回指标。"""
+    if not isinstance(payload, dict):
+        return err("body error", 400)
+    symbol = str(payload.get("symbol") or payload.get("code") or "").strip()
+    if not symbol:
+        return err("symbol is required", 400)
+    try:
+        from analysis.select.params import SelectParams
+        from analysis.select.screener import analyze_one
+        raw = payload.get("params") if isinstance(payload.get("params"), dict) else payload
+        params = SelectParams.from_dict(raw)
+        return ok(analyze_one(symbol, params))
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:
+        return err(str(exc), 500)
+@router.get("/api/analysis/chip")
+def get_chip_analysis(
+    company: str = Query("", description="公司名称或代码"),
+    start: str = Query("", description="区间开始 YYYY-MM-DD"),
+    end: str = Query("", description="区间结束 YYYY-MM-DD"),
+    target: str = Query("", description="目标日 YYYY-MM-DD"),
+    order: str = Query("desc", description="asc 或 desc"),
+):
+    """筹码分析（价格位置）：目标日 OHLC 在区间同类价格中的排名与百分比。"""
+    from datetime import date, timedelta
+    from analysis.select.price.service import price_position
+    m = re.search(r"(\d{6})", company or "")
+    symbol = m.group(1) if m else (company or "").strip()
+    if not symbol:
+        return err("company symbol is required", 400)
+    today = date.today().isoformat()
+    if not end:
+        end = today
+    if not start:
+        try:
+            end_d = date.fromisoformat(end[:10])
+        except ValueError:
+            end_d = date.today()
+        start = (end_d - timedelta(days=365)).isoformat()
+    if not target:
+        target = end
+    try:
+        result = price_position(symbol, start, end, target, order or "desc")
+        return ok(result)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:
+        return err(str(exc), 500)
+@router.get("/api/analysis/compare")
+def get_compare_analysis(
+    company: str = Query("", description="公司名称或代码"),
+    index: str = Query("SH000001", description="对比指数代码"),
+    beg: str = Query("", description="区间开始 YYYY-MM-DD"),
+    end: str = Query("", description="区间结束 YYYY-MM-DD"),
+):
+    """对比分析：个股相对指数的 OHLC 四图偏离度。"""
+    from datetime import date, timedelta
+    from analysis.select.compare.stock_vs_index import compare_stock_vs_index
+    m = re.search(r"(\d{6})", company or "")
+    symbol = m.group(1) if m else (company or "").strip()
+    if not symbol:
+        return err("company symbol is required", 400)
+    index_code = (index or "SH000001").strip()
+    today = date.today().isoformat()
+    if not end:
+        end = today
+    if not beg:
+        try:
+            end_d = date.fromisoformat(end[:10])
+        except ValueError:
+            end_d = date.today()
+        beg = (end_d - timedelta(days=365)).isoformat()
+    try:
+        result = compare_stock_vs_index(symbol, index_code, beg[:10], end[:10])
+        return ok(result)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc)
+        if "Connection aborted" in msg or "RemoteDisconnected" in msg or "ConnectionError" in type(exc).__name__:
+            return err("行情接口连接中断（东财限流/抖动），请等待10秒后点“重新计算”重试", 503)
+        return err(msg, 500)
+@router.post("/api/analysis/select/price-screen")
+def post_price_screen(payload: dict = Body(...)):
+    """股票分析（价格位置）：默认全市场扫描，按 price 参数批量分析并按分位筛选。"""
+    if not isinstance(payload, dict):
+        return err("body error", 400)
+    symbols = payload.get("symbols")
+    if symbols is None:
+        try:
+            from market.shares.service import service as shares_service
+            data = shares_service.list()
+            symbols = [str((it or {}).get("code") or "") for it in (data.get("items") or [])]
+            symbols = [s for s in symbols if s.strip()]
+        except Exception as exc:
+            return err(f"全市场列表获取失败: {exc}", 500)
+    if not isinstance(symbols, list) or not symbols:
+        return err("symbols is required", 400)
+    if len(symbols) > 6000:
+        return err("symbols max 6000", 400)
+    start = str(payload.get("start") or "").strip()
+    end = str(payload.get("end") or "").strip()
+    target = str(payload.get("target") or "").strip()
+    order = str(payload.get("order") or "desc").strip().lower()
+    filters = payload.get("filters") if isinstance(payload.get("filters"), dict) else {}
+    pct_min = filters.get("percent_min") if isinstance(filters.get("percent_min"), dict) else {}
+    pct_max = filters.get("percent_max") if isinstance(filters.get("percent_max"), dict) else {}
+    try:
+        workers = max(1, min(int(payload.get("max_workers", 32)), 64))
+    except (TypeError, ValueError):
+        return err("max_workers invalid", 400)
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        from analysis.select.price.service import FIELDS, price_position
+
+        def _one(symbol: str) -> dict:
+            symbol = str(symbol).strip()
+            try:
+                r = price_position(symbol, start, end, target, order)
+            except Exception as exc:
+                return {"symbol": symbol, "pass": False, "reasons": [str(exc)], "metrics": {}}
+            res = r.get("result") or {}
+            metrics = {}
+            for k in FIELDS:
+                if isinstance(res.get(k), dict):
+                    metrics[k] = {"percent": res[k].get("percent"), "rank": res[k].get("rank"),
+                                  "total": res[k].get("total"), "value": res[k].get("value")}
+            reasons = []
+            for k in FIELDS:
+                v = (metrics.get(k) or {}).get("percent")
+                if v is None:
+                    continue
+                if k in pct_min and v < float(pct_min[k]):
+                    reasons.append(f"{k}{v}低于{pct_min[k]}")
+                if k in pct_max and v > float(pct_max[k]):
+                    reasons.append(f"{k}{v}高于{pct_max[k]}")
+            return {"symbol": symbol, "pass": not reasons, "reasons": reasons,
+                    "metrics": metrics, "target": r.get("target"), "N": r.get("N")}
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            rows = list(pool.map(_one, [str(s) for s in symbols]))
+        passed = sorted([r for r in rows if r.get("pass")],
+                        key=lambda r: ((r.get("metrics") or {}).get("close") or {}).get("percent") or 0,
+                        reverse=True)
+        failed = [r for r in rows if not r.get("pass")]
+        return ok({"params": {"start": start, "end": end, "target": target, "order": order,
+                              "filters": {"percent_min": pct_min, "percent_max": pct_max}},
+                   "total": len(rows), "passed": passed, "failed": failed,
+                   "passed_symbols": [r["symbol"] for r in passed]})
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:
+        return err(str(exc), 500)
+@router.post("/api/analysis/select/price-stream")
+def post_price_stream(payload: dict = Body(...)):
+    """股票分析流式扫描：NDJSON 逐只推送，符合条件的直接展示。"""
+    import json
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from fastapi.responses import StreamingResponse
+    if not isinstance(payload, dict):
+        return err("body error", 400)
+    symbols = payload.get("symbols")
+    names: dict[str, str] = {}
+    if symbols is None:
+        try:
+            from market.shares.service import service as shares_service
+            data = shares_service.list()
+            items = data.get("items") or []
+            symbols = []
+            for it in items:
+                code = str((it or {}).get("code") or "").strip()
+                if code:
+                    symbols.append(code)
+                    names[code] = str((it or {}).get("name") or "")
+        except Exception as exc:
+            return err(f"market list failed: {exc}", 500)
+    if not isinstance(symbols, list) or not symbols:
+        return err("symbols is required", 400)
+    symbols = [str(s).strip() for s in symbols if str(s).strip()][:6000]
+    skip = payload.get("skip")
+    if isinstance(skip, list) and skip:
+        skip_set = {str(s).strip() for s in skip if str(s).strip()}
+        if skip_set:
+            symbols = [s for s in symbols if s not in skip_set]
+    start = str(payload.get("start") or "").strip()
+    end = str(payload.get("end") or "").strip()
+    target = str(payload.get("target") or "").strip()
+    order = str(payload.get("order") or "desc").strip().lower()
+    filters = payload.get("filters") if isinstance(payload.get("filters"), dict) else {}
+    pct_min = filters.get("percent_min") if isinstance(filters.get("percent_min"), dict) else {}
+    pct_max = filters.get("percent_max") if isinstance(filters.get("percent_max"), dict) else {}
+    try:
+        workers = max(1, min(int(payload.get("max_workers", 32)), 64))
+    except (TypeError, ValueError):
+        return err("max_workers invalid", 400)
+
+    def _one(symbol: str) -> dict:
+        from analysis.select.price.service import FIELDS, price_position
+        try:
+            r = price_position(symbol, start, end, target, order)
+        except Exception as exc:
+            return {"symbol": symbol, "name": names.get(symbol, ""), "pass": False,
+                    "reasons": [str(exc)], "metrics": {}}
+        res = r.get("result") or {}
+        metrics = {}
+        for k in FIELDS:
+            if isinstance(res.get(k), dict):
+                metrics[k] = {"percent": res[k].get("percent"), "rank": res[k].get("rank"),
+                              "total": res[k].get("total"), "value": res[k].get("value")}
+        reasons = []
+        for k in FIELDS:
+            v = (metrics.get(k) or {}).get("percent")
+            if v is None:
+                continue
+            if k in pct_min and v < float(pct_min[k]):
+                reasons.append(f"{k}{v}低于{pct_min[k]}")
+            if k in pct_max and v > float(pct_max[k]):
+                reasons.append(f"{k}{v}高于{pct_max[k]}")
+        return {"symbol": symbol, "name": names.get(symbol, ""), "pass": not reasons,
+                "reasons": reasons, "metrics": metrics, "target": r.get("target"), "N": r.get("N")}
+
+    def _gen():
+        yield json.dumps({"type": "info", "total": len(symbols),
+                          "params": {"start": start, "end": end, "target": target, "order": order}},
+                         ensure_ascii=False) + "\n"
+        done = 0
+        passed = 0
+        try:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                # 分批提交：边算边吐，避免一次性堆积数千 future
+                it = iter(symbols)
+                pending = set()
+                BATCH = max(workers * 2, 64)
+
+                def _fill():
+                    for _ in range(BATCH - len(pending)):
+                        try:
+                            s = next(it)
+                        except StopIteration:
+                            break
+                        pending.add(pool.submit(_one, s))
+
+                _fill()
+                while pending:
+                    for fut in as_completed(list(pending)):
+                        pending.discard(fut)
+                        try:
+                            row = fut.result()
+                        except Exception as exc:
+                            row = {"symbol": "", "name": "", "pass": False,
+                                   "reasons": [str(exc)], "metrics": {}}
+                        done += 1
+                        if row.get("pass"):
+                            passed += 1
+                        yield json.dumps({"type": "item", "done": done, "passed": passed,
+                                          "total": len(symbols), "row": row}, ensure_ascii=False) + "\n"
+                        _fill()
+                        break
+        except GeneratorExit:
+            return
+        yield json.dumps({"type": "done", "done": done, "passed": passed,
+                          "total": len(symbols)}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(_gen(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})

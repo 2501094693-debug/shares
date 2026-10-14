@@ -25,6 +25,11 @@
       sub: "筛选 · 形态 · 对比可独立使用，也可在「组合」里用且/或一次联评",
       from: "analysis",
     },
+    select: {
+      title: "ORBIT · 行情研判",
+      sub: "股票分析：设置偏离/价格/筹码参数，批量分析并按结果筛选",
+      from: "analysis",
+    },
   };
 
   const SHARES_MODES = [
@@ -432,6 +437,7 @@
     if (["limit", "screen", "decline", "zt"].includes(value)) return "limit";
     if (["industry", "rotation", "rot", "l3", "hy"].includes(value)) return "industry";
     if (["shares", "stock", "day", "kline", "个股", "日线"].includes(value)) return "shares";
+    if (["select", "stockpick", "精选", "股票分析"].includes(value)) return "select";
     return "";
   }
 
@@ -480,6 +486,7 @@
   }
 
   function syncStatusUi() {
+    if (view === "select") return;
     const st = current();
     showError(st.error || "");
     if (st.status === "running") {
@@ -528,6 +535,10 @@
     const benchBody = $("sharesBenchBody");
     if (workbench) workbench.classList.toggle("hidden", view !== "shares");
     if (benchBody) benchBody.classList.toggle("hidden", view !== "shares");
+    const selectPanel = $("selectPanel");
+    if (selectPanel) selectPanel.classList.toggle("hidden", view !== "select");
+    const summaryBar = $("summaryBar");
+    if (summaryBar) summaryBar.classList.toggle("hidden", view === "select");
     const layout = document.querySelector(".screen-layout");
     if (layout && view !== "shares") {
       layout.classList.remove("is-editor-open", "is-editor-collapsed");
@@ -4361,6 +4372,7 @@
 
   function renderAll() {
     renderSeg();
+    if (view === "select") return;
     if (view === "limit") {
       renderLimitSummary();
       renderDayRail();
@@ -4760,6 +4772,7 @@
   }
 
   function load(force) {
+    if (view === "select") return Promise.resolve();
     if (view === "limit") return loadLimit(force);
     if (view === "industry") return loadIndustry(force);
     if (view === "shares") {
@@ -4792,7 +4805,7 @@
   }
 
   function switchView(next) {
-    if (next !== "limit" && next !== "industry" && next !== "shares") {
+    if (next !== "limit" && next !== "industry" && next !== "shares" && next !== "select") {
       return;
     }
     if (next === view) return;
@@ -4802,6 +4815,7 @@
     applyChrome();
     renderAll();
     syncStatusUi();
+    if (view === "select") return;
     const st = current();
     if (view === "shares") {
       if (!shares.daysLoaded) loadSharesDays();
