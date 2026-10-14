@@ -1076,6 +1076,62 @@ def fetch_kline(
         except Exception as exc:
             logger.info("stale full rebuild %s failed: %s", code, exc)
     if stored_n:
+        stored_first0 = str(((stored.get("items") or [])[0] or {}).get("time") or "")[:10]
+        _depth_done = False
+        if (not beg_s and not end_s and not force and period_key == "day"
+                and stored_n < cap and stored_first0):
+            try:
+                _need = cap - stored_n + _KLINE_FILL_OVERLAP
+                _deep_end = (datetime.strptime(stored_first0, "%Y-%m-%d") + timedelta(days=-1)).strftime("%Y%m%d")
+                _deep = _fetch_remote_kline(code, period=period_key, adjust=adjust,
+                                            limit=min(640, max(_need, 60)),
+                                            beg="", end=_deep_end)
+                _deep_items = [b for b in list((_deep or {}).get("items") or [])
+                               if str(b.get("time") or "")[:10]
+                               and str(b.get("time") or "")[:10] < stored_first0]
+                if _deep_items:
+                    _have0 = {str(b.get("time") or "")[:10] for b in stored.get("items") or []}
+                    _new0 = [b for b in _deep_items if str(b.get("time") or "")[:10] not in _have0]
+                    if _new0:
+                        _merged0 = sorted(list(stored.get("items") or []) + _new0,
+                                          key=lambda b: str(b.get("time") or ""))
+                        _save_kline_disk(code, period_key, fqt,
+                                         {"code": code, "items": _merged0,
+                                          "source": _resolve_source(str(stored.get("source") or ""),
+                                                                    str((_deep or {}).get("source") or ""), True),
+                                          "full_history": False})
+                        stored = dict(stored)
+                        stored["items"] = _merged0
+                        stored["source"] = _resolve_source(str(stored.get("source") or ""),
+                                                           str((_deep or {}).get("source") or ""), True)
+                        stored_n = len(_merged0)
+                        _depth_done = True
+            except Exception as exc:
+                logger.info("depth fill %s failed: %s", code, exc)
+        if locals().get("_depth_done"):
+            # 深度补足后：只做尾部小窗口刷新，跳过中间大缺口回填；
+            # 用 _tail_window 直拉一段做合并，不进 _refresh_with_tail 的回填链
+            try:
+                _tn, _tbeg = _tail_window(period_key, str((stored.get("items")[-1] or {}).get("time") or ""))
+                if _tbeg:
+                    _tt = _fetch_remote_kline(code, period=period_key, adjust=adjust,
+                                              limit=_tn, beg=_tbeg, end="")
+                else:
+                    _tt = _fetch_remote_kline(code, period=period_key, adjust=adjust, limit=_tn)
+                _ti = list((_tt or {}).get("items") or [])
+                if _ti:
+                    _fixed = _merge_sorted(list(stored.get("items") or []), _ti)
+                    _dt = dict(_tt)
+                    _dt["items"] = _fixed
+                    _dt["count"] = len(_fixed)
+                    _save_kline_disk(code, period_key, fqt, _dt)
+                    _kline_live_cache.put(mem_key, _dt, cached_at=now)
+                    return _slice_payload(_dt, cap)
+            except Exception as exc:
+                logger.info("depth tail %s failed: %s", code, exc)
+            result = _kline_payload(stored)
+            _kline_live_cache.put(mem_key, result, cached_at=now)
+            return _slice_payload(result, cap)
         stored_last = str(((stored.get("items") or [])[-1] or {}).get("time") or "")[:10]
         try:
             expect_last = session_day().isoformat()
