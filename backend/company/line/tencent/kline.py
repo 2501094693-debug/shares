@@ -190,7 +190,9 @@ def _params(
     cap = int(limit) if limit is not None else 320
     if cap <= 0:
         cap = _MAX_LMT
-    cap = max(1, min(cap, _MAX_LMT))
+    # 腾讯服务端 limit>2000 直接 501（实测 3000/10000 必挂，2000 只返回 640），这里钳住，
+    # 剩下的靠上层分页/分段多拉几次补齐。
+    cap = max(1, min(cap, 2000))
 
     beg = _date(beg)
     end = _date(end)

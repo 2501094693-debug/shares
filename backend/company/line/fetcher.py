@@ -413,7 +413,8 @@ def _fetch_full_history(code, *, period, adjust, cap):
             last_pack = dict(disk)
     except Exception:
         pass
-    for _ in range(_FULL_ROUNDS):
+    _rounds = max(_FULL_ROUNDS, int(cap or 0) // 640 + 2)
+    for _ in range(_rounds):
         if cur_end:
             time.sleep(3.0)
         try:
@@ -423,6 +424,10 @@ def _fetch_full_history(code, *, period, adjust, cap):
             break
         last_pack = pack
         items = sorted(pack.get("items") or [], key=lambda b: str(b.get("time") or ""))
+        if not items:
+            # 首选源在该端点之前已无数据 → 视为挖到上市
+            sealed = True
+            break
         fresh = [b for b in items if str(b.get("time") or "")[:10] not in seen]
         if not fresh:
             sealed = False
@@ -443,9 +448,8 @@ def _fetch_full_history(code, *, period, adjust, cap):
         if len(out) >= cap:
             sealed = False
             break
-        if len(fresh) < 500:
-            sealed = True
-            break
+        # 注：不再以 fresh<500 判定到顶（各源分页大小不一会误判，如东财在 600773 上
+        # 2000-07-17 就只有 300 多根就断了），只认空页（到上市）/全重页（源头不认 end 参数）
         new_first = str(fresh[0].get("time") or "")[:10]
         new_last = str(fresh[-1].get("time") or "")[:10]
         old_first = str(out[-1].get("time") or "")[:10] if len(out) > len(fresh) else ""
@@ -651,7 +655,8 @@ _gapcheck_at: dict[str, float] = {}
 
 
 def _backfill_middle_gaps(items, *, code, period, adjust, cap, stored_source):
-    """检测 K 线中间断段（如 2006→2023 这种大缺口）并远程补齐。
+    """检测 K 线中间断段（如 2006→2023 这种大缺口）并远程补齐，顺带向前探头部
+    （最早一根之前可能还有，如东财 600773 只到 2000-07，腾讯有 1996 起）。
 
     尾部合并只管尾巴，中间缺段以前永远修不好，这里补上。
     返回 (items, 新source|None)；12h 内同一标的只查一次，避免每次加载都多打网。
@@ -674,10 +679,8 @@ def _backfill_middle_gaps(items, *, code, period, adjust, cap, stored_source):
             continue
         if delta > thresh:
             gaps.append((a, b, delta))
-    if not gaps:
-        _gapcheck_at[key] = now
-        return items, None
-    logger.info("kline middle gaps %s %s: %s", code, period, [(a, b) for a, b, _ in gaps])
+    if gaps:
+        logger.info("kline middle gaps %s %s: %s", code, period, [(a, b) for a, b, _ in gaps])
     gaps.sort(key=lambda g: -g[2])
     merged = list(items)
     seg_source = None
@@ -688,17 +691,17 @@ def _backfill_middle_gaps(items, *, code, period, adjust, cap, stored_source):
             _gb = datetime.strptime(b, "%Y-%m-%d") - timedelta(days=1)
         except ValueError:
             continue
-        # 大缺口按 ≤6 年一切，避免单次 limit 被源头截断越补越偏
+        # 大缺口按 ≤2 年一切（腾讯单次最多给 640 根，块太大一永远补不满），逐块拉
         chunks = []
         _cur = _ga
         while _cur <= _gb:
-            _ce = min(_gb, _cur + timedelta(days=6 * 365))
+            _ce = min(_gb, _cur + timedelta(days=2 * 365))
             chunks.append((_cur.strftime("%Y%m%d"), _ce.strftime("%Y%m%d")))
             _cur = _ce + timedelta(days=1)
         for ga, gb in chunks:
             try:
                 seg = _fetch_remote_kline(code, period=period, adjust=adjust,
-                                          limit=max(2000, int(cap or 0)), beg=ga, end=gb)
+                                          limit=2000, beg=ga, end=gb)
             except Exception as exc:
                 logger.info("kline gapfill %s %s [%s,%s] failed: %s", code, period, ga, gb, exc)
                 continue
@@ -710,6 +713,34 @@ def _backfill_middle_gaps(items, *, code, period, adjust, cap, stored_source):
             if len(merged) > before:
                 added_total += len(merged) - before
                 seg_source = str(seg.get("source") or "") or seg_source
+    # 头部回补：最早一根之前可能还有（如东财 600773 只到 2000-07，腾讯有 1996 起）。
+    # 最多向前探 3 页，探空即停。
+    for _ in range(3):
+        try:
+            first_t = min(str(b.get("time") or "")[:10] for b in merged if str(b.get("time") or "")[:10])
+        except ValueError:
+            break
+        try:
+            he = (datetime.strptime(first_t, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y%m%d")
+        except ValueError:
+            break
+        try:
+            hpack = _fetch_remote_kline(code, period=period, adjust=adjust, limit=2000, beg="", end=he)
+        except Exception as exc:
+            logger.info("kline headfill %s %s end=%s failed: %s", code, period, he, exc)
+            break
+        older = [b for b in (hpack.get("items") or [])
+                 if str(b.get("time") or "")[:10] and str(b.get("time") or "")[:10] < first_t
+                 and str(b.get("time") or "")[:10] not in {str(x.get("time") or "")[:10] for x in merged}]
+        if not older:
+            break
+        before = len(merged)
+        merged = _merge_sorted(merged, older)
+        if len(merged) > before:
+            added_total += len(merged) - before
+            seg_source = str(hpack.get("source") or "") or seg_source
+        else:
+            break
     if not added_total:
         _gapcheck_at[key] = now
         return items, None
