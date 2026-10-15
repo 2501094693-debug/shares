@@ -285,6 +285,307 @@ body.app-shell.ai-page-root .ai-page {
   margin-top: 0;
 }
 
+.engine-section .zv-body,
+.engine-section .zv-table {
+  margin: 0 0 12px;
+  overflow-x: auto;
+}
+
+.engine-section .zv-body table,
+.engine-section .zv-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.engine-section .zv-body th,
+.engine-section .zv-body td,
+.engine-section .zv-table th,
+.engine-section .zv-table td {
+  border: 1px solid var(--line);
+  padding: 5px 8px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.engine-section .zv-body th:first-child,
+.engine-section .zv-body td:first-child,
+.engine-section .zv-table th:first-child,
+.engine-section .zv-table td:first-child {
+  text-align: left;
+}
+
+.engine-section .zv-body th,
+.engine-section .zv-table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.engine-section .zv-body ul,
+.engine-section .zv-conc,
+.engine-section .zv-formula {
+  margin: 0 0 10px;
+  padding-left: 1.1em;
+  line-height: 1.6;
+}
+
+.engine-section .zv-formula-note {
+  margin: 4px 0 2px;
+  padding-left: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.engine-section .zv-formula-note li {
+  margin-top: 3px;
+  line-height: 1.6;
+}
+
+.engine-section .zv-formula-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(70, 210, 190, 0.14);
+  color: #46d2be;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+/* 七看：风险仪表盘（区别于其他看的表格式布局） */
+.engine-section .zv-risk-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.engine-section .zv-risk-banner.is-hit {
+  border-color: rgba(255, 107, 107, 0.45);
+  background: rgba(255, 107, 107, 0.08);
+}
+
+.engine-section .zv-risk-banner.is-ok {
+  border-color: rgba(70, 210, 190, 0.4);
+  background: rgba(70, 210, 190, 0.07);
+}
+
+.engine-section .zv-risk-banner .zv-risk-period {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.engine-section .zv-risk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.engine-section .zv-risk-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  line-height: 1.6;
+}
+
+.engine-section .zv-risk-card.is-hit {
+  border-color: rgba(255, 107, 107, 0.45);
+  background: rgba(255, 107, 107, 0.05);
+}
+
+.engine-section .zv-risk-card.is-ok {
+  border-color: rgba(70, 210, 190, 0.3);
+}
+
+.engine-section .zv-risk-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.engine-section .zv-risk-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.engine-section .is-hit .zv-risk-dot {
+  background: #ff6b6b;
+}
+
+.engine-section .is-ok .zv-risk-dot {
+  background: #46d2be;
+}
+
+.engine-section .zv-risk-tag {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.engine-section .zv-risk-card.is-hit .zv-risk-tag {
+  background: rgba(255, 107, 107, 0.14);
+  color: #ff6b6b;
+}
+
+.engine-section .zv-risk-card.is-ok .zv-risk-tag {
+  background: rgba(70, 210, 190, 0.14);
+  color: #46d2be;
+}
+
+.engine-section .zv-risk-value {
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.engine-section .zv-risk-threshold {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 综合诊断：八个方面卡片（区别于各看的表格式布局） */
+.engine-section .zv-sum-score {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.engine-section .zv-sum-score-num {
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.engine-section .zv-sum-score-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.engine-section .zv-sum-score.is-good .zv-sum-score-num {
+  color: #46d2be;
+}
+
+.engine-section .zv-sum-score.is-mid .zv-sum-score-num {
+  color: #f0b429;
+}
+
+.engine-section .zv-sum-score.is-bad .zv-sum-score-num {
+  color: #ff6b6b;
+}
+
+.engine-section .zv-sum-weight {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.engine-section .zv-sum-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 12px;
+}
+
+@media (max-width: 1100px) {
+  .engine-section .zv-sum-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .engine-section .zv-sum-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.engine-section .zv-sum-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid #8a94a6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  line-height: 1.6;
+}
+
+.engine-section .zv-sum-card.is-good {
+  border-left-color: #46d2be;
+}
+
+.engine-section .zv-sum-card.is-mid {
+  border-left-color: #f0b429;
+}
+
+.engine-section .zv-sum-card.is-bad {
+  border-left-color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.04);
+}
+
+.engine-section .zv-sum-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.engine-section .zv-sum-badge {
+  margin-left: auto;
+  padding: 0 8px;
+  border-radius: 20px;
+  font-size: 12px;
+  line-height: 1.8;
+  white-space: nowrap;
+  background: rgba(138, 148, 166, 0.14);
+  color: var(--muted);
+}
+
+.engine-section .zv-sum-card.is-good .zv-sum-badge {
+  background: rgba(70, 210, 190, 0.14);
+  color: #46d2be;
+}
+
+.engine-section .zv-sum-card.is-mid .zv-sum-badge {
+  background: rgba(240, 180, 41, 0.14);
+  color: #f0b429;
+}
+
+.engine-section .zv-sum-card.is-bad .zv-sum-badge {
+  background: rgba(255, 107, 107, 0.14);
+  color: #ff6b6b;
+}
+
+.engine-section .zv-sum-evidence {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.engine-section .zv-sum-risk {
+  margin: 6px 0 0;
+  padding-left: 1.1em;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.engine-section .zv-sum-risk li {
+  margin-top: 2px;
+}
+
 /* 分析中：仅展示流水线与实时日志 */
 .ai-board.is-running {
   grid-template-columns: 1fr;
@@ -449,6 +750,29 @@ body.app-shell.ai-page-root .ai-page {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.ai-report-params {
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-report-params.is-active {
+  display: inline-flex;
+}
+
+.ai-report-param-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.ai-report-params .chart-select {
+  font-size: 0.76rem;
+  padding: 4px 8px;
 }
 
 .ai-report-seg button {

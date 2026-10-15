@@ -1,7 +1,7 @@
 (() => {
   const MODES = window.AI_MODES || {};
-  const MODE_ORDER = window.AI_MODE_ORDER || ["business", "bazhang", "bazhang-rules", "buffett", "buffett-rules", "competition", "chain", "risk", "trend", "fundamentals", "valuation", "sentiment", "chip", "compare"];
-  const EARNINGS_VIEWS = new Set(["bazhang", "bazhang-rules", "buffett", "buffett-rules"]);
+  const MODE_ORDER = window.AI_MODE_ORDER || ["business", "bazhang", "bazhang-rules", "zhang-views", "buffett", "buffett-rules", "competition", "chain", "risk", "trend", "valuation", "sentiment", "chip", "compare"];
+  const EARNINGS_VIEWS = new Set(["bazhang", "bazhang-rules", "zhang-views", "buffett", "buffett-rules"]);
 
   const STATUS_LABELS = {
     pending: "等待",
@@ -340,32 +340,6 @@
     return `<div class="sentiment-metrics"><div class="engine-kpis">${kpiHtml}</div>${note}</div>`;
   }
 
-  function fmtMos(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return "—";
-    return `${(n * 100).toFixed(1)}%`;
-  }
-
-  function fundamentalsMetricsHtml(result) {
-    if (!result?.stance && result?.anchor_iv == null) return "";
-    const lightMap = { green: "绿", yellow: "黄", red: "红", gray: "灰" };
-    const dims = Array.isArray(result.dims) ? result.dims : [];
-    const dimText = dims.length
-      ? dims.map((d) => `${d.label || d.key || ""}${lightMap[d.light] || d.light || ""}`).filter(Boolean).join(" · ")
-      : "—";
-    const kpis = [
-      ["规则态度", String(result.stance || "—")],
-      ["内在价值锚", fmtPrice(result.anchor_iv)],
-      ["安全边际", fmtMos(result.anchor_mos)],
-      ["仪表盘", dimText],
-    ];
-    const kpiHtml = kpis.map(([label, value]) => (
-      `<div class="engine-kpi sentiment-kpi"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`
-    )).join("");
-    const note = `<p class="muted sentiment-source-note">台账与仪表盘规则先算；态度不是买卖点</p>`;
-    return `<div class="sentiment-metrics"><div class="engine-kpis">${kpiHtml}</div>${note}</div>`;
-  }
-
   function updatePipelineProgress(agents) {
     const cfg = getConfig();
     const el = $("pipelineProgress");
@@ -498,6 +472,10 @@
   function showEmptyState() {
     const cfg = getConfig();
     if ($("reportView")) $("reportView").innerHTML = cfg.emptyStateHtml;
+    if ($("reportParams")) {
+      $("reportParams").innerHTML = "";
+      $("reportParams").classList.remove("is-active");
+    }
   }
 
   function applyChrome(mode = state.mode) {
@@ -506,6 +484,10 @@
     const label = [name, code].filter(Boolean).join(" · ") || "当前公司";
     if ($("analysisCompanyLabel")) $("analysisCompanyLabel").textContent = label;
     if ($("startBtn")) $("startBtn").textContent = cfg.startBtn;
+    if ($("reportParams") && mode !== "zhang-views") {
+      $("reportParams").innerHTML = "";
+      $("reportParams").classList.remove("is-active");
+    }
     if ($("historyHead")) $("historyHead").textContent = cfg.historyHead;
     const agentCount = cfg.agentDefs?.length || 0;
     if ($("pipelineProgress")) $("pipelineProgress").textContent = `0 / ${agentCount}`;
@@ -573,9 +555,7 @@
         ? JSON.stringify(result.verdict || {})
         : cfg.id === "valuation"
           ? JSON.stringify({ stance: result.stance, primary: result.primary })
-          : cfg.id === "fundamentals"
-            ? JSON.stringify({ stance: result.stance, anchor_iv: result.anchor_iv, anchor_mos: result.anchor_mos })
-            : "";
+          : "";
     const reportKey = `${filename}|${text.length}|${metricsKey}`;
     if (filename) ms.activeReportFile = filename;
     if ($("reportTitle")) $("reportTitle").textContent = cfg.resultTitle?.(result) || String(filename).replace(/\.md$/i, "");
@@ -587,9 +567,7 @@
           ? trendMetricsHtml(result)
           : cfg.id === "valuation"
             ? valuationMetricsHtml(result)
-            : cfg.id === "fundamentals"
-              ? fundamentalsMetricsHtml(result)
-              : "";
+            : "";
       $("reportView").innerHTML = `${metrics}${renderMarkdown(text)}`;
       ms.renderedReportKey = reportKey;
     }
@@ -952,9 +930,177 @@
       if (st.geom) repaint();
     });
   }
+  const ZHANG_REPORT_TYPES = [
+    ["annual", "年报"],
+    ["semi", "半年报"],
+    ["q1", "一季报"],
+    ["q3", "三季报"],
+  ];
+
+  function zhangViewsFormParams() {
+    const pick = (id) => String(document.getElementById(id)?.value || "").trim();
+    const extra = {};
+    const reportType = pick("zvReportType");
+    if (reportType) extra.report_type = reportType;
+    return extra;
+  }
+
+  function zhangRiskBody(view) {
+    const m = (view && view.metrics) || {};
+    const items = Array.isArray(m.items) ? m.items : [];
+    const cardsHtml = items.length
+      ? `<div class="zv-risk-grid">${items.map((it) => {
+          const cls = it.triggered ? "is-hit" : "is-ok";
+          const tag = it.triggered ? "触发" : "正常";
+          return `<div class="zv-risk-card ${cls}">`
+            + `<div class="zv-risk-card-head"><span class="zv-risk-dot"></span><strong>${esc(it.name)}</strong><span class="zv-risk-tag">${tag}</span></div>`
+            + `<div class="zv-risk-value">${esc(it.value || "—")}</div>`
+            + `<div class="zv-risk-threshold">阈值：${esc(it.threshold || "—")}</div>`
+            + `</div>`;
+        }).join("")}</div>`
+      : "";
+    const fs = Array.isArray(view.formulas) ? view.formulas : [];
+    const formulaHtml = fs.length
+      ? `<h4>判定规则</h4><ul class="zv-formula">${fs.map((f) => {
+          const notes = [];
+          if (f.meaning) notes.push(`<li><span class="zv-formula-tag">含义</span>${esc(f.meaning)}</li>`);
+          if (f.reading) notes.push(`<li><span class="zv-formula-tag">怎么看</span>${esc(f.reading)}</li>`);
+          const noteHtml = notes.length ? `<ul class="zv-formula-note">${notes.join("")}</ul>` : "";
+          return `<li><strong>${esc(f.name)}</strong>：${esc(f.formula)}${noteHtml}</li>`;
+        }).join("")}</ul>`
+      : "";
+    return `${cardsHtml}${formulaHtml}`;
+  }
+
+  function zhangSummaryBody(view) {
+    const dims = Array.isArray(view.dimensions) ? view.dimensions : [];
+    const weights = Array.isArray(view.score_weights) ? view.score_weights : [];
+    const score = view.score_total;
+    let scoreHtml = "";
+    if (Number.isFinite(Number(score))) {
+      const s = Math.max(0, Math.min(100, Math.round(Number(score))));
+      const cls = s >= 80 ? "is-good" : (s >= 60 ? "is-mid" : "is-bad");
+      scoreHtml = `<div class="zv-sum-score ${cls}"><span class="zv-sum-score-num">${s}</span><span class="zv-sum-score-label">综合评分 / 100</span></div>`;
+    }
+    const cardsHtml = dims.length
+      ? `<div class="zv-sum-list">${dims.map(([aspect, evaluation, evidence], i) => {
+          let cls = "is-neutral";
+          if (evaluation === "优") cls = "is-good";
+          else if (evaluation === "中") cls = "is-mid";
+          else if (evaluation === "差") cls = "is-bad";
+          const w = Number(weights[i]) > 0 ? ` · ${weights[i]}%` : "";
+          const headTitle = `${esc(aspect || "")}<span class="zv-sum-weight">${esc(w)}</span>`;
+          let evidenceHtml = "";
+          if (evidence) {
+            if (String(aspect || "").includes("七看") || String(aspect || "").includes("八看")) {
+              const items = String(evidence).split("；").map((s) => s.trim()).filter(Boolean);
+              evidenceHtml = `<ul class="zv-sum-risk">${items.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>`;
+            } else {
+              evidenceHtml = `<div class="zv-sum-evidence">${esc(evidence)}</div>`;
+            }
+          }
+          return `<div class="zv-sum-card ${cls}">`
+            + `<div class="zv-sum-head"><strong>${headTitle}</strong><span class="zv-sum-badge">${esc(evaluation || "—")}</span></div>`
+            + evidenceHtml
+            + `</div>`;
+        }).join("")}</div>`
+      : "";
+    const fs = Array.isArray(view.formulas) ? view.formulas : [];
+    const formulaHtml = fs.length
+      ? `<h4>判定口径</h4><ul class="zv-formula">${fs.map((f) => {
+          const notes = [];
+          if (f.meaning) notes.push(`<li><span class="zv-formula-tag">含义</span>${esc(f.meaning)}</li>`);
+          if (f.reading) notes.push(`<li><span class="zv-formula-tag">怎么看</span>${esc(f.reading)}</li>`);
+          const noteHtml = notes.length ? `<ul class="zv-formula-note">${notes.join("")}</ul>` : "";
+          return `<li><strong>${esc(f.name)}</strong>：${esc(f.formula)}${noteHtml}</li>`;
+        }).join("")}</ul>`
+      : "";
+    return `${scoreHtml}${cardsHtml}${formulaHtml}`;
+  }
+
+  function zhangViewBody(view) {
+    if (view && view.layout === "risk") return zhangRiskBody(view);
+    if (view && view.key === "summary") return zhangSummaryBody(view);
+    if (view && (view.raw != null || view.results != null || view.formulas)) {
+      const rawText = (view.raw || "").trim();
+      const rawHtml = rawText ? renderMarkdown(view.raw) : "";
+      const rawSection = rawText ? `${"<h4>原始数据</h4>"}${rawHtml}` : "";
+      const fs = Array.isArray(view.formulas) ? view.formulas : [];
+      const formulaHtml = fs.length
+        ? `<ul class="zv-formula">${fs.map((f) => {
+            const notes = [];
+            if (f.meaning) notes.push(`<li><span class="zv-formula-tag">含义</span>${esc(f.meaning)}</li>`);
+            if (f.reading) notes.push(`<li><span class="zv-formula-tag">怎么看</span>${esc(f.reading)}</li>`);
+            const noteHtml = notes.length ? `<ul class="zv-formula-note">${notes.join("")}</ul>` : "";
+            return `<li><strong>${esc(f.name)}</strong>：${esc(f.formula)}${noteHtml}</li>`;
+          }).join("")}</ul>`
+        : "<p class='muted'>（本节无二次加工公式）</p>";
+      const tableHtml = view.results ? renderMarkdown(view.results) : "";
+      const resultsSection = tableHtml ? `${"<h4>计算结果</h4>"}${tableHtml}` : "";
+      const formulaSection = `${"<h4>计算公式</h4>"}${formulaHtml}`;
+      const conc = (Array.isArray(view.conclusions) ? view.conclusions : []).filter(Boolean);
+      const concHtml = conc.length
+        ? `${"<h4>结论</h4>"}<ul class="zv-conc">${conc.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>`
+        : "";
+      return `${resultsSection}`
+        + `${formulaSection}`
+        + `${rawSection}`
+        + concHtml;
+    }
+    if (view && view.text) return renderMarkdown(view.text);
+    const conc = (Array.isArray(view?.conclusions) ? view.conclusions : []).filter(Boolean);
+    const concHtml = conc.length ? `<ul class="zv-conc">${conc.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : "";
+    const tableHtml = view?.table ? renderMarkdown(view.table) : "";
+    return `${concHtml}${tableHtml}`;
+  }
+
+  function zhangParamsHtml(pack) {
+    const rt = (pack && pack.report_type) || "annual";
+    const options = ZHANG_REPORT_TYPES
+      .map(([value, label]) => `<option value="${value}"${value === rt ? " selected" : ""}>${label}</option>`)
+      .join("");
+    return ``
+      + `<label class="ai-report-param-label">报告口径<select id="zvReportType" class="chart-select">${options}</select></label>`;
+  }
+
+  function paintReportParams(pack) {
+    const slot = $("reportParams");
+    if (!slot) return;
+    if (state.mode === "zhang-views" && pack) {
+      slot.innerHTML = zhangParamsHtml(pack);
+      slot.classList.add("is-active");
+    } else {
+      slot.innerHTML = "";
+      slot.classList.remove("is-active");
+    }
+  }
+
+  function zhangViewsHtml(pack) {
+    if (!pack.data_available) {
+      return `
+        <div class="engine-hero">
+          <p class="engine-type">张新民「八看」</p>
+          <p class="muted">${esc(pack.text || "未获取到所选口径的定期报告")}</p>
+        </div>`;
+    }
+    const views = (Array.isArray(pack.views) ? pack.views : []).map((view) => (
+      `<section class="engine-section"><h3>${esc(view.name || "")}</h3><div class="zv-body">${zhangViewBody(view)}</div></section>`
+    )).join("");
+    const summary = pack.summary;
+    let summaryHtml = "";
+    if (summary) {
+      summaryHtml = `<section class="engine-section"><h3>${esc(summary.name || "综合诊断")}</h3><div class="zv-body">${zhangViewBody(summary)}</div></section>`;
+    }
+    return `
+      ${summaryHtml}
+      ${views}
+    `;
+  }
+
   function engineHtml(pack, mode = state.mode) {
     if (mode === "compare" || (pack?.scores && pack?.total && pack?.daily)) return cmpHtml(pack);
     if (mode === "chip" || pack?.method === "same_type") return chipHtml(pack);
+    if (mode === "zhang-views" || (Array.isArray(pack?.views) && pack?.summary)) return zhangViewsHtml(pack);
     const flags = Array.isArray(pack?.flags) ? pack.flags : [];
     const tables = pack?.tables || {};
     const isZhang = mode === "bazhang-rules" || !!pack?.strategy_type;
@@ -1061,6 +1207,7 @@
     if ($("reportTitle")) $("reportTitle").textContent = cfg.resultTitle?.(pack) || cfg.reportTitle;
     if ($("reportMeta")) $("reportMeta").textContent = cfg.resultMeta?.(pack) || "";
     if ($("reportView")) $("reportView").innerHTML = engineHtml(pack, state.mode);
+    paintReportParams(pack);
     if (state.mode === "compare") {
       requestAnimationFrame(() => {
         try { drawCmpCharts(pack); } catch { /* ignore */ }
@@ -1310,7 +1457,9 @@
   async function startTask() {
     if (isEngineMode()) {
       const extra = state.mode === "chip" ? chipFormParams()
-        : state.mode === "compare" ? cmpFormParams() : undefined;
+        : state.mode === "compare" ? cmpFormParams()
+        : state.mode === "zhang-views" ? { ...zhangViewsFormParams(), refresh: "1" }
+        : undefined;
       await loadEngine(state.mode, { force: true, extra });
       return;
     }
@@ -1537,6 +1686,12 @@
       if (!ev.target.closest?.("#cmpRecalc")) return;
       ev.preventDefault();
       loadEngine("compare", { force: true, extra: cmpFormParams() }).catch((err) => showError(err.message || String(err)));
+    });
+    document.getElementById("panel-judgment")?.addEventListener("click", (ev) => {
+      if (!ev.target.closest?.("#zvRecalc")) return;
+      ev.preventDefault();
+      loadEngine("zhang-views", { force: true, extra: { ...zhangViewsFormParams(), refresh: "1" } })
+        .catch((err) => showError(err.message || String(err)));
     });
     $("stopPollBtn")?.addEventListener("click", stopPoll);
     $("refreshReportsBtn")?.addEventListener("click", () => {

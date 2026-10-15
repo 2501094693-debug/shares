@@ -514,6 +514,54 @@ window.AI_MODES = {
     },
   },
 
+  "zhang-views": {
+    id: "zhang-views",
+    kind: "engine",
+    label: "张新民规则方法",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "张新民规则方法",
+    subtitle: "可选年报/半年报/一季报/三季报口径 · 八看逐项计算 + 综合汇总 · 不经过大模型",
+    startBtn: "重新计算",
+    historyHead: "规则结果",
+    reportTitle: "张新民规则方法",
+    reportMetaDefault: "按所选报告口径运行八看规则引擎，不调用大模型",
+    historyMeta: "规则结果",
+    emptyReports: "暂无结果",
+    resumeFail: "张新民规则方法计算失败",
+    apiRoot: "/api/stocks/financial-views",
+    jobStoreKey: "orbit.zhangViews.pack",
+    reportNameRe: /$^/,
+    agentDefs: [],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">∑</div>
+        <h3>先选口径，再算八看</h3>
+        <p>张新民规则方法按「一看～八看」逐项列出原始数据、计算公式、计算结果与结论，再汇总成综合诊断；可切换年报 / 半年报 / 一季报 / 三季报口径，全程不调用大模型。</p>
+        <ul class="ai-empty-tips">
+          <li>报告口径：年报 / 半年报 / 一季报 / 三季报（同口径同比）</li>
+          <li>一看战略 · 二看竞争力 · 三看效益 · 四看价值</li>
+          <li>五看成本 · 六看质量 · 七看风险 · 八看前景</li>
+          <li>八看汇总：五维评级 + 综合诊断</li>
+        </ul>
+      </div>`,
+    resultTitle(result) {
+      const st = result.strategy_type && result.strategy_type !== "未知" ? ` · ${result.strategy_type}` : "";
+      return `${result.name || result.stock_name || ""} 张新民规则方法${st}`.trim();
+    },
+    resultMeta(result) {
+      return [
+        result.code ? `代码 ${result.code}` : "",
+        result.report_type_label || "",
+        result.latest_period || "",
+        result.coverage || "",
+        result.data_available ? "已计算" : "无定期报告",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 张新民规则方法`;
+    },
+  },
+
   sentiment: {
     id: "sentiment",
     label: "情绪分析",
@@ -701,66 +749,9 @@ window.AI_MODES = {
     },
   },
 
-  fundamentals: {
-    id: "fundamentals",
-    label: "财务估值",
-    pageTitle: "ORBIT · 智能分析",
-    heading: "财务数据、盈利能力与估值",
-    subtitle: "台账 → 仪表盘打灯 → 分节解读：趋势 / 盈利 / 现金流 / 资产负债 / 估值 / 安全边际",
-    startBtn: "生成诊断",
-    historyHead: "历史报告",
-    reportTitle: "财务估值诊断",
-    reportMetaDefault: "选择历史报告或生成新的",
-    historyMeta: "历史报告",
-    emptyReports: "暂无历史报告",
-    resumeFail: "恢复财务估值诊断任务失败",
-    apiRoot: "/api/ai/fundamentals-analysis",
-    jobStoreKey: "orbit.fundamentalsAnalysis.activeJob",
-    reportNameRe: /财务估值|财务数据、盈利能力与估值/,
-    agentDefs: [
-      { id: "fv_resolve", name: "解析公司", subtitle: "识别代码与名称" },
-      { id: "fv_collect", name: "采集财务估值", subtitle: "财报 · 盘口 · 历史倍数 · 同业" },
-      { id: "fv_ledger", name: "构建台账", subtitle: "年报结构化指标" },
-      { id: "fv_gauge", name: "仪表盘规则", subtitle: "五维打灯 + 内在价值" },
-      { id: "fv_brief", name: "分节解读", subtitle: "趋势 · 盈利 · 现金 · 负债 · 估值 · 安全边际" },
-      { id: "fv_save", name: "保存报告", subtitle: "写入 Markdown" },
-    ],
-    emptyStateHtml: `
-      <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">▣</div>
-        <h3>先建台账，再打灯，后解读</h3>
-        <p>把近 3–5 年财报压成结构化台账，用规则对经营趋势、盈利能力、现金流、资产负债、估值位置打灯，并给出多种内在价值口径与安全边际。模型只解释已算好的数字。</p>
-        <ul class="ai-empty-tips">
-          <li>营收 / 净利 / 经营利润趋势</li>
-          <li>ROE · ROA · 毛利率 · 经营利润率</li>
-          <li>OCF · CapEx · FCF 与利润含金量</li>
-          <li>PE/PB/PS 历史与同业 · 安全边际</li>
-        </ul>
-      </div>`,
-    resultTitle(result) {
-      const stance = result.stance ? ` · ${result.stance}` : "";
-      return `${result.stock_name || ""} 财务估值${stance}`.trim();
-    },
-    resultMeta(result) {
-      const mos = Number(result.anchor_mos);
-      const mosText = Number.isFinite(mos) ? `安全边际 ${(mos * 100).toFixed(1)}%` : "";
-      return [
-        result.stock_code ? `代码 ${result.stock_code}` : "",
-        result.stance ? `态度 ${result.stance}` : "",
-        mosText,
-        result.report_path ? "已保存" : "",
-      ].filter(Boolean).join(" · ");
-    },
-    runningTitle(company) {
-      return `${company} · 财务估值`;
-    },
-    startQuery(company) {
-      return { company };
-    },
-  },
 };
 
-window.AI_MODE_ORDER = ["business", "bazhang", "bazhang-rules", "buffett", "buffett-rules", "competition", "chain", "risk", "trend", "fundamentals", "valuation", "sentiment", "chip", "compare"];
+window.AI_MODE_ORDER = ["business", "bazhang", "bazhang-rules", "zhang-views", "buffett", "buffett-rules", "competition", "chain", "risk", "trend", "valuation", "sentiment", "chip", "compare"];
 
 window.AI_MODE_ALIASES = {
   business: "business",
@@ -793,6 +784,11 @@ window.AI_MODE_ALIASES = {
   "zhang-rules": "bazhang-rules",
   "张新民规则引擎": "bazhang-rules",
   "八看规则引擎": "bazhang-rules",
+  "zhang-views": "zhang-views",
+  "zhang-views-method": "zhang-views",
+  "张新民规则方法": "zhang-views",
+  "八看规则方法": "zhang-views",
+  "规则方法": "zhang-views",
   sentiment: "sentiment",
   retail: "sentiment",
   "retail-sentiment": "sentiment",
@@ -812,10 +808,4 @@ window.AI_MODE_ALIASES = {
   compare: "compare",
   "对比分析": "compare",
   "对比": "compare",
-  fundamentals: "fundamentals",
-  "fundamentals-analysis": "fundamentals",
-  finval: "fundamentals",
-  "财务估值": "fundamentals",
-  "财务数据": "fundamentals",
-  "盈利能力与估值": "fundamentals",
 };
