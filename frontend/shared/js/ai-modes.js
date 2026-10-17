@@ -149,106 +149,52 @@ window.AI_MODES = {
     },
   },
 
-  competition: {
-    id: "competition",
-    label: "行业竞争",
+  peers: {
+    id: "peers",
+    kind: "engine",
+    label: "竞争分析",
     pageTitle: "ORBIT · 智能分析",
-    heading: "行业竞争分析",
-    subtitle: "主线：交易所 / 巨潮 / 七网 / 公告 PDF · 联网补充最新行业数据 · 同业对照",
-    startBtn: "生成分析",
-    historyHead: "历史报告",
-    reportTitle: "行业竞争分析",
-    reportMetaDefault: "选择历史报告或生成新的",
-    historyMeta: "历史报告",
-    emptyReports: "暂无历史报告",
-    resumeFail: "恢复行业竞争分析任务失败",
-    apiRoot: "/api/ai/competition-analysis",
-    jobStoreKey: "orbit.competition.activeJob",
-    reportNameRe: /行业竞争分析/,
-    agentDefs: [
-      { id: "ic_init", name: "解析公司", subtitle: "识别代码、名称与行业" },
-      { id: "ic_fetch", name: "采集资料", subtitle: "交易所 / 巨潮 / 七网 / 同业" },
-      { id: "ic_search", name: "联网补充", subtitle: "最新行业数据与竞争动态" },
-      { id: "ic_analyze", name: "生成分析", subtitle: "行业格局 · 竞争态势" },
-      { id: "ic_save", name: "保存报告", subtitle: "写入 Markdown" },
-    ],
+    heading: "竞争分析",
+    subtitle: "同申万三级行业横截面对比：八看逐项算分、排名与行业分位 · 不经过大模型",
+    startBtn: "重新计算",
+    historyHead: "规则结果",
+    reportTitle: "竞争分析",
+    reportMetaDefault: "选取目标公司所在申万三级行业，与同行按同一报告口径横截面对比八看指标",
+    historyMeta: "规则结果",
+    emptyReports: "暂无结果",
+    resumeFail: "竞争分析计算失败",
+    apiRoot: "/api/stocks/industry-compare",
+    jobStoreKey: "orbit.peers.pack",
+    reportNameRe: /$^/,
+    agentDefs: [],
     emptyStateHtml: `
       <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">⬡</div>
-        <h3>先看格局，再判位置</h3>
-        <p>以交易所、巨潮、七网披露为主线，结合申万同业对照与联网搜索的最新行业数据，分析行业格局与该公司竞争态势。</p>
+        <div class="ai-empty-icon" aria-hidden="true">⊞</div>
+        <h3>先圈行业，再排座次</h3>
+        <p>把目标公司放进它所属的申万三级行业，与全部（或市值靠前的）可比公司按同一报告期口径，逐项计算张新民「八看」指标，给出行业内排名、分位与中位数基准。</p>
         <ul class="ai-empty-tips">
-          <li>行业规模、增速、渗透率</li>
-          <li>竞争格局与主要对手威胁评估</li>
-          <li>细分赛道格局与产业链分析</li>
-          <li>技术变革、政策影响、新进入者</li>
+          <li>报告口径：年报 / 半年报 / 一季报 / 三季报（同口径对齐）</li>
+          <li>八看指标：战略 · 竞争力 · 效益 · 价值 · 成本 · 质量 · 风险 · 前景</li>
+          <li>方向性指标排名，中性指标只展示偏离</li>
+          <li>自动剔除 ST / 退市 / 无同期数据样本</li>
         </ul>
       </div>`,
     resultTitle(result) {
-      const industry = result.industry_name ? ` · ${result.industry_name}` : "";
-      return `${result.stock_name || ""} 行业竞争分析${industry}`.trim();
+      const industry = result.industry?.l3_name ? ` · ${result.industry.l3_name}` : "";
+      const name = result.target?.name || result.target?.code || "";
+      return `${name} 竞争分析${industry}`.trim();
     },
     resultMeta(result) {
+      const used = result.universe?.used;
       return [
-        result.stock_code ? `代码 ${result.stock_code}` : "",
-        result.industry_name ? `行业 ${result.industry_name}` : "",
-        result.report_path ? "已保存" : "",
+        result.industry?.l3_code ? `行业 ${result.industry.l3_name || result.industry.l3_code}` : "",
+        result.report_type_label || "",
+        result.latest_period || "",
+        Number.isFinite(Number(used)) ? `可比 ${used} 家` : "",
       ].filter(Boolean).join(" · ");
     },
     runningTitle(company) {
-      return `${company} · 行业竞争分析`;
-    },
-  },
-
-  chain: {
-    id: "chain",
-    label: "产业分析",
-    pageTitle: "ORBIT · 智能分析",
-    heading: "产业分析",
-    subtitle: "主线：交易所 / 巨潮 / 七网 / 公告 PDF · 先画地图再定向检索上下游",
-    startBtn: "生成分析",
-    historyHead: "历史报告",
-    reportTitle: "产业分析",
-    reportMetaDefault: "选择历史报告或生成新的",
-    historyMeta: "历史报告",
-    emptyReports: "暂无历史报告",
-    resumeFail: "恢复产业分析任务失败",
-    apiRoot: "/api/ai/chain-analysis",
-    jobStoreKey: "orbit.chain.activeJob",
-    reportNameRe: /产业(?:链)?分析/,
-    agentDefs: [
-      { id: "ch_init", name: "解析公司", subtitle: "识别代码、名称与行业" },
-      { id: "ch_fetch", name: "采集资料", subtitle: "交易所 / 巨潮 / 七网 / 同层" },
-      { id: "ch_map", name: "绘制产业链地图", subtitle: "上中下游结构 · 具名玩家" },
-      { id: "ch_search", name: "定向检索上下游", subtitle: "按地图检索供应商 / 客户 / 卡脖子" },
-      { id: "ch_analyze", name: "生成分析", subtitle: "位置 · 议价 · 利润池" },
-      { id: "ch_save", name: "保存报告", subtitle: "写入 Markdown" },
-    ],
-    emptyStateHtml: `
-      <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">⧉</div>
-        <h3>先画链条，再看位置</h3>
-        <p>以交易所、巨潮、七网披露为主线，先从年报抽出上中下游结构，再按结构定向检索供应商、客户与卡脖子环节，判断这家公司卡在哪一层、议价权在谁手里。</p>
-        <ul class="ai-empty-tips">
-          <li>产业链全景与本公司位置</li>
-          <li>前五供应商 / 前五客户（有披露必须点名）</li>
-          <li>卡脖子环节与利润池</li>
-          <li>价值分配：谁吃上下游</li>
-        </ul>
-      </div>`,
-    resultTitle(result) {
-      const industry = result.industry_name ? ` · ${result.industry_name}` : "";
-      return `${result.stock_name || ""} 产业分析${industry}`.trim();
-    },
-    resultMeta(result) {
-      return [
-        result.stock_code ? `代码 ${result.stock_code}` : "",
-        result.industry_name ? `行业 ${result.industry_name}` : "",
-        result.report_path ? "已保存" : "",
-      ].filter(Boolean).join(" · ");
-    },
-    runningTitle(company) {
-      return `${company} · 产业分析`;
+      return `${company} · 竞争分析`;
     },
   },
 
@@ -303,231 +249,21 @@ window.AI_MODES = {
     },
   },
 
-  bazhang: {
-    id: "bazhang",
-    label: "八看解读",
-    pageTitle: "ORBIT · 智能分析",
-    heading: "张新民「八看」财报解读",
-    subtitle: "战略 · 经营资产 · 核心利润 · 财务状况质量 · 规则引擎预计算",
-    startBtn: "生成报告",
-    historyHead: "历史报告",
-    reportTitle: "八看财报解读",
-    reportMetaDefault: "选择历史报告或生成新的",
-    historyMeta: "历史报告",
-    emptyReports: "暂无历史报告",
-    resumeFail: "恢复八看解读任务失败",
-    apiRoot: "/api/ai/bazhang-analysis",
-    jobStoreKey: "orbit.bazhang.activeJob",
-    reportNameRe: /八看财报解读|八看解读/,
-    agentDefs: [
-      { id: "bz_init", name: "解析公司", subtitle: "识别代码与行业" },
-      { id: "bz_fetch", name: "采集数据", subtitle: "财报 + 规则引擎预计算" },
-      { id: "bz_strategy", name: "一看：战略", subtitle: "资产配置 · 战略类型" },
-      { id: "bz_operating", name: "二看：经营资产", subtitle: "两头吃 · 周转效率" },
-      { id: "bz_profit", name: "三看：效益质量", subtitle: "核心利润 · 利润成色" },
-      { id: "bz_value", name: "四看：价值", subtitle: "ROE · ROIC · 价值创造" },
-      { id: "bz_cost", name: "五看：成本", subtitle: "费用结构 · 成本机制" },
-      { id: "bz_quality", name: "六看：财务状况", subtitle: "资产质量 · 负债结构" },
-      { id: "bz_risk", name: "七看：风险", subtitle: "三脱节 · 偿债 · 商誉" },
-      { id: "bz_outlook", name: "八看：前景", subtitle: "扩张/收缩 · 可持续性" },
-      { id: "bz_synthesis", name: "综合诊断", subtitle: "战略-质量-现金流自洽性" },
-      { id: "bz_assemble", name: "拼装报告", subtitle: "整合各章节" },
-      { id: "bz_save", name: "保存报告", subtitle: "写入 Markdown" },
-    ],
-    emptyStateHtml: `
-      <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">◈</div>
-        <h3>从报表看企业</h3>
-        <p>基于张新民「八看」框架，Python 规则引擎预计算资产分类、核心利润、两头吃指数与三脱节检测，LLM 逐章解读财务状况质量。</p>
-        <ul class="ai-empty-tips">
-          <li>年报、半年报、季报全量定期报告</li>
-          <li>经营性 vs 投资性资产分类</li>
-          <li>核心利润 + 经营现金流验证</li>
-          <li>两头吃竞争力 · 三脱节风险</li>
-          <li>八看逐章 + 综合诊断</li>
-        </ul>
-      </div>`,
-    resultTitle(result) {
-      const st = result.strategy_type ? ` · ${result.strategy_type}` : "";
-      return `${result.stock_name || ""} 八看财报解读${st}`.trim();
-    },
-    resultMeta(result) {
-      return [
-        result.stock_code ? `代码 ${result.stock_code}` : "",
-        result.strategy_type ? `战略 ${result.strategy_type}` : "",
-        result.report_path ? "已保存" : "",
-      ].filter(Boolean).join(" · ");
-    },
-    runningTitle(company) {
-      return `${company} · 八看财报解读`;
-    },
-  },
-
-  buffett: {
-    id: "buffett",
-    label: "巴菲特读表",
-    pageTitle: "ORBIT · 智能分析",
-    heading: "巴菲特读表",
-    subtitle: "所有者盈余 · 有形回报 · 资本配置 · 规则引擎预计算",
-    startBtn: "生成报告",
-    historyHead: "历史报告",
-    reportTitle: "巴菲特读表",
-    reportMetaDefault: "选择历史报告或生成新的",
-    historyMeta: "历史报告",
-    emptyReports: "暂无历史报告",
-    resumeFail: "恢复巴菲特读表任务失败",
-    apiRoot: "/api/ai/buffett-analysis",
-    jobStoreKey: "orbit.buffett.activeJob",
-    reportNameRe: /巴菲特读表/,
-    agentDefs: [
-      { id: "bf_init", name: "解析公司", subtitle: "识别代码与行业" },
-      { id: "bf_fetch", name: "采集数据", subtitle: "财报 + 所有者盈余预计算" },
-      { id: "bf_understand", name: "一、生意能否看懂", subtitle: "能力圈 · 怎么赚钱" },
-      { id: "bf_owner", name: "二、所有者盈余", subtitle: "上沿 / 下沿 / 现金核对" },
-      { id: "bf_capital", name: "三、资本饥饿", subtitle: "有形回报 · 四种生意" },
-      { id: "bf_honesty", name: "四、会计与配置", subtitle: "商誉 · 留存 · 发股" },
-      { id: "bf_synthesis", name: "五、综合判决", subtitle: "六问 · 安全边际" },
-      { id: "bf_assemble", name: "拼装报告", subtitle: "整合各章节" },
-      { id: "bf_save", name: "保存报告", subtitle: "写入 Markdown" },
-    ],
-    emptyStateHtml: `
-      <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">▣</div>
-        <h3>先算能取出的现金</h3>
-        <p>按巴菲特 1986 年所有者盈余公式，Python 先给出上沿（折旧）与下沿（资本开支）区间，再逐章解读生意能否看懂、资本饥饿、会计诚实与资本配置。</p>
-        <ul class="ai-empty-tips">
-          <li>所有者盈余区间，不把 (c) 装成精确值</li>
-          <li>有形 ROE · capex/D&amp;A · 四种生意分类</li>
-          <li>留存 1 美元测试的可计算近似</li>
-          <li>综合判决引用已有估值，不做独立三情景模型</li>
-        </ul>
-      </div>`,
-    resultTitle(result) {
-      const bt = result.business_type ? ` · ${result.business_type}` : "";
-      return `${result.stock_name || ""} 巴菲特读表${bt}`.trim();
-    },
-    resultMeta(result) {
-      return [
-        result.stock_code ? `代码 ${result.stock_code}` : "",
-        result.business_type ? `类型 ${result.business_type}` : "",
-        result.report_path ? "已保存" : "",
-      ].filter(Boolean).join(" · ");
-    },
-    runningTitle(company) {
-      return `${company} · 巴菲特读表`;
-    },
-  },
-
-  "buffett-rules": {
-    id: "buffett-rules",
-    kind: "engine",
-    label: "巴菲特规则引擎",
-    pageTitle: "ORBIT · 智能分析",
-    heading: "巴菲特规则引擎",
-    subtitle: "强制刷新东财最新全量定期报告 · 所有者盈余区间 · 不经过大模型",
-    startBtn: "重新计算",
-    historyHead: "规则结果",
-    reportTitle: "巴菲特规则引擎",
-    reportMetaDefault: "强制刷新最新全量定期报告后按固定公式计算，不调用大模型",
-    historyMeta: "规则结果",
-    emptyReports: "暂无结果",
-    resumeFail: "巴菲特规则引擎计算失败",
-    apiRoot: "/api/ai/buffett-rules",
-    jobStoreKey: "orbit.buffettRules.pack",
-    reportNameRe: /$^/,
-    agentDefs: [],
-    emptyStateHtml: `
-      <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">∑</div>
-        <h3>先算，再解释</h3>
-        <p>巴菲特规则引擎强制刷新东方财富 F10：利润表、资产负债表、现金流量表、主要指标、业绩报表，覆盖最新一期及历史定期报告，再按巴菲特公式给出上沿/下沿、有形 ROE 和生意类型。</p>
-        <ul class="ai-empty-tips">
-          <li>强制刷新，不吃一小时缓存</li>
-          <li>有形 ROE · capex/D&amp;A · 四种生意</li>
-          <li>留存 1 美元测试的可计算近似</li>
-          <li>折旧附注缺失时下沿标「未披露」</li>
-        </ul>
-      </div>`,
-    resultTitle(result) {
-      const bt = result.business_type ? ` · ${result.business_type}` : "";
-      return `${result.stock_name || ""} 巴菲特规则引擎${bt}`.trim();
-    },
-    resultMeta(result) {
-      return [
-        result.stock_code ? `代码 ${result.stock_code}` : "",
-        result.latest_period || "",
-        result.period_kind || "",
-        result.coverage || "",
-        result.data_available ? "已计算" : "无定期报告",
-      ].filter(Boolean).join(" · ");
-    },
-    runningTitle(company) {
-      return `${company} · 巴菲特规则引擎`;
-    },
-  },
-
-  "bazhang-rules": {
-    id: "bazhang-rules",
-    kind: "engine",
-    label: "张新民规则引擎",
-    pageTitle: "ORBIT · 智能分析",
-    heading: "张新民规则引擎",
-    subtitle: "强制刷新东财最新全量定期报告 · 八看指标纯计算 · 不经过大模型",
-    startBtn: "重新计算",
-    historyHead: "规则结果",
-    reportTitle: "张新民规则引擎",
-    reportMetaDefault: "强制刷新最新全量定期报告后按八看公式计算，不调用大模型",
-    historyMeta: "规则结果",
-    emptyReports: "暂无结果",
-    resumeFail: "张新民规则引擎计算失败",
-    apiRoot: "/api/ai/bazhang-rules",
-    jobStoreKey: "orbit.bazhangRules.pack",
-    reportNameRe: /$^/,
-    agentDefs: [],
-    emptyStateHtml: `
-      <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">∑</div>
-        <h3>先算，再解释</h3>
-        <p>张新民规则引擎强制刷新东方财富 F10 全量定期报告，按「八看」逐步列出原始数据、计算公式、计算结果与结论，不调用大模型。</p>
-        <ul class="ai-empty-tips">
-          <li>每一步：原始数据 → 公式 → 结果 → 结论</li>
-          <li>经营主导 / 投资主导 / 混合型</li>
-          <li>核心利润 · OCF/核心利润 · 销售收现比</li>
-          <li>两头吃指数 · 三脱节 · 存贷双高警示</li>
-        </ul>
-      </div>`,
-    resultTitle(result) {
-      const st = result.strategy_type ? ` · ${result.strategy_type}` : "";
-      return `${result.stock_name || ""} 张新民规则引擎${st}`.trim();
-    },
-    resultMeta(result) {
-      return [
-        result.stock_code ? `代码 ${result.stock_code}` : "",
-        result.latest_period || "",
-        result.period_kind || "",
-        result.coverage || "",
-        result.data_available ? "已计算" : "无定期报告",
-      ].filter(Boolean).join(" · ");
-    },
-    runningTitle(company) {
-      return `${company} · 张新民规则引擎`;
-    },
-  },
 
   "zhang-views": {
     id: "zhang-views",
     kind: "engine",
-    label: "张新民规则方法",
+    label: "张新民视角",
     pageTitle: "ORBIT · 智能分析",
-    heading: "张新民规则方法",
+    heading: "张新民视角",
     subtitle: "可选年报/半年报/一季报/三季报口径 · 八看逐项计算 + 综合汇总 · 不经过大模型",
     startBtn: "重新计算",
     historyHead: "规则结果",
-    reportTitle: "张新民规则方法",
-    reportMetaDefault: "按所选报告口径运行八看规则引擎，不调用大模型",
+    reportTitle: "张新民视角",
+    reportMetaDefault: "按所选报告口径运行八看规则方法，不调用大模型",
     historyMeta: "规则结果",
     emptyReports: "暂无结果",
-    resumeFail: "张新民规则方法计算失败",
+    resumeFail: "张新民视角计算失败",
     apiRoot: "/api/stocks/financial-views",
     jobStoreKey: "orbit.zhangViews.pack",
     reportNameRe: /$^/,
@@ -536,7 +272,7 @@ window.AI_MODES = {
       <div class="ai-empty-state">
         <div class="ai-empty-icon" aria-hidden="true">∑</div>
         <h3>先选口径，再算八看</h3>
-        <p>张新民规则方法按「一看～八看」逐项列出原始数据、计算公式、计算结果与结论，再汇总成综合诊断；可切换年报 / 半年报 / 一季报 / 三季报口径，全程不调用大模型。</p>
+        <p>张新民视角按「一看～八看」逐项列出原始数据、计算公式、计算结果与结论，再汇总成综合诊断；可切换年报 / 半年报 / 一季报 / 三季报口径，全程不调用大模型。</p>
         <ul class="ai-empty-tips">
           <li>报告口径：年报 / 半年报 / 一季报 / 三季报（同口径同比）</li>
           <li>一看战略 · 二看竞争力 · 三看效益 · 四看价值</li>
@@ -546,7 +282,7 @@ window.AI_MODES = {
       </div>`,
     resultTitle(result) {
       const st = result.strategy_type && result.strategy_type !== "未知" ? ` · ${result.strategy_type}` : "";
-      return `${result.name || result.stock_name || ""} 张新民规则方法${st}`.trim();
+      return `${result.name || result.stock_name || ""} 张新民视角${st}`.trim();
     },
     resultMeta(result) {
       return [
@@ -558,7 +294,7 @@ window.AI_MODES = {
       ].filter(Boolean).join(" · ");
     },
     runningTitle(company) {
-      return `${company} · 张新民规则方法`;
+      return `${company} · 张新民视角`;
     },
   },
 
@@ -629,67 +365,6 @@ window.AI_MODES = {
     },
   },
 
-  trend: {
-    id: "trend",
-    label: "趋势分析",
-    pageTitle: "ORBIT · 智能分析",
-    heading: "趋势分析",
-    subtitle: "只看当日资金动向列表与分时成交列表：先列统计，再解读博弈",
-    startBtn: "生成分析",
-    historyHead: "历史报告",
-    reportTitle: "趋势分析",
-    reportMetaDefault: "选择历史报告或生成新的",
-    historyMeta: "历史报告",
-    emptyReports: "暂无历史报告",
-    resumeFail: "恢复趋势分析任务失败",
-    apiRoot: "/api/ai/trend-analysis",
-    jobStoreKey: "orbit.trendAnalysis.activeJob",
-    reportNameRe: /趋势分析/,
-    agentDefs: [
-      { id: "tr_init", name: "解析公司", subtitle: "识别代码与名称" },
-      { id: "tr_fetch", name: "拉取资金与分时", subtitle: "大单列表 + 成交明细" },
-      { id: "tr_main", name: "统计资金动向", subtitle: "四象限 + 时段 + 金额档" },
-      { id: "tr_retail", name: "统计分时成交", subtitle: "档位 / 时段 / 小单代理" },
-      { id: "tr_synth", name: "生成综合结论", subtitle: "数据统计 + 分析解读" },
-      { id: "tr_save", name: "保存报告", subtitle: "写入 Markdown" },
-    ],
-    emptyStateHtml: `
-      <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">◇</div>
-        <h3>只看钱怎么流、单怎么撮</h3>
-        <p>报告只使用公司页同源的两张列表：资金动向（同花顺大单）与分时成交。先列统计，再交叉解读大单与小单是否共振或背离，并给出当日资金语言的失效观察。不含日线与东财分档资金。</p>
-        <ul class="ai-empty-tips">
-          <li>资金标签：偏吸 / 偏抛 / 对倒 / 分歧 / 观望</li>
-          <li>散户数量是小单活跃度代理，不是持仓人数</li>
-          <li>结论含共振或背离，并给出失效观察条件</li>
-          <li>不做买卖点建议</li>
-        </ul>
-      </div>`,
-    resultTitle(result) {
-      const v = result.verdict || {};
-      const lean = v.lean ? ` · ${v.lean}` : "";
-      return `${result.stock_name || ""} 趋势分析${lean}`.trim();
-    },
-    resultMeta(result) {
-      const v = result.verdict || {};
-      const main = result.main_force || {};
-      return [
-        result.stock_code ? `代码 ${result.stock_code}` : "",
-        result.day || "",
-        v.lean ? `倾向 ${v.lean}` : "",
-        Number.isFinite(Number(v.confidence)) ? `置信度 ${v.confidence}` : "",
-        main.label ? `资金 ${main.label}` : "",
-        result.report_path ? "已保存" : "",
-      ].filter(Boolean).join(" · ");
-    },
-    runningTitle(company) {
-      return `${company} · 趋势分析`;
-    },
-    startQuery(company) {
-      return { company };
-    },
-  },
-
   valuation: {
     id: "valuation",
     label: "估值分析",
@@ -751,53 +426,26 @@ window.AI_MODES = {
 
 };
 
-window.AI_MODE_ORDER = ["business", "bazhang", "bazhang-rules", "zhang-views", "buffett", "buffett-rules", "competition", "chain", "risk", "trend", "valuation", "sentiment", "chip", "compare"];
+window.AI_MODE_ORDER = ["business", "zhang-views", "peers", "risk", "valuation", "sentiment", "chip", "compare"];
 
 window.AI_MODE_ALIASES = {
   business: "business",
   brief: "business",
   ai: "business",
-  earnings: "bazhang",
-  "财报简述": "bazhang",
-  competition: "competition",
-  chain: "chain",
-  "产业链": "chain",
-  "产业分析": "chain",
-  "产业": "chain",
+  earnings: "zhang-views",
+  "财报简述": "zhang-views",
+  peers: "peers",
+  "竞争分析": "peers",
+  "同业对比": "peers",
+  "industry-compare": "peers",
   risk: "risk",
-  bazhang: "bazhang",
-  zhang: "bazhang",
-  "八看": "bazhang",
-  "张新民": "bazhang",
-  "张新明": "bazhang",
-  buffett: "buffett",
-  owner: "buffett",
-  "巴菲特": "buffett",
-  "巴菲特读表": "buffett",
-  "巴菲特视角": "buffett",
-  "buffett-rules": "buffett-rules",
-  rules: "buffett-rules",
-  engine: "buffett-rules",
-  "规则引擎": "buffett-rules",
-  "巴菲特规则引擎": "buffett-rules",
-  "bazhang-rules": "bazhang-rules",
-  "zhang-rules": "bazhang-rules",
-  "张新民规则引擎": "bazhang-rules",
-  "八看规则引擎": "bazhang-rules",
+  "张新民视角": "zhang-views",
   "zhang-views": "zhang-views",
-  "zhang-views-method": "zhang-views",
-  "张新民规则方法": "zhang-views",
-  "八看规则方法": "zhang-views",
-  "规则方法": "zhang-views",
   sentiment: "sentiment",
   retail: "sentiment",
   "retail-sentiment": "sentiment",
   "情绪分析": "sentiment",
   "散户情绪": "sentiment",
-  trend: "trend",
-  "trend-analysis": "trend",
-  "趋势分析": "trend",
-  "趋势研判": "trend",
   valuation: "valuation",
   "valuation-analysis": "valuation",
   "估值分析": "valuation",

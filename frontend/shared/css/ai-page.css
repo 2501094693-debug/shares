@@ -1291,3 +1291,95 @@ button.ai-brief-mode.is-active {
   border-radius: 3px;
   white-space: nowrap;
 }
+
+/* 竞争分析：同行业八看横截面对比 */
+.engine-section .peers-table .peers-ind-col {
+  position: sticky;
+  left: 0;
+  background: var(--panel);
+  text-align: left;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.engine-section .peers-table .peers-co-col {
+  white-space: nowrap;
+}
+
+.engine-section .peers-table th.is-target {
+  color: var(--accent, #46d2be);
+}
+
+.engine-section .peers-table td.is-target {
+  background: rgba(70, 210, 190, 0.06);
+}
+
+.engine-section .peers-table td.is-good {
+  color: #46d2be;
+}
+
+.engine-section .peers-table td.is-bad {
+  color: #ff6b6b;
+}
+
+.engine-section .peers-rank {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.engine-section .peers-rank-sep {
+  opacity: 0.6;
+}
+
+.engine-section .peers-rank-pct {
+  margin-left: 3px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: rgba(138, 148, 166, 0.14);
+  font-size: 10px;
+}
+
+.engine-section .peers-bench {
+  margin-top: 10px;
+}
+
+.engine-section .peers-bench summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+.engine-section .peers-chips {
+  list-style: none;
+  margin: 4px 0 10px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.engine-section .peers-chips li {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  border: 1px solid var(--line);
+}
+
+.engine-section .peers-chips.is-good li {
+  color: #46d2be;
+  background: rgba(70, 210, 190, 0.1);
+  border-color: rgba(70, 210, 190, 0.3);
+}
+
+.engine-section .peers-chips.is-bad li {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.08);
+  border-color: rgba(255, 107, 107, 0.25);
+}
+

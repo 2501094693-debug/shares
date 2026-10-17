@@ -310,13 +310,6 @@ const els = {
   peChartEmpty: document.getElementById("peChartEmpty"),
   peChartAxisScroll: document.getElementById("peChartAxisScroll"),
   peChartScrollBar: document.getElementById("peChartScrollBar"),
-  turnoverChartMeta: document.getElementById("turnoverChartMeta"),
-  turnoverChartHoverCard: document.getElementById("turnoverChartHoverCard"),
-  turnoverChartWrap: document.getElementById("turnoverChartWrap"),
-  turnoverChart: document.getElementById("turnoverChart"),
-  turnoverChartEmpty: document.getElementById("turnoverChartEmpty"),
-  turnoverChartAxisScroll: document.getElementById("turnoverChartAxisScroll"),
-  turnoverChartScrollBar: document.getElementById("turnoverChartScrollBar"),
   refreshNewsBtn: document.getElementById("refreshNewsBtn"),
   refreshQuotesBtn: document.getElementById("refreshQuotesBtn"),
   panelNews: document.getElementById("panel-news"),
@@ -326,7 +319,6 @@ const els = {
   companyTabStack: document.getElementById("companyTabStack"),
   panelJudgment: document.getElementById("panel-judgment"),
   judgmentSourceBar: document.getElementById("judgmentSourceBar"),
-  earningsSourceBar: document.getElementById("earningsSourceBar"),
   exchangeForm: document.getElementById("exchangeForm"),
   exchangeTabs: document.getElementById("exchangeTabs"),
   exchangeTitle: document.getElementById("exchangeTitle"),
@@ -733,10 +725,10 @@ const xqEmotionState = {
 let newsGroup = normalizeNewsGroup(params.get("news") || "");
 let newsBootstrapped = { official: false, other: false, reports: false, financials: false };
 let emotionBootstrapped = { eastmoney: false, tonghuashun: false, xueqiu: false };
-const ANALYSIS_PANELS = new Set(["business", "bazhang", "bazhang-rules", "zhang-views", "buffett", "buffett-rules", "competition", "chain", "risk", "sentiment", "trend", "valuation", "chip", "compare"]);
-const EARNINGS_VIEWS = new Set(["bazhang", "bazhang-rules", "zhang-views", "buffett", "buffett-rules"]);
+const ANALYSIS_PANELS = new Set(["business", "zhang-views", "peers", "risk", "sentiment", "valuation", "chip", "compare"]);
+const EARNINGS_VIEWS = new Set(["zhang-views"]);
 const EARNINGS_FAMILY = new Set(["earnings", "财报简述", ...EARNINGS_VIEWS]);
-let lastEarningsView = "bazhang";
+let lastEarningsView = "zhang-views";
 const tabParamRaw = (params.get("tab") || "").trim().toLowerCase();
 let emotionSource = normalizeEmotionSource(params.get("emotion") || "");
 if (["ths-emotion", "ths", "circle"].includes(tabParamRaw)) {
@@ -845,7 +837,7 @@ function normalizeMainPanel(panelId) {
 function normalizeJudgmentSubTab(view) {
   const raw = String(view || "").trim().toLowerCase();
   if (raw === "earnings" || raw === "财报简述") {
-    return EARNINGS_VIEWS.has(lastEarningsView) ? lastEarningsView : "bazhang";
+    return EARNINGS_VIEWS.has(lastEarningsView) ? lastEarningsView : "zhang-views";
   }
   const aliases = window.AI_MODE_ALIASES || {};
   const mapped = aliases[raw] || raw;
@@ -1174,16 +1166,6 @@ const METRIC_TIPS = {
   盘后委买: "收盘后那段固定价格交易里，还有多少人挂单想买。",
   盘后量: "收盘后那段时间成交了多少。",
   盘后额: "收盘后那段时间成交了多少钱。",
-  近1日: "最近 1 个交易日涨了还是跌了多少。",
-  "3日": "最近 3 个交易日累计涨跌多少。",
-  近3日: "最近 3 个交易日累计涨跌多少。",
-  "5日": "最近 5 个交易日累计涨跌多少。",
-  "10日": "最近 10 个交易日累计涨跌多少。",
-  "20日": "最近 20 个交易日累计涨跌多少（大约一个月）。",
-  "60日": "最近 60 个交易日累计涨跌多少（大约三个月）。",
-  近半年: "最近大约半年累计涨跌多少。",
-  近1年: "最近大约一年累计涨跌多少。",
-  今年: "从今年开年到现在，累计涨跌多少。",
   "52周最高": "过去一年里出现过的最高价（已按分红送股等做过前复权调整）。",
   "52周最低": "过去一年里出现过的最低价（已按分红送股等做过前复权调整）。",
   历史最高: "上市以来出现过的最高价（前复权后，方便和现在价格对比）。",
@@ -1333,44 +1315,6 @@ function setupMetricTips() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeMetricTips();
   });
-}
-
-function renderMetricSection(title, items, { gridClass = "" } = {}) {
-  const cells = items.filter(([, v]) => displayValue(v) !== "-");
-  if (!cells.length) return "";
-  const gridCls = ["company-metrics", gridClass].filter(Boolean).join(" ");
-  return `
-    <section class="metrics-section">
-      <h4 class="metrics-section-title">${escapeHtml(title)}</h4>
-      <div class="${gridCls}">
-        ${cells.map(metricCell).join("")}
-      </div>
-    </section>`;
-}
-
-function renderInlineMetricRows(title, rows, { highlightFirst = false, rowOpts = [] } = {}) {
-  const parts = rows
-    .map((items) => items.filter(([, v]) => displayValue(v) !== "-"))
-    .filter((items) => items.length);
-  if (!parts.length) return "";
-  return `
-    <section class="metrics-section">
-      <h4 class="metrics-section-title">${escapeHtml(title)}</h4>
-      ${parts
-        .map((items, idx) => {
-          const opts = rowOpts[idx] || {};
-          const rowCls = [
-            "company-metrics",
-            opts.class || "metrics-inline-row",
-            highlightFirst && idx === 0 ? "metrics-highlight-row" : "",
-          ]
-            .filter(Boolean)
-            .join(" ");
-          const style = ` style="--metrics-cols:${opts.cols || items.length}"`;
-          return `<div class="${rowCls}"${style}>${items.map(metricCell).join("")}</div>`;
-        })
-        .join("")}
-    </section>`;
 }
 
 function yuanFromWan(wan) {
@@ -2682,14 +2626,6 @@ function syncJudgmentSubTabUi() {
   if (els.judgmentSourceBar) {
     els.judgmentSourceBar.querySelectorAll("[data-source]").forEach((btn) => {
       const active = btn.getAttribute("data-source") === family;
-      btn.classList.toggle("is-active", active);
-      btn.setAttribute("aria-selected", active ? "true" : "false");
-    });
-  }
-  if (els.earningsSourceBar) {
-    els.earningsSourceBar.hidden = family !== "earnings";
-    els.earningsSourceBar.querySelectorAll("[data-source]").forEach((btn) => {
-      const active = btn.getAttribute("data-source") === view;
       btn.classList.toggle("is-active", active);
       btn.setAttribute("aria-selected", active ? "true" : "false");
     });
@@ -8702,18 +8638,10 @@ function setupJudgmentSubTabs() {
       if (!btn || !els.judgmentSourceBar.contains(btn)) return;
       const source = btn.getAttribute("data-source") || "business";
       if (source === "earnings") {
-        setJudgmentSubTab(lastEarningsView || "bazhang");
+        setJudgmentSubTab(lastEarningsView || "zhang-views");
         return;
       }
       setJudgmentSubTab(source);
-    });
-  }
-  if (els.earningsSourceBar && els.earningsSourceBar.dataset.bound !== "1") {
-    els.earningsSourceBar.dataset.bound = "1";
-    els.earningsSourceBar.addEventListener("click", (event) => {
-      const btn = event.target.closest("[data-source]");
-      if (!btn || !els.earningsSourceBar.contains(btn)) return;
-      setJudgmentSubTab(btn.getAttribute("data-source") || lastEarningsView || "bazhang");
     });
   }
   syncJudgmentSubTabUi();
@@ -9254,27 +9182,6 @@ function applyLinkedRangeToPe(range) {
   renderPeChart();
 }
 
-function applyLinkedRangeToTurnover(range) {
-  const vp = viewportFromAxisRange(turnoverState.allItems, range);
-  if (!vp) return;
-  turnoverState.viewStart = vp.viewStart;
-  turnoverState.viewSize = vp.viewSize;
-  turnoverState.items = turnoverViewWindow().items;
-  syncTurnoverScrollBar();
-  hideTurnoverHoverCard();
-  if (!turnoverState.allItems.length) {
-    renderTurnoverChart();
-    return;
-  }
-  const hasValue = (turnoverState.items || []).some((d) => turnoverValue(d) != null);
-  if (!hasValue) setTurnoverStatus("暂无换手率数据", { empty: true });
-  else {
-    setTurnoverStatus("");
-    refreshTurnoverWindowStatus();
-  }
-  renderTurnoverChart();
-}
-
 function applyLinkedRangeToFundflow(range) {
   const vp = viewportFromAxisRange(fundflowState.allItems, range);
   if (!vp) return;
@@ -9301,9 +9208,7 @@ function propagateLinkedAxis(source) {
         ? peState.items
         : source === "fundflow"
           ? fundflowState.items
-          : source === "margin"
-            ? marginState.items
-            : turnoverState.items;
+          : marginState.items;
   const range = visibleAxisRange(items);
   if (!range) return;
   linkedAxisLock = true;
@@ -9312,7 +9217,6 @@ function propagateLinkedAxis(source) {
     if (source !== "pe") applyLinkedRangeToPe(range);
     if (source !== "fundflow") applyLinkedRangeToFundflow(range);
     if (source !== "margin") applyLinkedRangeToMargin(range);
-    if (source !== "turnover") applyLinkedRangeToTurnover(range);
   } finally {
     linkedAxisLock = false;
   }
@@ -13335,362 +13239,6 @@ async function loadMarginChart() {
   }
 }
 
-const turnoverState = {
-  loading: false,
-  items: [],
-  allItems: [],
-  viewStart: 0,
-  viewSize: METRIC_FALLBACK_VIEW_SIZE,
-  source: "",
-};
-
-function turnoverValue(d) {
-  const n = Number(d?.turnover);
-  return Number.isFinite(n) ? n : null;
-}
-
-function setTurnoverStatus(message, { empty = false } = {}) {
-  if (els.turnoverChartMeta) els.turnoverChartMeta.textContent = message || "";
-  if (els.turnoverChartEmpty) {
-    els.turnoverChartEmpty.textContent = empty ? message || "暂无换手率数据" : "暂无换手率数据";
-    els.turnoverChartEmpty.classList.toggle("hidden", !empty);
-  }
-}
-
-function turnoverViewWindow() {
-  const all = turnoverState.allItems || [];
-  const total = all.length;
-  let size = Number(turnoverState.viewSize) || 0;
-  if (size <= 0 || size >= total) size = total;
-  const maxStart = Math.max(0, total - size);
-  const start = Math.min(Math.max(0, Number(turnoverState.viewStart) || 0), maxStart);
-  return { total, size, start, maxStart, items: total ? all.slice(start, start + size) : [] };
-}
-
-function syncTurnoverScrollBar() {
-  const bar = els.turnoverChartScrollBar;
-  const wrap = els.turnoverChartAxisScroll;
-  if (!bar || !wrap) return;
-  const { maxStart, start, total, size } = turnoverViewWindow();
-  const disabled = maxStart <= 0;
-  wrap.classList.toggle("is-disabled", disabled);
-  bar.disabled = disabled;
-  bar.min = "0";
-  bar.max = String(maxStart);
-  bar.value = String(start);
-  const ratio = total > 0 ? Math.min(1, size / total) : 1;
-  bar.style.setProperty("--thumb-w", `${Math.max(28, Math.round(ratio * 220))}px`);
-}
-
-function resetTurnoverViewport(allItems, { preferLinked = true } = {}) {
-  turnoverState.allItems = Array.isArray(allItems) ? allItems : [];
-  const total = turnoverState.allItems.length;
-  const linked = preferLinked && klineJoinsLinkedAxis() ? visibleAxisRange(chartState.items) : null;
-  const vp = linked ? viewportFromAxisRange(turnoverState.allItems, linked) : null;
-  if (vp) {
-    turnoverState.viewStart = vp.viewStart;
-    turnoverState.viewSize = vp.viewSize;
-  } else {
-    let viewSize = METRIC_FALLBACK_VIEW_SIZE;
-    if (viewSize <= 0 || viewSize >= total) viewSize = total;
-    turnoverState.viewSize = viewSize;
-    turnoverState.viewStart = Math.max(0, total - viewSize);
-  }
-  turnoverState.items = turnoverViewWindow().items;
-  syncTurnoverScrollBar();
-}
-
-function setTurnoverViewStart(nextStart, { render = true, hoverIndex = null } = {}) {
-  const { maxStart } = turnoverViewWindow();
-  const start = Math.min(Math.max(0, Math.round(nextStart)), maxStart);
-  if (start === turnoverState.viewStart && turnoverState.items.length) {
-    syncTurnoverScrollBar();
-    if (render) renderTurnoverChart(hoverIndex);
-    return start;
-  }
-  turnoverState.viewStart = start;
-  turnoverState.items = turnoverViewWindow().items;
-  syncTurnoverScrollBar();
-  if (render) {
-    refreshTurnoverWindowStatus();
-    renderTurnoverChart(hoverIndex);
-  }
-  propagateLinkedAxis("turnover");
-  return start;
-}
-
-function zoomTurnoverViewport(anchorRatio, factor, { render = true } = {}) {
-  const total = (turnoverState.allItems || []).length;
-  if (total <= 1) return;
-  const win = turnoverViewWindow();
-  const minSize = peMinViewSize(total);
-  const nextSize = Math.min(total, Math.max(minSize, Math.round(win.size * factor)));
-  const anchorIndex = win.start + Math.round(win.size * Math.min(1, Math.max(0, anchorRatio)));
-  const nextStart = Math.round(anchorIndex - nextSize * Math.min(1, Math.max(0, anchorRatio)));
-  turnoverState.viewSize = nextSize;
-  turnoverState.viewStart = nextStart;
-  turnoverState.items = turnoverViewWindow().items;
-  syncTurnoverScrollBar();
-  if (render) {
-    refreshTurnoverWindowStatus();
-    renderTurnoverChart();
-  }
-  propagateLinkedAxis("turnover");
-}
-
-function refreshTurnoverWindowStatus() {
-  const { total, size, items } = turnoverViewWindow();
-  if (!total) return;
-  const values = items.map(turnoverValue).filter((v) => v != null);
-  const last = values.length ? values[values.length - 1] : null;
-  const mid = quantile(values, 0.5);
-  const lo = values.length ? Math.min(...values) : null;
-  const hi = values.length ? Math.max(...values) : null;
-  const rank = percentileRank(values, last);
-  const src = turnoverState.source ? ` · ${turnoverState.source}` : "";
-  const tip =
-    size < total
-      ? ` · 显示 ${size}/${total}，滚轮缩放 · 拖动/滑动平移`
-      : ` · ${total} 日，滚轮可放大`;
-  const stats = [
-    last != null ? `当前 ${fmtPct(last)}` : "",
-    rank != null ? `${Math.round(rank)}%分位` : "",
-    mid != null ? `中位 ${fmtPct(mid)}` : "",
-    lo != null && hi != null ? `区间 ${fmtPct(lo)}–${fmtPct(hi)}` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  setTurnoverStatus(`换手率${stats ? ` · ${stats}` : ""}${tip}${src}`);
-}
-
-function hideTurnoverHoverCard() {
-  if (!els.turnoverChartHoverCard) return;
-  els.turnoverChartHoverCard.classList.add("hidden");
-  els.turnoverChartHoverCard.setAttribute("aria-hidden", "true");
-  els.turnoverChartHoverCard.innerHTML = "";
-}
-
-function showTurnoverHoverCard() {
-  if (!els.turnoverChartHoverCard) return;
-  els.turnoverChartHoverCard.classList.remove("hidden");
-  els.turnoverChartHoverCard.setAttribute("aria-hidden", "false");
-}
-
-function updateTurnoverHoverLabel(index) {
-  if (!els.turnoverChartHoverCard) return;
-  const items = turnoverState.items || [];
-  if (index == null || index < 0 || index >= items.length) {
-    hideTurnoverHoverCard();
-    return;
-  }
-  const d = items[index];
-  const to = turnoverValue(d);
-  const values = items.map(turnoverValue).filter((v) => v != null);
-  const rank = percentileRank(values, to);
-  const row = (label, valueHtml, valueCls = "") =>
-    `<span class="chart-hover-item"><span class="k">${escapeHtml(label)}</span><span class="v ${valueCls}">${valueHtml}</span></span>`;
-  const rows = [
-    row("换手率", escapeHtml(fmtPct(to))),
-    Number.isFinite(Number(d.close)) ? row("收盘", escapeHtml(fmtNum(d.close))) : "",
-    rank != null ? row("窗口分位", escapeHtml(`${Math.round(rank)}%`)) : "",
-  ].filter(Boolean);
-  els.turnoverChartHoverCard.innerHTML = `<div class="chart-hover-card-rows chart-hover-card-rows--inline"><span class="chart-hover-card-time">${escapeHtml(d.time || "")}</span>${rows.join("")}</div>`;
-  showTurnoverHoverCard();
-}
-
-function turnoverPointerIndex(evt) {
-  const canvas = els.turnoverChart;
-  const wrap = els.turnoverChartWrap;
-  const items = turnoverState.items || [];
-  if (!canvas || !wrap || !items.length) return null;
-  const rect = canvas.getBoundingClientRect();
-  const x = evt.clientX - rect.left;
-  const layout = peChartLayout(rect.width, rect.height);
-  if (x < layout.price.x || x > layout.price.x + layout.price.w) return null;
-  const t = (x - layout.price.x) / layout.price.w;
-  return Math.min(items.length - 1, Math.max(0, Math.floor(t * items.length)));
-}
-
-function panTurnoverByPixels(dx, canvasWidth) {
-  const { size, maxStart } = turnoverViewWindow();
-  if (maxStart <= 0 || size <= 0) return false;
-  const layout = peChartLayout(canvasWidth, 300);
-  const barW = layout.price.w / size;
-  if (barW <= 0) return false;
-  const deltaBars = Math.round(-dx / barW);
-  if (!deltaBars) return false;
-  setTurnoverViewStart(turnoverState.viewStart + deltaBars, { render: true });
-  return true;
-}
-
-function drawTurnoverChart(ctx, layout, items, colors, hoverIndex) {
-  drawMetricChart(ctx, layout, items, turnoverValue, colors, hoverIndex, {
-    formatLabel: fmtPct,
-    yFormat: (val) => fmtPct(val),
-    mode: "day",
-  });
-}
-
-function renderTurnoverChart(hoverIndex = null) {
-  if (els.priceChart) renderChart(hoverIndex);
-}
-
-async function loadTurnoverChart({ refresh = false } = {}) {
-  if (!code) return;
-  turnoverState.loading = true;
-  setTurnoverStatus("正在加载换手率…");
-  hideTurnoverHoverCard();
-  try {
-    const qs = new URLSearchParams({ code, limit: "1500" });
-    if (refresh) qs.set("refresh", "1");
-    const json = await api(`/api/stocks/turnover?${qs.toString()}`);
-    const data = json.data || {};
-    turnoverState.source = data.source || "";
-    resetTurnoverViewport(data.items || []);
-    const hasValue = (turnoverState.items || []).some((d) => turnoverValue(d) != null);
-    if (!turnoverState.allItems.length || !hasValue) {
-      setTurnoverStatus("暂无换手率数据", { empty: true });
-      renderTurnoverChart();
-      return;
-    }
-    setTurnoverStatus("");
-    refreshTurnoverWindowStatus();
-    renderTurnoverChart();
-  } catch (err) {
-    resetTurnoverViewport([]);
-    setTurnoverStatus(err.message || "换手率加载失败", { empty: true });
-    renderTurnoverChart();
-  } finally {
-    turnoverState.loading = false;
-  }
-}
-
-function setupTurnoverChart() {
-  if (!els.turnoverChart) return;
-
-  if (els.turnoverChartScrollBar) {
-    els.turnoverChartScrollBar.addEventListener("input", () => {
-      hideTurnoverHoverCard();
-      setTurnoverViewStart(Number(els.turnoverChartScrollBar.value) || 0, { render: true });
-    });
-  }
-
-  let hoverIdx = null;
-  let pan = null;
-
-  const onMove = (evt) => {
-    if (pan) {
-      const dx = evt.clientX - pan.lastX;
-      if (Math.abs(evt.clientX - pan.originX) > 4) pan.moved = true;
-      if (pan.moved && Math.abs(dx) >= 1) {
-        hideTurnoverHoverCard();
-        hoverIdx = null;
-        panTurnoverByPixels(dx, pan.width);
-        pan.lastX = evt.clientX;
-      }
-      return;
-    }
-    const idx = turnoverPointerIndex(evt);
-    if (idx === hoverIdx) return;
-    hoverIdx = idx;
-    updateTurnoverHoverLabel(idx);
-    renderTurnoverChart(idx);
-  };
-
-  const onLeave = () => {
-    if (pan) return;
-    hoverIdx = null;
-    hideTurnoverHoverCard();
-    renderTurnoverChart();
-  };
-
-  const onDown = (evt) => {
-    if (evt.button != null && evt.button !== 0) return;
-    const rect = els.turnoverChart.getBoundingClientRect();
-    pan = { originX: evt.clientX, lastX: evt.clientX, width: rect.width, moved: false };
-    els.turnoverChartWrap?.classList.add("is-panning");
-    try {
-      els.turnoverChart.setPointerCapture(evt.pointerId);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const onUp = (evt) => {
-    if (!pan) return;
-    const wasPan = pan.moved;
-    pan = null;
-    els.turnoverChartWrap?.classList.remove("is-panning");
-    try {
-      els.turnoverChart.releasePointerCapture(evt.pointerId);
-    } catch {
-      /* ignore */
-    }
-    if (!wasPan) {
-      const idx = turnoverPointerIndex(evt);
-      hoverIdx = idx;
-      updateTurnoverHoverLabel(idx);
-      renderTurnoverChart(idx);
-    } else {
-      hideTurnoverHoverCard();
-      hoverIdx = null;
-      renderTurnoverChart();
-    }
-  };
-
-  els.turnoverChart.addEventListener("pointerdown", onDown);
-  els.turnoverChart.addEventListener("pointermove", onMove);
-  els.turnoverChart.addEventListener("pointerup", onUp);
-  els.turnoverChart.addEventListener("pointercancel", onUp);
-  els.turnoverChart.addEventListener("pointerleave", onLeave);
-
-  els.turnoverChart.addEventListener(
-    "wheel",
-    (evt) => {
-      const total = (turnoverState.allItems || []).length;
-      if (!total) return;
-      evt.preventDefault();
-      hideTurnoverHoverCard();
-      hoverIdx = null;
-      const rect = els.turnoverChart.getBoundingClientRect();
-      const layout = peChartLayout(rect.width, rect.height);
-      const x = evt.clientX - rect.left;
-      let anchorRatio = 0.5;
-      if (x >= layout.price.x && x <= layout.price.x + layout.price.w) {
-        anchorRatio = (x - layout.price.x) / layout.price.w;
-      }
-      if (Math.abs(evt.deltaX) > Math.abs(evt.deltaY) * 1.15) {
-        const { maxStart } = turnoverViewWindow();
-        if (maxStart <= 0) return;
-        const step = Math.max(1, Math.round(Math.abs(evt.deltaX) / 40));
-        setTurnoverViewStart(turnoverState.viewStart + (evt.deltaX > 0 ? step : -step), { render: true });
-        return;
-      }
-      const steps = Math.max(1, Math.min(6, Math.round(Math.abs(evt.deltaY) / 56) || 1));
-      const base = evt.deltaY > 0 ? 1.22 : 1 / 1.22;
-      zoomTurnoverViewport(anchorRatio, base ** steps, { render: true });
-    },
-    { passive: false }
-  );
-
-  if (typeof ResizeObserver !== "undefined" && els.turnoverChartWrap) {
-    let timer = 0;
-    const ro = new ResizeObserver(() => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        syncTurnoverScrollBar();
-        renderTurnoverChart(hoverIdx);
-      }, 60);
-    });
-    ro.observe(els.turnoverChartWrap);
-  } else {
-    window.addEventListener("resize", () => {
-      syncTurnoverScrollBar();
-      renderTurnoverChart(hoverIdx);
-    });
-  }
-}
-
 els.refreshNewsBtn.addEventListener("click", () =>
   loadAllNews({ refresh: true })
 );
@@ -13817,7 +13365,6 @@ setupChart();
 setupTicksChart();
 setupPeChart();
 setupComboMetric();
-setupTurnoverChart();
 (async () => {
   await loadProfile();
   await loadChart("day");

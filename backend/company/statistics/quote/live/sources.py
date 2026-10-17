@@ -6,7 +6,6 @@
 数据源分工（公司详情-实时）：
 - 交易时段 / 盘后：东财 push2 优先，失败再同花顺，最后腾讯 qt.gtimg.cn
 - 盘前 1 小时（工作日 8:15~9:15）：腾讯优先，失败再东财、同花顺
-- 区间涨幅：``company.statistics.quote.derived.period_returns.fetch_period_returns``（腾讯日 K 优先，东财补充）
 - 历史/52 周高低：腾讯前复权日 K（按年并行）
 - 现手：``company.line.fetcher.fetch_ticks`` 最近一笔
 - F10：注册资本、发行股本
@@ -36,7 +35,6 @@ from core.fmt import (
 )
 from core.http import get_json, get_text
 from company.line.fetcher import fetch_ticks as fetch_kline_ticks
-from company.statistics.quote.derived.period_returns import fetch_period_returns as fetch_kline_period_returns
 from company.statistics.quote.fetch.free_float import calc as calc_free_float
 from core.codes import normalize_code, safe_str
 
@@ -62,17 +60,6 @@ _PUSH2_FIELDS = (
     "f11,f12,f13,f14,f15,f16,f17,f18,f19,f20,"
     "f31,f32,f33,f34,f35,f36,f37,f38,f39,f40,"
     "f531"
-)
-
-_RETURN_KEYS = (
-    "change_3d",
-    "change_5d",
-    "change_10d",
-    "change_20d",
-    "change_60d",
-    "change_half_year",
-    "change_1y",
-    "change_ytd",
 )
 
 
@@ -443,18 +430,8 @@ def map_push2(data: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# 区间涨幅 / 现手 / 自由流通
+# 现手 / 自由流通
 # ---------------------------------------------------------------------------
-
-
-def fetch_period_returns(code: str) -> dict[str, Any]:
-    """区间涨幅。走 ``company.statistics.quote.derived.period_returns.fetch_period_returns``（腾讯日 K 优先）。"""
-    try:
-        pack = fetch_kline_period_returns(code, adjust="qfq")
-    except Exception as exc:  # noqa: BLE001
-        logger.info("period returns skip %s: %s", code, exc)
-        return {}
-    return {key: pack[key] for key in _RETURN_KEYS if pack.get(key)}
 
 
 def fetch_current_hand(code: str) -> dict[str, Any]:

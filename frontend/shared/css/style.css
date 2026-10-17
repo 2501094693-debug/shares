@@ -3244,10 +3244,6 @@ html.company-charts-on .company-page.app {
   background: linear-gradient(90deg, transparent, rgba(159, 217, 206, 0.95), transparent);
 }
 
-.chart-card--turnover::before {
-  background: linear-gradient(90deg, transparent, rgba(255, 176, 92, 0.95), transparent);
-}
-
 .chart-card__head {
   flex-shrink: 0;
   display: flex;
@@ -3444,11 +3440,6 @@ button.chart-legend-item.is-active {
   box-shadow: 0 0 10px rgba(159, 217, 206, 0.45);
 }
 
-.chart-card--turnover .chart-card__mark {
-  background: var(--accent-hot);
-  box-shadow: 0 0 10px rgba(255, 176, 92, 0.45);
-}
-
 .chart-card__meta {
   margin: 0;
   font-family: var(--mono);
@@ -3470,19 +3461,12 @@ button.chart-legend-item.is-active {
   min-width: 0;
 }
 
-.chart-card--pe .chart-card__controls,
-.chart-card--turnover .chart-card__controls {
+.chart-card--pe .chart-card__controls {
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
-
-.chart-card--turnover .chart-card__controls {
-  justify-content: flex-end;
-  gap: 10px;
-}
-
 
 .chart-card--pe .chart-card__controls .chart-adjust {
   width: auto;
@@ -3657,8 +3641,7 @@ button.chart-legend-item.is-active {
 }
 
 .chart-card--kline .chart-kline-hover,
-.chart-card--pe .chart-card__controls .chart-pe-hover,
-.chart-card--turnover .chart-card__controls .chart-turnover-hover {
+.chart-card--pe .chart-card__controls .chart-pe-hover {
   flex: 1 1 auto;
   min-width: 0;
   padding: 2px 4px;
@@ -3673,15 +3656,13 @@ button.chart-legend-item.is-active {
   justify-content: flex-start;
 }
 
-.chart-card--pe .chart-card__controls .chart-pe-hover,
-.chart-card--turnover .chart-card__controls .chart-turnover-hover {
+.chart-card--pe .chart-card__controls .chart-pe-hover {
   justify-content: flex-end;
 }
 
 .chart-card--ticks .chart-ticks-hover .chart-hover-card-rows--inline,
 .chart-card--kline .chart-kline-hover .chart-hover-card-rows--inline,
-.chart-card--pe .chart-card__controls .chart-hover-card-rows--inline,
-.chart-card--turnover .chart-card__controls .chart-hover-card-rows--inline {
+.chart-card--pe .chart-card__controls .chart-hover-card-rows--inline {
   display: flex;
   flex-wrap: nowrap;
   align-items: baseline;
@@ -3697,22 +3678,19 @@ button.chart-legend-item.is-active {
   justify-content: flex-start;
 }
 
-.chart-card--pe .chart-card__controls .chart-hover-card-rows--inline,
-.chart-card--turnover .chart-card__controls .chart-hover-card-rows--inline {
+.chart-card--pe .chart-card__controls .chart-hover-card-rows--inline {
   justify-content: flex-end;
 }
 
 .chart-card--ticks .chart-ticks-hover .chart-hover-card-rows--inline::-webkit-scrollbar,
 .chart-card--kline .chart-kline-hover .chart-hover-card-rows--inline::-webkit-scrollbar,
-.chart-card--pe .chart-card__controls .chart-hover-card-rows--inline::-webkit-scrollbar,
-.chart-card--turnover .chart-card__controls .chart-hover-card-rows--inline::-webkit-scrollbar {
+.chart-card--pe .chart-card__controls .chart-hover-card-rows--inline::-webkit-scrollbar {
   display: none;
 }
 
 .chart-card--ticks .chart-ticks-hover .chart-hover-card-time,
 .chart-card--kline .chart-kline-hover .chart-hover-card-time,
-.chart-card--pe .chart-card__controls .chart-hover-card-time,
-.chart-card--turnover .chart-card__controls .chart-hover-card-time {
+.chart-card--pe .chart-card__controls .chart-hover-card-time {
   flex: 0 0 auto;
   font-size: 0.68rem;
   font-weight: 600;
@@ -3720,15 +3698,13 @@ button.chart-legend-item.is-active {
 
 .chart-card--ticks .chart-ticks-hover .chart-hover-card-rows .k,
 .chart-card--kline .chart-kline-hover .chart-hover-card-rows .k,
-.chart-card--pe .chart-card__controls .chart-hover-card-rows .k,
-.chart-card--turnover .chart-card__controls .chart-hover-card-rows .k {
+.chart-card--pe .chart-card__controls .chart-hover-card-rows .k {
   font-size: 0.64rem;
 }
 
 .chart-card--ticks .chart-ticks-hover .chart-hover-card-rows .v,
 .chart-card--kline .chart-kline-hover .chart-hover-card-rows .v,
-.chart-card--pe .chart-card__controls .chart-hover-card-rows .v,
-.chart-card--turnover .chart-card__controls .chart-hover-card-rows .v {
+.chart-card--pe .chart-card__controls .chart-hover-card-rows .v {
   font-size: 0.72rem;
 }
 
@@ -3849,19 +3825,13 @@ button.chart-legend-item.is-active {
 }
 
 @media (max-width: 960px) {
-  .chart-card--pe .chart-card__controls,
-  .chart-card--turnover .chart-card__controls {
+  .chart-card--pe .chart-card__controls {
     flex-wrap: wrap;
   }
 
-  .chart-card--pe .chart-card__controls .chart-pe-hover,
-  .chart-card--turnover .chart-card__controls .chart-turnover-hover {
+  .chart-card--pe .chart-card__controls .chart-pe-hover {
     order: 3;
     flex: 1 1 100%;
-  }
-
-  .chart-card--turnover .chart-card__controls .chart-select-wrap {
-    margin-left: 0;
   }
 }
 
@@ -4634,22 +4604,6 @@ html.company-charts-on .company-panel[data-panel="news"][data-news-source="repor
   font-size: 0.82rem;
   padding: 10px 8px;
   letter-spacing: 0.04em;
-}
-
-.company-panel[data-panel="judgment"] .judgment-sub-bar {
-  padding: 3px;
-}
-
-.company-panel[data-panel="judgment"] .judgment-sub-bar[hidden],
-.company-panel[data-panel="judgment"]:not([data-judgment-family="earnings"]) .judgment-sub-bar {
-  display: none !important;
-}
-
-.company-panel[data-panel="judgment"] .judgment-sub-bar .emotion-source-btn {
-  font-size: 0.8rem;
-  padding: 8px 10px;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
 }
 
 .company-panel[data-panel="judgment"] .judgment-view {

@@ -219,7 +219,7 @@ def value_conclusions(series: list[dict[str, Any]]) -> list[str]:
     return [
         ytd_note(latest),
         f"{period_label(latest)}ROE {fmt_pct(roe)}（≥15%优、≥8%中），评价为 **{evaluation}**；"
-        f"ROA {fmt_pct(d.get('roa'))}，ROIC {fmt_pct(p.get('roic'))}。",
+        f"ROA {fmt_pct(d.get('roa'))}。",
         (
             f"杜邦拆解：净利率 {fmt_pct(p.get('net_margin'))} × 资产周转 {fmt_x(d.get('asset_turnover'))}"
             f" × 权益乘数 {fmt_x(d.get('equity_multiplier'))}。"

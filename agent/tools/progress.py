@@ -15,29 +15,11 @@ AGENT_LABELS: dict[str, str] = {
     "be_search": "联网补充",
     "be_explain": "生成简述",
     "be_save": "保存报告",
-    "ic_init": "解析公司",
-    "ic_fetch": "采集资料",
-    "ic_search": "联网补充",
-    "ic_analyze": "生成分析",
-    "ic_save": "保存报告",
     "rr_init": "解析公司",
     "rr_fetch": "采集资料",
     "rr_search": "联网补充",
     "rr_analyze": "生成评估",
     "rr_save": "保存报告",
-    "bz_init": "解析公司",
-    "bz_fetch": "采集数据",
-    "bz_strategy": "一看：战略",
-    "bz_operating": "二看：经营资产",
-    "bz_profit": "三看：效益质量",
-    "bz_value": "四看：价值",
-    "bz_cost": "五看：成本机制",
-    "bz_quality": "六看：财务状况",
-    "bz_risk": "七看：风险",
-    "bz_outlook": "八看：前景",
-    "bz_synthesis": "综合诊断",
-    "bz_assemble": "拼装报告",
-    "bz_save": "保存报告",
     "bf_init": "解析公司",
     "bf_fetch": "采集数据",
     "bf_understand": "一、生意能否看懂",
@@ -47,12 +29,6 @@ AGENT_LABELS: dict[str, str] = {
     "bf_synthesis": "五、综合判决",
     "bf_assemble": "拼装报告",
     "bf_save": "保存报告",
-    "ch_init": "解析公司",
-    "ch_fetch": "采集资料",
-    "ch_map": "绘制产业链地图",
-    "ch_search": "定向检索上下游",
-    "ch_analyze": "生成分析",
-    "ch_save": "保存报告",
     "rs_init": "解析公司",
     "rs_fetch_em": "采集东财股吧",
     "rs_fetch_ths": "采集同花顺讨论",
@@ -63,12 +39,6 @@ AGENT_LABELS: dict[str, str] = {
     "rs_agg": "按用户计数",
     "rs_synth": "生成解读",
     "rs_save": "保存报告",
-    "tr_init": "解析公司",
-    "tr_fetch": "拉取资金与分时",
-    "tr_main": "统计资金动向",
-    "tr_retail": "统计分时成交",
-    "tr_synth": "生成综合结论",
-    "tr_save": "保存报告",
     "va_init": "解析公司",
     "va_fetch": "采集估值数据",
     "va_history": "历史倍数",
@@ -92,7 +62,6 @@ PHASE_LABELS: dict[str, str] = {
     "llm": "LLM 生成",
     "llm_done": "生成完成",
     "analyze": "规则分析",
-    "map_chain": "绘制产业链地图",
     "save_file": "写入文件",
     "skip": "跳过",
     "done": "已完成",
@@ -100,35 +69,7 @@ PHASE_LABELS: dict[str, str] = {
 }
 
 ALL_AGENTS = ["be_init", "be_fetch", "be_search", "be_explain", "be_save"]
-COMPETITION_AGENTS = ["ic_init", "ic_fetch", "ic_search", "ic_analyze", "ic_save"]
 RISK_REVIEWER_AGENTS = ["rr_init", "rr_fetch", "rr_search", "rr_analyze", "rr_save"]
-BAZHANG_AGENTS = [
-    "bz_init",
-    "bz_fetch",
-    "bz_strategy",
-    "bz_operating",
-    "bz_profit",
-    "bz_value",
-    "bz_cost",
-    "bz_quality",
-    "bz_risk",
-    "bz_outlook",
-    "bz_synthesis",
-    "bz_assemble",
-    "bz_save",
-]
-BUFFETT_AGENTS = [
-    "bf_init",
-    "bf_fetch",
-    "bf_understand",
-    "bf_owner",
-    "bf_capital",
-    "bf_honesty",
-    "bf_synthesis",
-    "bf_assemble",
-    "bf_save",
-]
-CHAIN_AGENTS = ["ch_init", "ch_fetch", "ch_map", "ch_search", "ch_analyze", "ch_save"]
 RETAIL_AGENTS = [
     "rs_init",
     "rs_fetch_em",
@@ -140,14 +81,6 @@ RETAIL_AGENTS = [
     "rs_agg",
     "rs_synth",
     "rs_save",
-]
-TREND_AGENTS = [
-    "tr_init",
-    "tr_fetch",
-    "tr_main",
-    "tr_retail",
-    "tr_synth",
-    "tr_save",
 ]
 VALUATION_AGENTS = [
     "va_init",
@@ -197,32 +130,14 @@ def init_business_explainer_agents() -> dict[str, dict[str, str]]:
     return init_agents_state(ALL_AGENTS)
 
 
-def init_industry_competition_agents() -> dict[str, dict[str, str]]:
-    return init_agents_state(COMPETITION_AGENTS)
-
-
 def init_risk_reviewer_agents() -> dict[str, dict[str, str]]:
     return init_agents_state(RISK_REVIEWER_AGENTS)
 
 
-def init_bazhang_analyst_agents() -> dict[str, dict[str, str]]:
-    return init_agents_state(BAZHANG_AGENTS)
-
-
-def init_buffett_analyst_agents() -> dict[str, dict[str, str]]:
-    return init_agents_state(BUFFETT_AGENTS)
-
-
-def init_chain_analyst_agents() -> dict[str, dict[str, str]]:
-    return init_agents_state(CHAIN_AGENTS)
 
 
 def init_retail_sentiment_agents() -> dict[str, dict[str, str]]:
     return init_agents_state(RETAIL_AGENTS)
-
-
-def init_trend_analyst_agents() -> dict[str, dict[str, str]]:
-    return init_agents_state(TREND_AGENTS)
 
 
 def init_valuation_analyst_agents() -> dict[str, dict[str, str]]:

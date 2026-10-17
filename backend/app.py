@@ -31,11 +31,13 @@ from fastapi.staticfiles import StaticFiles
 
 from agent.api import router as ai_router
 from company.api import router as company_router
+from company.statistics.dividend.api import router as dividend_router
 from company.statistics.fundflow.api import router as fundflow_router
 from company.statistics.holdings.api import router as holdings_router
 from company.statistics.margintrading.api import router as margintrading_router
 from company.news.financialreport.api import router as financialreport_router
 from company.analysis.financialreport.api import router as financial_views_router
+from company.analysis.competition.api import router as competition_router
 from company.news.periodicreport.api import router as periodicreport_router
 from market.funds.fund.api import router as fund_router
 from market.futures.api import router as futures_router
@@ -197,8 +199,10 @@ app.include_router(company_router)
 app.include_router(fundflow_router)
 app.include_router(holdings_router)
 app.include_router(margintrading_router)
+app.include_router(dividend_router)
 app.include_router(financialreport_router)
 app.include_router(financial_views_router)
+app.include_router(competition_router)
 app.include_router(periodicreport_router)
 app.include_router(market_router)
 app.include_router(world_router)

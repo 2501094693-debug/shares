@@ -11,7 +11,7 @@ K 线磁盘缓存历史根；交易时段只拉最新几根合并；休市 / 午
 只要自最近一次收盘后已校验过就不再打远程（force 除外；对不上复权 / 缺口仍整段重拉）。
 
 各源返回字段不完全一样，K 线 / 逐笔会先收成同一套再给 API / 统计用。
-不提供分时 trends2。区间涨跌见 ``company.statistics.quote.derived.period_returns``。
+不提供分时 trends2。
 """
 
 from __future__ import annotations

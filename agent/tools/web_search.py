@@ -32,22 +32,6 @@ BUSINESS_SEARCH_QUERIES: tuple[str, ...] = (
     "客户价值 业务矩阵 协同 产品",
 )
 
-COMPETITION_SEARCH_QUERIES: tuple[str, ...] = (
-    "行业市场规模 增速 渗透率 2024 2025",
-    "竞争格局 市场份额 主要竞争对手",
-    "行业报告 产业链 上下游 价值分配",
-    "技术变革 政策影响 新进入者 国产替代",
-    "细分赛道 竞争策略 龙头 挑战者",
-)
-
-CHAIN_SEARCH_QUERIES: tuple[str, ...] = (
-    "产业链 上下游 价值链 图谱",
-    "主要供应商 原材料 采购 集中度",
-    "主要客户 下游 销售 渠道",
-    "卡脖子 国产替代 供需 瓶颈",
-    "利润分配 议价能力 毛利率 环节",
-)
-
 RISK_SEARCH_QUERIES: tuple[str, ...] = (
     "监管处罚 问询函 关注函 立案 最新",
     "CEO 董事长 总经理 管理层 访谈 言论 战略",
@@ -216,91 +200,6 @@ def search_for_business(
         )
         if text and not text.startswith("（"):
             blocks.append(f"### 检索：{q}\n{text}")
-            if engine and engine not in engines:
-                engines.append(engine)
-
-    if not blocks:
-        return "", engines
-    return "\n\n".join(blocks), engines
-
-
-def search_for_competition(
-    company: str,
-    *,
-    industry_name: str = "",
-    stock_code: str = "",
-    max_results_per_query: int | None = None,
-    progress_cb: Callable[[str], None] | None = None,
-) -> tuple[str, list[str]]:
-    """行业竞争分析专用检索：市场规模、竞争格局、产业链、行业趋势。"""
-    engines: list[str] = []
-    blocks: list[str] = []
-    per_query = max_results_per_query or max(
-        4, WEB_SEARCH_MAX_RESULTS // max(len(COMPETITION_SEARCH_QUERIES), 1)
-    )
-
-    industry_part = f"{industry_name} " if industry_name else ""
-    for q in COMPETITION_SEARCH_QUERIES:
-        if progress_cb:
-            progress_cb(q)
-        query_suffix = f"{industry_part}{q}".strip()
-        text, engine = search_company_info(
-            company,
-            query_suffix,
-            stock_code=stock_code,
-            max_results=per_query,
-        )
-        if text and not text.startswith("（"):
-            blocks.append(f"### 检索：{query_suffix}\n{text}")
-            if engine and engine not in engines:
-                engines.append(engine)
-
-    if not blocks:
-        return "", engines
-    return "\n\n".join(blocks), engines
-
-
-def search_for_chain(
-    company: str,
-    *,
-    industry_name: str = "",
-    stock_code: str = "",
-    extra_queries: list[str] | None = None,
-    max_results_per_query: int | None = None,
-    progress_cb: Callable[[str], None] | None = None,
-) -> tuple[str, list[str]]:
-    """产业链分析专用检索：上下游、供应商/客户、卡脖子、价值分配。"""
-    engines: list[str] = []
-    blocks: list[str] = []
-    queries: list[str] = list(CHAIN_SEARCH_QUERIES)
-    seen = set(queries)
-    for item in extra_queries or []:
-        q = " ".join(str(item).split())
-        if len(q) < 4 or q in seen:
-            continue
-        seen.add(q)
-        queries.append(q)
-        if len(queries) >= len(CHAIN_SEARCH_QUERIES) + 6:
-            break
-
-    per_query = max_results_per_query or max(
-        4, WEB_SEARCH_MAX_RESULTS // max(len(queries), 1)
-    )
-    industry_part = f"{industry_name} " if industry_name else ""
-
-    for q in queries:
-        if progress_cb:
-            progress_cb(q)
-        is_fixed = q in CHAIN_SEARCH_QUERIES
-        query_suffix = f"{industry_part}{q}".strip() if is_fixed else q
-        text, engine = search_company_info(
-            company,
-            query_suffix,
-            stock_code=stock_code,
-            max_results=per_query,
-        )
-        if text and not text.startswith("（"):
-            blocks.append(f"### 检索：{query_suffix}\n{text}")
             if engine and engine not in engines:
                 engines.append(engine)
 

@@ -37,7 +37,7 @@ def stocks_financial_views(
     limit: int = Query(60, ge=1, le=60, description="拉取的定期报告期数上限"),
     refresh: str = Query("0", description="1=强制刷新（绕过一小时缓存）"),
 ):
-    """张新民「八看」财务分析：八看方法 + 汇总诊断，支持选择年报/半年报/一季报/三季报口径。"""
+    """张新民「八看」：八看方法 + 汇总诊断，支持选择年报/半年报/一季报/三季报口径。"""
     code = _resolve_code(code, company)
     if not code:
         return err("缺少参数 code", 400)

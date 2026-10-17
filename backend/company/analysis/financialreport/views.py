@@ -443,13 +443,12 @@ def view_profit(series: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def view_value(series: list[dict[str, Any]]) -> dict[str, Any]:
-    """四看：价值创造（ROE/ROA/ROIC + 杜邦拆解）。"""
+    """四看：价值创造（ROE/ROA + 杜邦拆解）。"""
     raw = _raw_md(
         series,
         [
             ("披露ROE", _pct_col("ROEJQ", "WEIGHTAVG_ROE")),
             ("披露ROA", _pct_col("ZZCJLL")),
-            ("披露ROIC", _pct_col("ROIC")),
             ("披露净利率", _pct_col("XSJLL")),
             ("营业收入", REVENUE_FIELDS),
             ("归母净利润", NET_PROFIT_FIELDS),
@@ -466,14 +465,13 @@ def view_value(series: list[dict[str, Any]]) -> dict[str, Any]:
                 period_label(row),
                 fmt_pct(p["roe"]),
                 fmt_pct(d["roa"]),
-                fmt_pct(p["roic"]),
                 fmt_pct(p["net_margin"]),
                 fmt_x(d["asset_turnover"]),
                 fmt_x(d["equity_multiplier"]),
             ]
         )
     results = _results_table(
-        ["报告期", "ROE", "ROA", "ROIC", "净利率", "资产周转", "权益乘数"],
+        ["报告期", "ROE", "ROA", "净利率", "资产周转", "权益乘数"],
         rows,
     )
     conc: list[str] = []
@@ -489,12 +487,6 @@ def view_value(series: list[dict[str, Any]]) -> dict[str, Any]:
             "formula": "归母净利润 ÷ 总资产（优先取财报披露的总资产净利率）",
             "meaning": "公司全部资产（不论股东出钱还是借钱）每 1 元一年能赚多少净利润，衡量整体资产的赚钱效率，不受融资结构影响。",
             "reading": "越高越好，说明同样规模的资产产出更多利润。主要看趋势和同行对比；ROA 远低于 ROE，说明 ROE 主要靠加杠杆撑起来。",
-        },
-        {
-            "name": "ROIC",
-            "formula": "税后净经营利润(NOPAT) ÷ 投入资本，即 [息税前利润 × (1 − 有效税率)] ÷ (有息负债 + 股东权益)；本表优先取财报披露值",
-            "meaning": "公司投入经营的每一元资本（股权加有息债务）一年能赚回多少经营利润，剔除了融资方式的影响，是看主业真实回报的指标。",
-            "reading": "越高越好，且最好长期高于资金成本；持续低于资金成本意味着越投入越不值。适合跨行业、跨杠杆水平的公司对比。",
         },
         {
             "name": "净利率",
@@ -520,7 +512,6 @@ def view_value(series: list[dict[str, Any]]) -> dict[str, Any]:
         [
             ("ROE", "pct", lambda r: core_profit(r)["roe"]),
             ("ROA", "pct", lambda r: value_parts(r, core_profit(r))["roa"]),
-            ("ROIC", "pct", lambda r: core_profit(r)["roic"]),
             ("资产周转", "x", lambda r: value_parts(r, core_profit(r))["asset_turnover"]),
             ("权益乘数", "x", lambda r: value_parts(r, core_profit(r))["equity_multiplier"]),
         ],
@@ -1001,7 +992,7 @@ def build_summary(
     *,
     coverage: str = "",
 ) -> dict[str, Any]:
-    """汇总方法：把八看收敛成八个方面 + 综合诊断。"""
+    """汇总方法：把八看收敛成七个评分方面 + 综合诊断（战略方向不计分）。"""
     strategy = bundle.get("strategy") or {}
     profit = bundle.get("profit") or {}
     cash = bundle.get("cash") or {}
@@ -1115,8 +1106,8 @@ def build_summary(
         ],
         [
             "效益质量（三看）",
-            f"{fmt_yi(core_profit_val)}亿" if core_profit_val is not None else "—",
-            f"核心利润 {fmt_yi(core_profit_val)}亿（上期 {fmt_yi(prev_core_profit_val)}亿，{_trend(core_profit_val, prev_core_profit_val)}）",
+            f"{fmt_yi(core_profit_val)}" if core_profit_val is not None else "—",
+            f"核心利润 {fmt_yi(core_profit_val)}（上期 {fmt_yi(prev_core_profit_val)}，{_trend(core_profit_val, prev_core_profit_val)}）",
         ],
         [
             "价值创造（四看）",
@@ -1215,7 +1206,7 @@ def build_summary(
         {
             "name": "综合评分",
             "formula": "竞争力15 + 效益质量15 + 价值创造20 + 成本控制10 + 现金流质量15 + 风险状况15 + 前景10 = 100（战略方向不计分）",
-            "meaning": "七个方面按权重加权平均，满分 100 分。优90分、中65分、差30分、缺数据60分；效益质量按核心利润趋势变好90/持平70/变差30分；风险无触发100分、1~2项70分、3项及以上30分；战略方向本身无优劣，只展示类型，不参与评分。",
+            "meaning": "七个方面按权重加权平均，满分 100 分。优90分、中65分、差30分、缺数据60分；效益质量按核心利润趋势变好90/持平70/变差30分；风险无触发100分、1~2项70分、3项及以上30分；战略方向本身无优劣，不参与评分。",
             "reading": "分数越高基本面越好，重点看丢分项是哪几个方面，再去对应的一看里找原因。分数只反映财报基本面，不构成买卖建议。",
         },
     ]

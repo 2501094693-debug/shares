@@ -1,6 +1,6 @@
 # 智能分析（agent）
 
-业务简述、八看财报解读、巴菲特读表、行业竞争、产业链、风险评估 — HTTP API + LangGraph 智能体。
+业务简述、八看财报解读、巴菲特读表规则引擎、风险评估 — HTTP API + LangGraph 智能体。
 
 ## 目录结构
 
@@ -10,10 +10,7 @@ agent/
 ├── service.py              # 各分析类型的任务编排
 ├── config.py               # LLM / 搜索配置
 ├── business_explainer/     # 业务简述智能体
-├── bazhang_analyst/        # 张新民八看财报解读
-├── buffett_analyst/        # 巴菲特读表
-├── industry_competition/   # 行业竞争
-├── chain_analyst/          # 产业链分析
+├── buffett_analyst/        # 巴菲特读表规则引擎（纯 Python）
 ├── risk_reviewer/          # 风险评估
 ├── rules/                  # 规则引擎公共工具
 ├── tools/                  # 数据采集、PDF、联网搜索
@@ -39,10 +36,6 @@ python backend/app.py
 
 ```bash
 python -m agent.explain_business 600519
-python -m agent.buffett_analyst 600519
-python -m agent.bazhang_analyst 600519
-python -m agent.explain_competition 600519
-python -m agent.chain_analyst 000338
 python -m agent.explain_risk 600519
 ```
 
@@ -50,7 +43,6 @@ python -m agent.explain_risk 600519
 
 ```bash
 python explain_business.py 600519
-python explain_chain.py 000338
 ```
 
 环境变量见 `.env.example`，根目录 `.env` 会自动加载。

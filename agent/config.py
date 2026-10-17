@@ -1,4 +1,4 @@
-"""AI LangGraph 配置（业务简述 / 财报解读 / 行业竞争分析 / 产业链分析 / 风险与管理层评估）。"""
+"""AI LangGraph 配置（业务简述 / 财报解读 / 风险与管理层评估）。"""
 
 import os
 from pathlib import Path

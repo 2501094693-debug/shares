@@ -11,7 +11,7 @@
 流程：
 1. 代码规范化；内存命中则直接返回
 2. 磁盘可复用则直接返回；否则按需全量或增量拉取
-3. 线程池并行：实时盘口、区间涨幅、现手，必要时再加 F10、估值、自由流通
+3. 线程池并行：实时盘口、现手，必要时再加 F10、估值、自由流通
 4. 拿到上市日后，再提交历史/52 周高低（前复权需要上市年）
 5. 东财盘口自带的 52 周高低优先于自行计算值
 6. 用自由流通股把换手(实)、自由流通市值算出来
@@ -34,7 +34,6 @@ from company.statistics.quote.live.sources import (
     fetch_current_hand,
     fetch_f10_profile,
     fetch_free_float_fields,
-    fetch_period_returns,
     fetch_price_extremes,
     fetch_realtime_quote,
     fetch_realtime_quotes,
@@ -247,7 +246,6 @@ def _fetch_remote_quote(
         workers = 7 if include_slow else 3
         with ThreadPoolExecutor(max_workers=workers) as pool:
             fut_quote = pool.submit(_load_realtime, code)
-            fut_ret = pool.submit(fetch_period_returns, code)
             fut_hand = pool.submit(fetch_current_hand, code)
             fut_f10 = pool.submit(fetch_f10_profile, code) if include_slow else None
             fut_val = pool.submit(fetch_valuation_extra, code) if include_slow else None
@@ -273,7 +271,6 @@ def _fetch_remote_quote(
             }
 
             parts: list[tuple[Any, str]] = [
-                (fut_ret, "period returns"),
                 (fut_hand, "current hand"),
             ]
             if fut_f10 is not None:

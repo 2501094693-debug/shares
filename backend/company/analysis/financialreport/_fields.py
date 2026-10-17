@@ -1,6 +1,6 @@
 """张新民「八看」框架：资产负债表 / 利润表科目分类映射（东财 F10 字段名）。
 
-与 ``agent.bazhang_analyst.rules._fields`` 同源：数据都来自东财 F10 报表，字段名一致。
+张新民视角：数据来自东财 F10 报表。
 此处独立维护一份，避免后端反向依赖 ``agent``。
 """
 
@@ -62,6 +62,11 @@ CORE_PROFIT_EXPENSE_FIELDS = [
     "RESEARCH_EXPENSE",
     "FINANCE_EXPENSE",
 ]
+
+# 现金流量表：分配股利 / 利润偿付的现金（分红兜底口径，优先走 statistics.dividend）
+DIVIDEND_PAY_FIELDS = ["ASSIGN_DIVIDEND_PORFIT"]
+# 现金流量表：支付其他与筹资活动有关的现金（回购混在其中，仅作上限校验，不直接当回购）
+FINANCE_OTHER_PAY_FIELDS = ["PAY_OTHER_FINANCE"]
 
 REVENUE_FIELDS = ["TOTALOPERATEREVE", "TOTAL_OPERATE_INCOME", "OPERATE_INCOME_PK"]
 COGS_FIELDS = ["OPERATE_COST", "OPERATE_EXPENSE"]
