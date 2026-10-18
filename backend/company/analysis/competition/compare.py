@@ -17,6 +17,7 @@ from core.cache import TtlCache
 
 from company.analysis.competition import aggregate, render, universe
 from company.analysis.competition.registry import view_groups
+from company.analysis.competition.results_catalog import full_view_indicators
 from company.analysis.competition.snapshot import build_snapshot
 from company.analysis.financialreport._common import (
     normalize_report_type,
@@ -64,6 +65,7 @@ def _build_companies(
                 "risk_hits": snap.get("risk_hits"),
                 "flags": snap.get("flags") or [],
                 "metrics": snap.get("metrics") or {},
+                "view_results": snap.get("view_results") or {},
             }
         )
     return companies, dropped
@@ -110,6 +112,7 @@ def _build_by_view(
                     "is_target": c.get("is_target", False),
                     "values": values,
                     "ranks": row_ranks,
+                    "all_values": (c.get("view_results") or {}).get(group.key) or {},
                 }
             )
         out.append(
@@ -118,6 +121,7 @@ def _build_by_view(
                 "no": group.no,
                 "name": group.name,
                 "indicators": indicators,
+                "all_indicators": full_view_indicators(group.key),
                 "rows": rows,
                 "benchmark": {ind.key: benchmark.get(ind.key) for ind in group.indicators},
                 "dispersion": {

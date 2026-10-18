@@ -155,7 +155,7 @@ window.AI_MODES = {
     label: "竞争分析",
     pageTitle: "ORBIT · 智能分析",
     heading: "竞争分析",
-    subtitle: "同申万三级行业横截面对比：八看逐项算分、排名与行业分位 · 不经过大模型",
+    subtitle: "同申万三级行业横截面对比：八看逐项算分、行业名次与中位数基准 · 不经过大模型",
     startBtn: "重新计算",
     historyHead: "规则结果",
     reportTitle: "竞争分析",
@@ -171,7 +171,7 @@ window.AI_MODES = {
       <div class="ai-empty-state">
         <div class="ai-empty-icon" aria-hidden="true">⊞</div>
         <h3>先圈行业，再排座次</h3>
-        <p>把目标公司放进它所属的申万三级行业，与全部（或市值靠前的）可比公司按同一报告期口径，逐项计算张新民「八看」指标，给出行业内排名、分位与中位数基准。</p>
+        <p>把目标公司放进它所属的申万三级行业，与全部（或市值靠前的）可比公司按同一报告期口径，逐项计算张新民「八看」指标，给出行业内名次与中位数基准。</p>
         <ul class="ai-empty-tips">
           <li>报告口径：年报 / 半年报 / 一季报 / 三季报（同口径对齐）</li>
           <li>八看指标：战略 · 竞争力 · 效益 · 价值 · 成本 · 质量 · 风险 · 前景</li>
@@ -180,16 +180,14 @@ window.AI_MODES = {
         </ul>
       </div>`,
     resultTitle(result) {
-      const industry = result.industry?.l3_name ? ` · ${result.industry.l3_name}` : "";
       const name = result.target?.name || result.target?.code || "";
-      return `${name} 竞争分析${industry}`.trim();
+      return `${name} 竞争分析`.trim();
     },
     resultMeta(result) {
       const used = result.universe?.used;
       return [
-        result.industry?.l3_code ? `行业 ${result.industry.l3_name || result.industry.l3_code}` : "",
-        result.report_type_label || "",
-        result.latest_period || "",
+        result.industry?.l3_name || result.industry?.l3_code || "",
+        result.latest_period || result.report_type_label || "",
         Number.isFinite(Number(used)) ? `可比 ${used} 家` : "",
       ].filter(Boolean).join(" · ");
     },

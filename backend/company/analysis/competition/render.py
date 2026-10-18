@@ -91,6 +91,7 @@ def _view_conclusions(pack: dict[str, Any], view: dict[str, Any]) -> list[str]:
     if not target or not indicators:
         return []
     by_ind = target.get("by_indicator") or {}
+    n = pack.get("universe", {}).get("used") or 0
     lines: list[str] = []
     for ind in indicators:
         key = ind["key"]
@@ -103,8 +104,8 @@ def _view_conclusions(pack: dict[str, Any], view: dict[str, Any]) -> list[str]:
         unit = ind["unit"]
         better = ind["direction"]
         pos = ""
-        if info.get("percentile") is not None and better != "neutral":
-            pos = f"分位 {info['percentile']:.0f}%"
+        if info.get("rank") and better != "neutral":
+            pos = f"行业第 {info['rank']}/{n}"
         vs = ""
         if med is not None and isinstance(value, (int, float)):
             arrow = "高于" if value > med else ("低于" if value < med else "持平")
@@ -130,9 +131,9 @@ def _target_summary(pack: dict[str, Any]) -> list[str]:
     strengths = target.get("strengths") or []
     weaknesses = target.get("weaknesses") or []
     if strengths:
-        lines.append(f"- 相对优势（分位 ≥70%）：{'；'.join(strengths[:6])}。")
+        lines.append(f"- 相对优势（行业前列）：{'；'.join(strengths[:6])}。")
     if weaknesses:
-        lines.append(f"- 相对短板（分位 ≤30%）：{'；'.join(weaknesses[:6])}。")
+        lines.append(f"- 相对短板（行业靠后）：{'；'.join(weaknesses[:6])}。")
     if not strengths and not weaknesses:
         lines.append("- 各指标大多处于行业中游，未见极端优/劣势。")
     return lines

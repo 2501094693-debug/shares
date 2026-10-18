@@ -1028,23 +1028,16 @@
     const pick = (id) => String(document.getElementById(id)?.value || "").trim();
     const extra = {};
     const reportType = pick("peersReportType");
-    const peersLimit = pick("peersLimit");
     if (reportType) extra.report_type = reportType;
-    if (peersLimit) extra.peers = peersLimit;
     return extra;
   }
 
   function peersParamsHtml(pack) {
     const rt = (pack && pack.report_type) || "annual";
-    const limit = pack?.universe?.used ?? 0;
     const options = PEERS_REPORT_TYPES
       .map(([value, label]) => `<option value="${value}"${value === rt ? " selected" : ""}>${label}</option>`)
       .join("");
-    const peerVal = pack && pack.universe && pack.universe.limited ? String(limit) : "0";
-    return ``
-      + `<label class="ai-report-param-label">报告口径<select id="peersReportType" class="chart-select">${options}</select></label>`
-      + `<label class="ai-report-param-label">同行上限<input id="peersLimit" class="chart-select" type="number" min="0" max="200" step="1" value="${esc(peerVal)}" title="0=行业全部可比公司" /></label>`
-      + `<button type="button" id="peersRecalc" class="btn primary">重新计算</button>`;
+    return `<label class="ai-report-param-label">报告口径<select id="peersReportType" class="chart-select">${options}</select></label>`;
   }
 
   function peersFmt(value, unit) {
@@ -1062,30 +1055,123 @@
     return String(value);
   }
 
-  function peersRankCell(rank, total) {
-    if (!rank || !rank.rank) return "";
-    const pct = Number(rank.percentile);
-    const heat = Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : null;
-    const tag = heat == null ? "" : `<span class="peers-rank-pct">${heat.toFixed(0)}%</span>`;
-    return `<span class="peers-rank">${rank.rank}<span class="peers-rank-sep">/${total}</span>${tag}</span>`;
-  }
-
-  function peersHeatCls(rank, direction) {
-    if (!rank || rank.percentile == null || direction === "neutral") return "";
+  function peersTone(rank) {
+    if (!rank || rank.percentile == null) return "";
     const pct = Number(rank.percentile);
     if (!Number.isFinite(pct)) return "";
     if (pct >= 70) return "is-good";
     if (pct <= 30) return "is-bad";
-    return "";
+    return "is-mid";
   }
 
-  function peersViewSection(view, total) {
-    const indicators = Array.isArray(view.indicators) ? view.indicators : [];
-    const rows = Array.isArray(view.rows) ? view.rows : [];
-    if (!indicators.length || !rows.length) {
-      return `<section class="engine-section"><h3>${esc(view.name || "")}</h3><p class="muted">无可用数值</p></section>`;
+  function peersDirHint(direction) {
+    if (direction === "higher") return "越高越好";
+    if (direction === "lower") return "越低越好";
+    return "中性观察";
+  }
+
+  function peersTargetRankInfo(ind, rows, universeUsed) {
+    const target = rows.find((r) => r.is_target);
+    if (!target) return null;
+    const has = target.all_values && Object.prototype.hasOwnProperty.call(target.all_values, ind.key);
+    const raw = has ? target.all_values[ind.key] : (target.values || {})[ind.key];
+    const value = Number(raw);
+    if (!Number.isFinite(value)) return null;
+    const backend = (target.ranks || {})[ind.key];
+    if (backend && backend.rank) {
+      return {
+        value,
+        rank: Number(backend.rank),
+        total: universeUsed || 0,
+        percentile: backend.percentile == null ? null : Number(backend.percentile),
+      };
     }
-    // 目标公司列置顶，其余按综合评分排序
+    const peers = [];
+    rows.forEach((r) => {
+      const h = r.all_values && Object.prototype.hasOwnProperty.call(r.all_values, ind.key);
+      const rv = h ? r.all_values[ind.key] : (r.values || {})[ind.key];
+      const n = Number(rv);
+      if (Number.isFinite(n)) peers.push(n);
+    });
+    if (peers.length < 2) return { value, rank: null, total: peers.length, percentile: null };
+    const better = ind.direction === "higher";
+    let worse = 0;
+    peers.forEach((o) => { if (better ? o < value : o > value) worse += 1; });
+    return { value, rank: peers.length - worse, total: peers.length, percentile: (worse / (peers.length - 1)) * 100 };
+  }
+
+  function peersTargetRankList(view, pack) {
+    const indicators = (Array.isArray(view.indicators) && view.indicators.length)
+      ? view.indicators
+      : (Array.isArray(view.all_indicators) ? view.all_indicators : []);
+    const rows = Array.isArray(view.rows) ? view.rows : [];
+    if (!indicators.length || !rows.length) return "";
+    const rankable = indicators.filter((ind) => ind.unit !== "text" && ind.direction !== "neutral");
+    const items = rankable.map((ind) => {
+      const better = ind.direction === "higher";
+      const vals = [];
+      rows.forEach((r) => {
+        const has = r.all_values && Object.prototype.hasOwnProperty.call(r.all_values, ind.key);
+        const raw = has ? r.all_values[ind.key] : (r.values || {})[ind.key];
+        const num = Number(raw);
+        if (Number.isFinite(num)) vals.push({ num, name: r.name || r.code || "", isTarget: !!r.is_target });
+      });
+      if (!vals.length) return "";
+      const n = vals.length;
+      const nums = vals.map((v) => v.num);
+      const mn = Math.min(...nums);
+      const mx = Math.max(...nums);
+      const span = mx - mn;
+      const scored = vals.map((v) => {
+        let worse = 0;
+        vals.forEach((o) => { if (better ? o.num < v.num : o.num > v.num) worse += 1; });
+        const pos = span === 0 ? 50 : (better ? (v.num - mn) / span : (mx - v.num) / span) * 100;
+        return { ...v, pct: n > 1 ? (worse / (n - 1)) * 100 : 50, pos, rank: n - worse };
+      });
+      const tgt = scored.find((p) => p.isTarget);
+      if (!tgt) return "";
+      const tone = tgt.pct >= 70 ? "is-good" : tgt.pct <= 30 ? "is-bad" : "is-mid";
+      const valText = peersFmt(tgt.num, ind.unit);
+      const groupMap = new Map();
+      scored.forEach((p) => {
+        const pv = peersFmt(p.num, ind.unit);
+        const g = groupMap.get(pv);
+        if (g) {
+          g.items.push({ name: p.name, rank: p.rank, target: p.isTarget });
+          if (p.isTarget) g.hasTarget = true;
+        } else {
+          groupMap.set(pv, { pv, pos: p.pos, items: [{ name: p.name, rank: p.rank, target: p.isTarget }], hasTarget: p.isTarget });
+        }
+      });
+      const dots = [...groupMap.values()]
+        .sort((a, b) => a.pos - b.pos)
+        .map((g) => {
+          g.items.sort((a, b) => (b.target ? 1 : 0) - (a.target ? 1 : 0));
+          const rows = JSON.stringify(g.items);
+          const aria = g.items.map((it) => `${it.name} 第 ${it.rank}/${n} 名`).join("；");
+          return `<span class="peers-tr-dot${g.hasTarget ? " is-target" : ""}" style="left:${Math.max(0, Math.min(100, g.pos)).toFixed(1)}%" aria-label="${esc(ind.label)} ${esc(aria)}" data-tip-label="${esc(ind.label)}" data-tip-value="${esc(g.pv)}" data-tip-total="${n}" data-tip-rows="${esc(rows)}"></span>`;
+        })
+        .join("");
+      return `<li class="peers-tr ${tone}">
+        <span class="peers-tr-name">${esc(ind.label)}<i>${esc(peersDirHint(ind.direction))}</i></span>
+        <span class="peers-tr-axis">${dots}</span>
+        <span class="peers-tr-val">${esc(valText)}</span>
+        <span class="peers-tr-rank"><b>第 ${tgt.rank}</b><em>/ 共 ${n} 家</em></span>
+      </li>`;
+    }).filter(Boolean).join("");
+    if (!items) return "";
+    return `<div class="peers-tr-wrap">
+      <div class="peers-tr-head"><span>可对比指标</span><span>行业相对位置</span><span>本司值</span><span>名次</span></div>
+      <ol class="peers-tr-list">${items}</ol>
+    </div>`;
+  }
+
+  function peersMatrixHtml(view, total) {
+    const indicators = (Array.isArray(view.all_indicators) && view.all_indicators.length)
+      ? view.all_indicators
+      : (Array.isArray(view.indicators) ? view.indicators : []);
+    const rows = Array.isArray(view.rows) ? view.rows : [];
+    if (!indicators.length || !rows.length) return "";
     const scoreRank = (r) => {
       const info = (r.ranks || {}).score_total;
       return info && info.rank ? info.rank : 999;
@@ -1093,94 +1179,266 @@
     const ordered = rows.slice().sort((a, b) => (Number(b.is_target) - Number(a.is_target)) || (scoreRank(a) - scoreRank(b)));
     const head = `<tr><th class="peers-ind-col">指标</th>${ordered.map((r) => `<th class="peers-co-col${r.is_target ? " is-target" : ""}">${r.is_target ? "★ " : ""}${esc(r.name || r.code)}</th>`).join("")}</tr>`;
     const body = indicators.map((ind) => {
+      const isText = ind.unit === "text";
       const cells = ordered.map((r) => {
-        const v = peersFmt((r.values || {})[ind.key], ind.unit);
+        const has = r.all_values && Object.prototype.hasOwnProperty.call(r.all_values, ind.key);
+        const raw = has ? r.all_values[ind.key] : (r.values || {})[ind.key];
+        const v = isText ? (raw == null || raw === "" ? "—" : String(raw)) : peersFmt(raw, ind.unit);
         const rank = (r.ranks || {})[ind.key];
-        const cls = peersHeatCls(rank, ind.direction);
-        const rankHtml = ind.direction === "neutral" || ind.unit === "text" ? "" : peersRankCell(rank, total);
-        return `<td class="num${cls ? " " + cls : ""}${r.is_target ? " is-target" : ""}">${esc(v)}${rankHtml}</td>`;
+        const tone = isText || ind.direction === "neutral" ? "" : peersTone(rank);
+        const rankHtml = isText || ind.direction === "neutral" || !rank || !rank.rank
+          ? ""
+          : `<span class="peers-rank">${esc(String(rank.rank))}<i>/${esc(String(total))}</i></span>`;
+        const cls = isText ? "peers-co-text" : "num";
+        return `<td class="${cls}${tone ? " " + tone : ""}${r.is_target ? " is-target" : ""}">${esc(v)}${rankHtml}</td>`;
       }).join("");
       return `<tr><th class="peers-ind-col">${esc(ind.label)}</th>${cells}</tr>`;
     }).join("");
-    // 行业基准表
-    const bench = view.benchmark || {};
-    const benchRows = indicators
-      .map((ind) => {
-        const st = bench[ind.key] || {};
-        if (!st.count) return "";
-        return `<tr><th class="peers-ind-col">${esc(ind.label)}</th>`
-          + `<td class="num">${esc(peersFmt(st.median, ind.unit))}</td>`
-          + `<td class="num">${esc(peersFmt(st.mean, ind.unit))}</td>`
-          + `<td class="num">${esc(peersFmt(st.p25, ind.unit))} ~ ${esc(peersFmt(st.p75, ind.unit))}</td>`
-          + `<td class="num">${esc(peersFmt(st.min, ind.unit))} ~ ${esc(peersFmt(st.max, ind.unit))}</td></tr>`;
-      })
-      .filter(Boolean)
-      .join("");
-    const benchHtml = benchRows
-      ? `<details class="peers-bench"><summary>行业基准（中位数 / 均值 / 四分位 / 极值）</summary>`
-        + `<div class="rot-scroll"><table class="rot-table peers-table"><thead><tr><th class="peers-ind-col">指标</th><th class="num">中位数</th><th class="num">均值</th><th class="num">四分位区间</th><th class="num">极值区间</th></tr></thead><tbody>${benchRows}</tbody></table></div></details>`
-      : "";
-    // 分化提示
-    const dispersion = view.dispersion || {};
-    const high = indicators
-      .map((ind) => ({ ind, d: dispersion[ind.key] || {} }))
-      .filter((x) => x.d.level === "高" || x.d.level === "中");
-    const dispHtml = high.length
-      ? `<p class="muted sentiment-source-note">行业分化提示：${high.map((x) => `${esc(x.ind.label)}（${x.d.level}）`).join("、")} 离散度偏高，排名参考价值有限。</p>`
-      : "";
-    return `<section class="engine-section"><h3>${esc(view.name || "")}</h3>`
-      + `<div class="rot-scroll"><table class="rot-table peers-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`
-      + `${dispHtml}${benchHtml}</section>`;
+    return `<div class="peers-matrix">
+      <div class="peers-matrix-title">同行明细矩阵（${ordered.length} 家 · ${indicators.length} 项结果）</div>
+      <div class="peers-table-wrap"><table class="rot-table peers-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    </div>`;
   }
 
-  function peersTargetHtml(pack) {
+  function peersViewSection(view, pack) {
+    const total = pack.universe?.used || 0;
     const target = pack.target || {};
-    if (!target.code) return "";
-    const kpis = [
-      ["综合评分", Number.isFinite(Number(target.score_total)) ? String(target.score_total) : "—"],
-      ["行业内排名", target.score_rank ? `${target.score_rank} / ${target.of}` : "—"],
-      ["可比公司", String(pack.universe?.used ?? "—")],
-      ["基准期", pack.latest_period || "—"],
-    ];
-    const kpiHtml = kpis.map(([label, value]) => (
-      `<div class="engine-kpi"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`
-    )).join("");
-    const strengths = Array.isArray(target.strengths) ? target.strengths : [];
-    const weaknesses = Array.isArray(target.weaknesses) ? target.weaknesses : [];
-    const chips = (list, cls) => list.length
-      ? `<ul class="peers-chips ${cls}">${list.slice(0, 8).map((s) => `<li>${esc(s)}</li>`).join("")}</ul>`
-      : "";
-    const notes = [];
-    if (strengths.length) notes.push(`<h4>相对优势</h4>${chips(strengths, "is-good")}`);
-    if (weaknesses.length) notes.push(`<h4>相对短板</h4>${chips(weaknesses, "is-bad")}`);
-    return `<div class="engine-kpis">${kpiHtml}</div>${notes.join("")}`;
+    const indicators = Array.isArray(view.indicators) ? view.indicators : [];
+    const byInd = target.by_indicator || {};
+    const noLabel = view.key === "summary" ? "∑" : String(view.no || "");
+
+    if (!indicators.length) {
+      return `<details class="peers-view-card" id="peers-view-${esc(view.key)}" open>
+        <summary class="peers-view-head">
+          <span class="peers-view-no">${esc(noLabel)}</span>
+          <span class="peers-view-name">${esc(view.name || "")}</span>
+        </summary>
+        <div class="peers-view-body"><p class="peers-dist-empty">本看暂无可用数值</p></div>
+      </details>`;
+    }
+
+    let good = 0, bad = 0;
+    indicators.forEach((ind) => {
+      const info = byInd[ind.key];
+      if (!info || ind.direction === "neutral") return;
+      const pct = Number(info.percentile);
+      if (!Number.isFinite(pct)) return;
+      if (pct >= 70) good += 1;
+      else if (pct <= 30) bad += 1;
+    });
+
+    const rankHtml = peersTargetRankList(view, pack);
+
+    return `<details class="peers-view-card" id="peers-view-${esc(view.key)}" open>
+      <summary class="peers-view-head">
+        <span class="peers-view-no">${esc(noLabel)}</span>
+        <span class="peers-view-name">${esc(view.name || "")}</span>
+        <span class="peers-view-stats"><i class="is-good">${good}</i> 项优势<i class="peers-dot-sep">·</i><i class="is-bad">${bad}</i> 项短板</span>
+      </summary>
+      <div class="peers-view-body">
+        ${rankHtml}
+        ${peersMatrixHtml(view, total)}
+      </div>
+    </details>`;
+  }
+
+  function peersHeroHtml(pack) {
+    const ind = pack.industry || {};
+    const universe = pack.universe || {};
+    const chips = [
+      pack.report_type_label ? `<span class="peers-hero-chip">${esc(pack.report_type_label)}</span>` : "",
+      pack.latest_period ? `<span class="peers-hero-chip">基准期 ${esc(pack.latest_period)}</span>` : "",
+      `<span class="peers-hero-chip is-accent">可比 ${esc(String(universe.used ?? "—"))} 家</span>`,
+      `<span class="peers-hero-chip">行业 ${esc(String(universe.total ?? "—"))} 家</span>`,
+    ].filter(Boolean).join("");
+    const path = [ind.l1_name, ind.l2_name, ind.l3_code].filter(Boolean).map((s) => esc(s)).join(" · ");
+    return `<header class="peers-hero">
+      <div class="peers-hero-copy">
+        <p class="peers-eyebrow">申万三级行业 · 同口径横截面</p>
+        <h3 class="peers-hero-title">${esc(ind.l3_name || ind.l3_code || "—")}</h3>
+        ${path ? `<p class="peers-hero-path">${path}</p>` : ""}
+      </div>
+      <div class="peers-hero-chips">${chips}</div>
+    </header>`;
+  }
+
+  function peersSignalCard(list, kind) {
+    const isGood = kind === "good";
+    const items = Array.isArray(list) ? list.slice(0, 8) : [];
+    const body = items.length
+      ? `<ul class="peers-signal-list ${isGood ? "is-good" : "is-bad"}">${items.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>`
+      : `<p class="peers-signal-empty">${isGood ? "暂无明显优势项" : "暂无明显短板项"}</p>`;
+    return `<article class="peers-signal ${isGood ? "is-good" : "is-bad"}">
+      <header class="peers-signal-head">
+        <span class="peers-signal-dot"></span>
+        <strong>${isGood ? "相对优势" : "相对短板"}</strong>
+        <span class="peers-signal-count">${Array.isArray(list) ? list.length : 0} 项</span>
+      </header>
+      ${body}
+    </article>`;
+  }
+
+  function peersRankLevel(tone) {
+    if (tone === "is-good") return "行业领先";
+    if (tone === "is-bad") return "相对落后";
+    return "处于中游";
+  }
+
+  function peersRankFocusHtml(pack) {
+    const t = pack.target || {};
+    const n = Number(t.of) || Number(pack.universe?.used) || 0;
+    const rank = Number(t.score_rank);
+    if (!t.code || !Number.isFinite(rank) || n < 2) return "";
+    const frac = (rank - 1) / (n - 1);
+    const tone = frac <= 0.3 ? "is-good" : frac >= 0.7 ? "is-bad" : "is-mid";
+    const leftPos = Math.max(0, Math.min(100, frac * 100));
+    const scoreNum = Number(t.score_total);
+    const scoreText = Number.isFinite(scoreNum) ? `综合分 ${Math.round(scoreNum)}` : "综合分 —";
+    return `<section class="peers-rank-panel">
+      <div class="peers-rank-main">
+        <p class="peers-rank-eyebrow">申万三级行业排名</p>
+        <div class="peers-rank-figure">
+          <span class="peers-rank-num">${esc(String(rank))}</span>
+          <span class="peers-rank-of">名 / 共 <b>${esc(String(n))}</b> 家</span>
+        </div>
+        <div class="peers-rank-tags">
+          <span class="peers-rank-level ${tone}">${esc(peersRankLevel(tone))}</span>
+          <span class="peers-rank-score">${esc(scoreText)}</span>
+        </div>
+      </div>
+      <div class="peers-rank-ladder" role="img" aria-label="本司在申万三级行业中的排名位置：第 ${esc(String(rank))} 名，共 ${esc(String(n))} 家">
+        <div class="peers-rank-ladder-track">
+          <span class="peers-rank-ladder-marker ${tone}" style="left:${leftPos.toFixed(1)}%"></span>
+        </div>
+        <div class="peers-rank-ladder-scale">
+          <span>第 1 名</span>
+          <span class="peers-rank-ladder-self">本司 · 第 ${esc(String(rank))} 名</span>
+          <span>第 ${esc(String(n))} 名</span>
+        </div>
+      </div>
+    </section>`;
+  }
+
+  function peersScorecardHtml(pack) {
+    const t = pack.target || {};
+    if (!t.code && !t.name) return "";
+    const rankFocus = peersRankFocusHtml(pack);
+    if (!rankFocus) return "";
+    return `<div class="peers-dashboard">${rankFocus}</div>`;
+  }
+
+  function peersRankCardHtml(pack) {
+    const t = pack.target || {};
+    const n = Number(t.of) || Number(pack.universe?.used) || 0;
+    const rank = Number(t.score_rank);
+    if (!t.code || !Number.isFinite(rank) || n < 2) return "";
+    const frac = (rank - 1) / (n - 1);
+    const tone = frac <= 0.3 ? "is-good" : frac >= 0.7 ? "is-bad" : "is-mid";
+    const leftPos = Math.max(0, Math.min(100, ((n - rank) / (n - 1)) * 100));
+    const scoreNum = Number(t.score_total);
+    const scoreText = Number.isFinite(scoreNum) ? `综合分 ${Math.round(scoreNum)}` : "综合分 —";
+    return `<article class="peers-signal is-rank">
+      <header class="peers-signal-head">
+        <span class="peers-signal-dot"></span>
+        <strong>综合排名</strong>
+        <span class="peers-signal-count">共 ${n} 家</span>
+      </header>
+      <div class="peers-rank-card-body">
+        <div class="peers-rank-card-figure">
+          <span class="peers-rank-num">${esc(String(rank))}</span>
+          <span class="peers-rank-of">名 / 共 <b>${esc(String(n))}</b> 家</span>
+        </div>
+        <div class="peers-rank-tags">
+          <span class="peers-rank-level ${tone}">${esc(peersRankLevel(tone))}</span>
+          <span class="peers-rank-score">${esc(scoreText)}</span>
+        </div>
+        <div class="peers-rank-ladder" role="img" aria-label="本司在申万三级行业中的排名位置：第 ${esc(String(rank))} 名，共 ${esc(String(n))} 家">
+          <div class="peers-rank-ladder-track">
+            <span class="peers-rank-ladder-marker ${tone}" style="left:${leftPos.toFixed(1)}%" aria-label="${esc(t.name || t.code || "")}，第 ${esc(String(rank))} 名，共 ${esc(String(n))} 家 · 综合分 ${Number.isFinite(scoreNum) ? Math.round(scoreNum) : "—"}"><span class="peers-rank-ladder-tip"><b class="peers-rank-tip-name">${esc(t.name || t.code || "")}</b><span class="peers-rank-tip-meta">第 ${esc(String(rank))}/${esc(String(n))} 名 · 综合分 ${Number.isFinite(scoreNum) ? Math.round(scoreNum) : "—"}</span></span></span>
+          </div>
+          <div class="peers-rank-ladder-scale">
+            <span>第 ${esc(String(n))} 名</span>
+            <span class="peers-rank-ladder-self">本司 · 第 ${esc(String(rank))} 名</span>
+            <span>第 1 名</span>
+          </div>
+        </div>
+      </div>
+    </article>`;
+  }
+
+  function peersSignalsHtml(pack) {
+    const t = pack.target || {};
+    if (!t.code && !t.name) return "";
+    const rankCard = peersRankCardHtml(pack);
+    const cards = `${peersSignalCard(t.strengths, "good")}${peersSignalCard(t.weaknesses, "bad")}`;
+    if (!rankCard && !cards) return "";
+    return `<div class="peers-dashboard"><div class="peers-signal-grid${rankCard ? " has-rank" : ""}">${rankCard}${cards}</div></div>`;
+  }
+
+  function peersLeaderboardHtml(pack) {
+    const companies = (Array.isArray(pack.companies) ? pack.companies : [])
+      .filter((c) => c && (Number.isFinite(Number(c.score_total)) || Number.isFinite(Number(c.score_rank))));
+    if (companies.length < 2) return "";
+    const ordered = companies.slice().sort((a, b) => {
+      const ra = Number.isFinite(Number(a.score_rank)) ? Number(a.score_rank) : 1e6;
+      const rb = Number.isFinite(Number(b.score_rank)) ? Number(b.score_rank) : 1e6;
+      if (ra !== rb) return ra - rb;
+      return (Number(b.score_total) || 0) - (Number(a.score_total) || 0);
+    });
+    const rowOf = (c, idx) => {
+      const scoreNum = Number(c.score_total);
+      const hasScore = Number.isFinite(scoreNum);
+      const score = hasScore ? Math.round(scoreNum) : null;
+      const rank = Number.isFinite(Number(c.score_rank)) ? Number(c.score_rank) : idx + 1;
+      const hits = c.metrics?.risk_hits;
+      const medal = rank === 1 ? " is-gold" : rank === 2 ? " is-silver" : rank === 3 ? " is-bronze" : "";
+      return `<tr class="peers-lb-row${c.is_target ? " is-target" : ""}">
+        <td class="peers-lb-rank${medal}"><span class="peers-lb-rank-num">${rank}</span></td>
+        <td class="peers-lb-name"><span class="peers-lb-name-text">${esc(c.name || c.code)}</span>${c.is_target ? '<span class="peers-lb-tag">本司</span>' : ""}</td>
+        <td class="num peers-lb-scorecell">${hasScore ? score : "—"}</td>
+        <td class="peers-lb-strategy-cell">${c.strategy_type ? esc(c.strategy_type) : "—"}</td>
+        <td class="num peers-lb-riskcell">${Number.isFinite(Number(hits)) ? esc(String(hits)) : "—"}</td>
+      </tr>`;
+    };
+    const head = `<thead><tr><th>#</th><th>可比公司</th><th class="num">综合分</th><th>战略类型</th><th class="num">风险命中</th></tr></thead>`;
+    const industryName = (pack.industry || {}).l3_name || "申万三级行业";
+    return `<section class="peers-board">
+      <header class="peers-board-head">
+        <h4 class="peers-board-title">${esc(industryName)} · 综合排名</h4>
+        <span class="peers-board-hint">按「八看」综合分排序 · 共 ${ordered.length} 家</span>
+      </header>
+      <div class="peers-lb-wrap"><table class="peers-lb-table">${head}<tbody>${ordered.map((c, i) => rowOf(c, i)).join("")}</tbody></table></div>
+    </section>`;
+  }
+
+  function peersNotesHtml(pack) {
+    const flags = Array.isArray(pack.flags) ? pack.flags : [];
+    const excluded = pack.universe?.excluded || [];
+    const parts = [];
+    if (flags.length) {
+      parts.push(`<div class="peers-note is-warn"><strong>口径提示</strong><ul>${flags.map((f) => `<li>${esc(f)}</li>`).join("")}</ul></div>`);
+    }
+    if (excluded.length) {
+      parts.push(`<details class="peers-note is-muted"><summary>已剔除 ${excluded.length} 家样本</summary><p>${excluded.slice(0, 60).map((e) => `${esc(e.name)}(${esc(e.code)})：${esc(e.reason)}`).join("；")}</p></details>`);
+    }
+    return parts.join("");
+  }
+
+  function peersNavHtml(pack) {
+    const views = (Array.isArray(pack.by_view) ? pack.by_view : []).filter((v) => v.key !== "summary");
+    if (!views.length) return "";
+    return `<nav class="peers-nav" aria-label="八看导航">${views.map((v) => {
+      const shortName = String(v.name || "").replace(/^.*?：/, "");
+      return `<button type="button" data-peers-jump="${esc(v.key)}">${esc(String(v.no || ""))}看 · ${esc(shortName)}</button>`;
+    }).join("")}</nav>`;
   }
 
   function peersHtml(pack) {
     if (!pack || !Array.isArray(pack.by_view) || !pack.by_view.length) {
       return `<div class="engine-hero"><p class="engine-type">竞争分析</p><p class="muted">${esc(pack?.text || "未取到可比样本")}</p></div>`;
     }
-    const total = pack.universe?.used || 0;
-    const flags = Array.isArray(pack.flags) ? pack.flags : [];
-    const flagHtml = flags.length
-      ? `<p class="muted sentiment-source-note">${flags.map((f) => esc(f)).join("；")}</p>`
-      : "";
-    const excluded = pack.universe?.excluded || [];
-    const exclHtml = excluded.length
-      ? `<details class="peers-bench"><summary>已剔除 ${excluded.length} 家</summary><p class="muted sentiment-source-note">${excluded.slice(0, 40).map((e) => `${esc(e.name)}(${esc(e.code)})：${esc(e.reason)}`).join("；")}</p></details>`
-      : "";
-    const sections = pack.by_view.map((v) => peersViewSection(v, total)).join("");
-    return `
-      <div class="engine-hero">
-        <p class="engine-type">行业：<strong>${esc(pack.industry?.l3_name || pack.industry?.l3_code || "—")}</strong>
-          ${pack.industry?.l1_name ? `<span class="muted"> · ${esc(pack.industry.l1_name)} / ${esc(pack.industry.l2_name || "")}</span>` : ""}</p>
-        <p class="muted">${esc([pack.report_type_label, pack.latest_period].filter(Boolean).join(" · "))}</p>
-        ${flagHtml}
-      </div>
-      ${peersTargetHtml(pack)}
-      ${exclHtml}
-      ${sections}
-    `;
+    const sections = pack.by_view.filter((v) => v.key !== "summary").map((v) => peersViewSection(v, pack)).join("");
+    return `${peersSignalsHtml(pack)}${peersNotesHtml(pack)}${peersLeaderboardHtml(pack)}${peersNavHtml(pack)}${sections}`;
   }
 
   function zhangParamsHtml(pack) {
@@ -1344,6 +1602,15 @@
     if (state.mode === "compare") {
       requestAnimationFrame(() => {
         try { drawCmpCharts(pack); } catch { /* ignore */ }
+      });
+    }
+    if (state.mode === "peers") {
+      requestAnimationFrame(() => {
+        const wrap = document.querySelector("#panel-judgment .peers-lb-wrap");
+        const row = wrap?.querySelector("tr.is-target");
+        if (wrap && row && wrap.scrollHeight > wrap.clientHeight) {
+          wrap.scrollTop = Math.max(0, row.offsetTop - wrap.clientHeight / 2 + row.offsetHeight / 2);
+        }
       });
     }
     ms.enginePack = pack;
@@ -1831,12 +2098,70 @@
       loadEngine("zhang-views", { force: true, extra: { ...zhangViewsFormParams(), refresh: "1" } })
         .catch((err) => showError(err.message || String(err)));
     });
-    document.getElementById("panel-judgment")?.addEventListener("click", (ev) => {
-      if (!ev.target.closest?.("#peersRecalc")) return;
+    $("reportView")?.addEventListener("click", (ev) => {
+      const btn = ev.target.closest?.("[data-peers-jump]");
+      if (!btn) return;
       ev.preventDefault();
-      loadEngine("peers", { force: true, extra: { ...peersFormParams(), refresh: "1" } })
-        .catch((err) => showError(err.message || String(err)));
+      const key = btn.getAttribute("data-peers-jump");
+      const target = document.getElementById(`peers-view-${key}`);
+      if (!target) return;
+      if (target.tagName === "DETAILS" && !target.open) target.open = true;
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+    (function peersFloatTooltip() {
+      const host = document.getElementById("panel-judgment");
+      if (!host) return;
+      const float = document.createElement("div");
+      float.className = "peers-float";
+      document.body.appendChild(float);
+      let active = null;
+      const show = (dot) => {
+        float.innerHTML = "";
+        const label = dot.getAttribute("data-tip-label") || "";
+        const value = dot.getAttribute("data-tip-value") || "";
+        const total = dot.getAttribute("data-tip-total") || "";
+        let rows = [];
+        try { rows = JSON.parse(dot.getAttribute("data-tip-rows") || "[]"); } catch { rows = []; }
+        const head = document.createElement("b");
+        head.className = "peers-float-head";
+        head.textContent = label;
+        float.append(head);
+        const sub = document.createElement("span");
+        sub.className = "peers-float-sub";
+        sub.textContent = `${value} · ${rows.length} 家${rows.length > 1 ? "并列" : ""}`;
+        float.append(sub);
+        const list = document.createElement("div");
+        list.className = "peers-float-rows";
+        rows.forEach((it) => {
+          const line = document.createElement("div");
+          line.className = "peers-float-row" + (it && it.target ? " is-target" : "");
+          line.textContent = `${(it && it.name) || ""} · 第 ${(it && it.rank) || ""}/${total} 名`;
+          list.append(line);
+        });
+        float.append(list);
+        float.classList.add("is-open");
+        const r = dot.getBoundingClientRect();
+        const half = float.offsetWidth / 2;
+        let cx = r.left + r.width / 2;
+        cx = Math.max(half + 4, Math.min(window.innerWidth - half - 4, cx));
+        float.style.left = cx + "px";
+        const fh = float.offsetHeight;
+        let topPos = r.top - 8;
+        if (topPos - fh < 4) topPos = fh + 4;
+        float.style.top = topPos + "px";
+        active = dot;
+      };
+      const hide = () => { float.classList.remove("is-open"); active = null; };
+      host.addEventListener("mouseover", (ev) => {
+        const dot = ev.target.closest?.(".peers-tr-dot");
+        if (dot) show(dot);
+      });
+      host.addEventListener("mouseout", (ev) => {
+        if (ev.target.closest?.(".peers-tr-dot")) hide();
+      });
+      host.addEventListener("scroll", () => { if (active) hide(); }, true);
+      window.addEventListener("resize", () => { if (active) hide(); });
+    })();
     $("stopPollBtn")?.addEventListener("click", stopPoll);
     $("refreshReportsBtn")?.addEventListener("click", () => {
       loadReports().catch((err) => showError(err.message));

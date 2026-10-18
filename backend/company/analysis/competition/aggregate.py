@@ -178,10 +178,11 @@ def target_position(
         }
         if ind.direction == "neutral":
             continue
+        rank = info.get("rank")
         if pct >= 70:
-            strengths.append(f"{ind.label}（{ind.direction == 'lower' and '低' or '高'}居前列，分位 {pct:.0f}%）")
+            strengths.append(f"{ind.label}（行业第 {rank}/{n}）")
         elif pct <= 30:
-            weaknesses.append(f"{ind.label}（分位 {pct:.0f}%）")
+            weaknesses.append(f"{ind.label}（行业第 {rank}/{n}）")
 
     return {
         "code": target_code,
