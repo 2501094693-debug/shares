@@ -458,7 +458,7 @@
     const label = [name, code].filter(Boolean).join(" · ") || "当前公司";
     if ($("analysisCompanyLabel")) $("analysisCompanyLabel").textContent = label;
     if ($("startBtn")) $("startBtn").textContent = cfg.startBtn;
-    if ($("reportParams") && mode !== "zhang-views" && mode !== "peers") {
+    if ($("reportParams") && mode !== "zhang-views" && mode !== "peers" && mode !== "bizprofile") {
       $("reportParams").innerHTML = "";
       $("reportParams").classList.remove("is-active");
     }
@@ -1449,6 +1449,240 @@
     }).join("")}</nav>`;
   }
 
+  // ---- 业务概述（bizprofile）：确定性规则结果，原生表格渲染 ----
+
+  const BIZ_DIM_TABS = [
+    ["product", "按产品"],
+    ["industry", "按行业"],
+    ["area", "按地区"],
+  ];
+
+  function bizNum(value, digits = 2) {
+    if (value == null || value === "" || !Number.isFinite(Number(value))) return "—";
+    return Number(value).toFixed(digits);
+  }
+
+  function bizYi(value) {
+    if (value == null || value === "" || !Number.isFinite(Number(value))) return "—";
+    const n = Number(value);
+    const sign = n < 0 ? "-" : "";
+    return `${sign}${(Math.abs(n) / 1e8).toFixed(2)}亿`;
+  }
+
+  function bizPct(value, digits = 2) {
+    if (value == null || value === "" || !Number.isFinite(Number(value))) return "—";
+    return `${(Number(value) * 100).toFixed(digits)}%`;
+  }
+
+  function bizPp(value) {
+    if (value == null || value === "" || !Number.isFinite(Number(value))) return "—";
+    return `${Number(value) >= 0 ? "+" : ""}${Number(value).toFixed(2)}pp`;
+  }
+
+  function bizHhi(value) {
+    if (value == null || value === "" || !Number.isFinite(Number(value))) return "—";
+    // HHI 常用 0~1 或 0~10000 两种口径；此处源数据为 0~1，统一放大到 0~10000
+    return (Number(value) * 10000).toFixed(0);
+  }
+
+  function bizStatusLabel(status) {
+    if (status === "匹配") return "延续";
+    if (status === "本期新出现") return "新出现";
+    if (status === "本期无") return "本期无";
+    return status || "—";
+  }
+
+  function bizIntroHtml(pack) {
+    const intro = pack.intro || {};
+    const rows = [
+      ["主营业务", intro.main_business],
+      ["产品类型", intro.product_type],
+      ["主要产品", intro.product_name || (intro.product_name_list || []).join("、")],
+      ["经营范围", intro.scope],
+    ].filter((r) => String(r[1] || "").trim());
+    if (!rows.length) return "";
+    return `
+      <section class="engine-section biz-intro">
+        <h3>主营业务速览</h3>
+        <dl class="biz-intro-list">
+          ${rows.map(([k, v]) => `<div class="biz-intro-row"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}
+        </dl>
+      </section>`;
+  }
+
+  function bizOverviewHtml(pack) {
+    const dims = Array.isArray(pack.dimensions) ? pack.dimensions : [];
+    if (!dims.length) return "";
+    const rows = dims.map((d) => {
+      const c = d.concentration || {};
+      return [
+        `<b>${esc(d.label || d.key || "")}</b>`,
+        esc(d.report_date || "—"),
+        String(d.count ?? "—"),
+        bizYi(d.total_revenue),
+        bizPct(d.total_ratio),
+        bizPct(d.overall_margin),
+        bizPct(c.cr3),
+        bizHhi(c.hhi),
+      ];
+    });
+    return `
+      <section class="engine-section">
+        <h3>主营构成总览</h3>
+        <div class="zv-table">
+          <table>
+            <thead><tr><th>维度</th><th>最新报告期</th><th>一级分部</th><th>主营合计</th><th>占比合计</th><th>整体毛利率</th><th>CR3</th><th>HHI</th></tr></thead>
+            <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>
+          </table>
+        </div>
+        <p class="muted biz-note">整体毛利率由「Σ分部毛利 ÷ Σ分部收入」派生；CR3 / HHI 按一级分部收入占比计算（HHI 已放大到 0~10000）。三个维度由公司分别披露，期数与口径不同，不可横向当作同一口径比较。</p>
+      </section>`;
+  }
+
+  function bizSegmentsHtml(dim) {
+    const segs = Array.isArray(dim.segments) ? dim.segments : [];
+    if (!segs.length) return "";
+    const rows = segs.map((s) => {
+      const gm = s.gross_margin;
+      const isNeg = Number.isFinite(Number(gm)) && Number(gm) < 0;
+      return [
+        esc(s.item_name || ""),
+        bizYi(s.revenue),
+        bizPct(s.revenue_ratio),
+        bizPct(s.revenue_yoy),
+        `<span class="${isNeg ? "is-neg" : ""}">${bizPct(gm)}</span>`,
+        bizPct(s.gross_profit_ratio),
+      ];
+    });
+    return `
+      <div class="zv-table">
+        <table>
+          <thead><tr><th>分部</th><th>营业收入</th><th>收入占比</th><th>收入同比</th><th>毛利率</th><th>毛利占比</th></tr></thead>
+          <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>
+        </table>
+      </div>
+      <p class="muted biz-note">收入占比合计 ${bizPct(dim.total_ratio)}；毛利率列为该分部自身毛利率，毛利占比为该分部毛利占全部分部毛利之比。</p>`;
+  }
+
+  function bizMigrationHtml(dim) {
+    const rows = Array.isArray(dim.migration) ? dim.migration : [];
+    if (!rows.length) return "";
+    const body = rows.map((r) => {
+      const status = r.status || "";
+      const cls = status === "本期新出现" ? "is-new" : status === "本期无" ? "is-gone" : "";
+      const delta = Number.isFinite(Number(r.delta_pp)) ? bizPp(r.delta_pp) : "—";
+      return [
+        esc(r.item_name || ""),
+        bizPct(r.prev_ratio),
+        bizPct(r.cur_ratio),
+        `<span class="biz-delta ${Number(r.delta_pp) > 0 ? "is-up" : Number(r.delta_pp) < 0 ? "is-down" : ""}">${delta}</span>`,
+        bizPct(r.revenue_yoy),
+        `<span class="biz-status ${cls}">${esc(bizStatusLabel(status))}</span>`,
+      ];
+    });
+    return `
+      <div class="zv-table">
+        <table>
+          <thead><tr><th>分部</th><th>上期占比</th><th>本期占比</th><th>占比变动</th><th>收入同比</th><th>匹配</th></tr></thead>
+          <tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>
+        </table>
+      </div>
+      <p class="muted biz-note">按分部名称匹配本期与上期；名称跨期变化时匹配不上的记为「新出现 / 本期无」，不猜测对应关系。</p>`;
+  }
+
+  function bizDimensionHtml(pack, dim) {
+    if (!dim) return "";
+    const isPrimary = dim.key === pack.primary;
+    return `
+      <section class="engine-section biz-dim" data-biz-dim="${esc(dim.key || "")}">
+        <h3>${esc(dim.label || dim.key || "")}${isPrimary ? "（主维度）" : ""}　${esc(dim.report_date || "")}</h3>
+        <h4>分部构成</h4>
+        ${bizSegmentsHtml(dim)}
+        <h4>收入结构迁移</h4>
+        ${bizMigrationHtml(dim)}
+      </section>`;
+  }
+
+  function bizClassificationHtml(pack) {
+    const cls = pack.classification || {};
+    if (!cls.available) return "";
+    const hits = Array.isArray(cls.hits) ? cls.hits : [];
+    const unmatched = Array.isArray(cls.unmatched) ? cls.unmatched : [];
+    const modelLabel = cls.model_hint || cls.main_model || "";
+    let html = `
+      <section class="engine-section">
+        <h3>业务归类（静态词典派生）</h3>
+        <div class="engine-kpis">
+          <div class="engine-kpi"><span>业务大类</span><strong>${esc(cls.main_category || "—")}</strong></div>
+          <div class="engine-kpi"><span>赚钱模式</span><strong>${esc(modelLabel || "—")}</strong></div>
+          <div class="engine-kpi"><span>典型客群</span><strong>${esc(cls.main_buyers || "—")}</strong></div>
+        </div>`;
+    if (hits.length) {
+      html += `
+        <div class="zv-table">
+          <table>
+            <thead><tr><th>分部</th><th>命中关键词</th><th>业务大类</th><th>赚钱模式</th><th>典型客群</th></tr></thead>
+            <tbody>${hits.map((h) => `<tr><td>${esc(h.item_name || "")}</td><td>${esc(h.keyword || "")}</td><td>${esc(h.category || "")}</td><td>${esc(h.model || "")}</td><td>${esc(h.buyers || "")}</td></tr>`).join("")}</tbody>
+          </table>
+        </div>`;
+    }
+    if (unmatched.length) {
+      html += `<p class="muted biz-note">词典未命中：${esc(unmatched.join("、"))}（未命中不代表无业务属性，仅表示静态词典未收录）</p>`;
+    }
+    html += `<p class="muted biz-note">本节由静态业务词典（关键词字符串匹配）派生，规则确定、可复现，不含任何模型推断。</p></section>`;
+    return html;
+  }
+
+  function bizReviewHtml(pack) {
+    const rv = pack.review || {};
+    const text = String(rv.text || "").trim();
+    if (!text) return "";
+    const limit = 1200;
+    const excerpt = text.length > limit ? `${text.slice(0, limit)}……（已截断，完整内容见同花顺 F10 页面）` : text;
+    const total = rv.total ? `共 ${rv.total} 期，已选最长的一期` : "";
+    return `
+      <section class="engine-section">
+        <h3>董事会经营评述（原文节选）</h3>
+        <p class="muted biz-note">报告期 ${esc(rv.report_date || "—")} · ${rv.length || 0} 字${total ? ` · ${esc(total)}` : ""}</p>
+        <blockquote class="biz-review">${esc(excerpt)}</blockquote>
+        <p class="muted biz-note">本节为原文节选，未做改写或摘要。</p>
+      </section>`;
+  }
+
+  function bizGuardrailsHtml(pack) {
+    const hits = Array.isArray(pack.guardrails) ? pack.guardrails : [];
+    if (!hits.length) return "";
+    return `
+      <section class="engine-flags">
+        <h3>口径提示（${hits.length} 条）</h3>
+        <ul>${hits.map((h) => `<li><b>[${esc(h.id || "")}]</b> ${esc(h.title || "")}：${esc(h.detail || "")}</li>`).join("")}</ul>
+      </section>`;
+  }
+
+  function bizProfileHtml(pack) {
+    if (!pack || !Array.isArray(pack.dimensions) || !pack.dimensions.length) {
+      return `<div class="engine-hero"><p class="engine-type">业务概述</p><p class="muted">${esc(pack?.error || "未取到主营构成数据")}</p></div>`;
+    }
+    const dims = pack.dimensions;
+    const primary = dims.find((d) => d.key === pack.primary) || dims[0];
+    const otherDims = dims.filter((d) => d.key !== primary.key);
+    const latest = primary.report_date || "";
+    return `
+      <div class="engine-hero">
+        <p class="engine-type">业务概述</p>
+        <p>${esc(pack.name || "")}（${esc(pack.code || "")}）主营业务构成　数据源：${esc(pack.source_label || "")}　报告期：${esc(latest)}</p>
+        <p class="muted">按产品 / 按行业 / 按地区三个维度分别披露，一次请求取全 · 确定性规则渲染，未调用大模型</p>
+      </div>
+      ${bizGuardrailsHtml(pack)}
+      ${bizIntroHtml(pack)}
+      ${bizOverviewHtml(pack)}
+      ${bizDimensionHtml(pack, primary)}
+      ${otherDims.map((d) => bizDimensionHtml(pack, d)).join("")}
+      ${bizClassificationHtml(pack)}
+      ${bizReviewHtml(pack)}
+      <p class="muted biz-note">数据来源：${esc(pack.page || "")}（同花顺 F10 经营分析）。本报告由确定性规则渲染，所有数字直接取自该来源或由其派生。</p>`;
+  }
+
   function peersHtml(pack) {
     if (!pack || !Array.isArray(pack.by_view) || !pack.by_view.length) {
       return `<div class="engine-hero"><p class="engine-type">竞争分析</p><p class="muted">${esc(pack?.text || "未取到可比样本")}</p></div>`;
@@ -1466,6 +1700,30 @@
       + `<label class="ai-report-param-label">报告口径<select id="zvReportType" class="chart-select">${options}</select></label>`;
   }
 
+  const BIZ_LATEST_N = [
+    ["1", "最近 1 期"],
+    ["2", "最近 2 期"],
+    ["3", "最近 3 期"],
+    ["5", "最近 5 期"],
+  ];
+
+  function bizFormParams() {
+    const pick = (id) => String(document.getElementById(id)?.value || "").trim();
+    const extra = {};
+    const n = pick("bizLatestN");
+    if (n) extra.latest_n = n;
+    return extra;
+  }
+
+  function bizParamsHtml(pack) {
+    const cur = String((pack && pack.latest_n) || "3");
+    const options = BIZ_LATEST_N
+      .map(([value, label]) => `<option value="${value}"${value === cur ? " selected" : ""}>${label}</option>`)
+      .join("");
+    return `<label class="ai-report-param-label">报告期数<select id="bizLatestN" class="chart-select">${options}</select></label>`
+      + `<button type="button" id="bizRecalc" class="btn primary sm">计算</button>`;
+  }
+
   function paintReportParams(pack) {
     const slot = $("reportParams");
     if (!slot) return;
@@ -1474,6 +1732,9 @@
       slot.classList.add("is-active");
     } else if (state.mode === "peers" && pack) {
       slot.innerHTML = peersParamsHtml(pack);
+      slot.classList.add("is-active");
+    } else if (state.mode === "bizprofile" && pack) {
+      slot.innerHTML = bizParamsHtml(pack);
       slot.classList.add("is-active");
     } else {
       slot.innerHTML = "";
@@ -1504,6 +1765,7 @@
   }
 
   function engineHtml(pack, mode = state.mode) {
+    if (mode === "bizprofile" || Array.isArray(pack?.dimensions)) return bizProfileHtml(pack);
     if (mode === "compare" || (pack?.scores && pack?.total && pack?.daily)) return cmpHtml(pack);
     if (mode === "chip" || pack?.method === "same_type") return chipHtml(pack);
     if (mode === "zhang-views" || (Array.isArray(pack?.views) && pack?.summary)) return zhangViewsHtml(pack);
@@ -1652,14 +1914,16 @@
     setLive("busy");
     setBoardMode("result");
     if (mode === state.mode) $("startBtn")?.classList.add("hidden");
-    const loadingMsg = mode === "peers"
+    const loadingMsg = mode === "bizprofile"
+      ? "正在取回主营构成三维度（按产品/按行业/按地区）与董事会经营评述…"
+      : mode === "peers"
       ? "正在圈定申万三级行业，并拉取同行定期报告逐项计算八看…"
       : "正在强制刷新东财最新全量定期报告并计算…";
     showReportLoading(loadingMsg, `${cfg.label}计算中`);
     if ($("reportTitle")) $("reportTitle").textContent = cfg.runningTitle?.(company) || cfg.reportTitle;
     try {
       const qs = new URLSearchParams({ company, ...(extra || {}) });
-      const timeoutMs = mode === "peers" ? 180000 : 90000;
+      const timeoutMs = mode === "peers" ? 180000 : mode === "bizprofile" ? 60000 : 90000;
       const { data } = await api(`${cfg.apiRoot}?${qs}`, { timeoutMs });
       if (state.mode !== mode) return;
       renderEnginePack(data);
@@ -1880,6 +2144,7 @@
         : state.mode === "compare" ? cmpFormParams()
         : state.mode === "zhang-views" ? { ...zhangViewsFormParams(), refresh: "1" }
         : state.mode === "peers" ? { ...peersFormParams(), refresh: "1" }
+        : state.mode === "bizprofile" ? { ...bizFormParams(), markdown: "0" }
         : undefined;
       await loadEngine(state.mode, { force: true, extra });
       return;
@@ -2097,6 +2362,12 @@
       cmpResizeTimer = setTimeout(() => {
         try { drawCmpCharts(pack); } catch { /* ignore */ }
       }, 200);
+    });
+    document.getElementById("panel-judgment")?.addEventListener("click", (ev) => {
+      if (!ev.target.closest?.("#bizRecalc")) return;
+      ev.preventDefault();
+      loadEngine("bizprofile", { force: true, extra: { ...bizFormParams(), markdown: "0" } })
+        .catch((err) => showError(err.message || String(err)));
     });
     document.getElementById("panel-judgment")?.addEventListener("click", (ev) => {
       if (!ev.target.closest?.("#chipRecalc")) return;

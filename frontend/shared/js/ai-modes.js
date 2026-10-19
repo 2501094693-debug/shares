@@ -149,6 +149,53 @@ window.AI_MODES = {
     },
   },
 
+  bizprofile: {
+    id: "bizprofile",
+    kind: "engine",
+    label: "业务概述",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "业务概述",
+    subtitle: "主营构成三维度（按产品/按行业/按地区）+ 收入结构变化 + 盈利结构 · 确定性规则，不经过大模型",
+    startBtn: "重新计算",
+    historyHead: "规则结果",
+    reportTitle: "业务概述",
+    reportMetaDefault: "同花顺 F10 经营分析：主营构成、收入结构迁移、盈利结构与口径提示",
+    historyMeta: "规则结果",
+    emptyReports: "暂无结果",
+    resumeFail: "业务概述计算失败",
+    apiRoot: "/api/stocks/biz-profile",
+    jobStoreKey: "orbit.bizprofile.pack",
+    reportNameRe: /$^/,
+    agentDefs: [],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">◫</div>
+        <h3>这家公司的生意由哪几块构成</h3>
+        <p>取同花顺 F10「经营分析」的主营构成，按产品 / 按行业 / 按地区三个维度分别列示，并给出收入结构迁移、盈利结构与口径提示。</p>
+        <ul class="ai-empty-tips">
+          <li>三个维度一次请求取全，不重复抓取</li>
+          <li>整体毛利率由分部毛利 ÷ 分部收入派生，不直接采信源字段</li>
+          <li>维度期数与最新期不同，横向比较前请留意尾注提示</li>
+        </ul>
+      </div>`,
+    resultTitle(result) {
+      const name = result.name || result.code || "";
+      return `${name} 业务概述`.trim();
+    },
+    resultMeta(result) {
+      const dims = result.dim_latest || {};
+      const latest = dims[result.primary] || "";
+      return [
+        result.source_label || "",
+        latest ? `报告期 ${latest}` : "",
+        result.guardrails?.length ? `口径提示 ${result.guardrails.length} 条` : "",
+      ].filter(Boolean).join(" · ");
+    },
+    runningTitle(company) {
+      return `${company} · 业务概述`;
+    },
+  },
+
   peers: {
     id: "peers",
     kind: "engine",
@@ -424,12 +471,16 @@ window.AI_MODES = {
 
 };
 
-window.AI_MODE_ORDER = ["business", "zhang-views", "peers", "risk", "valuation", "sentiment", "chip", "compare"];
+window.AI_MODE_ORDER = ["business", "bizprofile", "zhang-views", "peers", "risk", "valuation", "sentiment", "chip", "compare"];
 
 window.AI_MODE_ALIASES = {
   business: "business",
   brief: "business",
   ai: "business",
+  bizprofile: "bizprofile",
+  "biz-profile": "bizprofile",
+  "业务概述": "bizprofile",
+  "主营构成": "bizprofile",
   earnings: "zhang-views",
   "财报简述": "zhang-views",
   peers: "peers",
