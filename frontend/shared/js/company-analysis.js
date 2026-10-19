@@ -1101,9 +1101,9 @@
   }
 
   function peersTargetRankList(view, pack) {
-    const indicators = (Array.isArray(view.indicators) && view.indicators.length)
-      ? view.indicators
-      : (Array.isArray(view.all_indicators) ? view.all_indicators : []);
+    const indicators = (Array.isArray(view.all_indicators) && view.all_indicators.length)
+      ? view.all_indicators
+      : (Array.isArray(view.indicators) ? view.indicators : []);
     const rows = Array.isArray(view.rows) ? view.rows : [];
     if (!indicators.length || !rows.length) return "";
     const rankable = indicators.filter((ind) => ind.unit !== "text" && ind.direction !== "neutral");
@@ -1113,8 +1113,10 @@
       rows.forEach((r) => {
         const has = r.all_values && Object.prototype.hasOwnProperty.call(r.all_values, ind.key);
         const raw = has ? r.all_values[ind.key] : (r.values || {})[ind.key];
+        if (raw === null || raw === undefined || raw === "") return;
         const num = Number(raw);
-        if (Number.isFinite(num)) vals.push({ num, name: r.name || r.code || "", isTarget: !!r.is_target });
+        if (!Number.isFinite(num)) return;
+        vals.push({ num, name: r.name || r.code || "", isTarget: !!r.is_target });
       });
       if (!vals.length) return "";
       const n = vals.length;
@@ -1126,37 +1128,49 @@
         let worse = 0;
         vals.forEach((o) => { if (better ? o.num < v.num : o.num > v.num) worse += 1; });
         const pos = span === 0 ? 50 : (better ? (v.num - mn) / span : (mx - v.num) / span) * 100;
-        return { ...v, pct: n > 1 ? (worse / (n - 1)) * 100 : 50, pos, rank: n - worse };
+        return { ...v, pct: span === 0 ? 50 : (n > 1 ? (worse / (n - 1)) * 100 : 50), pos };
       });
       const tgt = scored.find((p) => p.isTarget);
-      if (!tgt) return "";
-      const tone = tgt.pct >= 70 ? "is-good" : tgt.pct <= 30 ? "is-bad" : "is-mid";
-      const valText = peersFmt(tgt.num, ind.unit);
+      const tone = tgt ? (tgt.pct >= 70 ? "is-good" : tgt.pct <= 30 ? "is-bad" : "is-mid") : "";
+      const valText = tgt ? peersFmt(tgt.num, ind.unit) : "—";
+      // 按显示值分组：相同数值归为一组，共享同一名次
       const groupMap = new Map();
       scored.forEach((p) => {
         const pv = peersFmt(p.num, ind.unit);
         const g = groupMap.get(pv);
         if (g) {
-          g.items.push({ name: p.name, rank: p.rank, target: p.isTarget });
+          g.items.push({ name: p.name, num: p.num, target: p.isTarget });
           if (p.isTarget) g.hasTarget = true;
+          // 代表值取组内最优的一家，保证名次/位置落在极值端
+          const repBetter = better ? p.num > g.num : p.num < g.num;
+          if (repBetter) { g.num = p.num; g.pos = p.pos; }
         } else {
-          groupMap.set(pv, { pv, pos: p.pos, items: [{ name: p.name, rank: p.rank, target: p.isTarget }], hasTarget: p.isTarget });
+          groupMap.set(pv, { pv, num: p.num, pos: p.pos, items: [{ name: p.name, num: p.num, target: p.isTarget }], hasTarget: p.isTarget });
         }
       });
+      // 按数值从优到劣为每组排名：名次 = 1 + 前方各组人数之和（同组同名次）
+      const ordered = [...groupMap.values()].sort((a, b) => (better ? b.num - a.num : a.num - b.num));
+      let cum = 0;
+      ordered.forEach((g) => { g.rank = cum + 1; cum += g.items.length; });
+      const tgtGroup = tgt ? ordered.find((g) => g.hasTarget) : null;
       const dots = [...groupMap.values()]
         .sort((a, b) => a.pos - b.pos)
         .map((g) => {
           g.items.sort((a, b) => (b.target ? 1 : 0) - (a.target ? 1 : 0));
+          g.items.forEach((it) => { it.rank = g.rank; });
           const rows = JSON.stringify(g.items);
           const aria = g.items.map((it) => `${it.name} 第 ${it.rank}/${n} 名`).join("；");
           return `<span class="peers-tr-dot${g.hasTarget ? " is-target" : ""}" style="left:${Math.max(0, Math.min(100, g.pos)).toFixed(1)}%" aria-label="${esc(ind.label)} ${esc(aria)}" data-tip-label="${esc(ind.label)}" data-tip-value="${esc(g.pv)}" data-tip-total="${n}" data-tip-rows="${esc(rows)}"></span>`;
         })
         .join("");
+      const rankHtml = tgtGroup
+        ? `<b>第 ${tgtGroup.rank}</b><em>/ 共 ${n} 家</em>`
+        : `<b class="peers-tr-rank-none">本司无数据</b>`;
       return `<li class="peers-tr ${tone}">
         <span class="peers-tr-name">${esc(ind.label)}<i>${esc(peersDirHint(ind.direction))}</i></span>
         <span class="peers-tr-axis">${dots}</span>
         <span class="peers-tr-val">${esc(valText)}</span>
-        <span class="peers-tr-rank"><b>第 ${tgt.rank}</b><em>/ 共 ${n} 家</em></span>
+        <span class="peers-tr-rank">${rankHtml}</span>
       </li>`;
     }).filter(Boolean).join("");
     if (!items) return "";
@@ -1203,7 +1217,9 @@
   function peersViewSection(view, pack) {
     const total = pack.universe?.used || 0;
     const target = pack.target || {};
-    const indicators = Array.isArray(view.indicators) ? view.indicators : [];
+    const viewIndicators = Array.isArray(view.indicators) ? view.indicators : [];
+    const allIndicators = Array.isArray(view.all_indicators) ? view.all_indicators : [];
+    const indicators = viewIndicators.length ? viewIndicators : allIndicators;
     const byInd = target.by_indicator || {};
     const noLabel = view.key === "summary" ? "∑" : String(view.no || "");
 
@@ -1354,7 +1370,7 @@
         </div>
         <div class="peers-rank-ladder" role="img" aria-label="本司在申万三级行业中的排名位置：第 ${esc(String(rank))} 名，共 ${esc(String(n))} 家">
           <div class="peers-rank-ladder-track">
-            <span class="peers-rank-ladder-marker ${tone}" style="left:${leftPos.toFixed(1)}%" aria-label="${esc(t.name || t.code || "")}，第 ${esc(String(rank))} 名，共 ${esc(String(n))} 家 · 综合分 ${Number.isFinite(scoreNum) ? Math.round(scoreNum) : "—"}"><span class="peers-rank-ladder-tip"><b class="peers-rank-tip-name">${esc(t.name || t.code || "")}</b><span class="peers-rank-tip-meta">第 ${esc(String(rank))}/${esc(String(n))} 名 · 综合分 ${Number.isFinite(scoreNum) ? Math.round(scoreNum) : "—"}</span></span></span>
+            <span class="peers-rank-ladder-marker ${tone}" style="left:${leftPos.toFixed(1)}%"></span>
           </div>
           <div class="peers-rank-ladder-scale">
             <span>第 ${esc(String(n))} 名</span>

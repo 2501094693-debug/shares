@@ -1542,45 +1542,6 @@ button.ai-brief-mode.is-active {
   border-radius: 50%;
 }
 
-.peers-rank-ladder-tip {
-  position: absolute;
-  bottom: 170%;
-  left: 50%;
-  z-index: 6;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: #0e1623;
-  border: 1px solid var(--line);
-  box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.95);
-  white-space: nowrap;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateX(-50%) translateY(3px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s;
-  pointer-events: none;
-}
-
-.peers-rank-ladder-marker:hover .peers-rank-ladder-tip {
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(0);
-}
-
-.peers-rank-tip-name {
-  font-size: 0.74rem;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.peers-rank-tip-meta {
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  color: var(--muted);
-}
-
 .peers-rank-ladder-scale {
   display: flex;
   justify-content: space-between;
@@ -2479,6 +2440,12 @@ button.ai-brief-mode.is-active {
 .peers-tr-rank b {
   color: var(--ink);
   font-weight: 600;
+}
+
+.peers-tr-rank b.peers-tr-rank-none {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.62rem;
 }
 
 .peers-tr.is-good .peers-tr-rank b {
