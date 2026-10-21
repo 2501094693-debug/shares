@@ -103,7 +103,7 @@ window.AI_MODES = {
     id: "business",
     label: "业务简述",
     pageTitle: "ORBIT · 智能分析",
-    heading: "业务简述",
+    heading: "业务简述 · AI视角",
     subtitle: "主线：交易所 / 巨潮 / 七网 / 公告 PDF 正文 · 联网补充 · 段永平视角",
     startBtn: "生成简述",
     historyHead: "历史报告",
@@ -145,24 +145,24 @@ window.AI_MODES = {
       ].filter(Boolean).join(" · ");
     },
     runningTitle(company) {
-      return `${company} · 业务简述`;
+      return `${company} · 业务简述（AI视角）`;
     },
   },
 
   bizprofile: {
     id: "bizprofile",
     kind: "engine",
-    label: "业务概述",
+    label: "规则视角",
     pageTitle: "ORBIT · 智能分析",
-    heading: "业务概述",
+    heading: "业务简述 · 规则视角",
     subtitle: "主营构成三维度（按产品/按行业/按地区）+ 收入结构变化 + 盈利结构 · 确定性规则，不经过大模型",
     startBtn: "重新计算",
     historyHead: "规则结果",
-    reportTitle: "业务概述",
-    reportMetaDefault: "同花顺 F10 经营分析：主营构成、收入结构迁移、盈利结构与口径提示",
+    reportTitle: "业务简述 · 规则视角",
+    reportMetaDefault: "同花顺 F10 经营分析：主营构成、收入结构迁移与盈利结构",
     historyMeta: "规则结果",
     emptyReports: "暂无结果",
-    resumeFail: "业务概述计算失败",
+    resumeFail: "业务简述（规则视角）计算失败",
     apiRoot: "/api/stocks/biz-profile",
     jobStoreKey: "orbit.bizprofile.pack",
     reportNameRe: /$^/,
@@ -171,28 +171,28 @@ window.AI_MODES = {
       <div class="ai-empty-state">
         <div class="ai-empty-icon" aria-hidden="true">◫</div>
         <h3>这家公司的生意由哪几块构成</h3>
-        <p>取同花顺 F10「经营分析」的主营构成，按产品 / 按行业 / 按地区三个维度分别列示，并给出收入结构迁移、盈利结构与口径提示。</p>
+        <p>取同花顺 F10「经营分析」的主营构成，按产品 / 按行业 / 按地区三个维度分别列示，并给出收入结构迁移与盈利结构。</p>
         <ul class="ai-empty-tips">
           <li>三个维度一次请求取全，不重复抓取</li>
           <li>整体毛利率由分部毛利 ÷ 分部收入派生，不直接采信源字段</li>
-          <li>维度期数与最新期不同，横向比较前请留意尾注提示</li>
+          <li>维度期数与最新期不同，横向比较前请留意各维度的报告期</li>
         </ul>
       </div>`,
     resultTitle(result) {
       const name = result.name || result.code || "";
-      return `${name} 业务概述`.trim();
+      return `${name} 业务简述 · 规则视角`.trim();
     },
     resultMeta(result) {
       const dims = result.dim_latest || {};
       const latest = dims[result.primary] || "";
       return [
+        "规则视角",
         result.source_label || "",
         latest ? `报告期 ${latest}` : "",
-        result.guardrails?.length ? `口径提示 ${result.guardrails.length} 条` : "",
       ].filter(Boolean).join(" · ");
     },
     runningTitle(company) {
-      return `${company} · 业务概述`;
+      return `${company} · 业务简述（规则视角）`;
     },
   },
 
@@ -245,55 +245,52 @@ window.AI_MODES = {
 
   risk: {
     id: "risk",
+    kind: "engine",
     label: "风险评估",
     pageTitle: "ORBIT · 智能分析",
-    heading: "风险与管理层评估",
-    subtitle: "主线：交易所 / 巨潮 / 七网 / 公告 PDF · 联网补充监管动态与管理层言论",
-    startBtn: "生成评估",
-    historyHead: "历史报告",
-    reportTitle: "风险与管理层评估",
-    reportMetaDefault: "选择历史报告或生成新的",
-    historyMeta: "历史报告",
-    emptyReports: "暂无历史报告",
-    resumeFail: "恢复风险评估任务失败",
-    apiRoot: "/api/ai/risk-review",
-    jobStoreKey: "orbit.risk.activeJob",
-    reportNameRe: /风险与管理层评估/,
-    agentDefs: [
-      { id: "rr_init", name: "解析公司", subtitle: "识别代码、名称与行业" },
-      { id: "rr_fetch", name: "采集资料", subtitle: "交易所 / 巨潮 / 七网 / 公告 PDF" },
-      { id: "rr_search", name: "联网补充", subtitle: "监管动态与管理层言论" },
-      { id: "rr_analyze", name: "生成评估", subtitle: "风险矩阵 · 管理层质量" },
-      { id: "rr_save", name: "保存报告", subtitle: "写入 Markdown" },
-    ],
+    heading: "风险评估",
+    subtitle: "巨潮非定期公告七维排查：检索方式表 + 按子查询分组的检索结果 · 不经过大模型",
+    startBtn: "重新扫描",
+    historyHead: "规则结果",
+    reportTitle: "风险评估",
+    reportMetaDefault: "按七维从巨潮检索；结果按 Q1/Q2/… 分组展示",
+    historyMeta: "规则结果",
+    emptyReports: "暂无结果",
+    resumeFail: "风险评估扫描失败",
+    apiRoot: "/api/stocks/risk-assessment",
+    jobStoreKey: "orbit.risk.pack",
+    reportNameRe: /$^/,
+    agentDefs: [],
     emptyStateHtml: `
       <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">△</div>
-        <h3>先看风险，再看人</h3>
-        <p>以交易所、巨潮、七网披露为主线，结合联网搜索的最新监管动态与管理层言论，评估投资风险与管理层质量。</p>
+        <div class="ai-empty-icon" aria-hidden="true">⚠</div>
+        <h3>按七维扫巨潮公告</h3>
+        <p>每个维度用统一公式描述检索：Qi := 源 ∧ 语料 ∧ 通道 ∧ 分类 ∧ 标题关键词 ∧ 窗口。前端按维阅读：检索方式 → 按子查询分组的检索结果。</p>
         <ul class="ai-empty-tips">
-          <li>管理层：能力圈、诚信度、战略眼光、资本配置</li>
-          <li>监管、竞争、业务、宏观各维度风险分级</li>
-          <li>治理结构：股权、关联交易、股东回报</li>
-          <li>长期确定性：10 年展望与商业模式颠覆风险</li>
+          <li>监管与合规 · 治理与内控 · 股本与控制权</li>
+          <li>资本运作与债务 · 披露质量 · 存续性 · 经营与沟通</li>
+          <li>同一维度内按 Q1 / Q2 / … 分组列出命中公告</li>
+          <li>数据源：巨潮资讯 · fetch_announcements</li>
         </ul>
       </div>`,
     resultTitle(result) {
-      const industry = result.industry_name ? ` · ${result.industry_name}` : "";
-      return `${result.stock_name || ""} 风险与管理层评估${industry}`.trim();
+      const name = result.name || result.code || "";
+      return `${name} 风险评估`.trim();
     },
     resultMeta(result) {
+      const s = result.summary || {};
       return [
-        result.stock_code ? `代码 ${result.stock_code}` : "",
-        result.industry_name ? `行业 ${result.industry_name}` : "",
-        result.report_path ? "已保存" : "",
+        result.source_label || result.source || "",
+        Number.isFinite(Number(s.hit_dimensions))
+          ? `命中维 ${s.hit_dimensions}/${s.dimension_count || 7}`
+          : "",
+        Number.isFinite(Number(s.total_items)) ? `去重 ${s.total_items}` : "",
       ].filter(Boolean).join(" · ");
     },
     runningTitle(company) {
-      return `${company} · 风险与管理层评估`;
+      return `${company} · 风险评估`;
     },
   },
-
 
   "zhang-views": {
     id: "zhang-views",
@@ -477,9 +474,14 @@ window.AI_MODE_ALIASES = {
   business: "business",
   brief: "business",
   ai: "business",
+  "ai视角": "business",
+  "业务简述": "business",
+  "智能视角": "business",
   bizprofile: "bizprofile",
   "biz-profile": "bizprofile",
   "业务概述": "bizprofile",
+  "规则视角": "bizprofile",
+  "规则": "bizprofile",
   "主营构成": "bizprofile",
   earnings: "zhang-views",
   "财报简述": "zhang-views",
@@ -488,6 +490,10 @@ window.AI_MODE_ALIASES = {
   "同业对比": "peers",
   "industry-compare": "peers",
   risk: "risk",
+  "risk-assessment": "risk",
+  "风险评估": "risk",
+  "风险排查": "risk",
+  "风险": "risk",
   "张新民视角": "zhang-views",
   "zhang-views": "zhang-views",
   sentiment: "sentiment",

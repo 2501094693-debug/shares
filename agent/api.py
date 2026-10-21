@@ -4,13 +4,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
-from agent.risk_service import (
-    get_risk_job,
-    list_risk_jobs,
-    list_risk_reports,
-    read_risk_report,
-    start_risk_review,
-)
 from agent.buffett_rules_service import run_buffett_rules
 from agent.retail_service import (
     get_retail_job,
@@ -81,62 +74,6 @@ def ai_get_report(filename: str):
         return err(str(exc), 404)
     except Exception as exc:  # noqa: BLE001
         return err(str(exc), 500)
-
-
-@router.post("/api/ai/risk-review")
-def ai_start_risk_review(
-    company: str = Query("", description="公司名称或代码"),
-):
-    company = company.strip()
-    if not company:
-        return err("缺少参数 company", 400)
-    try:
-        job = start_risk_review(company)
-        return ok(job)
-    except ValueError as exc:
-        return err(str(exc), 400)
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/ai/risk-review/jobs")
-def ai_list_risk_jobs():
-    try:
-        return ok(list_risk_jobs())
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/ai/risk-review/reports")
-def ai_list_risk_reports():
-    try:
-        return ok(list_risk_reports())
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/ai/risk-review/reports/{filename}")
-def ai_get_risk_report(filename: str):
-    try:
-        content = read_risk_report(filename)
-        return ok({"filename": filename, "content": content})
-    except FileNotFoundError as exc:
-        return err(str(exc), 404)
-    except Exception as exc:  # noqa: BLE001
-        return err(str(exc), 500)
-
-
-@router.get("/api/ai/risk-review/{job_id}")
-def ai_get_risk_review(job_id: str, full: str = Query("0", description="1=返回完整报告正文")):
-    job = get_risk_job(job_id.strip(), include_full_result=full == "1")
-    if not job:
-        return err("任务不存在", 404)
-    return ok(job)
-
-
-
-
-
 
 
 @router.post("/api/ai/retail-sentiment")

@@ -15,11 +15,6 @@ AGENT_LABELS: dict[str, str] = {
     "be_search": "联网补充",
     "be_explain": "生成简述",
     "be_save": "保存报告",
-    "rr_init": "解析公司",
-    "rr_fetch": "采集资料",
-    "rr_search": "联网补充",
-    "rr_analyze": "生成评估",
-    "rr_save": "保存报告",
     "bf_init": "解析公司",
     "bf_fetch": "采集数据",
     "bf_understand": "一、生意能否看懂",
@@ -69,7 +64,6 @@ PHASE_LABELS: dict[str, str] = {
 }
 
 ALL_AGENTS = ["be_init", "be_fetch", "be_search", "be_explain", "be_save"]
-RISK_REVIEWER_AGENTS = ["rr_init", "rr_fetch", "rr_search", "rr_analyze", "rr_save"]
 RETAIL_AGENTS = [
     "rs_init",
     "rs_fetch_em",
@@ -128,12 +122,6 @@ def init_agents_state(keys: list[str] | None = None) -> dict[str, dict[str, str]
 
 def init_business_explainer_agents() -> dict[str, dict[str, str]]:
     return init_agents_state(ALL_AGENTS)
-
-
-def init_risk_reviewer_agents() -> dict[str, dict[str, str]]:
-    return init_agents_state(RISK_REVIEWER_AGENTS)
-
-
 
 
 def init_retail_sentiment_agents() -> dict[str, dict[str, str]]:

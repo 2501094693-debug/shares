@@ -1,6 +1,7 @@
 (() => {
   const MODES = window.AI_MODES || {};
   const MODE_ORDER = window.AI_MODE_ORDER || ["business", "zhang-views", "peers", "risk", "valuation", "sentiment", "chip", "compare"];
+  const BUSINESS_FAMILY_VIEWS = new Set(["business", "bizprofile"]);
   const EARNINGS_VIEWS = new Set(["zhang-views"]);
 
   const STATUS_LABELS = {
@@ -32,7 +33,7 @@
 
   const params = new URLSearchParams(window.location.search);
   const state = {
-    mode: "business",
+    mode: "bizprofile",
     identity: {
       code: (params.get("code") || "").trim(),
       name: (params.get("name") || "").trim(),
@@ -52,6 +53,7 @@
   }
 
   function judgmentFamily(mode = state.mode) {
+    if (BUSINESS_FAMILY_VIEWS.has(mode)) return "business";
     return EARNINGS_VIEWS.has(mode) ? "earnings" : mode;
   }
 
@@ -131,9 +133,10 @@
     html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
     html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
     html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
     html = html.replace(/〔来源：(.+?)〕/g, '<cite class="ai-source" title="$1">〔来源：$1〕</cite>');
     html = html.replace(/^&gt; (.+)$/gm, "<blockquote>$1</blockquote>");
-    html = html.replace(/^- (.+)$/gm, "<li>$1</li>");
+    html = html.replace(/^[ \t]*- (.+)$/gm, "<li>$1</li>");
     html = html.replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`);
     html = html.replace(/\|(.+)\|\n\|[-| :]+\|\n((?:\|.*\|\n?)+)/g, (_, head, body) => {
       const ths = head.split("|").filter(Boolean).map((c) => `<th>${c.trim()}</th>`).join("");
@@ -248,7 +251,8 @@
     if (!job) return "";
     const statusMap = { running: "生成中", completed: "已完成", failed: "失败" };
     const label = statusMap[job.status] || job.status;
-    const stock = job.stock?.code ? ` · ${job.stock.code}` : "";
+    const stockCode = job.stock?.code || job.result?.stock_code || "";
+    const stock = stockCode ? ` · ${stockCode}` : "";
     const industry = job.result?.industry_name ? ` · ${job.result.industry_name}` : "";
     const m = job.result?.metrics || {};
     const sentiment = Number.isFinite(Number(m.n_retail_users))
@@ -458,7 +462,7 @@
     const label = [name, code].filter(Boolean).join(" · ") || "当前公司";
     if ($("analysisCompanyLabel")) $("analysisCompanyLabel").textContent = label;
     if ($("startBtn")) $("startBtn").textContent = cfg.startBtn;
-    if ($("reportParams") && mode !== "zhang-views" && mode !== "peers" && mode !== "bizprofile") {
+    if ($("reportParams") && mode !== "zhang-views" && mode !== "peers") {
       $("reportParams").innerHTML = "";
       $("reportParams").classList.remove("is-active");
     }
@@ -1449,18 +1453,7 @@
     }).join("")}</nav>`;
   }
 
-  // ---- 业务概述（bizprofile）：确定性规则结果，原生表格渲染 ----
-
-  const BIZ_DIM_TABS = [
-    ["product", "按产品"],
-    ["industry", "按行业"],
-    ["area", "按地区"],
-  ];
-
-  function bizNum(value, digits = 2) {
-    if (value == null || value === "" || !Number.isFinite(Number(value))) return "—";
-    return Number(value).toFixed(digits);
-  }
+  // ---- 业务简述 · 规则视角（bizprofile）：确定性规则结果，原生卡片 / 表格渲染 ----
 
   function bizYi(value) {
     if (value == null || value === "" || !Number.isFinite(Number(value))) return "—";
@@ -1492,20 +1485,33 @@
     return status || "—";
   }
 
+  function bizAmountParts(value) {
+    if (value == null || value === "" || !Number.isFinite(Number(value))) return { num: "—", unit: "" };
+    const n = Number(value) / 1e8;
+    return { num: `${n < 0 ? "-" : ""}${Math.abs(n).toFixed(2)}`, unit: "亿" };
+  }
+
+  function bizRatioCell(value) {
+    const n = Number(value);
+    if (value == null || value === "" || !Number.isFinite(n)) return `<span class="biz-ratio-num">—</span>`;
+    const width = Math.max(0, Math.min(100, n * 100));
+    return `<span class="biz-ratio"><span class="biz-ratio-bar"><i class="biz-ratio-fill" style="width:${width.toFixed(2)}%"></i></span><span class="biz-ratio-num">${bizPct(n)}</span></span>`;
+  }
+
   function bizIntroHtml(pack) {
     const intro = pack.intro || {};
     const rows = [
-      ["主营业务", intro.main_business],
-      ["产品类型", intro.product_type],
-      ["主要产品", intro.product_name || (intro.product_name_list || []).join("、")],
-      ["经营范围", intro.scope],
+      ["主营业务", intro.main_business, true],
+      ["产品类型", intro.product_type, false],
+      ["主要产品", intro.product_name || (intro.product_name_list || []).join("、"), false],
+      ["经营范围", intro.scope, false],
     ].filter((r) => String(r[1] || "").trim());
     if (!rows.length) return "";
     return `
-      <section class="engine-section biz-intro">
-        <h3>主营业务速览</h3>
+      <section class="biz-card biz-intro">
+        <header class="biz-card-head"><h3>主营业务速览</h3></header>
         <dl class="biz-intro-list">
-          ${rows.map(([k, v]) => `<div class="biz-intro-row"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}
+          ${rows.map(([k, v, strong]) => `<div class="biz-intro-row${strong ? " is-strong" : ""}"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}
         </dl>
       </section>`;
   }
@@ -1513,30 +1519,63 @@
   function bizOverviewHtml(pack) {
     const dims = Array.isArray(pack.dimensions) ? pack.dimensions : [];
     if (!dims.length) return "";
-    const rows = dims.map((d) => {
+    const cards = dims.map((d) => {
       const c = d.concentration || {};
-      return [
-        `<b>${esc(d.label || d.key || "")}</b>`,
-        esc(d.report_date || "—"),
-        String(d.count ?? "—"),
-        bizYi(d.total_revenue),
-        bizPct(d.total_ratio),
-        bizPct(d.overall_margin),
-        bizPct(c.cr3),
-        bizHhi(c.hhi),
-      ];
-    });
+      const total = bizAmountParts(d.total_revenue);
+      const isPrimary = d.key === pack.primary;
+      return `
+        <article class="biz-sum-card${isPrimary ? " is-active" : ""}" data-biz-card="${esc(d.key || "")}" role="button" tabindex="0" aria-pressed="${isPrimary ? "true" : "false"}">
+          <header>
+            <span class="biz-sum-name">${esc(d.label || d.key || "")}</span>
+            <span class="biz-sum-date">${esc(d.report_date || "—")}</span>
+          </header>
+          <p class="biz-sum-total"><b>${esc(total.num)}</b><span>${esc(total.unit)}</span><em>主营合计</em></p>
+          <dl class="biz-sum-metrics">
+            <div><dt>一级分部</dt><dd>${d.count ?? "—"}</dd></div>
+            <div><dt>占比合计</dt><dd>${bizPct(d.total_ratio)}</dd></div>
+            <div><dt>整体毛利率</dt><dd>${bizPct(d.overall_margin)}</dd></div>
+            <div><dt>CR3</dt><dd>${bizPct(c.cr3)}</dd></div>
+            <div><dt>HHI</dt><dd>${bizHhi(c.hhi)}</dd></div>
+          </dl>
+        </article>`;
+    }).join("");
     return `
-      <section class="engine-section">
-        <h3>主营构成总览</h3>
-        <div class="zv-table">
-          <table>
-            <thead><tr><th>维度</th><th>最新报告期</th><th>一级分部</th><th>主营合计</th><th>占比合计</th><th>整体毛利率</th><th>CR3</th><th>HHI</th></tr></thead>
-            <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>
-          </table>
-        </div>
-        <p class="muted biz-note">整体毛利率由「Σ分部毛利 ÷ Σ分部收入」派生；CR3 / HHI 按一级分部收入占比计算（HHI 已放大到 0~10000）。三个维度由公司分别披露，期数与口径不同，不可横向当作同一口径比较。</p>
+      <section class="biz-card biz-overview">
+        <header class="biz-card-head">
+          <h3>主营构成总览</h3>
+        </header>
+        <div class="biz-sum-grid">${cards}</div>
       </section>`;
+  }
+
+  function bizFormulaHtml() {
+    return `
+      <details class="biz-card biz-formula">
+        <summary>
+          <h3>计算公式</h3>
+          <span class="biz-formula-chevron" aria-hidden="true">▾</span>
+        </summary>
+        <div class="biz-formula-body">
+          <article class="biz-formula-card">
+            <h4>整体毛利率</h4>
+            <code>Σ各分部毛利 ÷ Σ各分部收入</code>
+            <p><span class="biz-tag">含义</span>主营业务每 100 元收入扣掉直接成本后剩下的毛利，衡量整体盈利能力；不采用接口的 gross_profit_rate 字段（口径不符）。</p>
+            <p><span class="biz-tag">怎么看</span>毛利好坏要与同行比：连续多期下滑多为成本上升或价格战；整体被某个负毛利分部拖低时，可看「盈利结构」定位到具体分部。</p>
+          </article>
+          <article class="biz-formula-card">
+            <h4>CR3（收入前三集中度）</h4>
+            <code>r₁ + r₂ + r₃（r 为各一级分部收入占比，按降序取前 3）</code>
+            <p><span class="biz-tag">含义</span>收入最大的三个业务合计占主营收入的比例，衡量公司是「靠几个主业吃饭」还是业务分散。</p>
+            <p><span class="biz-tag">怎么看</span>CR3 越高越依赖少数业务：80% 以上属高度集中，业绩弹性大但抗风险能力弱；50% 以下相对分散。需与 HHI 一起看，不能单看 CR3。</p>
+          </article>
+          <article class="biz-formula-card">
+            <h4>HHI（赫芬达尔指数）</h4>
+            <code>10000 × Σrᵢ²（rᵢ 为各一级分部收入占比）</code>
+            <p><span class="biz-tag">含义</span>把各分部占比平方求和并放大到 0~10000：10000 表示只有一项业务，越接近 0 越分散；与 CR3 只看前三不同，它把头部以外的分部也纳入。</p>
+            <p><span class="biz-tag">怎么看</span>常用经验区间：低于 1500 为低集中，1500~2500 为中等集中，高于 2500 为高集中。CR3 相近时，HHI 更高说明中间规模的分部也不小。</p>
+          </article>
+        </div>
+      </details>`;
   }
 
   function bizSegmentsHtml(dim) {
@@ -1545,23 +1584,33 @@
     const rows = segs.map((s) => {
       const gm = s.gross_margin;
       const isNeg = Number.isFinite(Number(gm)) && Number(gm) < 0;
-      return [
-        esc(s.item_name || ""),
-        bizYi(s.revenue),
-        bizPct(s.revenue_ratio),
-        bizPct(s.revenue_yoy),
-        `<span class="${isNeg ? "is-neg" : ""}">${bizPct(gm)}</span>`,
-        bizPct(s.gross_profit_ratio),
-      ];
-    });
+      return `
+        <tr>
+          <td class="biz-cell-name">${esc(s.item_name || "")}</td>
+          <td class="num">${bizYi(s.revenue)}</td>
+          <td class="num">${bizRatioCell(s.revenue_ratio)}</td>
+          <td class="num">${bizYoyCell(s.revenue_yoy)}</td>
+          <td class="num"><span class="biz-margin${isNeg ? " is-neg" : ""}">${bizPct(gm)}</span></td>
+          <td class="num">${bizPct(s.gross_profit_ratio)}</td>
+        </tr>`;
+    }).join("");
     return `
-      <div class="zv-table">
-        <table>
-          <thead><tr><th>分部</th><th>营业收入</th><th>收入占比</th><th>收入同比</th><th>毛利率</th><th>毛利占比</th></tr></thead>
-          <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>
-        </table>
-      </div>
-      <p class="muted biz-note">收入占比合计 ${bizPct(dim.total_ratio)}；毛利率列为该分部自身毛利率，毛利占比为该分部毛利占全部分部毛利之比。</p>`;
+      <div class="biz-table-card">
+        <header class="biz-table-head"><h4>分部构成</h4></header>
+        <div class="biz-table-wrap">
+          <table class="biz-table">
+            <thead><tr><th>分部</th><th class="num">营业收入</th><th class="num">收入占比</th><th class="num">收入同比</th><th class="num">毛利率</th><th class="num">毛利占比</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  function bizYoyCell(value) {
+    const n = Number(value);
+    if (value == null || value === "" || !Number.isFinite(n)) return "—";
+    const dir = n > 0 ? " is-up" : n < 0 ? " is-down" : "";
+    return `<span class="biz-yoy${dir}">${bizPct(n)}</span>`;
   }
 
   function bizMigrationHtml(dim) {
@@ -1571,116 +1620,86 @@
       const status = r.status || "";
       const cls = status === "本期新出现" ? "is-new" : status === "本期无" ? "is-gone" : "";
       const delta = Number.isFinite(Number(r.delta_pp)) ? bizPp(r.delta_pp) : "—";
-      return [
-        esc(r.item_name || ""),
-        bizPct(r.prev_ratio),
-        bizPct(r.cur_ratio),
-        `<span class="biz-delta ${Number(r.delta_pp) > 0 ? "is-up" : Number(r.delta_pp) < 0 ? "is-down" : ""}">${delta}</span>`,
-        bizPct(r.revenue_yoy),
-        `<span class="biz-status ${cls}">${esc(bizStatusLabel(status))}</span>`,
-      ];
-    });
+      const deltaDir = Number(r.delta_pp) > 0 ? "is-up" : Number(r.delta_pp) < 0 ? "is-down" : "";
+      return `
+        <tr>
+          <td class="biz-cell-name">${esc(r.item_name || "")}</td>
+          <td class="num">${bizPct(r.prev_ratio)}</td>
+          <td class="num">${bizRatioCell(r.cur_ratio)}</td>
+          <td class="num"><span class="biz-delta ${deltaDir}">${delta}</span></td>
+          <td class="num">${bizYoyCell(r.revenue_yoy)}</td>
+          <td class="num"><span class="biz-status ${cls}">${esc(bizStatusLabel(status))}</span></td>
+        </tr>`;
+    }).join("");
     return `
-      <div class="zv-table">
-        <table>
-          <thead><tr><th>分部</th><th>上期占比</th><th>本期占比</th><th>占比变动</th><th>收入同比</th><th>匹配</th></tr></thead>
-          <tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>
-        </table>
-      </div>
-      <p class="muted biz-note">按分部名称匹配本期与上期；名称跨期变化时匹配不上的记为「新出现 / 本期无」，不猜测对应关系。</p>`;
+      <div class="biz-table-card">
+        <header class="biz-table-head"><h4>收入结构迁移</h4></header>
+        <div class="biz-table-wrap">
+          <table class="biz-table">
+            <thead><tr><th>分部</th><th class="num">上期占比</th><th class="num">本期占比</th><th class="num">占比变动</th><th class="num">收入同比</th><th class="num">匹配</th></tr></thead>
+            <tbody>${body}</tbody>
+          </table>
+        </div>
+      </div>`;
   }
 
-  function bizDimensionHtml(pack, dim) {
+  function bizDimensionPanelHtml(dim, active) {
     if (!dim) return "";
-    const isPrimary = dim.key === pack.primary;
     return `
-      <section class="engine-section biz-dim" data-biz-dim="${esc(dim.key || "")}">
-        <h3>${esc(dim.label || dim.key || "")}${isPrimary ? "（主维度）" : ""}　${esc(dim.report_date || "")}</h3>
-        <h4>分部构成</h4>
+      <section class="biz-panel" id="biz-panel-${esc(dim.key || "")}" data-biz-panel="${esc(dim.key || "")}" role="tabpanel" aria-labelledby="biz-tab-${esc(dim.key || "")}"${active ? "" : " hidden"}>
+        <header class="biz-panel-head">
+          <h3>${esc(dim.label || dim.key || "")}</h3>
+          <span class="biz-period">报告期 ${esc(dim.report_date || "—")}</span>
+        </header>
         ${bizSegmentsHtml(dim)}
-        <h4>收入结构迁移</h4>
         ${bizMigrationHtml(dim)}
       </section>`;
   }
 
-  function bizClassificationHtml(pack) {
-    const cls = pack.classification || {};
-    if (!cls.available) return "";
-    const hits = Array.isArray(cls.hits) ? cls.hits : [];
-    const unmatched = Array.isArray(cls.unmatched) ? cls.unmatched : [];
-    const modelLabel = cls.model_hint || cls.main_model || "";
-    let html = `
-      <section class="engine-section">
-        <h3>业务归类（静态词典派生）</h3>
-        <div class="engine-kpis">
-          <div class="engine-kpi"><span>业务大类</span><strong>${esc(cls.main_category || "—")}</strong></div>
-          <div class="engine-kpi"><span>赚钱模式</span><strong>${esc(modelLabel || "—")}</strong></div>
-          <div class="engine-kpi"><span>典型客群</span><strong>${esc(cls.main_buyers || "—")}</strong></div>
-        </div>`;
-    if (hits.length) {
-      html += `
-        <div class="zv-table">
-          <table>
-            <thead><tr><th>分部</th><th>命中关键词</th><th>业务大类</th><th>赚钱模式</th><th>典型客群</th></tr></thead>
-            <tbody>${hits.map((h) => `<tr><td>${esc(h.item_name || "")}</td><td>${esc(h.keyword || "")}</td><td>${esc(h.category || "")}</td><td>${esc(h.model || "")}</td><td>${esc(h.buyers || "")}</td></tr>`).join("")}</tbody>
-          </table>
-        </div>`;
-    }
-    if (unmatched.length) {
-      html += `<p class="muted biz-note">词典未命中：${esc(unmatched.join("、"))}（未命中不代表无业务属性，仅表示静态词典未收录）</p>`;
-    }
-    html += `<p class="muted biz-note">本节由静态业务词典（关键词字符串匹配）派生，规则确定、可复现，不含任何模型推断。</p></section>`;
-    return html;
-  }
-
-  function bizReviewHtml(pack) {
-    const rv = pack.review || {};
-    const text = String(rv.text || "").trim();
-    if (!text) return "";
-    const limit = 1200;
-    const excerpt = text.length > limit ? `${text.slice(0, limit)}……（已截断，完整内容见同花顺 F10 页面）` : text;
-    const total = rv.total ? `共 ${rv.total} 期，已选最长的一期` : "";
+  function bizDimensionHtml(pack) {
+    const dims = Array.isArray(pack.dimensions) ? pack.dimensions : [];
+    if (!dims.length) return "";
+    const primaryKey = (dims.find((d) => d.key === pack.primary) || dims[0]).key;
+    const tabs = dims.map((d) => {
+      const active = d.key === primaryKey;
+      return `<button type="button" class="biz-tab${active ? " is-active" : ""}" role="tab" id="biz-tab-${esc(d.key || "")}" aria-controls="biz-panel-${esc(d.key || "")}" data-biz-tab="${esc(d.key || "")}" aria-selected="${active ? "true" : "false"}">${esc(d.label || d.key || "")}<em>${esc(d.report_date || "")}</em></button>`;
+    }).join("");
+    const panels = dims.map((d) => bizDimensionPanelHtml(d, d.key === primaryKey)).join("");
     return `
-      <section class="engine-section">
-        <h3>董事会经营评述（原文节选）</h3>
-        <p class="muted biz-note">报告期 ${esc(rv.report_date || "—")} · ${rv.length || 0} 字${total ? ` · ${esc(total)}` : ""}</p>
-        <blockquote class="biz-review">${esc(excerpt)}</blockquote>
-        <p class="muted biz-note">本节为原文节选，未做改写或摘要。</p>
-      </section>`;
-  }
-
-  function bizGuardrailsHtml(pack) {
-    const hits = Array.isArray(pack.guardrails) ? pack.guardrails : [];
-    if (!hits.length) return "";
-    return `
-      <section class="engine-flags">
-        <h3>口径提示（${hits.length} 条）</h3>
-        <ul>${hits.map((h) => `<li><b>[${esc(h.id || "")}]</b> ${esc(h.title || "")}：${esc(h.detail || "")}</li>`).join("")}</ul>
+      <section class="biz-card biz-dim">
+        <nav class="biz-tabs" role="tablist" aria-label="主营构成维度">${tabs}</nav>
+        <div class="biz-panels">${panels}</div>
       </section>`;
   }
 
   function bizProfileHtml(pack) {
     if (!pack || !Array.isArray(pack.dimensions) || !pack.dimensions.length) {
-      return `<div class="engine-hero"><p class="engine-type">业务概述</p><p class="muted">${esc(pack?.error || "未取到主营构成数据")}</p></div>`;
+      return `<div class="engine-hero"><p class="engine-type">业务简述 · 规则视角</p><p class="muted">${esc(pack?.error || "未取到主营构成数据")}</p></div>`;
     }
-    const dims = pack.dimensions;
-    const primary = dims.find((d) => d.key === pack.primary) || dims[0];
-    const otherDims = dims.filter((d) => d.key !== primary.key);
-    const latest = primary.report_date || "";
     return `
-      <div class="engine-hero">
-        <p class="engine-type">业务概述</p>
-        <p>${esc(pack.name || "")}（${esc(pack.code || "")}）主营业务构成　数据源：${esc(pack.source_label || "")}　报告期：${esc(latest)}</p>
-        <p class="muted">按产品 / 按行业 / 按地区三个维度分别披露，一次请求取全 · 确定性规则渲染，未调用大模型</p>
-      </div>
-      ${bizGuardrailsHtml(pack)}
-      ${bizIntroHtml(pack)}
-      ${bizOverviewHtml(pack)}
-      ${bizDimensionHtml(pack, primary)}
-      ${otherDims.map((d) => bizDimensionHtml(pack, d)).join("")}
-      ${bizClassificationHtml(pack)}
-      ${bizReviewHtml(pack)}
-      <p class="muted biz-note">数据来源：${esc(pack.page || "")}（同花顺 F10 经营分析）。本报告由确定性规则渲染，所有数字直接取自该来源或由其派生。</p>`;
+      <div class="biz-profile">
+        ${bizIntroHtml(pack)}
+        ${bizOverviewHtml(pack)}
+        ${bizDimensionHtml(pack)}
+        ${bizFormulaHtml()}
+      </div>`;
+  }
+
+  function activateBizTab(host, key) {
+    if (!host || !key) return;
+    host.querySelectorAll(".biz-tab").forEach((btn) => {
+      const on = btn.getAttribute("data-biz-tab") === key;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    host.querySelectorAll("[data-biz-panel]").forEach((panel) => {
+      panel.hidden = panel.getAttribute("data-biz-panel") !== key;
+    });
+    host.querySelectorAll("[data-biz-card]").forEach((card) => {
+      const on = card.getAttribute("data-biz-card") === key;
+      card.classList.toggle("is-active", on);
+      card.setAttribute("aria-pressed", on ? "true" : "false");
+    });
   }
 
   function peersHtml(pack) {
@@ -1689,6 +1708,184 @@
     }
     const sections = pack.by_view.filter((v) => v.key !== "summary").map((v) => peersViewSection(v, pack)).join("");
     return `${peersSignalsHtml(pack)}${peersNotesHtml(pack)}${peersLeaderboardHtml(pack)}${peersNavHtml(pack)}${sections}`;
+  }
+
+  function riskSplitClauses(text) {
+    return String(text || "")
+      .split(/[；;。]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  function riskProseHtml(text) {
+    const parts = riskSplitClauses(text);
+    if (!parts.length) return `<p class="muted">—</p>`;
+    if (parts.length === 1) return `<p>${esc(parts[0])}</p>`;
+    return `<ul class="risk-prose-list">${parts.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>`;
+  }
+
+  function riskHeroHtml(pack) {
+    const s = pack.summary || {};
+    const chips = [
+      `<span class="peers-hero-chip is-accent">七维</span>`,
+      `<span class="peers-hero-chip">有命中 ${esc(String(s.hit_dimensions ?? 0))}/${esc(String(s.dimension_count ?? 7))}</span>`,
+      `<span class="peers-hero-chip">去重后 ${esc(String(s.total_items ?? 0))}</span>`,
+      Number.isFinite(Number(s.total_items_raw))
+        ? `<span class="peers-hero-chip">原始 ${esc(String(s.total_items_raw))}</span>`
+        : "",
+    ].filter(Boolean).join("");
+    return `<header class="peers-hero risk-hero">
+      <div class="peers-hero-copy">
+        <p class="peers-eyebrow">巨潮非定期公告 · 按维检索</p>
+        <h3 class="peers-hero-title">七维风险排查</h3>
+        <p class="peers-hero-path">${esc(pack.source_label || pack.source || "巨潮资讯")}</p>
+      </div>
+      <div class="peers-hero-chips">${chips}</div>
+    </header>`;
+  }
+
+  function riskNavHtml(dimensions) {
+    if (!dimensions.length) return "";
+    const links = dimensions.map((d) => {
+      const n = Number(d.count) || 0;
+      return `<button type="button" class="risk-nav-link${n ? "" : " is-empty"}" data-risk-dim="${esc(d.key)}">${esc(String(d.no))}. ${esc(d.name)} <i>${esc(String(n))}</i></button>`;
+    }).join("");
+    return `<nav class="risk-nav" aria-label="七维导航">${links}</nav>`;
+  }
+
+  function riskItemRow(item, index) {
+    const title = item.title || "（无标题）";
+    const titleHtml = item.url
+      ? `<a class="risk-ev-title" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(title)}</a>`
+      : `<span class="risk-ev-title">${esc(title)}</span>`;
+    const meta = [item.published_at || "", item.category_cn || ""].filter(Boolean).join(" · ");
+    return `<li class="risk-ev">
+      <span class="risk-ev-idx">${esc(String(index))}</span>
+      <div class="risk-ev-main">
+        ${titleHtml}
+        <p class="risk-ev-meta muted">${esc(meta)}</p>
+      </div>
+    </li>`;
+  }
+
+  function riskResultGroupHtml(group) {
+    const count = Number(group.count) || 0;
+    const items = Array.isArray(group.items) ? group.items : [];
+    const listHtml = items.length
+      ? `<ol class="risk-ev-list">${items.map((it, i) => riskItemRow(it, i + 1)).join("")}</ol>`
+      : `<p class="muted">本组无命中</p>`;
+    return `<article class="risk-result-group${count ? "" : " is-empty"}">
+      <header class="risk-result-group-head">
+        <code class="risk-sm-sym">${esc(group.symbol || "")}</code>
+        <span class="risk-result-group-name">${esc(group.label || group.qid || "")}</span>
+        <span class="risk-result-group-count">${esc(String(count))} 条</span>
+      </header>
+      <div class="risk-result-group-body">${listHtml}</div>
+    </article>`;
+  }
+
+  function riskCellList(values, emptyLabel = "任意") {
+    if (!Array.isArray(values) || !values.length) return emptyLabel;
+    return values.join("、");
+  }
+
+  function riskSearchMethodHtml(sm, queries) {
+    // 新 schema：表格 + 直白说明；旧版可能是字符串
+    if (!sm || typeof sm === "string") {
+      return `${riskProseHtml(sm || "")}${riskLegacyQueryTable(queries)}`;
+    }
+    const clauses = Array.isArray(sm.clauses) ? sm.clauses : [];
+    const hitByQid = {};
+    (queries || []).forEach((q) => { hitByQid[q.qid] = q; });
+
+    const rows = clauses.map((c) => {
+      const q = hitByQid[c.qid] || {};
+      const status = q.ok === false ? "失败" : (q.ok ? "成功" : "—");
+      const tone = q.ok === false ? "is-high" : (Number(q.raw_count) > 0 ? "is-mid" : "");
+      return `<tr class="${tone}">
+        <td class="risk-sm-sym">${esc(c.symbol || "")}</td>
+        <td>${esc(c.label || c.qid || "")}</td>
+        <td>${esc(c.tab_label || c.tab || "全文")}</td>
+        <td>${esc(riskCellList(c.category))}</td>
+        <td class="risk-sm-kw">${esc(riskCellList(c.keyword_terms))}</td>
+        <td class="num">近 ${esc(String(c.days ?? "—"))} 天</td>
+        <td class="num">${esc(String(q.raw_count ?? "—"))}</td>
+        <td>${esc(status)}</td>
+      </tr>`;
+    }).join("");
+
+    return `<div class="risk-sm">
+      <div class="peers-table-wrap risk-stats-wrap risk-sm-table-wrap">
+        <table class="rot-table peers-table risk-stats-table risk-sm-table">
+          <thead><tr>
+            <th>编号</th><th>子查询</th><th>通道</th><th>分类</th><th>标题关键词</th><th>时间窗口</th><th>命中</th><th>状态</th>
+          </tr></thead>
+          <tbody>${rows || `<tr><td colspan="8" class="muted">无子查询</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+
+  function riskLegacyQueryTable(queries) {
+    if (!Array.isArray(queries) || !queries.length) return "";
+    const rows = queries.map((q) => {
+      const status = q.ok === false ? "FAIL" : "OK";
+      const tone = q.ok === false ? "is-high" : (Number(q.raw_count) > 0 ? "is-mid" : "");
+      return `<tr class="${tone}">
+        <td>${esc(q.title || q.qid || "")}</td>
+        <td>${esc(q.method || "")}</td>
+        <td class="num">${esc(String(q.raw_count ?? 0))}</td>
+        <td>${esc(status)}</td>
+      </tr>`;
+    }).join("");
+    return `<div class="peers-table-wrap risk-stats-wrap">
+      <table class="rot-table peers-table risk-stats-table">
+        <thead><tr><th>查询</th><th>方式</th><th>原始命中</th><th>状态</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }
+
+  function riskDimensionCard(dim) {
+    const count = Number(dim.count) || 0;
+    const groups = Array.isArray(dim.groups) ? dim.groups : [];
+    // 兼容旧包：无 groups 时退回扁平 items
+    let resultsHtml;
+    if (groups.length) {
+      const cols = Math.min(Math.max(groups.length, 1), 4);
+      resultsHtml = `<div class="risk-result-groups" style="--risk-cols:${cols}">${groups.map((g) => riskResultGroupHtml(g)).join("")}</div>`;
+    } else {
+      const items = Array.isArray(dim.items) ? dim.items : [];
+      resultsHtml = items.length
+        ? `<ol class="risk-ev-list">${items.map((it, i) => riskItemRow(it, i + 1)).join("")}</ol>`
+        : `<p class="muted">本维窗口内无命中</p>`;
+    }
+    const open = count > 0 ? " open" : "";
+    return `<details class="risk-dim-card" id="risk-dim-${esc(dim.key)}"${open}>
+      <summary class="risk-dim-head">
+        <span class="risk-dim-no">${esc(String(dim.no ?? ""))}</span>
+        <span class="risk-dim-name">${esc(dim.name || "")}</span>
+        <span class="risk-dim-count">${esc(String(count))} 条</span>
+      </summary>
+      <div class="risk-dim-body">
+        <section class="risk-dim-block">
+          <h4><span class="risk-block-tag">1</span>检索方式</h4>
+          ${riskSearchMethodHtml(dim.search_method, dim.queries)}
+        </section>
+        <section class="risk-dim-block">
+          <h4><span class="risk-block-tag">2</span>检索结果 <span class="risk-section-count">${esc(String(count))}</span></h4>
+          ${resultsHtml}
+        </section>
+      </div>
+    </details>`;
+  }
+
+  function riskHtml(pack) {
+    if (!pack || !Array.isArray(pack.dimensions)) {
+      return `<div class="engine-hero"><p class="engine-type">风险评估</p><p class="muted">未取到七维结果</p></div>`;
+    }
+    const cards = pack.dimensions.map((d) => riskDimensionCard(d)).join("");
+    return `${riskHeroHtml(pack)}${riskNavHtml(pack.dimensions)}<div class="risk-dim-list">${cards}</div>`;
   }
 
   function zhangParamsHtml(pack) {
@@ -1700,30 +1897,6 @@
       + `<label class="ai-report-param-label">报告口径<select id="zvReportType" class="chart-select">${options}</select></label>`;
   }
 
-  const BIZ_LATEST_N = [
-    ["1", "最近 1 期"],
-    ["2", "最近 2 期"],
-    ["3", "最近 3 期"],
-    ["5", "最近 5 期"],
-  ];
-
-  function bizFormParams() {
-    const pick = (id) => String(document.getElementById(id)?.value || "").trim();
-    const extra = {};
-    const n = pick("bizLatestN");
-    if (n) extra.latest_n = n;
-    return extra;
-  }
-
-  function bizParamsHtml(pack) {
-    const cur = String((pack && pack.latest_n) || "3");
-    const options = BIZ_LATEST_N
-      .map(([value, label]) => `<option value="${value}"${value === cur ? " selected" : ""}>${label}</option>`)
-      .join("");
-    return `<label class="ai-report-param-label">报告期数<select id="bizLatestN" class="chart-select">${options}</select></label>`
-      + `<button type="button" id="bizRecalc" class="btn primary sm">计算</button>`;
-  }
-
   function paintReportParams(pack) {
     const slot = $("reportParams");
     if (!slot) return;
@@ -1732,9 +1905,6 @@
       slot.classList.add("is-active");
     } else if (state.mode === "peers" && pack) {
       slot.innerHTML = peersParamsHtml(pack);
-      slot.classList.add("is-active");
-    } else if (state.mode === "bizprofile" && pack) {
-      slot.innerHTML = bizParamsHtml(pack);
       slot.classList.add("is-active");
     } else {
       slot.innerHTML = "";
@@ -1765,6 +1935,7 @@
   }
 
   function engineHtml(pack, mode = state.mode) {
+    if (mode === "risk" || pack?.module === "riskassessment") return riskHtml(pack);
     if (mode === "bizprofile" || Array.isArray(pack?.dimensions)) return bizProfileHtml(pack);
     if (mode === "compare" || (pack?.scores && pack?.total && pack?.daily)) return cmpHtml(pack);
     if (mode === "chip" || pack?.method === "same_type") return chipHtml(pack);
@@ -1915,15 +2086,17 @@
     setBoardMode("result");
     if (mode === state.mode) $("startBtn")?.classList.add("hidden");
     const loadingMsg = mode === "bizprofile"
-      ? "正在取回主营构成三维度（按产品/按行业/按地区）与董事会经营评述…"
+      ? "正在取回主营构成三维度（按产品/按行业/按地区）…"
       : mode === "peers"
       ? "正在圈定申万三级行业，并拉取同行定期报告逐项计算八看…"
+      : mode === "risk"
+      ? "正在按七维从巨潮检索非定期公告…"
       : "正在强制刷新东财最新全量定期报告并计算…";
     showReportLoading(loadingMsg, `${cfg.label}计算中`);
     if ($("reportTitle")) $("reportTitle").textContent = cfg.runningTitle?.(company) || cfg.reportTitle;
     try {
       const qs = new URLSearchParams({ company, ...(extra || {}) });
-      const timeoutMs = mode === "peers" ? 180000 : mode === "bizprofile" ? 60000 : 90000;
+      const timeoutMs = mode === "peers" || mode === "risk" ? 180000 : mode === "bizprofile" ? 60000 : 90000;
       const { data } = await api(`${cfg.apiRoot}?${qs}`, { timeoutMs });
       if (state.mode !== mode) return;
       renderEnginePack(data);
@@ -1959,23 +2132,26 @@
       list.innerHTML = `<li class='muted' style='padding:10px'>${esc(cfg.emptyReports)}</li>`;
       return;
     }
-    list.innerHTML = ms.reports.map((row) => (
-      `<li>
+    list.innerHTML = ms.reports.map((row) => {
+      return `<li>
         <button type="button" class="ai-history-item" data-file="${esc(row.filename)}">
           <span class="ai-history-name">${esc(row.filename)}</span>
           <span class="ai-history-time">${esc(row.modified_at || "")}</span>
         </button>
-      </li>`
-    )).join("");
+      </li>`;
+    }).join("");
     list.querySelectorAll(".ai-history-item").forEach((btn) => {
       btn.addEventListener("click", async () => {
         try {
           const { data: file } = await api(reportReadUrl(cfg, btn.dataset.file));
+          const row = ms.reports.find((r) => r.filename === btn.dataset.file) || {};
           ms.activeReportFile = btn.dataset.file;
           setBoardMode("result");
           if ($("reportTitle")) $("reportTitle").textContent = file.filename.replace(/\.md$/i, "");
           if ($("reportMeta")) $("reportMeta").textContent = cfg.historyMeta;
-          if ($("reportView")) $("reportView").innerHTML = renderMarkdown(file.content || "");
+          if ($("reportView")) {
+            $("reportView").innerHTML = renderMarkdown(file.content || file.markdown || "");
+          }
           ms.renderedReportKey = `${btn.dataset.file}|${(file.content || "").length}`;
           ms.ready = true;
           highlightActiveReport();
@@ -2008,11 +2184,12 @@
       try {
         const { data } = await api(reportReadUrl(cfg, ms.activeReportFile));
         if (state.mode !== mode) return;
+        const row = ms.reports.find((r) => r.filename === ms.activeReportFile) || {};
         setBoardMode("result");
         if ($("reportTitle")) $("reportTitle").textContent = data.filename.replace(/\.md$/i, "");
         if ($("reportMeta")) $("reportMeta").textContent = cfg.historyMeta;
         if ($("reportView")) {
-          $("reportView").innerHTML = renderMarkdown(data.content || "");
+          $("reportView").innerHTML = renderMarkdown(data.content || data.markdown || "");
           ms.renderedReportKey = `${ms.activeReportFile}|${(data.content || "").length}`;
         }
         highlightActiveReport();
@@ -2058,18 +2235,24 @@
     const filename = reportFilename(result);
     if (!content && filename) {
       const { data } = await api(reportReadUrl(cfg, filename));
-      content = data.content || "";
+      content = data.content || data.markdown || "";
     }
-    if (!content && job?.id) {
-      const full = await fetchJob(cfg, job.id, true);
-      content = resultText(full.result);
-      return {
-        ...(full.result || result),
-        report: content,
-        filename: filename || reportFilename(full.result),
-      };
+    // 结构化结果只在完整任务里返回，这里补一次。
+    let full = null;
+    if (job?.id && !result.assessment) {
+      try {
+        full = await fetchJob(cfg, job.id, true);
+      } catch {
+        full = null;
+      }
     }
-    return { ...result, report: content, filename };
+    const merged = full?.result || result;
+    if (!content) content = resultText(merged);
+    return {
+      ...merged,
+      report: content,
+      filename: filename || reportFilename(merged),
+    };
   }
 
   async function revealCompleted(job) {
@@ -2144,7 +2327,8 @@
         : state.mode === "compare" ? cmpFormParams()
         : state.mode === "zhang-views" ? { ...zhangViewsFormParams(), refresh: "1" }
         : state.mode === "peers" ? { ...peersFormParams(), refresh: "1" }
-        : state.mode === "bizprofile" ? { ...bizFormParams(), markdown: "0" }
+        : state.mode === "risk" ? { markdown: "0" }
+        : state.mode === "bizprofile" ? { markdown: "0" }
         : undefined;
       await loadEngine(state.mode, { force: true, extra });
       return;
@@ -2301,7 +2485,9 @@
         setBoardMode("result");
         if ($("reportTitle")) $("reportTitle").textContent = data.filename.replace(/\.md$/i, "");
         if ($("reportMeta")) $("reportMeta").textContent = latest.modified_at ? `已保存 · ${latest.modified_at}` : cfg.historyMeta;
-        if ($("reportView")) $("reportView").innerHTML = renderMarkdown(data.content || "");
+        if ($("reportView")) {
+          $("reportView").innerHTML = renderMarkdown(data.content || data.markdown || "");
+        }
         ms.renderedReportKey = `${latest.filename}|${(data.content || "").length}`;
         highlightActiveReport();
         showError("");
@@ -2364,12 +2550,6 @@
       }, 200);
     });
     document.getElementById("panel-judgment")?.addEventListener("click", (ev) => {
-      if (!ev.target.closest?.("#bizRecalc")) return;
-      ev.preventDefault();
-      loadEngine("bizprofile", { force: true, extra: { ...bizFormParams(), markdown: "0" } })
-        .catch((err) => showError(err.message || String(err)));
-    });
-    document.getElementById("panel-judgment")?.addEventListener("click", (ev) => {
       if (!ev.target.closest?.("#chipRecalc")) return;
       ev.preventDefault();
       loadEngine("chip", { force: true, extra: chipFormParams() }).catch((err) => showError(err.message || String(err)));
@@ -2386,11 +2566,41 @@
         .catch((err) => showError(err.message || String(err)));
     });
     $("reportView")?.addEventListener("click", (ev) => {
+      const tab = ev.target.closest?.(".biz-tab[data-biz-tab]");
+      if (tab) {
+        ev.preventDefault();
+        const host = tab.closest(".biz-profile") || $("reportView");
+        activateBizTab(host, tab.getAttribute("data-biz-tab"));
+        return;
+      }
+      const card = ev.target.closest?.(".biz-sum-card[data-biz-card]");
+      if (!card) return;
+      const host = card.closest(".biz-profile") || $("reportView");
+      activateBizTab(host, card.getAttribute("data-biz-card"));
+    });
+    $("reportView")?.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      const card = ev.target.closest?.(".biz-sum-card[data-biz-card]");
+      if (!card) return;
+      ev.preventDefault();
+      card.click();
+    });
+    $("reportView")?.addEventListener("click", (ev) => {
       const btn = ev.target.closest?.("[data-peers-jump]");
       if (!btn) return;
       ev.preventDefault();
       const key = btn.getAttribute("data-peers-jump");
       const target = document.getElementById(`peers-view-${key}`);
+      if (!target) return;
+      if (target.tagName === "DETAILS" && !target.open) target.open = true;
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    $("reportView")?.addEventListener("click", (ev) => {
+      const btn = ev.target.closest?.("[data-risk-dim]");
+      if (!btn) return;
+      ev.preventDefault();
+      const key = btn.getAttribute("data-risk-dim");
+      const target = document.getElementById(`risk-dim-${key}`);
       if (!target) return;
       if (target.tagName === "DETAILS" && !target.open) target.open = true;
       target.scrollIntoView({ behavior: "smooth", block: "start" });

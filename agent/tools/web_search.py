@@ -32,15 +32,6 @@ BUSINESS_SEARCH_QUERIES: tuple[str, ...] = (
     "客户价值 业务矩阵 协同 产品",
 )
 
-RISK_SEARCH_QUERIES: tuple[str, ...] = (
-    "监管处罚 问询函 关注函 立案 最新",
-    "CEO 董事长 总经理 管理层 访谈 言论 战略",
-    "关联交易 股权质押 减持 回购 分红",
-    "行业监管政策 反垄断 环保 数据安全 最新",
-    "诉讼 仲裁 担保 违规 整改",
-    "新业务 亏损 扩张 风险 不确定性",
-)
-
 
 def is_web_search_available() -> bool:
     return web_search_status()[0]
@@ -207,38 +198,3 @@ def search_for_business(
         return "", engines
     return "\n\n".join(blocks), engines
 
-
-def search_for_risk(
-    company: str,
-    *,
-    industry_name: str = "",
-    stock_code: str = "",
-    max_results_per_query: int | None = None,
-    progress_cb: Callable[[str], None] | None = None,
-) -> tuple[str, list[str]]:
-    """投资风险与管理层质量评估专用检索：监管动态、管理层言论、治理风险。"""
-    engines: list[str] = []
-    blocks: list[str] = []
-    per_query = max_results_per_query or max(
-        4, WEB_SEARCH_MAX_RESULTS // max(len(RISK_SEARCH_QUERIES), 1)
-    )
-
-    industry_part = f"{industry_name} " if industry_name else ""
-    for q in RISK_SEARCH_QUERIES:
-        if progress_cb:
-            progress_cb(q)
-        query_suffix = f"{industry_part}{q}".strip()
-        text, engine = search_company_info(
-            company,
-            query_suffix,
-            stock_code=stock_code,
-            max_results=per_query,
-        )
-        if text and not text.startswith("（"):
-            blocks.append(f"### 检索：{query_suffix}\n{text}")
-            if engine and engine not in engines:
-                engines.append(engine)
-
-    if not blocks:
-        return "", engines
-    return "\n\n".join(blocks), engines

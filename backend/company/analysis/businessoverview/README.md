@@ -42,7 +42,6 @@ businessoverview/
 │   └── README.md          模块文档
 │
 └── rules/                 已下线（保留知识资产，主链路不引用）
-    ├── lexicon.py         业务词典（由 bizprofile 引用）
     ├── glossary.py        术语白话表（由 bizprofile 引用）
     └── __init__.py
 ```

@@ -24,9 +24,6 @@ DIM_TITLE: dict[str, str] = {
     "area": "按地区",
 }
 
-#: 经营评述摘录的字数上限
-REVIEW_EXCERPT_LIMIT = 1200
-
 
 def _yi(value: Any) -> str:
     """金额 → 亿元字符串，缺失为「—」。"""
@@ -262,71 +259,6 @@ def _profitability_section(profile: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _review_section(profile: dict[str, Any]) -> str:
-    picked = profile.get("review_picked") or {}
-    lines = ["## 六、经营评述摘录", ""]
-    if not picked:
-        lines.append("（同花顺 F10 未披露董事会经营评述，或页面结构已变更）")
-        return "\n".join(lines)
-
-    length = int(picked.get("length") or 0)
-    lines.append(
-        f"> 报告期 {picked.get('report_date') or '—'} | {length} 字 | "
-        f"来源：同花顺 F10 经营分析"
-    )
-    lines.append("")
-
-    text = _text(picked.get("review"))
-    if len(text) > REVIEW_EXCERPT_LIMIT:
-        excerpt = text[:REVIEW_EXCERPT_LIMIT].rstrip() + "……（已截断，完整内容见同花顺 F10 页面）"
-    else:
-        excerpt = text
-    lines.append(excerpt)
-    lines.append("")
-    lines.append("> 本节为原文节选，未做改写或摘要。")
-    return "\n".join(lines)
-
-
-def _classification_section(profile: dict[str, Any]) -> str:
-    classification = profile.get("classification") or {}
-    lines = ["## 七、业务归类与白话解读", ""]
-    if not classification.get("available"):
-        lines.append("（业务词典未启用）")
-        return "\n".join(lines)
-
-    if classification.get("generic"):
-        lines.append("- 业务大类：未分类（词典未命中）")
-        lines.append("- 命中情况：所有分部名称均未命中业务词典")
-    else:
-        lines.append(f"- 业务大类：{classification.get('main_category') or '—'}")
-        model = classification.get("main_model") or ""
-        hint = classification.get("model_hint") or ""
-        lines.append(f"- 赚钱模式：{model}{f'（{hint}）' if hint else ''}")
-        lines.append(f"- 典型客群：{classification.get('main_buyers') or '—'}")
-
-    hits = classification.get("hits") or []
-    if hits:
-        lines.append("")
-        lines.append("| 分部 | 命中关键词 | 业务大类 | 赚钱模式 | 典型客群 |")
-        lines.append("|---|---|---|---|---|")
-        for hit in hits:
-            lines.append(
-                f"| {_text(hit.get('item_name'))} | {_text(hit.get('keyword'))} | "
-                f"{_text(hit.get('category'))} | {_text(hit.get('model'))} | "
-                f"{_text(hit.get('buyers'))} |"
-            )
-
-    unmatched = classification.get("unmatched") or []
-    if unmatched:
-        lines.append("")
-        lines.append(f"> 词典未命中：{'、'.join(str(x) for x in unmatched)}"
-                     "（未命中不代表无业务属性，仅表示静态词典未收录）")
-    lines.append("")
-    lines.append("> 本节由静态业务词典（关键词字符串匹配）派生，规则确定、可复现，"
-                 "不含任何模型推断。")
-    return "\n".join(lines)
-
-
 def _footnote(profile: dict[str, Any]) -> str:
     dimensions = profile.get("dimensions") or {}
     primary = profile.get("primary") or ""
@@ -363,11 +295,9 @@ def render_markdown(profile: dict[str, Any]) -> str:
         _dimensions_section(profile),
         _migration_section(profile),
         _profitability_section(profile),
-        _review_section(profile),
-        _classification_section(profile),
         _footnote(profile),
     ]
     return "\n\n".join(s.strip() for s in sections if s and s.strip()) + "\n"
 
 
-__all__ = ["DIM_TITLE", "REVIEW_EXCERPT_LIMIT", "render_markdown"]
+__all__ = ["DIM_TITLE", "render_markdown"]

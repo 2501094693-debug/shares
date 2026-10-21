@@ -6,7 +6,7 @@
 职责
 ----
 1. **取数** —— 一次请求取全三个维度（按产品/按行业/按地区）+ 一次 SSR 请求取全
-   主营介绍与经营评述，共 2 次 HTTP；
+   主营介绍，共 2 次 HTTP；
 2. **格式统一** —— 复用 ``businessoverview.core.normalize``，不自造字段契约；
 3. **派生指标** —— 集中度、整体毛利率、占比迁移等**纯计算**，全部可由 pack 复算；
 4. **口径护栏** —— 如实披露口径问题，不修改数据。
@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 import re
-from collections import Counter
 from datetime import date
 from typing import Any
 
@@ -166,58 +165,6 @@ def _migration(
     return rows
 
 
-def _classify(segments: list[dict[str, Any]]) -> dict[str, Any]:
-    """业务归类（词典派生，规则确定可复现）。
-
-    复用 ``businessoverview.rules.lexicon`` 的静态词典：命中与否完全由
-    字符串匹配决定；未命中走 GENERIC 兜底，不做任何模型推断。
-    """
-    try:
-        from company.analysis.businessoverview.rules.lexicon import (
-            CATEGORY_MODEL_HINT,
-            DEFAULT_BUYERS,
-            GENERIC_CATEGORY,
-            lookup,
-        )
-    except Exception:  # noqa: BLE001
-        return {"available": False}
-
-    hits: list[dict[str, str]] = []
-    unmatched: list[str] = []
-    for s in segments:
-        name = s.get("item_name") or ""
-        hit = lookup(name)
-        if hit:
-            hits.append({
-                "item_name": name,
-                "keyword": hit.get("keyword", ""),
-                "category": hit.get("category", ""),
-                "model": hit.get("model", ""),
-                "buyers": hit.get("buyers", ""),
-                "product": hit.get("product", ""),
-            })
-        else:
-            unmatched.append(name)
-
-    categories = Counter(h["category"] for h in hits)
-    models = Counter(h["model"] for h in hits)
-    buyers = Counter(h["buyers"] for h in hits)
-
-    return {
-        "available": True,
-        "hits": hits,
-        "unmatched": unmatched,
-        "main_category": categories.most_common(1)[0][0] if categories else GENERIC_CATEGORY,
-        "main_model": models.most_common(1)[0][0] if models else "",
-        "model_hint": CATEGORY_MODEL_HINT.get(
-            models.most_common(1)[0][0] if models else "", ""
-        ),
-        "main_buyers": buyers.most_common(1)[0][0] if buyers else DEFAULT_BUYERS,
-        "category_options": categories.most_common(),
-        "generic": not hits,
-    }
-
-
 def _gloss(text: str) -> str:
     """术语白话替换（纯正则，可预期可审计）。"""
     try:
@@ -232,7 +179,7 @@ def _fetch_all(code: str, *, latest_n: int) -> tuple[dict[str, dict[str, Any]], 
     """取全三维度 + 文本块（共 2 次 HTTP）。
 
     维度数据走 ``product_index_query``（一次返回三块）；
-    主营介绍与经营评述同源于 SSR 页面，合并为一次抓取。
+    主营介绍取自 SSR 页面。
     """
     raw_dims = fetch_operate_dimensions(code, latest_n=latest_n)
     text_blocks = fetch_operate_text_blocks(code)
@@ -242,7 +189,7 @@ def _fetch_all(code: str, *, latest_n: int) -> tuple[dict[str, dict[str, Any]], 
 def build_profile(
     company: str,
     *,
-    latest_n: int = 3,
+    latest_n: int = 2,
     with_text: bool = True,
 ) -> dict[str, Any]:
     """产出主营业务画像的全部中间数据（不含 Markdown 文本）。
@@ -252,9 +199,9 @@ def build_profile(
     company
         股票代码或名称。
     latest_n
-        取最近 N 个报告期，默认 3。
+        取最近 N 个报告期，默认 2（最新期展示 + 上一期做占比迁移）。
     with_text
-        是否抓取主营介绍与董事会经营评述（SSR 页面）。
+        是否抓取主营介绍（SSR 页面）。
     """
     code = str(company or "").strip()
     if not code:
@@ -264,7 +211,6 @@ def build_profile(
     raw_dims, text_blocks = _fetch_all(code, latest_n=latest_n)
 
     intro = (text_blocks or {}).get("intro") or {}
-    review = (text_blocks or {}).get("review") or {}
 
     # 统一格式：逐维度归一
     dimensions: dict[str, dict[str, Any]] = {}
@@ -286,7 +232,6 @@ def build_profile(
         pack["_concentration"] = _concentration(current)
         pack["_overall_margin"] = _overall_margin(current)
         pack["_migration"] = _migration(current, previous)
-        pack["_classification"] = _classify(current)
         dimensions[key] = pack
 
     if not dimensions:
@@ -303,13 +248,6 @@ def build_profile(
         primary["product_name"] = intro.get("product_name") or ""
         primary["product_name_list"] = intro.get("product_name_list") or []
         primary["scope"] = intro.get("business_scope") or ""
-        primary["reviews"] = review.get("items") or []
-        primary["review_dates"] = review.get("report_dates") or []
-
-    # 经营评述：取最长的一期（最新 ≠ 最完整，护栏 G8）
-    reviews = primary.get("reviews") or []
-    picked = max(reviews, key=lambda r: int(r.get("length") or 0)) if reviews else None
-    primary["_review_picked"] = picked
 
     dim_periods = {k: int(d.get("period_count") or 0) for k, d in dimensions.items()}
     dim_latest = {k: (d.get("report_date") or "") for k, d in dimensions.items()}
@@ -324,8 +262,6 @@ def build_profile(
                 dim_periods=dim_periods,
                 dim_latest=dim_latest,
                 reference_latest=reference_latest,
-                review_picked=picked if key == primary_key else None,
-                review_total=len(reviews) if key == primary_key else 0,
             )
         )
     # 同一编号可能多维度重复命中，去重（保留首条）
@@ -351,9 +287,6 @@ def build_profile(
         "dimensions": dimensions,
         "dim_periods": dim_periods,
         "dim_latest": dim_latest,
-        "review_picked": picked,
-        "review_total": len(reviews),
-        "classification": primary.get("_classification") or {"available": False},
         "gloss": _gloss,
         "guardrails": unique_hits,
     }

@@ -15,7 +15,6 @@ G4    ``revenue_yoy`` 可能缺失，缺失不等于 0
 G5    最新期可能是半年报/季报累计口径，不可与年度直接横比
 G6    分部名称跨期改名，按名匹配会漏配
 G7    三个维度的可得期数与最新期不同，不可横向当同口径比较
-G8    经营评述「最新」不等于「最完整」，需按正文字数选
 G9    某维度数据可能严重过期（如分地区只更新到 2010 年）
 G10   收入占比合计可能不等于 100%（负占比/抵销行），不强行归一
 ===== ==========================================================
@@ -33,7 +32,7 @@ DIM_TITLE: dict[str, str] = {
 }
 
 GUARDRAIL_IDS: tuple[str, ...] = (
-    "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10",
+    "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G9", "G10",
 )
 
 #: 最新期与「正常最新期」相差多少年即视为该维度数据过期（G9）
@@ -58,8 +57,6 @@ def inspect(
     dim_periods: dict[str, int] | None = None,
     dim_latest: dict[str, str] | None = None,
     reference_latest: str = "",
-    review_picked: dict[str, Any] | None = None,
-    review_total: int = 0,
 ) -> list[dict[str, str]]:
     """检查单个维度的 pack，返回命中的护栏列表。
 
@@ -77,10 +74,6 @@ def inspect(
         各维度的最新报告期，用于 G7 / G9。
     reference_latest
         作为「最新」的参照报告期（通常取主维度最新期），用于 G9。
-    review_picked
-        被选中的经营评述条目，用于 G8。
-    review_total
-        经营评述总条数，用于 G8。
     """
     hits: list[dict[str, str]] = []
     # 报告表格只渲染**最新一期**的分部，因此 G3/G4 也只看最新期，
@@ -157,23 +150,6 @@ def inspect(
                 f"{DIM_TITLE.get(k, k)} {v} 期" for k, v in sorted(dim_periods.items())
             ) + "，不可横向当作同口径比较。",
         })
-
-    # G8: 评述选取
-    if review_picked:
-        length = int(review_picked.get("length") or 0)
-        if length < 2000:
-            hits.append({
-                "id": "G8",
-                "title": f"经营评述正文较短（{length} 字）",
-                "detail": "页面折叠版内容偏少，可能未覆盖完整经营讨论。",
-            })
-        if review_total > 1:
-            hits.append({
-                "id": "G8",
-                "title": f"经营评述共 {review_total} 期，已选最长的一期",
-                "detail": f"选中 {review_picked.get('report_date')}（{length} 字）；"
-                          "「最新」不等于「最完整」。",
-            })
 
     # G9: 维度数据过期
     if dim_latest and reference_latest:

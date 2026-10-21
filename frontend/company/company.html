@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=ths-vote-20261015l" />
-  <link rel="stylesheet" href="/css/ai-page.css?v=no-bo-20261019" />
+  <link rel="stylesheet" href="/css/style.css?v=20261022" />
+  <link rel="stylesheet" href="/css/ai-page.css?v=20261022-risk-cols" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
@@ -44,11 +44,10 @@
     </div>
 
     <div class="company-panels">
-      <div id="panel-judgment" class="company-panel" data-panel="judgment" data-judgment-view="business" data-judgment-family="business" role="tabpanel" hidden>
+      <div id="panel-judgment" class="company-panel" data-panel="judgment" data-judgment-view="bizprofile" data-judgment-family="business" role="tabpanel" hidden>
         <div class="judgment-layout">
           <nav id="judgmentSourceBar" class="emotion-source-bar judgment-source-bar" aria-label="研判分类">
             <button type="button" class="emotion-source-btn is-active" data-source="business" aria-selected="true">业务简述</button>
-            <button type="button" class="emotion-source-btn" data-source="bizprofile" aria-selected="false">业务概述</button>
             <button type="button" class="emotion-source-btn" data-source="earnings" aria-selected="false">财报简述</button>
             <button type="button" class="emotion-source-btn" data-source="peers" aria-selected="false">竞争分析</button>
             <button type="button" class="emotion-source-btn" data-source="risk" aria-selected="false">风险评估</button>
@@ -58,6 +57,11 @@
             <button type="button" class="emotion-source-btn" data-source="compare" aria-selected="false">对比分析</button>
           </nav>
           <div class="judgment-view">
+        <div id="bizViewBar" class="judgment-view-bar" role="tablist" aria-label="业务简述视角" hidden>
+          <span class="judgment-view-label">视角</span>
+          <button type="button" class="judgment-view-btn is-active" role="tab" data-biz-view="bizprofile" aria-selected="true">规则视角</button>
+          <button type="button" class="judgment-view-btn" role="tab" data-biz-view="business" aria-selected="false">AI视角</button>
+        </div>
         <div class="ai-page company-analysis-page">
           <div id="analysisErrorBox" class="error hidden"></div>
 
@@ -75,7 +79,7 @@
             <main class="ai-pane ai-pane-report" aria-label="分析报告">
               <header class="ai-pane-head ai-report-head">
                 <div class="ai-report-title-block">
-                  <h2 id="reportTitle">分析报告</h2>
+                  <h2 id="reportTitle">业务简述 · 规则视角</h2>
                   <p id="reportMeta" class="muted"></p>
                 </div>
                 <div class="ai-report-tools">
@@ -83,7 +87,7 @@
                   <span id="jobMeta" class="ai-job-meta muted"></span>
                   <span id="reportStatus" class="ai-status-chip hidden" aria-live="polite"></span>
                   <span id="reportParams" class="ai-report-params"></span>
-                  <button id="startBtn" class="btn primary sm" type="button">生成简述</button>
+                  <button id="startBtn" class="btn primary sm" type="button">重新计算</button>
                   <button id="stopPollBtn" class="btn ghost sm hidden" type="button">停止轮询</button>
                 </div>
               </header>
@@ -1187,8 +1191,8 @@
   <script src="/js/shared/orbit-http.js?v=holders-date-20260919"></script>
   <script src="/js/shared/orbit-prefetch.js?v=holders-date-20260919"></script>
   <script src="/js/shared/nav.js?v=nav-industry-20261001"></script>
-  <script src="/js/shared/ai-modes.js?v=no-bo-20261019"></script>
-  <script src="/js/shared/company-analysis.js?v=no-bo-20261019"></script>
-  <script src="/js/company.js?v=ths-vote-20261015"></script>
+  <script src="/js/shared/ai-modes.js?v=20261022-risk-grp"></script>
+  <script src="/js/shared/company-analysis.js?v=20261022-risk-lean"></script>
+  <script src="/js/company.js?v=20261022-risk-grp"></script>
 </body>
 </html>

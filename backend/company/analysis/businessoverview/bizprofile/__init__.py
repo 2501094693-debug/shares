@@ -11,8 +11,6 @@
   三、分维度构成明细
   四、收入结构与变化（占比迁移 + 合计同比）
   五、盈利结构
-  六、经营评述摘录（原文节选）
-  七、业务归类与白话解读（静态词典派生）
   尾注：数据来源与口径披露
 
 **不调用任何模型**，输出可复现、可审计。
@@ -28,7 +26,7 @@ __all__ = ["build_profile", "render_markdown", "build_report"]
 def build_report(
     company: str,
     *,
-    latest_n: int = 3,
+    latest_n: int = 2,
     with_text: bool = True,
 ) -> dict:
     """取数 + 派生 + 渲染，一次拿到完整报告。

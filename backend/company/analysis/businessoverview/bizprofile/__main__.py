@@ -32,10 +32,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("code", help="股票代码，如 600990")
     parser.add_argument(
-        "-n", "--latest-n", type=int, default=3, help="取最近 N 个报告期（默认 3）"
+        "-n", "--latest-n", type=int, default=2, help="取最近 N 个报告期（默认 2）"
     )
     parser.add_argument(
-        "--no-text", action="store_true", help="不抓取主营介绍与董事会经营评述"
+        "--no-text", action="store_true", help="不抓取主营介绍"
     )
     parser.add_argument("--json", action="store_true", help="输出结构化 JSON（含 Markdown）")
     parser.add_argument("--out", default="", help="Markdown 输出路径")

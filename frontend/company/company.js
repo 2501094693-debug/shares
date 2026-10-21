@@ -319,6 +319,7 @@ const els = {
   companyTabStack: document.getElementById("companyTabStack"),
   panelJudgment: document.getElementById("panel-judgment"),
   judgmentSourceBar: document.getElementById("judgmentSourceBar"),
+  bizViewBar: document.getElementById("bizViewBar"),
   exchangeForm: document.getElementById("exchangeForm"),
   exchangeTabs: document.getElementById("exchangeTabs"),
   exchangeTitle: document.getElementById("exchangeTitle"),
@@ -726,6 +727,7 @@ let newsGroup = normalizeNewsGroup(params.get("news") || "");
 let newsBootstrapped = { official: false, other: false, reports: false, financials: false };
 let emotionBootstrapped = { eastmoney: false, tonghuashun: false, xueqiu: false };
 const ANALYSIS_PANELS = new Set(["business", "bizprofile", "zhang-views", "peers", "risk", "sentiment", "valuation", "chip", "compare"]);
+const BUSINESS_FAMILY_VIEWS = new Set(["business", "bizprofile"]);
 const EARNINGS_VIEWS = new Set(["zhang-views"]);
 const EARNINGS_FAMILY = new Set(["earnings", "财报简述", ...EARNINGS_VIEWS]);
 let lastEarningsView = "zhang-views";
@@ -752,8 +754,9 @@ if (["list", "lhb", "longhu"].includes(tabParamRaw)) {
 }
 let judgmentSubTab = normalizeJudgmentSubTab(params.get("judgment") || "");
 if (isAnalysisPanel(tabParamRaw) || tabParamRaw === "analysis") {
-  judgmentSubTab = normalizeJudgmentSubTab(tabParamRaw === "analysis" ? "business" : tabParamRaw);
+  judgmentSubTab = normalizeJudgmentSubTab(tabParamRaw === "analysis" ? "bizprofile" : tabParamRaw);
 }
+let lastBusinessView = BUSINESS_FAMILY_VIEWS.has(judgmentSubTab) ? judgmentSubTab : "bizprofile";
 let stockDisplayName = nameHint || code;
 
 function normalizeEmotionSource(source) {
@@ -845,7 +848,7 @@ function normalizeJudgmentSubTab(view) {
     if (EARNINGS_VIEWS.has(mapped)) lastEarningsView = mapped;
     return mapped;
   }
-  return "business";
+  return "bizprofile";
 }
 
 function normalizeOthersSubTab(view) {
@@ -2616,9 +2619,15 @@ function setOthersSubTab(nextView, { reload = true } = {}) {
   bootstrapOthersSubTab(view);
 }
 
+function judgmentFamilyOf(view) {
+  if (BUSINESS_FAMILY_VIEWS.has(view)) return "business";
+  if (EARNINGS_VIEWS.has(view)) return "earnings";
+  return view;
+}
+
 function syncJudgmentSubTabUi() {
   const view = judgmentSubTab;
-  const family = EARNINGS_VIEWS.has(view) ? "earnings" : view;
+  const family = judgmentFamilyOf(view);
   if (els.panelJudgment) {
     els.panelJudgment.dataset.judgmentView = view;
     els.panelJudgment.dataset.judgmentFamily = family;
@@ -2626,6 +2635,14 @@ function syncJudgmentSubTabUi() {
   if (els.judgmentSourceBar) {
     els.judgmentSourceBar.querySelectorAll("[data-source]").forEach((btn) => {
       const active = btn.getAttribute("data-source") === family;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+  }
+  if (els.bizViewBar) {
+    els.bizViewBar.hidden = family !== "business";
+    els.bizViewBar.querySelectorAll("[data-biz-view]").forEach((btn) => {
+      const active = btn.getAttribute("data-biz-view") === view;
       btn.classList.toggle("is-active", active);
       btn.setAttribute("aria-selected", active ? "true" : "false");
     });
@@ -2638,6 +2655,7 @@ function bootstrapJudgmentSubTab(view = judgmentSubTab) {
 
 function setJudgmentSubTab(nextView, { reload = true } = {}) {
   const view = normalizeJudgmentSubTab(nextView);
+  if (BUSINESS_FAMILY_VIEWS.has(view)) lastBusinessView = view;
   if (view === judgmentSubTab) return;
   judgmentSubTab = view;
   syncJudgmentSubTabUi();
@@ -8641,7 +8659,19 @@ function setupJudgmentSubTabs() {
         setJudgmentSubTab(lastEarningsView || "zhang-views");
         return;
       }
+      if (source === "business") {
+        setJudgmentSubTab(BUSINESS_FAMILY_VIEWS.has(judgmentSubTab) ? judgmentSubTab : lastBusinessView || "bizprofile");
+        return;
+      }
       setJudgmentSubTab(source);
+    });
+  }
+  if (els.bizViewBar && els.bizViewBar.dataset.bound !== "1") {
+    els.bizViewBar.dataset.bound = "1";
+    els.bizViewBar.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-biz-view]");
+      if (!btn || !els.bizViewBar.contains(btn)) return;
+      setJudgmentSubTab(btn.getAttribute("data-biz-view") || "bizprofile");
     });
   }
   syncJudgmentSubTabUi();

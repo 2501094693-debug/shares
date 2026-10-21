@@ -13,11 +13,9 @@
 * :mod:`company.analysis.businessoverview.core.normalize` —— 唯一在场规则，
   只做格式统一（字段名/字段集/类型/单位/日期/维度键/排序），不做加工。
 
-派生层 :mod:`company.analysis.businessoverview.bizprofile` 引用本目录两个静态
+派生层 :mod:`company.analysis.businessoverview.bizprofile` 引用本目录的静态
 知识表（属「派生」而非「格式统一」）：
 
-* :mod:`company.analysis.businessoverview.rules.lexicon` —— 业务词典，
-  用于产出业务归类（业务大类 / 赚钱模式 / 典型客群）。
 * :mod:`company.analysis.businessoverview.rules.glossary` —— 术语白话表，
   用于把财报术语替换为通俗说法。
 """

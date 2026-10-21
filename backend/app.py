@@ -38,6 +38,7 @@ from company.statistics.margintrading.api import router as margintrading_router
 from company.news.financialreport.api import router as financialreport_router
 from company.analysis.financialreport.api import router as financial_views_router
 from company.analysis.competition.api import router as competition_router
+from company.analysis.riskassessment.api import router as riskassessment_router
 from company.analysis.businessoverview.interfaces.api import router as businessoverview_router
 from company.analysis.businessoverview.bizprofile.api import router as bizprofile_router
 from company.news.periodicreport.api import router as periodicreport_router
@@ -205,6 +206,7 @@ app.include_router(dividend_router)
 app.include_router(financialreport_router)
 app.include_router(financial_views_router)
 app.include_router(competition_router)
+app.include_router(riskassessment_router)
 app.include_router(businessoverview_router)
 app.include_router(bizprofile_router)
 app.include_router(periodicreport_router)
@@ -478,8 +480,6 @@ def js_ths_auth():
 @app.get("/earnings.html")
 @app.get("/competition")
 @app.get("/competition.html")
-@app.get("/risk")
-@app.get("/risk.html")
 @app.get("/gmap")
 @app.get("/gmap.html")
 def removed_pages():
@@ -536,9 +536,12 @@ def _acquire_single_instance() -> None:
 
 
 def _kill_port_listeners(port: int) -> None:
-    """干掉占用端口的旧服务，新启动的实例接管。只杀 LISTENING 态且不是自己的进程。"""
-    import re
-    import shutil
+    """干掉占用端口的旧服务，新启动的实例接管。只杀 LISTENING 态且不是自己的进程。
+
+    ``uvicorn --reload`` 的监听 socket 可能被 reloader 派生的子进程继承：
+    杀掉父进程后，子进程仍持有端口，新实例无法绑定，前端就会一直命中旧代码。
+    因此这里循环「扫描监听者 -> 杀进程树 -> 等待释放」，直到端口真正空闲。
+    """
     import socket
     import subprocess
     import time
@@ -555,48 +558,61 @@ def _kill_port_listeners(port: int) -> None:
         finally:
             s.close()
 
+    def _listener_pids() -> set[int]:
+        pids: set[int] = set()
+        if os.name == "nt":
+            try:
+                out = subprocess.run(
+                    ["netstat", "-ano", "-p", "TCP"],
+                    capture_output=True, text=True, timeout=15,
+                ).stdout
+            except Exception as exc:  # noqa: BLE001
+                print(f"netstat failed: {exc}")
+                return pids
+            for line in out.splitlines():
+                if "LISTENING" not in line or f":{port}" not in line:
+                    continue
+                parts = line.split()
+                if len(parts) >= 5 and parts[-1].isdigit():
+                    pid = int(parts[-1])
+                    if pid != me:
+                        pids.add(pid)
+        else:
+            import shutil
+            if shutil.which("lsof"):
+                try:
+                    out = subprocess.run(
+                        ["lsof", "-ti", f"tcp:{port}"],
+                        capture_output=True, text=True, timeout=15,
+                    ).stdout
+                    for token in out.split():
+                        if token.isdigit() and int(token) != me:
+                            pids.add(int(token))
+                except Exception:  # noqa: BLE001
+                    pass
+        return pids
+
     if not _port_busy():
         return
 
-    if os.name == "nt":
-        try:
-            out = subprocess.run(
-                ["netstat", "-ano", "-p", "TCP"],
-                capture_output=True, text=True, timeout=15,
-            ).stdout
-        except Exception as exc:  # noqa: BLE001
-            print(f"netstat failed: {exc}")
-            out = ""
-        pids = set()
-        for line in out.splitlines():
-            if "LISTENING" not in line or f":{port}" not in line:
-                continue
-            parts = line.split()
-            if len(parts) >= 5 and parts[-1].isdigit():
-                pid = int(parts[-1])
-                if pid != me:
-                    pids.add(pid)
-        for pid in sorted(pids):
+    for _round in range(8):
+        for pid in sorted(_listener_pids()):
             print(f"Killing stale server PID {pid} on port {port} ...")
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
-                           capture_output=True, timeout=30)
-    else:
-        for tool, args in (
-            ("fuser", ["fuser", "-k", f"{port}/tcp"]),
-            ("lsof", ["sh", "-c", f"kill -9 $(lsof -ti tcp:{port})"]),
-        ):
-            if shutil.which(tool) is None:
-                continue
-            try:
-                subprocess.run(args, capture_output=True, timeout=30)
-            except Exception:  # noqa: BLE001
-                pass
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                               capture_output=True, timeout=30)
+            else:
+                import signal
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
+        for _ in range(10):
+            if not _port_busy():
+                print(f"Port {port} is free now.")
+                return
+            time.sleep(0.2)
 
-    for _ in range(50):
-        if not _port_busy():
-            print(f"Port {port} is free now.")
-            return
-        time.sleep(0.2)
     print(f"WARNING: port {port} still busy after killing old processes.")
 
 

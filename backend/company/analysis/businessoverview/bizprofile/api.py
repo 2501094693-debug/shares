@@ -21,6 +21,10 @@ router = APIRouter()
 
 _CODE_RE = re.compile(r"(\d{6})")
 
+#: 固定取最近 2 期：最新期用于结构/集中度展示，第 2 期用于占比迁移。
+#: 报告只消费这两期，调大期数不产生任何新内容，故不再作为可调参数。
+LATEST_N = 2
+
 
 def _resolve_code(code: str, company: str) -> str:
     code = str(code or "").strip()
@@ -64,8 +68,7 @@ def _dimension_view(pack: dict) -> dict:
 def stocks_biz_profile(
     code: str = Query("", description="股票代码，如 600990"),
     company: str = Query("", description="公司查询串；与 code 二选一"),
-    latest_n: int = Query(3, ge=1, le=6, description="取最近 N 个报告期（默认 3）"),
-    text: str = Query("1", description="1=抓取主营介绍与经营评述（SSR）"),
+    text: str = Query("1", description="1=抓取主营介绍（SSR）"),
     markdown: str = Query("1", description="1=返回 Markdown 全文"),
 ):
     """主营业务画像：分章节 Markdown 报告。
@@ -82,7 +85,7 @@ def stocks_biz_profile(
     try:
         profile = build_profile(
             resolved,
-            latest_n=latest_n,
+            latest_n=LATEST_N,
             with_text=text == "1",
         )
     except ValueError as exc:
@@ -92,7 +95,6 @@ def stocks_biz_profile(
 
     primary_key = profile.get("primary") or ""
     primary = (profile.get("dimensions") or {}).get(primary_key) or {}
-    review = profile.get("review_picked") or {}
 
     body: dict = {
         "code": profile.get("code"),
@@ -103,7 +105,6 @@ def stocks_biz_profile(
         "cutoff_date": profile.get("cutoff_date"),
         "primary": primary_key,
         "primary_label": profile.get("primary_label"),
-        "latest_n": latest_n,
         "dim_periods": profile.get("dim_periods"),
         "dim_latest": profile.get("dim_latest"),
         "guardrails": profile.get("guardrails"),
@@ -119,13 +120,6 @@ def stocks_biz_profile(
             _dimension_view(pack)
             for pack in (profile.get("dimensions") or {}).values()
         ],
-        "classification": profile.get("classification") or {},
-        "review": {
-            "report_date": review.get("report_date") or "",
-            "text": review.get("review") or "",
-            "length": int(review.get("length") or 0),
-            "total": profile.get("review_total") or 0,
-        },
     }
     if markdown == "1":
         body["markdown"] = render_markdown(profile)
