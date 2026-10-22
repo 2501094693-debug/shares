@@ -68,7 +68,7 @@ def stocks_risk_assessment(
         "code": pack.get("code") or resolved,
         "name": pack.get("name") or "",
         "source": "巨潮资讯",
-        "source_label": "巨潮非定期公告 · 七维检索 · 仅用 fetch_announcements",
+        "source_label": "巨潮非定期公告 · 七维检索",
         "summary": {
             "dimension_count": stats.get("dimension_count", 0),
             "hit_dimensions": stats.get("hit_dimensions", 0),

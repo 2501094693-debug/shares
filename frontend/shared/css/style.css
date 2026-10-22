@@ -7707,7 +7707,9 @@ body.app-shell.shares-page-root .shares-page.market-page {
 
 /* —— 涨跌停日历 —— */
 body.app-shell.steep-page-root {
-  --company-quotes-inner: calc(100vw - var(--rail-w) - 24px);
+  /* 扣除主导航 + 日期侧栏，让卡片宽度贴近当日面板可用区 */
+  --steep-dates-w: 180px;
+  --company-quotes-inner: calc(100vw - var(--rail-w) - var(--steep-dates-w) - 24px);
   --company-hero-w: clamp(280px, calc(var(--company-quotes-inner) * 0.34), 380px);
   --company-kline-w: calc((var(--company-quotes-inner) - var(--company-hero-w) - 20px) * 1.2 / 2.2);
 }
@@ -7740,15 +7742,146 @@ body.app-shell.steep-page-root .steep-page.market-page {
 
 .steep-page .market-toolbar {
   margin-bottom: 6px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-.steep-matrix {
+/* 主区：日期列表 | 当日涨跌停 */
+.steep-board {
   flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(148px, 180px) minmax(0, 1fr);
+  gap: 0;
+  width: 100%;
+  border-top: 1px solid var(--line);
+}
+
+.steep-dates {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  border-right: 1px solid var(--line);
+  background: rgba(7, 11, 18, 0.72);
+}
+
+.steep-dates-head {
+  flex: none;
+  padding: 10px 12px;
+  font-family: var(--display);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.steep-dates-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(42, 212, 184, 0.35) transparent;
+}
+
+.steep-dates-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.steep-dates-scroll::-webkit-scrollbar-thumb {
+  background: rgba(42, 212, 184, 0.28);
+  border-radius: 99px;
+}
+
+.steep-dates-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.steep-dates-empty {
+  margin: 16px 8px;
+  font-size: 0.82rem;
+}
+
+.steep-dates-foot {
+  margin: 8px 4px 12px;
+  padding: 0 6px;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.steep-date-item {
+  appearance: none;
   width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 4px;
+  padding: 10px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.steep-date-item:hover {
+  background: rgba(42, 212, 184, 0.06);
+  border-color: rgba(42, 212, 184, 0.12);
+}
+
+.steep-date-item.is-active {
+  background: rgba(42, 212, 184, 0.1);
+  border-color: rgba(42, 212, 184, 0.28);
+}
+
+.steep-date-when {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.steep-date-when b {
+  font-family: var(--mono);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.steep-date-when em {
+  font-style: normal;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.steep-date-counts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.steep-date-counts [data-tone="up"] {
+  color: var(--up);
+}
+
+.steep-date-counts [data-tone="down"] {
+  color: var(--down);
+}
+
+.steep-day-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
 }
 
 .steep-matrix-row {
@@ -7757,9 +7890,11 @@ body.app-shell.steep-page-root .steep-page.market-page {
   flex: 1 1 0;
   border: 0;
   border-top: 1px solid var(--line);
-  border-radius: 0;
-  background: var(--bg-panel);
   overflow: hidden;
+}
+
+.steep-day-panel > .steep-matrix-row:first-child {
+  border-top: 0;
 }
 
 .steep-matrix-row.is-collapsed {
@@ -7809,7 +7944,7 @@ body.app-shell.steep-page-root .steep-page.market-page {
   border-right: 0;
 }
 
-.steep-matrix-row.is-collapsed .steep-matrix-scroll {
+.steep-matrix-row.is-collapsed .steep-pane-scroll {
   display: none;
 }
 
@@ -7821,178 +7956,62 @@ body.app-shell.steep-page-root .steep-page.market-page {
   color: var(--down);
 }
 
-.steep-matrix-scroll {
+.steep-pane-scroll {
   flex: 1;
   min-width: 0;
   min-height: 0;
   height: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  container-type: inline-size;
-  container-name: steep-scroll;
-}
-
-.steep-matrix-scroll::-webkit-scrollbar {
-  display: none;
-}
-
-.steep-matrix-track {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  padding: 6px 0;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 100%;
-  height: 100%;
-  max-height: 100%;
-}
-
-.steep-matrix-row.is-open .steep-matrix-track {
-  width: max-content;
-  min-width: 100%;
-}
-
-.steep-day {
-  flex: 1 1 84px;
-  min-width: 84px;
-  width: auto;
-  height: 100%;
-  max-height: 100%;
-  display: flex;
-  flex-direction: row;
-  min-height: 0;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: rgba(7, 11, 18, 0.55);
-  transition: flex-basis 0.18s ease, width 0.18s ease;
-}
-
-/* 展开时隐藏其余日期列，名单占满整行 */
-.steep-matrix-row.is-open .steep-day:not(.is-open) {
-  display: none;
-}
-
-.steep-day.is-open {
-  flex: 0 0 100cqi;
-  width: 100cqi;
-  min-width: 100cqi;
-}
-
-.steep-day-head {
-  appearance: none;
-  flex: 1 1 auto;
-  width: 100%;
-  min-width: 84px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 6px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  text-align: center;
-}
-
-.steep-day.is-open .steep-day-head {
-  flex: 0 0 84px;
-  width: 84px;
-  border-right: 1px solid var(--line);
-}
-
-/* 卡片视图：日期上移为顶栏，个股卡片横排占满 */
-.steep-matrix[data-view="cards"] .steep-day.is-open {
-  flex-direction: column;
-}
-
-.steep-matrix[data-view="cards"] .steep-day.is-open > .steep-day-head {
-  flex: 0 0 auto;
-  width: 100%;
-  min-width: 0;
-  flex-direction: row;
-  justify-content: flex-start;
-  gap: 10px;
-  padding: 6px 10px;
-  border-right: 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.steep-matrix[data-view="cards"] .steep-day.is-open > .steep-day-head .steep-day-when {
-  flex-direction: row;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.steep-matrix[data-view="cards"] .steep-day.is-open .steep-day-body {
-  width: 100%;
-  flex: 1 1 0;
-  min-height: 0;
-}
-
-.steep-day-head:hover {
-  background: rgba(42, 212, 184, 0.06);
-}
-
-.steep-day-when {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 0;
-}
-
-.steep-day-when b {
-  font-family: var(--mono);
-  font-size: 0.92rem;
-  font-weight: 600;
-}
-
-.steep-day-when em {
-  font-style: normal;
-  font-size: 0.7rem;
-  color: var(--muted);
-}
-
-.steep-day-count {
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  white-space: nowrap;
-}
-
-.steep-day-count[data-tone="up"] {
-  color: var(--up);
-}
-
-.steep-day-count[data-tone="down"] {
-  color: var(--down);
-}
-
-.steep-day-caret {
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.steep-day-body {
-  flex: 1 1 0;
-  min-width: 0;
-  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(42, 212, 184, 0.35) transparent;
 }
 
-.steep-day-body::-webkit-scrollbar {
-  display: none;
+.steep-pane-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-.steep-day-body[hidden] {
-  display: none;
+.steep-pane-scroll::-webkit-scrollbar-thumb {
+  background: rgba(42, 212, 184, 0.28);
+  border-radius: 99px;
+}
+
+.steep-pane-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.steep-day-panel[data-view="cards"] .steep-pane-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.steep-day-panel[data-view="cards"] .steep-stock-cards.screen-result-list {
+  flex: 1 1 0%;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  padding: 6px 8px;
+  gap: 8px;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.steep-day-panel[data-view="cards"] .steep-stock-cards .screen-card {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: min(100%, var(--steep-card-h, 70dvh));
+  max-height: 100%;
+  aspect-ratio: var(--steep-card-ar, 0.65);
+  align-self: center;
 }
 
 .steep-mini {
@@ -8027,35 +8046,6 @@ body.app-shell.steep-page-root .steep-page.market-page {
   font-weight: 600;
 }
 
-.steep-matrix[data-view="cards"] .steep-day-body {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.steep-matrix[data-view="cards"] .steep-stock-cards.screen-result-list {
-  flex: 1 1 0%;
-  min-height: 0;
-  height: 100%;
-  width: 100%;
-  padding: 6px 8px;
-  gap: 8px;
-  align-items: center;
-  scroll-snap-type: x proximity;
-}
-
-.steep-matrix[data-view="cards"] .steep-stock-cards .screen-card {
-  flex: 0 0 auto;
-  box-sizing: border-box;
-  width: auto;
-  min-width: 0;
-  max-width: none;
-  height: min(100%, var(--steep-card-h, 70dvh));
-  max-height: 100%;
-  aspect-ratio: var(--steep-card-ar, 0.65);
-  align-self: center;
-}
-
 .steep-page .screen-card-score b[data-tone="up"] {
   color: var(--up);
 }
@@ -8068,15 +8058,45 @@ body.app-shell.steep-page-root .steep-page.market-page {
   color: var(--ink);
 }
 
-.steep-page .market-toolbar {
-  gap: 12px;
-  flex-wrap: wrap;
-}
+@media (max-width: 900px) {
+  body.app-shell.steep-page-root {
+    --steep-dates-w: 140px;
+  }
 
-@media (max-width: 800px) {
+  .steep-board {
+    grid-template-columns: minmax(120px, 140px) minmax(0, 1fr);
+  }
+
   .steep-matrix-label {
     width: 1.8rem;
     letter-spacing: 0.08em;
+  }
+}
+
+@media (max-width: 640px) {
+  .steep-board {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(120px, 28%) minmax(0, 1fr);
+  }
+
+  .steep-dates {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .steep-dates-scroll {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 6px 8px;
+  }
+
+  .steep-date-item {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 96px;
+    margin: 0;
   }
 }
 

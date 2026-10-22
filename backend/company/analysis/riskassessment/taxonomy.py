@@ -35,6 +35,14 @@ class RiskQuery:
     enabled: bool = True
 
 
+def keyword_terms(keyword: str) -> list[str]:
+    """关键词串 → 词表（``|`` 分隔，命中任一即算命中）。"""
+    raw = (keyword or "").strip()
+    if not raw:
+        return []
+    return [p.strip() for p in raw.split("|") if p.strip()]
+
+
 @dataclass(slots=True)
 class RiskDimension:
     """前端按维展示：检索方式 + 按子查询分组的检索结果。"""
@@ -43,6 +51,17 @@ class RiskDimension:
     no: int
     name: str
     query_ids: tuple[str, ...]
+
+
+# 第四问的标题关键词：只保留资质类对象词与处置类动作词，命中任一即算命中
+A4_KEYWORD = (
+    # 处置动作
+    "吊销|撤销|收回|注销|中止|暂停|取消|降级|"
+    # 名单与准入限制
+    "列入|纳入|列为|限制|禁止|不得|暂不|失信|"
+    # 资质对象
+    "资质|证书|许可证|经营许可|认证|准入|经营资格|采购资格"
+)
 
 
 # 风险查询清单（仅调用 fetch_announcements）
@@ -63,7 +82,10 @@ RISK_QUERIES: list[RiskQuery] = [
         risk_type="REGULATORY",
         level="HIGH",
         desc="标题中出现监管问询、立案、稽查、行政处罚等",
-        keyword="问询函|关注函|监管函|立案|立案调查|调查|稽查|行政处罚|责令整改|监管措施|监管谈话|下发问询",
+        keyword=(
+            "问询函|关注函|监管函|立案|立案调查|调查|稽查|行政处罚|责令整改|责令改正|"
+            "监管措施|监管谈话|监管警示|警示函|纪律处分|通报批评|下发问询"
+        ),
         days=365,
     ),
     RiskQuery(
@@ -77,12 +99,12 @@ RISK_QUERIES: list[RiskQuery] = [
     ),
     RiskQuery(
         qid="A4_QUALIFICATION",
-        title="资质/采购资格（军队采购等）",
+        title="经营资质/许可/采购资格",
         risk_type="REGULATORY",
         level="HIGH",
-        desc="经营资质类负面，常在日常经营中披露，难以归入专属 category",
-        keyword="军队采购|装备采购|军品|采购资格|供应商资格|暂停资格|中止资格|取消资格|被暂停|被取消",
-        days=365,
+        desc="资质类对象词与处置类动作词，标题命中任一即算命中",
+        keyword=A4_KEYWORD,
+        days=730,
     ),
     # B. 治理与内控
     RiskQuery(

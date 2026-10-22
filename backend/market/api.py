@@ -115,7 +115,7 @@ def market_shares(
 
 @router.get("/api/market/steep")
 def market_steep(
-    days: int = Query(DEFAULT_DAYS, description="最近几个交易日，默认 15，最大 30"),
+    days: int = Query(DEFAULT_DAYS, description="最近几个交易日，默认 15，最大 30（东财池历史窗口）"),
     refresh: str = Query("0"),
     lite: str = Query("0", description="1=只带最近一天名单，其余天只返回家数"),
 ):
@@ -124,6 +124,21 @@ def market_steep(
         data = steep_service.recent(
             days=days, force=refresh == "1", lite=lite == "1"
         )
+        return ok(data)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/market/steep/day")
+def market_steep_day(
+    date: str = Query(..., description="交易日 YYYYMMDD 或 YYYY-MM-DD"),
+    refresh: str = Query("0"),
+):
+    """单日涨停 / 跌停完整名单。"""
+    try:
+        data = steep_service.day_pool(date, force=refresh == "1")
         return ok(data)
     except ValueError as exc:
         return err(str(exc), 400)

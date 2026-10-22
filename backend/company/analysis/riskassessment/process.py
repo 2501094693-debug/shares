@@ -47,6 +47,7 @@ def _public_item(hit: dict[str, Any]) -> dict[str, Any]:
         "query_id": hit.get("query_id") or "",
         "query_title": hit.get("query_title") or "",
         "matched_by": hit.get("matched_by") or "",
+        "matched_terms": list(hit.get("matched_terms") or []),
     }
 
 

@@ -1,34 +1,38 @@
 (() => {
-  const DAY_OPTIONS = [15, 30];
+  const PAGE_DAYS = 15;
+  const STEP_DAYS = 15;
+  // 东财涨停/跌停池大约只保留近 30 个交易日
+  const MAX_DAYS = 30;
   const POLL_MS = 30000;
-  const LIVE_POLL_MS = 15000; // 实时行情轮询间隔
+  const LIVE_POLL_MS = 15000;
   const WEEK = "日一二三四五六";
   const VIEW_KEY = "steep-view";
+  const FOLD_KEY = "steep-row-fold";
+  const DATE_KEY = "steep-selected-date";
 
   const state = {
     items: [],
     itemsSig: "",
     updatedAt: "",
-    days: 15,
+    days: PAGE_DAYS,
+    hasMore: true,
     sortKey: "board",
     sortDir: "desc",
     view: "list",
-    open: new Set(),
+    selectedDate: "",
     collapsed: { up: false, down: false },
     fetching: false,
+    loadingMore: false,
     pendingLoad: null,
     pollTimer: 0,
     liveQuoteTimer: 0,
     liveQuoteStarted: false,
-    syncing: false,
-    liveQuotes: {}, // 实时行情：key=code, value=quote数据
+    liveQuotes: {},
+    pinDateScroll: false,
+    dayFetching: "",
   };
 
   const $ = (id) => document.getElementById(id);
-
-  function paneKey(dateRaw, kind) {
-    return `${dateRaw}:${kind}`;
-  }
 
   function fmtPct(value) {
     if (value == null || value === "") return "—";
@@ -264,7 +268,7 @@
 
   function mountOpenKlines() {
     if (state.view !== "cards" || !window.OrbitKline) return;
-    document.querySelectorAll(".steep-day.is-open .screen-card.is-stock").forEach(mountCardKline);
+    document.querySelectorAll(".steep-pane-scroll .screen-card.is-stock").forEach(mountCardKline);
   }
 
   function dayTable(day, kind) {
@@ -294,24 +298,12 @@
   }
 
   function dayBody(day, kind) {
+    if (!day) return `<p class="screen-empty muted">请选择交易日</p>`;
     return state.view === "cards" ? dayCards(day, kind) : dayTable(day, kind);
   }
 
-  function dayCard(day, kind) {
-    const key = paneKey(day.date_raw, kind);
-    const open = state.open.has(key);
-    const count = kind === "up" ? day.limit_up_count || 0 : day.limit_down_count || 0;
-    return `<article class="steep-day${open ? " is-open" : ""}" data-date="${day.date_raw}" data-kind="${kind}">
-      <button type="button" class="steep-day-head" data-date="${day.date_raw}" data-kind="${kind}" aria-expanded="${open ? "true" : "false"}">
-        <span class="steep-day-when">
-          <b>${fmtMd(day.date)}</b>
-          <em>${weekday(day.date)}</em>
-        </span>
-        <span class="steep-day-count" data-tone="${kind}">${count}</span>
-        <span class="steep-day-caret" aria-hidden="true">${open ? "◂" : "▸"}</span>
-      </button>
-      <div class="steep-day-body"${open ? "" : " hidden"}>${open ? dayBody(day, kind) : ""}</div>
-    </article>`;
+  function selectedDay() {
+    return state.items.find((day) => day.date_raw === state.selectedDate) || null;
   }
 
   function readView() {
@@ -330,11 +322,52 @@
     }
   }
 
+  function readSavedDate() {
+    try {
+      return localStorage.getItem(DATE_KEY) || "";
+    } catch {
+      return "";
+    }
+  }
+
+  function persistDate() {
+    try {
+      if (state.selectedDate) localStorage.setItem(DATE_KEY, state.selectedDate);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function ensureSelectedDate() {
+    if (!state.items.length) {
+      state.selectedDate = "";
+      return;
+    }
+    if (state.selectedDate && state.items.some((day) => day.date_raw === state.selectedDate)) return;
+    const saved = readSavedDate();
+    if (saved && state.items.some((day) => day.date_raw === saved)) {
+      state.selectedDate = saved;
+      return;
+    }
+    state.selectedDate = state.items[0].date_raw;
+    persistDate();
+  }
+
+  function setSelectedDate(dateRaw) {
+    if (!dateRaw || dateRaw === state.selectedDate) return;
+    if (!state.items.some((day) => day.date_raw === dateRaw)) return;
+    state.selectedDate = dateRaw;
+    state.pinDateScroll = true;
+    persistDate();
+    render();
+    void ensureDayDetail(dateRaw);
+  }
+
   function renderViewSeg() {
     $("viewSeg")?.querySelectorAll("button[data-view]").forEach((btn) => {
       btn.classList.toggle("is-active", btn.dataset.view === state.view);
     });
-    document.querySelector(".steep-matrix")?.setAttribute("data-view", state.view);
+    $("dayPanel")?.setAttribute("data-view", state.view);
   }
 
   function setView(next) {
@@ -355,8 +388,7 @@
     probe.remove();
     const toolbar = document.querySelector(".steep-page .market-toolbar");
     const top = toolbar ? toolbar.getBoundingClientRect().bottom : 120;
-    // 与个股行情一致：看板底边距 12 + 卡片列表上下 padding 10+10
-    const height = Math.max(180, window.innerHeight - top - 12 - 20);
+    const height = Math.max(180, (window.innerHeight - top - 12 - 20) / (state.collapsed.up || state.collapsed.down ? 1 : 2));
     return { width, height };
   }
 
@@ -381,35 +413,22 @@
     });
   }
 
-  function renderRange() {
-    $("rangeSeg").querySelectorAll("button[data-days]").forEach((btn) => {
-      btn.classList.toggle("is-active", Number(btn.dataset.days) === state.days);
-    });
-  }
-
   function renderSummary() {
-    const up = state.items.reduce((n, day) => n + (day.limit_up_count || 0), 0);
-    const down = state.items.reduce((n, day) => n + (day.limit_down_count || 0), 0);
+    const day = selectedDay();
+    const upAll = state.items.reduce((n, d) => n + (d.limit_up_count || 0), 0);
+    const downAll = state.items.reduce((n, d) => n + (d.limit_down_count || 0), 0);
+    const dayLabel = day ? `${fmtMd(day.date)} ${weekday(day.date)}` : "—";
+    const up = day ? day.limit_up_count || 0 : 0;
+    const down = day ? day.limit_down_count || 0 : 0;
     $("summaryBar").innerHTML = `
       <span>${state.items.length} 个交易日</span>
+      <span>当日 <b>${dayLabel}</b></span>
       <span>涨停 <b class="is-up">${up}</b></span>
       <span>跌停 <b class="is-down">${down}</b></span>
+      <span class="muted">区间合计 ↑${upAll} ↓${downAll}</span>
     `;
     $("marketMeta").textContent = state.updatedAt || "";
   }
-
-  function markRowOpen() {
-    $("upRow").classList.toggle(
-      "is-open",
-      state.items.some((day) => state.open.has(paneKey(day.date_raw, "up")))
-    );
-    $("downRow").classList.toggle(
-      "is-open",
-      state.items.some((day) => state.open.has(paneKey(day.date_raw, "down")))
-    );
-  }
-
-  const FOLD_KEY = "steep-row-fold";
 
   function loadFold() {
     try {
@@ -455,77 +474,104 @@
     state.collapsed[kind] = !state.collapsed[kind];
     applyRowFold();
     saveFold();
+    if (state.view === "cards") {
+      syncCardGeometry();
+      requestAnimationFrame(mountOpenKlines);
+    }
+  }
+
+  function dateListFooter() {
+    if (state.loadingMore) {
+      return `<p class="steep-dates-foot muted" aria-live="polite">加载更早交易日…</p>`;
+    }
+    if (!state.hasMore && state.items.length) {
+      return `<p class="steep-dates-foot muted">东财约保留近 ${MAX_DAYS} 个交易日</p>`;
+    }
+    if (state.hasMore && state.items.length) {
+      return `<p class="steep-dates-foot muted">下滑加载更早</p>`;
+    }
+    return "";
+  }
+
+  function renderDateList() {
+    const list = $("dateList");
+    if (!list) return;
+    const keepTop = list.scrollTop;
+    if (!state.items.length) {
+      list.innerHTML = `<p class="steep-dates-empty muted">暂无交易日</p>`;
+      return;
+    }
+    list.innerHTML =
+      state.items
+        .map((day) => {
+          const active = day.date_raw === state.selectedDate;
+          return `<button type="button" class="steep-date-item${active ? " is-active" : ""}" role="option" aria-selected="${active ? "true" : "false"}" data-date="${day.date_raw}">
+          <span class="steep-date-when">
+            <b>${fmtMd(day.date)}</b>
+            <em>${weekday(day.date)}</em>
+          </span>
+          <span class="steep-date-counts">
+            <span data-tone="up">${day.limit_up_count || 0}</span>
+            <span data-tone="down">${day.limit_down_count || 0}</span>
+          </span>
+        </button>`;
+        })
+        .join("") + dateListFooter();
+    list.scrollTop = keepTop;
+    if (state.pinDateScroll) {
+      state.pinDateScroll = false;
+      const activeBtn = list.querySelector(".steep-date-item.is-active");
+      if (activeBtn) {
+        const box = list.getBoundingClientRect();
+        const btn = activeBtn.getBoundingClientRect();
+        if (btn.top < box.top || btn.bottom > box.bottom) {
+          activeBtn.scrollIntoView({ block: "nearest" });
+        }
+      }
+    }
+    requestAnimationFrame(maybeFillDates);
   }
 
   function captureCardScrolls() {
     const map = new Map();
-    document.querySelectorAll(".steep-day .steep-stock-cards").forEach((el) => {
-      const day = el.closest(".steep-day");
-      if (!day?.dataset.date || !day.dataset.kind) return;
-      map.set(paneKey(day.dataset.date, day.dataset.kind), el.scrollLeft);
-    });
+    for (const kind of ["up", "down"]) {
+      const el = $(`${kind}Body`)?.querySelector(".steep-stock-cards");
+      if (el) map.set(kind, el.scrollLeft);
+    }
     return map;
   }
 
   function restoreCardScrolls(map) {
     if (!map?.size) return;
-    document.querySelectorAll(".steep-day .steep-stock-cards").forEach((el) => {
-      const day = el.closest(".steep-day");
-      if (!day?.dataset.date || !day.dataset.kind) return;
-      const key = paneKey(day.dataset.date, day.dataset.kind);
-      if (!map.has(key)) return;
-      el.scrollLeft = map.get(key);
-    });
+    for (const [kind, left] of map) {
+      const el = $(`${kind}Body`)?.querySelector(".steep-stock-cards");
+      if (el) el.scrollLeft = left;
+    }
   }
 
-  function renderTracks() {
-    const left = Math.max($("upScroll").scrollLeft || 0, $("downScroll").scrollLeft || 0);
+  function renderDayPanel() {
+    const day = selectedDay();
     const cardScrolls = captureCardScrolls();
-    $("upTrack").innerHTML = state.items.map((day) => dayCard(day, "up")).join("");
-    $("downTrack").innerHTML = state.items.map((day) => dayCard(day, "down")).join("");
-    const restoreScroll = () => {
-      $("upScroll").scrollLeft = left;
-      $("downScroll").scrollLeft = left;
-      restoreCardScrolls(cardScrolls);
-    };
-    restoreScroll();
-    markRowOpen();
+    $("upBody").innerHTML = dayBody(day, "up");
+    $("downBody").innerHTML = dayBody(day, "down");
+    restoreCardScrolls(cardScrolls);
     requestAnimationFrame(() => {
-      restoreScroll();
+      restoreCardScrolls(cardScrolls);
       mountOpenKlines();
-      // 等容器查询 / 展开卡宽度算完后再写一次，避免被布局夹回 0
-      requestAnimationFrame(restoreScroll);
     });
   }
 
   function render() {
-    renderRange();
+    ensureSelectedDate();
     renderSort();
     renderViewSeg();
     renderSummary();
-    renderTracks();
+    renderDateList();
+    renderDayPanel();
     applyRowFold();
     startLiveQuotesPoll();
-    // render 后用已有实时数据刷新 DOM（下一帧等卡片渲染好）
     if (Object.keys(state.liveQuotes || {}).length > 0) {
       requestAnimationFrame(() => patchLiveQuotes());
-    }
-  }
-
-  function togglePane(dateRaw, kind) {
-    const key = paneKey(dateRaw, kind);
-    if (state.open.has(key)) state.open.delete(key);
-    else state.open.add(key);
-    render();
-    if (state.open.has(key)) {
-      const scroll = $(kind === "up" ? "upScroll" : "downScroll");
-      if (scroll) scroll.scrollLeft = 0;
-      const card = document.querySelector(`.steep-day[data-date="${dateRaw}"][data-kind="${kind}"]`);
-      card?.scrollIntoView({ inline: "start", block: "nearest" });
-      // 展开后立即用已有实时数据刷新 DOM（下一帧等卡片渲染好）
-      if (Object.keys(state.liveQuotes || {}).length > 0) {
-        requestAnimationFrame(() => patchLiveQuotes());
-      }
     }
   }
 
@@ -540,22 +586,127 @@
     render();
   }
 
-  function setDays(days) {
-    const value = Number(days);
-    if (!DAY_OPTIONS.includes(value) || value === state.days) return;
-    state.days = value;
-    state.open = new Set();
-    renderRange();
-    void load();
+  function updateHasMore(prevCount, items) {
+    const nextCount = (items || []).length;
+    if (state.days >= MAX_DAYS || nextCount <= prevCount) {
+      state.hasMore = false;
+      return;
+    }
+    // 新拉到的更早交易日若涨跌停都是 0，多半已超出东财历史窗口
+    const newer = (items || []).slice(prevCount);
+    if (newer.length && newer.every((day) => !(day.limit_up_count || 0) && !(day.limit_down_count || 0))) {
+      state.hasMore = false;
+      return;
+    }
+    state.hasMore = true;
   }
 
-  function pruneOpen() {
-    const valid = new Set();
-    for (const day of state.items) {
-      valid.add(paneKey(day.date_raw, "up"));
-      valid.add(paneKey(day.date_raw, "down"));
+  function dayNeedsDetail(day) {
+    if (!day) return false;
+    const upN = day.limit_up_count || 0;
+    const downN = day.limit_down_count || 0;
+    const upLen = (day.limit_up || []).length;
+    const downLen = (day.limit_down || []).length;
+    return (upN > 0 && upLen === 0) || (downN > 0 && downLen === 0);
+  }
+
+  async function ensureDayDetail(dateRaw) {
+    const raw = String(dateRaw || "").replace(/-/g, "").slice(0, 8);
+    if (!raw || state.dayFetching === raw) return;
+    const day = state.items.find((item) => item.date_raw === raw);
+    if (!dayNeedsDetail(day)) return;
+    state.dayFetching = raw;
+    try {
+      const path = `/api/market/steep/day?date=${encodeURIComponent(raw)}`;
+      const json = window.OrbitHttp
+        ? await OrbitHttp.get(path, { bypassCache: true, writeCache: true })
+        : await fetch(path, { cache: "no-store" }).then((r) => r.json());
+      if (!json?.ok || !json.data) return;
+      const detail = json.data;
+      const idx = state.items.findIndex((item) => item.date_raw === raw);
+      if (idx < 0) return;
+      state.items[idx] = {
+        ...state.items[idx],
+        ...detail,
+        limit_up: detail.limit_up || [],
+        limit_down: detail.limit_down || [],
+        limit_up_count: detail.limit_up_count ?? (detail.limit_up || []).length,
+        limit_down_count: detail.limit_down_count ?? (detail.limit_down || []).length,
+      };
+      state.itemsSig = steepItemsSig(state.items);
+      if (state.selectedDate === raw) {
+        renderSummary();
+        renderDayPanel();
+        renderDateList();
+        if (Object.keys(state.liveQuotes || {}).length > 0) {
+          requestAnimationFrame(() => patchLiveQuotes());
+        }
+      }
+    } catch (err) {
+      console.warn("[steep] 补拉单日名单失败", err);
+    } finally {
+      if (state.dayFetching === raw) state.dayFetching = "";
     }
-    state.open = new Set([...state.open].filter((key) => valid.has(key)));
+  }
+
+  async function loadMore() {
+    if (state.loadingMore || state.fetching || !state.hasMore) return;
+    if (state.days >= MAX_DAYS) {
+      state.hasMore = false;
+      renderDateList();
+      return;
+    }
+    const nextDays = Math.min(MAX_DAYS, state.days + STEP_DAYS);
+    if (nextDays <= state.days) {
+      state.hasMore = false;
+      renderDateList();
+      return;
+    }
+    const prevDays = state.days;
+    const prevCount = state.items.length;
+    state.loadingMore = true;
+    state.days = nextDays;
+    renderDateList();
+    try {
+      const json = await fetchSteep({ bypassCache: true });
+      const items = json?.data?.items || [];
+      const newer = items.slice(prevCount);
+      const newerAllEmpty =
+        newer.length > 0 &&
+        newer.every((day) => !(day.limit_up_count || 0) && !(day.limit_down_count || 0));
+      if (newerAllEmpty) {
+        // 超出东财历史窗口：不追加空日期
+        state.days = prevDays;
+        state.hasMore = false;
+      } else {
+        updateHasMore(prevCount, items);
+        applyPayload(json.data || {});
+      }
+    } catch (err) {
+      console.warn("[steep] 加载更早交易日失败", err);
+      state.days = prevDays;
+    } finally {
+      state.loadingMore = false;
+      renderDateList();
+      if (state.pendingLoad) {
+        const next = state.pendingLoad;
+        state.pendingLoad = null;
+        void load(next);
+      }
+    }
+  }
+
+  function onDateListScroll() {
+    const list = $("dateList");
+    if (!list || state.loadingMore || !state.hasMore) return;
+    const remain = list.scrollHeight - list.scrollTop - list.clientHeight;
+    if (remain <= 48) void loadMore();
+  }
+
+  function maybeFillDates() {
+    const list = $("dateList");
+    if (!list || state.loadingMore || state.fetching || !state.hasMore) return;
+    if (list.scrollHeight <= list.clientHeight + 8) void loadMore();
   }
 
   function steepPath({ refresh = false, lite = false } = {}) {
@@ -597,17 +748,29 @@
       const nextFull = items.reduce((n, day) => n + (day.limit_up || []).length + (day.limit_down || []).length, 0);
       if (nextFull < currentFull) return;
     }
+    const prevCount = state.items.length;
     const nextSig = steepItemsSig(items);
     const sameList = nextSig === state.itemsSig && state.items.length > 0;
     state.items = items;
     state.itemsSig = nextSig;
     state.updatedAt = data.updated_at || "";
-    pruneOpen();
+    if (typeof data.days === "number" && data.days > state.days) {
+      state.days = data.days;
+    }
+    // hasMore：首屏开启；触底加载由 loadMore 判定；静默刷新不改
+    if (state.days >= MAX_DAYS) {
+      state.hasMore = false;
+    } else if (!state.loadingMore && prevCount === 0) {
+      state.hasMore = items.length > 0;
+    }
+    ensureSelectedDate();
     if (sameList) {
       renderSummary();
+      renderDateList();
     } else {
       render();
     }
+    void ensureDayDetail(state.selectedDate);
     window.OrbitPrefetch?.intent({ stocks: visibleSteepStocks() });
     const errs = data.errors || [];
     if (errs.length) {
@@ -634,6 +797,10 @@
   }
 
   async function load({ silent = false, refresh = false } = {}) {
+    if (state.loadingMore) {
+      state.pendingLoad = { silent, refresh };
+      return;
+    }
     if (state.fetching) {
       state.pendingLoad = { silent, refresh };
       return;
@@ -685,26 +852,29 @@
     }, POLL_MS);
   }
 
-  function bindScroll() {
-    const up = $("upScroll");
-    const down = $("downScroll");
-    const follow = (from, to) => {
-      from.addEventListener("scroll", () => {
-        if (state.syncing) return;
-        state.syncing = true;
-        to.scrollLeft = from.scrollLeft;
-        state.syncing = false;
+  function onPaneClick(ev) {
+    if (ev.target.closest(".screen-card-head")) return;
+    if (ev.target.closest(".chart-card")) return;
+    if (ev.target.closest("[data-add-group]")) return;
+    const stock = ev.target.closest(".is-stock[data-code]");
+    if (stock) {
+      window.location.href = stockHref({
+        code: stock.dataset.code,
+        l3_code: stock.dataset.industry,
       });
-    };
-    follow(up, down);
-    follow(down, up);
+    }
   }
 
   function bind() {
-    $("upTrack").addEventListener("click", onTrackClick);
-    $("downTrack").addEventListener("click", onTrackClick);
-    window.OrbitMineAdd?.bindRoot($("upTrack"));
-    window.OrbitMineAdd?.bindRoot($("downTrack"));
+    $("dateList").addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-date]");
+      if (btn) setSelectedDate(btn.dataset.date);
+    });
+    $("dateList").addEventListener("scroll", onDateListScroll, { passive: true });
+    $("upBody").addEventListener("click", onPaneClick);
+    $("downBody").addEventListener("click", onPaneClick);
+    window.OrbitMineAdd?.bindRoot($("upBody"));
+    window.OrbitMineAdd?.bindRoot($("downBody"));
     $("viewSeg")?.addEventListener("click", (ev) => {
       const btn = ev.target.closest("button[data-view]");
       if (btn) setView(btn.dataset.view);
@@ -712,10 +882,6 @@
     $("sortSeg").addEventListener("click", (ev) => {
       const btn = ev.target.closest("button[data-sort]");
       if (btn) setSort(btn.dataset.sort);
-    });
-    $("rangeSeg").addEventListener("click", (ev) => {
-      const btn = ev.target.closest("button[data-days]");
-      if (btn) setDays(btn.dataset.days);
     });
     $("upRow").querySelector(".steep-matrix-label")?.addEventListener("click", () => toggleRow("up"));
     $("downRow").querySelector(".steep-matrix-label")?.addEventListener("click", () => toggleRow("down"));
@@ -727,52 +893,28 @@
       syncCardGeometry();
       if (state.view === "cards") requestAnimationFrame(mountOpenKlines);
     });
-    bindScroll();
   }
 
   function visibleSteepStocks() {
-    const first = state.items[0] || {};
-    return [...(first.limit_up || []), ...(first.limit_down || [])].slice(0, 6);
+    const day = selectedDay() || state.items[0] || {};
+    return [...(day.limit_up || []), ...(day.limit_down || [])].slice(0, 6);
   }
 
-  function onTrackClick(ev) {
-    if (ev.target.closest(".screen-card-head")) return;
-    if (ev.target.closest(".chart-card")) return;
-    if (ev.target.closest("[data-add-group]")) return;
-    const stock = ev.target.closest(".is-stock[data-code]");
-    if (stock) {
-      window.location.href = stockHref({
-        code: stock.dataset.code,
-        l3_code: stock.dataset.industry,
-      });
-      return;
-    }
-    const head = ev.target.closest(".steep-day-head");
-    if (head) togglePane(head.dataset.date, head.dataset.kind);
-  }
-
-  function stopLiveQuotesPoll() {
-    if (state.liveQuoteTimer) {
-      clearTimeout(state.liveQuoteTimer);
-      state.liveQuoteTimer = 0;
-    }
-  }
-
-  function getAllCodes() {
+  function getSelectedCodes() {
+    const day = selectedDay();
+    if (!day) return [];
     const codes = new Set();
-    for (const day of state.items) {
-      for (const row of day.limit_up || []) {
-        if (row.code) codes.add(row.code);
-      }
-      for (const row of day.limit_down || []) {
-        if (row.code) codes.add(row.code);
-      }
+    for (const row of day.limit_up || []) {
+      if (row.code) codes.add(row.code);
+    }
+    for (const row of day.limit_down || []) {
+      if (row.code) codes.add(row.code);
     }
     return [...codes];
   }
 
   async function fetchLiveQuotes() {
-    const codes = getAllCodes();
+    const codes = getSelectedCodes();
     if (!codes.length) {
       state.liveQuoteTimer = setTimeout(fetchLiveQuotes, LIVE_POLL_MS);
       return;
@@ -787,15 +929,12 @@
     } catch (err) {
       console.warn("[steep] 实时行情获取失败", err);
     }
-    // 继续轮询
     state.liveQuoteTimer = setTimeout(fetchLiveQuotes, LIVE_POLL_MS);
   }
 
   function patchLiveQuotes() {
-    // 更新卡片视图中的实时数据
-    const upTrack = $("upTrack");
-    const downTrack = $("downTrack");
-    for (const track of [upTrack, downTrack]) {
+    for (const bodyId of ["upBody", "downBody"]) {
+      const track = $(bodyId);
       if (!track) continue;
       track.querySelectorAll("article.is-stock[data-code]").forEach((card) => {
         const code = card.dataset.code;
@@ -803,15 +942,12 @@
         if (!quote) return;
         const scoreDiv = card.querySelector(".screen-card-score");
         if (!scoreDiv) return;
-        // 更新价格
         const priceEl = scoreDiv.querySelector("span:last-child");
         if (priceEl && quote.price) {
           priceEl.textContent = quote.price;
         }
-        // 更新涨跌幅（API 返回的 change_pct 已是 "10.00%" 格式字符串）
         const chgEl = scoreDiv.querySelector("b[data-tone]");
         if (chgEl && quote.change_pct) {
-          // 从 "10.00%" 格式中提取数值用于计算 tone
           const n = parseFloat(quote.change_pct);
           chgEl.textContent = quote.change_pct;
           chgEl.dataset.tone = !Number.isFinite(n) || n === 0 ? "flat" : n > 0 ? "up" : "down";
@@ -821,7 +957,6 @@
   }
 
   function startLiveQuotesPoll() {
-    // 只启动一次，避免被 render() 反复重置 2 秒延迟
     if (state.liveQuoteStarted) return;
     state.liveQuoteStarted = true;
     state.liveQuoteTimer = setTimeout(fetchLiveQuotes, 2000);
@@ -833,8 +968,8 @@
   syncCardGeometry();
   renderViewSeg();
   bind();
-  window.OrbitPrefetch?.bindHover($("upTrack"), ".is-stock[data-code]");
-  window.OrbitPrefetch?.bindHover($("downTrack"), ".is-stock[data-code]");
+  window.OrbitPrefetch?.bindHover($("upBody"), ".is-stock[data-code]");
+  window.OrbitPrefetch?.bindHover($("downBody"), ".is-stock[data-code]");
   window.OrbitPrefetch?.boot("steep");
   void load().then(() => {
     startPoll();

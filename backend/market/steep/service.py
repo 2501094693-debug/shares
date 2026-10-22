@@ -25,6 +25,7 @@ _RECENT_TTL = 30
 _SW_MAP_TTL = 600
 _CACHE_VERSION = 1
 _MIN_DAYS = 1
+# 东财涨停/跌停池历史大约只保留近 30 个交易日，再早接口返回空池
 _MAX_DAYS = 30
 DEFAULT_DAYS = 15
 MAX_DAYS = _MAX_DAYS

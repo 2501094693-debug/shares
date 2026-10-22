@@ -64,8 +64,12 @@ def to_markdown(pack: dict[str, Any]) -> str:
                         lines.append(f"{i}. [{title}]({url})")
                     else:
                         lines.append(f"{i}. {title}")
+                    terms_hit = e.get("matched_terms") or []
+                    hit_txt = ""
+                    if terms_hit:
+                        hit_txt = f" | 命中：{'、'.join(terms_hit)}"
                     lines.append(
-                        f"   - 时间：{e.get('published_at') or '-'} | 分类：{e.get('category_cn') or '-'}"
+                        f"   - 时间：{e.get('published_at') or '-'} | 分类：{e.get('category_cn') or '-'}{hit_txt}"
                     )
                     lines.append("")
 

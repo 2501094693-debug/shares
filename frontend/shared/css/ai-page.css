@@ -870,6 +870,16 @@ body.app-shell.ai-page-root .ai-page {
   color: #7ed8c8;
 }
 
+.risk-nav-stat {
+  align-self: center;
+  margin-left: 2px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 .risk-dim-list {
   display: flex;
   flex-direction: column;
@@ -995,8 +1005,23 @@ body.app-shell.ai-page-root .ai-page {
   max-height: none;
 }
 
+/* 自适应列宽：关键词列要放得下整串检索词 */
+.risk-sm-table {
+  table-layout: auto;
+}
+
+.risk-sm-table thead th:nth-child(2) {
+  width: 16%;
+}
+
+.risk-sm-table thead th:nth-child(5) {
+  width: 34%;
+  min-width: 240px;
+}
+
 .risk-sm-table .risk-sm-sym {
   font-family: var(--mono);
+  font-size: 0.72rem;
   font-weight: 600;
   color: #7ed8c8;
   white-space: nowrap;
@@ -1005,8 +1030,12 @@ body.app-shell.ai-page-root .ai-page {
 .risk-sm-table .risk-sm-kw {
   max-width: 320px;
   word-break: break-word;
-  font-size: 0.78rem;
-  line-height: 1.4;
+  /* 关键词表可能很长（如资质/采购资格一维），换行全量展示，不要单行省略 */
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .risk-sm-plain {
@@ -1022,7 +1051,7 @@ body.app-shell.ai-page-root .ai-page {
   grid-template-columns: repeat(var(--risk-cols), minmax(0, 1fr));
   gap: 10px;
   margin-top: 8px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .risk-result-group {
@@ -1043,27 +1072,46 @@ body.app-shell.ai-page-root .ai-page {
 
 .risk-result-group-head {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 6px 8px;
-  align-items: start;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  align-items: center;
   padding: 8px 10px;
   border-bottom: 1px solid rgba(70, 210, 190, 0.08);
   background: rgba(70, 210, 190, 0.04);
 }
 
+.risk-result-group-head .risk-sm-sym {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 1px 7px;
+  border: 1px solid rgba(70, 210, 190, 0.28);
+  border-radius: 999px;
+  background: rgba(70, 210, 190, 0.1);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #7ed8c8;
+  white-space: nowrap;
+}
+
 .risk-result-group-name {
+  min-width: 0;
   font-size: 0.8rem;
   font-weight: 600;
-  line-height: 1.35;
-  word-break: break-word;
+  line-height: 1.4;
+  color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .risk-result-group-count {
   font-family: var(--mono);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
+  line-height: 1.5;
   color: var(--muted);
   white-space: nowrap;
-  padding-top: 1px;
 }
 
 .risk-result-group-body {
@@ -1159,6 +1207,12 @@ a.risk-ev-title:hover {
 .risk-stats-wrap {
   max-height: 220px;
   margin-top: 8px;
+}
+
+/* 检索方式表不裁切行，整表展开 */
+.risk-stats-wrap.risk-sm-table-wrap {
+  max-height: none;
+  margin-top: 0;
 }
 
 .risk-stats-table td.num {

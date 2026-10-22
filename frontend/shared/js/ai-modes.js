@@ -270,7 +270,7 @@ window.AI_MODES = {
           <li>监管与合规 · 治理与内控 · 股本与控制权</li>
           <li>资本运作与债务 · 披露质量 · 存续性 · 经营与沟通</li>
           <li>同一维度内按 Q1 / Q2 / … 分组列出命中公告</li>
-          <li>数据源：巨潮资讯 · fetch_announcements</li>
+          <li>数据源：巨潮资讯（非定期公告）</li>
         </ul>
       </div>`,
     resultTitle(result) {
@@ -279,8 +279,11 @@ window.AI_MODES = {
     },
     resultMeta(result) {
       const s = result.summary || {};
+      const source = String(result.source_label || result.source || "")
+        .replace(/\s*·\s*仅用\s*fetch_announcements/gi, "")
+        .trim();
       return [
-        result.source_label || result.source || "",
+        source,
         Number.isFinite(Number(s.hit_dimensions))
           ? `命中维 ${s.hit_dimensions}/${s.dimension_count || 7}`
           : "",

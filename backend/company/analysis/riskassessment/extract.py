@@ -1,8 +1,14 @@
-"""按七维调用 fetch_announcements，并按子查询分组整理结果。"""
+"""按七维调用 fetch_announcements，并按子查询分组整理结果。
+
+巨潮 ``searchkey`` 只做标题短语匹配，不认 ``|`` 或运算：
+``"董事会|股东大会"`` 会被当成整串短语，返回 0 条。
+因此关键词查询改为「按窗口拉一次公告全集 → 客户端做标题 OR 匹配」，
+同一窗口（tab + 分类 + 天数）只拉一次，多条子查询共享。
+"""
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Sequence
 
 from company.news.official.cninfo.fetch import fetch_announcements
 
@@ -15,9 +21,22 @@ from .taxonomy import (
     get_dimensions,
     get_enabled_queries,
     get_query_map,
+    keyword_terms,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def match_title_terms(title: str, terms: Sequence[str]) -> list[str]:
+    """标题命中的关键词（命中任一即可，忽略大小写）。"""
+    text = (title or "").casefold()
+    if not text:
+        return []
+    hit: list[str] = []
+    for term in terms:
+        if term and term.casefold() in text:
+            hit.append(term)
+    return hit
 
 
 def _matched_by(q: RiskQuery) -> str:
@@ -35,10 +54,35 @@ def _matched_by(q: RiskQuery) -> str:
 class CninfoRiskExtractor:
     def __init__(self, code: str) -> None:
         self.code = code.strip()
+        self._windows: dict[tuple[str, int, tuple[str, ...]], dict[str, Any] | Exception] = {}
+
+    def _window(self, q: RiskQuery) -> dict[str, Any]:
+        """按 (通道, 窗口, 分类) 取公告全集；同窗口只请求一次。"""
+        tab = (q.tab or "fulltext").strip() or "fulltext"
+        cats = tuple(q.category or ())
+        days = int(q.days)
+        key = (tab, days, cats)
+        cached = self._windows.get(key)
+        if cached is None:
+            try:
+                cached = fetch_announcements(
+                    self.code,
+                    tab=tab,
+                    category=list(cats) or None,
+                    days=days,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._windows[key] = exc
+                raise
+            self._windows[key] = cached
+        if isinstance(cached, Exception):
+            raise cached
+        return cached
 
     def _run_query(self, q: RiskQuery) -> dict[str, Any]:
         """执行单条查询，返回 query 元数据 + 原始命中。"""
         clause = build_clause(q)
+        terms = keyword_terms(q.keyword)
         meta: dict[str, Any] = {
             "qid": q.qid,
             "title": q.title,
@@ -60,21 +104,13 @@ class CninfoRiskExtractor:
             "error": "",
         }
         try:
-            res = fetch_announcements(
-                self.code,
-                tab=q.tab or "fulltext",
-                category=q.category,
-                keyword=q.keyword or "",
-                days=q.days,
-            )
+            res = self._window(q)
         except Exception as exc:  # noqa: BLE001
             logger.warning("riskassessment query failed qid=%s code=%s: %s", q.qid, self.code, exc)
             meta["error"] = str(exc)
             return {"meta": meta, "hits": [], "name": "", "org_id": ""}
 
         items = res.get("items") or []
-        meta["ok"] = True
-        meta["raw_count"] = len(items)
         code_res = res.get("code") or self.code
         name_res = res.get("name") or ""
         org_res = res.get("org_id") or ""
@@ -82,6 +118,9 @@ class CninfoRiskExtractor:
 
         hits: list[dict[str, Any]] = []
         for item in items:
+            hit_terms = match_title_terms(item.get("title") or "", terms)
+            if terms and not hit_terms:
+                continue
             ev = build_event(
                 code=code_res,
                 name=name_res,
@@ -92,11 +131,16 @@ class CninfoRiskExtractor:
                 query_id=q.qid,
                 query_title=q.title,
                 matched_by=matched_by,
+                matched_terms=hit_terms,
             )
             d = ev.to_dict()
             d.pop("raw", None)
             hits.append(d)
 
+        meta["ok"] = not res.get("error")
+        meta["raw_count"] = len(hits)
+        if res.get("error"):
+            meta["error"] = str(res.get("error"))
         return {"meta": meta, "hits": hits, "name": name_res, "org_id": org_res}
 
     def run_dimensions(self, dimensions: list[RiskDimension] | None = None) -> dict[str, Any]:

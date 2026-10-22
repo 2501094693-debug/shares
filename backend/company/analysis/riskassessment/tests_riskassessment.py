@@ -9,7 +9,9 @@ from company.analysis.riskassessment import (
     get_query_map,
     risk_scan_cninfo_only_fetch,
 )
+from company.analysis.riskassessment.extract import match_title_terms
 from company.analysis.riskassessment.search_method import build_search_method
+from company.analysis.riskassessment.taxonomy import A4_KEYWORD, keyword_terms
 
 
 def test_queries_exist() -> None:
@@ -63,3 +65,55 @@ def test_api_shape() -> None:
     assert "groups" in dim
     assert isinstance(dim["groups"], list)
     assert len(dim["groups"]) == len(dim.get("queries") or [])
+
+
+def test_qualification_keyword_is_exactly_the_agreed_list() -> None:
+    """第四问：只保留约定的 24 个词，扁平匹配，不做分类。"""
+    terms = keyword_terms(A4_KEYWORD)
+    assert terms == [
+        "吊销",
+        "撤销",
+        "收回",
+        "注销",
+        "中止",
+        "暂停",
+        "取消",
+        "降级",
+        "列入",
+        "纳入",
+        "列为",
+        "限制",
+        "禁止",
+        "不得",
+        "暂不",
+        "失信",
+        "资质",
+        "证书",
+        "许可证",
+        "经营许可",
+        "认证",
+        "准入",
+        "经营资格",
+        "采购资格",
+    ]
+    q = get_query_map()["A4_QUALIFICATION"]
+    assert q.keyword == A4_KEYWORD
+    assert not hasattr(q, "keyword_rules")
+    # 不留被字形式
+    assert [t for t in terms if t.startswith("被")] == []
+
+
+def test_keyword_matching_is_or() -> None:
+    """巨潮 searchkey 不认 | ，或运算必须在客户端做。"""
+    terms = keyword_terms("资质|吊销|撤销")
+    assert match_title_terms("关于收到吊销经营资质通知的公告", terms) == ["资质", "吊销"]
+    assert match_title_terms("关于撤销部分资产的公告", terms) == ["撤销"]
+    assert match_title_terms("关于召开董事会的公告", terms) == []
+
+
+def test_qualification_hits_report_matched_terms() -> None:
+    """命中项要能看出是哪个词命中的。"""
+    terms = keyword_terms(A4_KEYWORD)
+    hit = match_title_terms("关于公司经营许可被吊销的公告", terms)
+    assert "吊销" in hit
+    assert "经营许可" in hit

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=mine-add-create-20260930" />
+  <link rel="stylesheet" href="/css/style.css?v=steep-infinite-20261022" />
 </head>
 <body class="app-shell company-page-root market-page-root steep-page-root" data-nav="steep">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
@@ -18,7 +18,7 @@
         <div class="brand">
           <div>
             <h1>涨跌停</h1>
-            <p class="company-page-sub">多日并排：点左侧可折叠涨停或跌停，另一排铺满；点日期展开名单，其余日期收起</p>
+            <p class="company-page-sub">左侧选交易日，下滑加载更早（东财约保留近 30 个交易日）；右侧看当日涨停 / 跌停</p>
           </div>
         </div>
         <div class="top-actions">
@@ -37,10 +37,6 @@
             <button type="button" data-sort="board">连板</button>
             <button type="button" data-sort="l1">一级</button>
           </div>
-          <div id="rangeSeg" class="market-seg steep-range" role="group" aria-label="天数">
-            <button type="button" data-days="15">15日</button>
-            <button type="button" data-days="30">30日</button>
-          </div>
           <span id="liveDot" class="market-live" data-state="idle">LIVE</span>
           <span id="marketMeta" class="muted market-meta"></span>
         </div>
@@ -49,25 +45,28 @@
       <div id="errorBox" class="error hidden"></div>
       <div id="loading" class="loading hidden">正在加载…</div>
 
-      <div class="steep-matrix" data-view="list">
-        <section class="steep-matrix-row" data-kind="up" id="upRow">
-          <button type="button" class="steep-matrix-label" data-tone="up" data-kind="up" aria-expanded="true" title="折叠涨停">
-            <span>涨停</span>
-            <span class="steep-row-caret" aria-hidden="true">▾</span>
-          </button>
-          <div class="steep-matrix-scroll" id="upScroll">
-            <div class="steep-matrix-track" id="upTrack"></div>
-          </div>
-        </section>
-        <section class="steep-matrix-row" data-kind="down" id="downRow">
-          <button type="button" class="steep-matrix-label" data-tone="down" data-kind="down" aria-expanded="true" title="折叠跌停">
-            <span>跌停</span>
-            <span class="steep-row-caret" aria-hidden="true">▾</span>
-          </button>
-          <div class="steep-matrix-scroll" id="downScroll">
-            <div class="steep-matrix-track" id="downTrack"></div>
-          </div>
-        </section>
+      <div class="steep-board">
+        <aside class="steep-dates" aria-label="交易日列表">
+          <div class="steep-dates-head">交易日</div>
+          <div class="steep-dates-scroll" id="dateList" role="listbox" aria-label="选择交易日"></div>
+        </aside>
+
+        <div class="steep-day-panel" data-view="list" id="dayPanel">
+          <section class="steep-matrix-row" data-kind="up" id="upRow">
+            <button type="button" class="steep-matrix-label" data-tone="up" data-kind="up" aria-expanded="true" title="折叠涨停">
+              <span>涨停</span>
+              <span class="steep-row-caret" aria-hidden="true">▾</span>
+            </button>
+            <div class="steep-pane-scroll" id="upBody"></div>
+          </section>
+          <section class="steep-matrix-row" data-kind="down" id="downRow">
+            <button type="button" class="steep-matrix-label" data-tone="down" data-kind="down" aria-expanded="true" title="折叠跌停">
+              <span>跌停</span>
+              <span class="steep-row-caret" aria-hidden="true">▾</span>
+            </button>
+            <div class="steep-pane-scroll" id="downBody"></div>
+          </section>
+        </div>
       </div>
     </div>
   </div>
@@ -76,6 +75,6 @@
   <script src="/js/shared/nav.js?v=nav-industry-20261001"></script>
   <script src="/js/shared/kline-draw.js?v=screen-20260909-kpan"></script>
   <script src="/js/shared/mine-add-group.js?v=mine-add-create-20260930"></script>
-  <script src="/js/steep.js?v=mine-add-create-20260930"></script>
+  <script src="/js/steep.js?v=steep-em-window-20261023"></script>
 </body>
 </html>

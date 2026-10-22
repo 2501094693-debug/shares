@@ -1724,33 +1724,20 @@
     return `<ul class="risk-prose-list">${parts.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>`;
   }
 
-  function riskHeroHtml(pack) {
-    const s = pack.summary || {};
-    const chips = [
-      `<span class="peers-hero-chip is-accent">七维</span>`,
-      `<span class="peers-hero-chip">有命中 ${esc(String(s.hit_dimensions ?? 0))}/${esc(String(s.dimension_count ?? 7))}</span>`,
-      `<span class="peers-hero-chip">去重后 ${esc(String(s.total_items ?? 0))}</span>`,
-      Number.isFinite(Number(s.total_items_raw))
-        ? `<span class="peers-hero-chip">原始 ${esc(String(s.total_items_raw))}</span>`
-        : "",
-    ].filter(Boolean).join("");
-    return `<header class="peers-hero risk-hero">
-      <div class="peers-hero-copy">
-        <p class="peers-eyebrow">巨潮非定期公告 · 按维检索</p>
-        <h3 class="peers-hero-title">七维风险排查</h3>
-        <p class="peers-hero-path">${esc(pack.source_label || pack.source || "巨潮资讯")}</p>
-      </div>
-      <div class="peers-hero-chips">${chips}</div>
-    </header>`;
-  }
-
-  function riskNavHtml(dimensions) {
+  function riskNavHtml(dimensions, summary) {
     if (!dimensions.length) return "";
     const links = dimensions.map((d) => {
       const n = Number(d.count) || 0;
       return `<button type="button" class="risk-nav-link${n ? "" : " is-empty"}" data-risk-dim="${esc(d.key)}">${esc(String(d.no))}. ${esc(d.name)} <i>${esc(String(n))}</i></button>`;
     }).join("");
-    return `<nav class="risk-nav" aria-label="七维导航">${links}</nav>`;
+    const s = summary || {};
+    const stat = [];
+    if (s.hit_dimensions !== undefined && s.dimension_count !== undefined) {
+      stat.push(`有命中 ${esc(String(s.hit_dimensions))}/${esc(String(s.dimension_count))}`);
+    }
+    if (s.total_items !== undefined) stat.push(`去重后 ${esc(String(s.total_items))}`);
+    const statHtml = stat.length ? `<span class="risk-nav-stat">${stat.join(" · ")}</span>` : "";
+    return `<nav class="risk-nav" aria-label="七维导航">${links}${statHtml}</nav>`;
   }
 
   function riskItemRow(item, index) {
@@ -1758,7 +1745,12 @@
     const titleHtml = item.url
       ? `<a class="risk-ev-title" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(title)}</a>`
       : `<span class="risk-ev-title">${esc(title)}</span>`;
-    const meta = [item.published_at || "", item.category_cn || ""].filter(Boolean).join(" · ");
+    const metaParts = [item.published_at || "", item.category_cn || ""].filter(Boolean);
+    const hitTerms = Array.isArray(item.matched_terms) ? item.matched_terms : [];
+    if (hitTerms.length) {
+      metaParts.push(`命中 ${hitTerms.join("、")}`);
+    }
+    const meta = metaParts.join(" · ");
     return `<li class="risk-ev">
       <span class="risk-ev-idx">${esc(String(index))}</span>
       <div class="risk-ev-main">
@@ -1885,7 +1877,7 @@
       return `<div class="engine-hero"><p class="engine-type">风险评估</p><p class="muted">未取到七维结果</p></div>`;
     }
     const cards = pack.dimensions.map((d) => riskDimensionCard(d)).join("");
-    return `${riskHeroHtml(pack)}${riskNavHtml(pack.dimensions)}<div class="risk-dim-list">${cards}</div>`;
+    return `${riskNavHtml(pack.dimensions, pack.summary)}<div class="risk-dim-list">${cards}</div>`;
   }
 
   function zhangParamsHtml(pack) {

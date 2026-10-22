@@ -25,6 +25,7 @@ class RiskEvent:
     query_id: str
     query_title: str
     matched_by: str  # category/keyword/tab
+    matched_terms: list[str]
     dedup_key: str
     raw: dict[str, Any]
 
@@ -51,6 +52,7 @@ def build_event(
     query_id: str,
     query_title: str,
     matched_by: str,
+    matched_terms: list[str] | None = None,
 ) -> RiskEvent:
     aid = str(item.get("announcement_id") or "").strip()
     event_id = f"{code}:{aid}" if aid else f"{code}:{_dedup_key(item)}"
@@ -71,6 +73,7 @@ def build_event(
         query_id=query_id,
         query_title=query_title,
         matched_by=matched_by,
+        matched_terms=list(matched_terms or []),
         dedup_key=_dedup_key(item),
         raw=item,
     )

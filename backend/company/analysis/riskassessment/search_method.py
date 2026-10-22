@@ -9,12 +9,14 @@
     语料        = 非定期公告
     通道        = 全文 | 持续督导 | 投资者关系 | …
     分类        = ∈{…} | 任意
-    标题关键词  = ∈{…} | 任意   （标题命中任一关键词）
+    标题关键词  = ∈{…} | 任意   （标题命中任一关键词，客户端 OR 匹配）
     窗口        = ≤N天
 
 维内展示：
 
     本维 := 分组[Q1, Q2, …, Qn]   （组内去重，不跨组合并）
+
+巨潮 searchkey 不支持 ``|`` 或运算，关键词一律在客户端按标题做 OR 匹配。
 
 全部由 RiskQuery 参数生成，禁止手写散文。
 """
@@ -24,7 +26,7 @@ from typing import Any
 
 from company.news.official.cninfo.constants import TAB_LABELS
 
-from .taxonomy import RiskQuery
+from .taxonomy import RiskQuery, keyword_terms
 
 SCHEMA = "risk-search/v1"
 SOURCE = "巨潮资讯"
@@ -51,10 +53,7 @@ def _tab_label(tab: str) -> str:
 
 
 def _keyword_terms(keyword: str) -> list[str]:
-    raw = (keyword or "").strip()
-    if not raw:
-        return []
-    return [p.strip() for p in raw.split("|") if p.strip()]
+    return keyword_terms(keyword)
 
 
 def _fmt_set(values: list[str]) -> str:
