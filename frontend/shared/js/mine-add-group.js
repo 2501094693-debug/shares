@@ -7,6 +7,8 @@
   let groupsAt = 0;
   let current = null;
   let busy = false;
+  let openSeq = 0;
+  let suppressClose = false;
 
   function esc(value) {
     return String(value ?? "")
@@ -110,11 +112,31 @@
     return json.data;
   }
 
+  function setPopBusy(on) {
+    const el = document.getElementById(POP_ID);
+    if (!el) return;
+    el.classList.toggle("is-busy", Boolean(on));
+    el.querySelectorAll("button, input").forEach((node) => {
+      if (node.hasAttribute("data-close")) return;
+      if (on) {
+        if (!node.disabled) node.dataset.wasDisabled = "0";
+        node.disabled = true;
+      } else if (node.dataset.wasDisabled === "0") {
+        node.disabled = false;
+        delete node.dataset.wasDisabled;
+      }
+    });
+  }
+
   function close() {
     const el = document.getElementById(POP_ID);
-    if (el) el.hidden = true;
+    if (el) {
+      el.hidden = true;
+      el.classList.remove("is-busy");
+    }
     current = null;
     busy = false;
+    openSeq += 1;
   }
 
   function placeNear(anchor) {
@@ -175,62 +197,83 @@
         </header>
         ${body}
         <form class="mine-add-pop__create" data-create-form="1">
-          <input type="text" name="name" maxlength="40" placeholder="新建分组…" autocomplete="off" />
-          <button type="submit" class="mine-add-pop__go" title="新建并加入">新建</button>
+          <input type="text" name="name" maxlength="40" placeholder="新建分组…" autocomplete="off" ${busy ? "disabled" : ""} />
+          <button type="submit" class="mine-add-pop__go" title="新建并加入" ${busy ? "disabled" : ""}>新建</button>
         </form>
-        <p class="mine-add-pop__hint muted">可在「我的」里管理全部分组</p>
+        <p class="mine-add-pop__hint muted">${busy ? "正在加入…" : "可在「我的」里管理全部分组"}</p>
       </div>`;
     placeNear(current?.anchor);
+    setPopBusy(busy);
     const input = el.querySelector('input[name="name"]');
-    if (input && !list.length && !loading) input.focus();
+    if (input && !list.length && !loading && !busy) input.focus();
   }
 
-  async function refreshAndRender() {
+  async function refreshAndRender(seq) {
     render({ loading: true, groups: [] });
     try {
       const groups = await listGroups({ force: true });
-      if (!current) return;
+      if (!current || seq !== openSeq) return;
       render({ groups });
     } catch (err) {
-      if (!current) return;
+      if (!current || seq !== openSeq) return;
       render({ error: err.message || String(err) });
     }
   }
 
   async function pickGroup(groupId, groupName) {
-    if (!current || busy) return;
+    if (!current) return;
+    if (busy) {
+      toast("正在加入，请稍候…", "flat");
+      return;
+    }
     const { code, name } = current;
+    const seq = openSeq;
     busy = true;
+    setPopBusy(true);
     try {
       const data = await addStock(groupId, code, name);
+      if (seq !== openSeq) return;
       const added = Array.isArray(data?.added) ? data.added.length : 0;
       const label = groupName || "分组";
       if (added > 0) toast(`已加入「${label}」`);
       else toast(`已在「${label}」中`, "flat");
       close();
     } catch (err) {
+      if (seq !== openSeq) return;
       busy = false;
+      setPopBusy(false);
       toast(err.message || String(err), "err");
       render({ error: err.message || String(err), groups: groupsCache || [] });
     }
   }
 
   async function onCreate(name) {
-    if (!current || busy) return;
+    if (!current) return;
+    if (busy) {
+      toast("正在加入，请稍候…", "flat");
+      return;
+    }
     const text = String(name || "").trim();
     if (!text) return;
+    const seq = openSeq;
+    const stock = current;
     busy = true;
+    setPopBusy(true);
     try {
       const group = await createGroup(text);
-      const data = await addStock(group.id, current.code, current.name);
+      if (seq !== openSeq) return;
+      const data = await addStock(group.id, stock.code, stock.name);
+      if (seq !== openSeq) return;
       const added = Array.isArray(data?.added) ? data.added.length : 0;
       if (added > 0) toast(`已新建并加入「${group.name || text}」`);
       else toast(`已在「${group.name || text}」中`, "flat");
       close();
     } catch (err) {
+      if (seq !== openSeq) return;
       busy = false;
+      setPopBusy(false);
       toast(err.message || String(err), "err");
-      await refreshAndRender();
+      await refreshAndRender(seq);
     }
   }
 
@@ -243,20 +286,31 @@
     const item = ev.target.closest("[data-group-id]");
     if (item) {
       ev.preventDefault();
+      ev.stopPropagation();
       void pickGroup(item.dataset.groupId, item.dataset.groupName || "");
     }
   }
 
   async function open(anchor, { code, name } = {}) {
     const c = String(code || "").trim();
-    if (!c) return;
+    if (!c) {
+      toast("缺少股票代码，无法加入分组", "err");
+      return;
+    }
+    // 吞掉触发打开的同一次 click，避免「打开立刻被外侧关闭」
+    suppressClose = true;
+    queueMicrotask(() => {
+      suppressClose = false;
+    });
+    openSeq += 1;
+    const seq = openSeq;
+    busy = false;
     current = {
       code: c,
       name: String(name || "").trim(),
       anchor: anchor || null,
     };
-    busy = false;
-    await refreshAndRender();
+    await refreshAndRender(seq);
   }
 
   function bindRoot(root = document) {
@@ -275,6 +329,7 @@
   }
 
   document.addEventListener("click", (ev) => {
+    if (suppressClose) return;
     const el = document.getElementById(POP_ID);
     if (!el || el.hidden) return;
     if (el.contains(ev.target)) return;

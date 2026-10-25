@@ -1,104 +1,5 @@
 /** 智能分析模块配置 */
 window.AI_MODES = {
-  compare: {
-    id: "compare",
-    kind: "engine",
-    label: "对比分析",
-    pageTitle: "ORBIT · 智能分析",
-    heading: "对比分析",
-    subtitle: "个股相对指数的 OHLC 四图偏离度：每图一分 + 加权总分，可设指数与区间",
-    startBtn: "重新计算",
-    historyHead: "历史报告",
-    reportTitle: "对比分析",
-    reportMetaDefault: "设置参数后计算",
-    historyMeta: "历史报告",
-    emptyReports: "暂无历史报告",
-    resumeFail: "恢复对比分析失败",
-    apiRoot: "/api/analysis/compare",
-    jobStoreKey: "orbit.compare.pack",
-    reportNameRe: /$^/,
-    agentDefs: [],
-    emptyStateHtml: `
-      <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">⇄</div>
-        <h3>先定指数与区间，再看偏离</h3>
-        <p>计算个股相对指数在开/高/低/收四个维度上的平均偏离（逆向加权1.5倍），再按权重合成总分。默认对比上证指数、近一年。</p>
-        <ul class="ai-empty-tips">
-          <li>总分 &lt;0.5 紧贴，&lt;1.0 轻度偏离，&lt;2.0 明显偏离</li>
-          <li>股涨指跌 / 股跌指涨按 1.5 倍加权</li>
-          <li>收盘权重最高（0.40）</li>
-        </ul>
-      </div>`,
-    resultTitle(pack) {
-      const meta = pack.meta || {};
-      return `${meta.stock_name || meta.stock || ""} 对比分析`.trim();
-    },
-    resultMeta(pack) {
-      const meta = pack.meta || {};
-      const total = pack.total || {};
-      return [
-        meta.index_name || meta.index ? `指数 ${meta.index_name || meta.index}` : "",
-        total.value != null ? `总分 ${total.value}` : "",
-        total.level || "",
-      ].filter(Boolean).join(" · ");
-    },
-    runningTitle(company) {
-      return `${company} · 对比分析`;
-    },
-    startQuery(company) {
-      return { company };
-    },
-  },
-
-
-  chip: {
-    id: "chip",
-    kind: "engine",
-    label: "筹码分析",
-    pageTitle: "ORBIT · 智能分析",
-    heading: "筹码分析",
-    subtitle: "目标日 OHLC 在区间同类价格中的位置：排名 + 百分位，可设区间与目标日",
-    startBtn: "重新计算",
-    historyHead: "历史报告",
-    reportTitle: "筹码分析",
-    reportMetaDefault: "设置参数后计算",
-    historyMeta: "历史报告",
-    emptyReports: "暂无历史报告",
-    resumeFail: "恢复筹码分析失败",
-    apiRoot: "/api/analysis/chip",
-    jobStoreKey: "orbit.chip.pack",
-    reportNameRe: /$^/,
-    agentDefs: [],
-    emptyStateHtml: `
-      <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">◈</div>
-        <h3>先定区间，再看位置</h3>
-        <p>计算目标日开/高/低/收在所选区间同类价格中的排名与百分位（0%=区间最小，100%=区间最大）。默认近一年、目标日为区间末端。</p>
-        <ul class="ai-empty-tips">
-          <li>百分位越高，目标价越接近区间上沿</li>
-          <li>rank 从大到小第几（1=最高），可切 asc 看从小到大</li>
-          <li>目标日非交易日自动取前一个交易日</li>
-        </ul>
-      </div>`,
-    resultTitle(pack) {
-      return `${pack.symbol || ""} 筹码分析`.trim();
-    },
-    resultMeta(pack) {
-      return [
-        pack.target ? `目标日 ${pack.target}` : "",
-        pack.N ? `样本 ${pack.N}` : "",
-        pack.order ? `排序 ${pack.order}` : "",
-      ].filter(Boolean).join(" · ");
-    },
-    runningTitle(company) {
-      return `${company} · 筹码分析`;
-    },
-    startQuery(company) {
-      return { company };
-    },
-  },
-
-
   business: {
     id: "business",
     label: "业务简述",
@@ -410,68 +311,9 @@ window.AI_MODES = {
     },
   },
 
-  valuation: {
-    id: "valuation",
-    label: "估值分析",
-    pageTitle: "ORBIT · 智能分析",
-    heading: "估值分析",
-    subtitle: "四路 × 三情景：历史倍数 / 财报正常化 / 巴菲特 / 收入因素；数字由规则引擎先算",
-    startBtn: "生成分析",
-    historyHead: "历史报告",
-    reportTitle: "估值分析",
-    reportMetaDefault: "选择历史报告或生成新的",
-    historyMeta: "历史报告",
-    emptyReports: "暂无历史报告",
-    resumeFail: "恢复估值分析任务失败",
-    apiRoot: "/api/ai/valuation-analysis",
-    jobStoreKey: "orbit.valuationAnalysis.activeJob",
-    reportNameRe: /估值分析/,
-    agentDefs: [
-      { id: "va_init", name: "解析公司", subtitle: "识别代码与名称" },
-      { id: "va_fetch", name: "采集估值数据", subtitle: "盘口 · 近十年倍数 · 财报" },
-      { id: "va_history", name: "历史倍数", subtitle: "近10年 P25 / P50 / P75" },
-      { id: "va_fundamentals", name: "财报正常化", subtitle: "扣非中位数 × 退出倍数" },
-      { id: "va_buffett", name: "巴菲特路径", subtitle: "所有者盈余资本化" },
-      { id: "va_drivers", name: "收入关键因素", subtitle: "营收冲击 × 利润率分位" },
-      { id: "va_synth", name: "交叉对照", subtitle: "综合锚 + 安全边际下限" },
-      { id: "va_save", name: "保存报告", subtitle: "写入 Markdown" },
-    ],
-    emptyStateHtml: `
-      <div class="ai-empty-state">
-        <div class="ai-empty-icon" aria-hidden="true">∑</div>
-        <h3>先算四路，再解释假设</h3>
-        <p>对一只股票给出历史倍数、财报正常化、巴菲特、收入关键因素四组悲观/中性/乐观隐含市值与股价。数字全部由规则引擎计算，模型只说明假设。综合锚贴近近10年定价带，巴菲特中性只作安全边际下限。</p>
-        <ul class="ai-empty-tips">
-          <li>历史窗口近 10 年 P25 / P50 / P75，不用极值</li>
-          <li>亏损或金融股自动换主口径</li>
-          <li>综合态度不是买卖点</li>
-          <li>看不懂时不得「值得进一步研究」</li>
-        </ul>
-      </div>`,
-    resultTitle(result) {
-      const stance = result.stance ? ` · ${result.stance}` : "";
-      return `${result.stock_name || ""} 估值分析${stance}`.trim();
-    },
-    resultMeta(result) {
-      return [
-        result.stock_code ? `代码 ${result.stock_code}` : "",
-        result.business_type || "",
-        result.primary ? `主倍数 ${result.primary}` : "",
-        result.stance ? `态度 ${result.stance}` : "",
-        result.report_path ? "已保存" : "",
-      ].filter(Boolean).join(" · ");
-    },
-    runningTitle(company) {
-      return `${company} · 估值分析`;
-    },
-    startQuery(company) {
-      return { company };
-    },
-  },
-
 };
 
-window.AI_MODE_ORDER = ["business", "bizprofile", "zhang-views", "peers", "risk", "valuation", "sentiment", "chip", "compare"];
+window.AI_MODE_ORDER = ["business", "bizprofile", "zhang-views", "peers", "risk", "sentiment"];
 
 window.AI_MODE_ALIASES = {
   business: "business",
@@ -504,14 +346,4 @@ window.AI_MODE_ALIASES = {
   "retail-sentiment": "sentiment",
   "情绪分析": "sentiment",
   "散户情绪": "sentiment",
-  valuation: "valuation",
-  "valuation-analysis": "valuation",
-  "估值分析": "valuation",
-  "估值": "valuation",
-  chip: "chip",
-  "筹码分析": "chip",
-  "筹码": "chip",
-  compare: "compare",
-  "对比分析": "compare",
-  "对比": "compare",
 };

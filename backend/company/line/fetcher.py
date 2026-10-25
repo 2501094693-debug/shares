@@ -54,21 +54,31 @@ _ths_ready_cache: dict[str, Any] = {"ok": False, "at": 0.0}
 
 
 def _ths_ready() -> bool:
-    """同花顺已登录才返回 True；K线排第二，仅登录后参与fallback。"""
+    """同花顺已登录才返回 True；K线仅登录后参与 fallback。
+
+    未安装 ``thsdk`` / 探测异常时一律 False，避免拖垮腾讯/东财回退。
+    """
     try:
         from company.line.tonghuashun import auth as _ths_auth
     except Exception:
         return False
-    if _ths_auth.is_authenticated():
-        _ths_ready_cache["ok"] = True
+    try:
+        if _ths_auth.is_authenticated():
+            _ths_ready_cache["ok"] = True
+            _ths_ready_cache["at"] = time.time()
+            return True
+        if time.time() - float(_ths_ready_cache.get("at") or 0) < _THS_READY_TTL:
+            return bool(_ths_ready_cache.get("ok"))
+        ok = bool(_ths_auth.ensure())
+        _ths_ready_cache["ok"] = ok
         _ths_ready_cache["at"] = time.time()
-        return True
-    if time.time() - float(_ths_ready_cache.get("at") or 0) < _THS_READY_TTL:
-        return bool(_ths_ready_cache.get("ok"))
-    ok = bool(_ths_auth.ensure())
-    _ths_ready_cache["ok"] = ok
-    _ths_ready_cache["at"] = time.time()
-    return ok
+        return ok
+    except Exception as exc:  # noqa: BLE001
+        # 典型：No module named 'thsdk'
+        logger.debug("ths ready check skipped: %s", exc)
+        _ths_ready_cache["ok"] = False
+        _ths_ready_cache["at"] = time.time()
+        return False
 
 
 # 腾讯日 K 实际只给最近约 640 根，更早的会被截断；东财单次可给全历史。
@@ -892,7 +902,17 @@ def fetch_kline(
                 if covers:
                     live = is_cn_market_live()
                     verified_at = float(stored.get("verified_at") or 0)
-                    sealed = (not live) and verified_at >= last_session_close().timestamp()
+                    try:
+                        expect_day = session_day().isoformat()
+                    except Exception:
+                        expect_day = ""
+                    # 尾部未到当前交易日时不能当 sealed（午休/开盘空隙会一直停在昨日）
+                    tail_current = (not expect_day) or last_d >= expect_day
+                    sealed = (
+                        (not live)
+                        and tail_current
+                        and verified_at >= last_session_close().timestamp()
+                    )
                     base = stored
                     if not sealed:
                         try:
@@ -1158,9 +1178,11 @@ def fetch_kline(
             _kline_live_cache.put(mem_key, result, cached_at=now)
             return _slice_payload(result, cap)
         verified_at = float(stored.get("verified_at") or 0)
-        # 非交易时段：收盘后已校验过的磁盘缓存直接用，避免隔半小时又全市场尾盘刷新。
+        # 非交易时段：仅当尾部已到当前交易日、且收盘后已校验过，才直用磁盘。
+        # 缺最新交易日时必须补尾——午休/集合竞价空隙 live=False，
+        # 但 last_session_close 仍是昨收，否则会永久停在昨日。
         sealed_after_close = verified_at >= last_session_close().timestamp()
-        if not live and sealed_after_close:
+        if not live and sealed_after_close and tail_ok:
             result = _kline_payload(stored)
         else:
             result = _refresh_with_tail(
@@ -1761,8 +1783,9 @@ def fetch_ticks(
     # 历史日已在上面只读返回，不受 force 影响。
     stored = None if force else _load_ticks_disk(code)
 
-    if stored and not live:
-        # 盘后固定缓存：直接读文件，不再补远程、不再升级同花顺。
+    if stored and not live and _ticks_looks_complete(stored):
+        # 盘后仅当已收齐到 15:00 才固定用文件。
+        # 午休/早盘落盘的残缺带（止于 11:30）必须再打远程补齐，否则全天只剩上午。
         return _slice_ticks_pos(stored, pos_n)
 
     cache_key = f"{code}:{pos_n}"
@@ -1774,6 +1797,16 @@ def fetch_ticks(
 
     if pos_n == 0:
         if result.get("items"):
+            # 与已有上午段合并，避免远程偶发只给下午时把早盘冲掉
+            if stored and stored.get("items"):
+                merged = _merge_tick_items(list(stored["items"]), list(result["items"]))
+                if len(merged) > len(result["items"]):
+                    pack = dict(result)
+                    pack["items"] = merged
+                    pack["source"] = result.get("source") or stored.get("source") or ""
+                    if result.get("pre_price") is None and stored.get("pre_price") is not None:
+                        pack["pre_price"] = stored.get("pre_price")
+                    result = pack
             result = _save_ticks_disk(code, result, finalized=not live)
         elif stored:
             return stored

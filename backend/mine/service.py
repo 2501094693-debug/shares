@@ -12,7 +12,7 @@ from mine import store
 
 _MAX_GROUP_NAME_LEN = 40
 _MAX_GROUPS = 100
-_MAX_STOCKS_PER_GROUP = 500
+_MAX_STOCKS_PER_GROUP = 1000
 
 # 与个股行情列表对齐的行情字段
 _QUOTE_KEYS = (
@@ -53,8 +53,11 @@ def _lookup_name(code: str) -> str:
     return ""
 
 
-def _quote_index(*, live: bool = True) -> tuple[dict[str, dict[str, Any]], str]:
-    """复用个股行情缓存，按代码索引；失败时返回空表。"""
+def _quote_index(*, live: bool = False) -> tuple[dict[str, dict[str, Any]], str]:
+    """复用个股行情缓存，按代码索引；失败时返回空表。
+
+    默认 ``live=False``：只读已有列表缓存，避免切换分组时反复刷新全市场行情。
+    """
     try:
         from market.shares.service import service as shares_service
 
@@ -73,7 +76,7 @@ def _quote_index(*, live: bool = True) -> tuple[dict[str, dict[str, Any]], str]:
 def _enrich_stocks(
     stocks: list[dict[str, Any]],
     *,
-    live: bool = True,
+    live: bool = False,
 ) -> tuple[list[dict[str, Any]], str]:
     """把分组成分补上与「个股行情」列表相同的行情字段，保留加入顺序。"""
     by_code, quote_updated_at = _quote_index(live=live)
@@ -104,7 +107,7 @@ def _public_group(
     group: dict[str, Any],
     *,
     with_stocks: bool = True,
-    live: bool = True,
+    live: bool = False,
 ) -> dict[str, Any]:
     stocks = [dict(s) for s in (group.get("stocks") or []) if isinstance(s, dict)]
     out: dict[str, Any] = {
@@ -122,6 +125,17 @@ def _public_group(
     return out
 
 
+def _snapshot_group(group: dict[str, Any]) -> dict[str, Any]:
+    """浅拷贝分组，避免锁外富化时改到 store 内对象。"""
+    return {
+        "id": group.get("id"),
+        "name": group.get("name"),
+        "created_at": group.get("created_at"),
+        "updated_at": group.get("updated_at"),
+        "stocks": [dict(s) for s in (group.get("stocks") or []) if isinstance(s, dict)],
+    }
+
+
 def _find_group(groups: list[dict[str, Any]], group_id: str) -> dict[str, Any] | None:
     gid = safe_str(group_id)
     for group in groups:
@@ -137,13 +151,15 @@ class MineService:
             groups = [_public_group(g, with_stocks=False) for g in payload["groups"]]
         return {"groups": groups, "count": len(groups)}
 
-    def get_group(self, group_id: str) -> dict[str, Any]:
+    def get_group(self, group_id: str, *, live: bool = False) -> dict[str, Any]:
         with store._lock:
             payload = store.load()
             group = _find_group(payload["groups"], group_id)
             if group is None:
                 raise KeyError(f"分组不存在: {group_id}")
-            return _public_group(group, with_stocks=True)
+            snapshot = _snapshot_group(group)
+        # 行情富化可能较慢，必须在 store 锁外做，否则切换分组会互相卡住
+        return _public_group(snapshot, with_stocks=True, live=live)
 
     def create_group(self, name: str) -> dict[str, Any]:
         name = safe_str(name)
@@ -171,7 +187,8 @@ class MineService:
             }
             groups.append(group)
             store.save(payload)
-            return _public_group(group, with_stocks=True)
+            snapshot = _snapshot_group(group)
+        return _public_group(snapshot, with_stocks=True, live=False)
 
     def delete_group(self, group_id: str) -> dict[str, Any]:
         with store._lock:
@@ -180,12 +197,12 @@ class MineService:
             group = _find_group(groups, group_id)
             if group is None:
                 raise KeyError(f"分组不存在: {group_id}")
-            snapshot = _public_group(group, with_stocks=True)
+            snapshot = _snapshot_group(group)
             payload["groups"] = [
                 g for g in groups if safe_str(g.get("id")) != safe_str(group_id)
             ]
             store.save(payload)
-            return snapshot
+        return _public_group(snapshot, with_stocks=True, live=False)
 
     def add_stocks(
         self,
@@ -204,6 +221,17 @@ class MineService:
             if normalize_code(k)
         }
 
+        # 名称补全放锁外，避免查行业索引时卡住其它分组接口
+        resolved: list[tuple[str, str]] = []
+        for raw in raw_codes:
+            code = normalize_code(raw)
+            if not code:
+                continue
+            name = name_map.get(code) or _lookup_name(code)
+            resolved.append((code, name))
+        if not resolved:
+            raise ValueError("没有有效的股票代码")
+
         with store._lock:
             payload = store.load()
             group = _find_group(payload["groups"], group_id)
@@ -221,40 +249,38 @@ class MineService:
             skipped: list[str] = []
             stamp = _now_iso()
 
-            for raw in raw_codes:
-                code = normalize_code(raw)
-                if not code:
-                    continue
+            for code, name in resolved:
                 if code in existing:
                     skipped.append(code)
                     continue
                 if len(stocks) + len(added) >= _MAX_STOCKS_PER_GROUP:
                     raise ValueError(f"每个分组最多 {_MAX_STOCKS_PER_GROUP} 只股票")
 
-                name = name_map.get(code) or _lookup_name(code)
                 row = {"code": code, "name": name, "added_at": stamp}
                 added.append(row)
                 existing.add(code)
 
             if not added and skipped:
                 # 全部已存在也算成功，返回当前分组
-                return {
-                    "group": _public_group(group, with_stocks=True),
-                    "added": [],
-                    "skipped": skipped,
-                }
-            if not added:
+                snapshot = _snapshot_group(group)
+                return_added: list[dict[str, Any]] = []
+                return_skipped = skipped
+            elif not added:
                 raise ValueError("没有有效的股票代码")
+            else:
+                stocks.extend(added)
+                group["stocks"] = stocks
+                group["updated_at"] = stamp
+                store.save(payload)
+                snapshot = _snapshot_group(group)
+                return_added = added
+                return_skipped = skipped
 
-            stocks.extend(added)
-            group["stocks"] = stocks
-            group["updated_at"] = stamp
-            store.save(payload)
-            return {
-                "group": _public_group(group, with_stocks=True),
-                "added": added,
-                "skipped": skipped,
-            }
+        return {
+            "group": _public_group(snapshot, with_stocks=True, live=False),
+            "added": return_added,
+            "skipped": return_skipped,
+        }
 
     def remove_stocks(self, group_id: str, codes: list[str]) -> dict[str, Any]:
         raw_codes = [normalize_code(c) for c in (codes or [])]
@@ -284,10 +310,12 @@ class MineService:
             group["stocks"] = kept
             group["updated_at"] = _now_iso()
             store.save(payload)
-            return {
-                "group": _public_group(group, with_stocks=True),
-                "removed": removed,
-            }
+            snapshot = _snapshot_group(group)
+
+        return {
+            "group": _public_group(snapshot, with_stocks=True, live=False),
+            "removed": removed,
+        }
 
 
 service = MineService()

@@ -7,6 +7,7 @@
     { prefix: "/api/market/shares", ttl: 90_000 },
     { prefix: "/api/market/steep", ttl: 90_000 },
     { prefix: "/api/stocks/profile", ttl: 60_000 },
+    { prefix: "/api/stocks/line-jetton", ttl: 120_000 },
     { prefix: "/api/stocks/line", ttl: 120_000 },
     { prefix: "/api/stocks/ticks", ttl: 8_000 },
     { prefix: "/api/stocks/fund-flow", ttl: 60_000 },
@@ -23,6 +24,7 @@
     { prefix: "/api/otc-funds/tree", ttl: 30 * 60_000 },
     { prefix: "/api/futures/tree", ttl: 30 * 60_000 },
     { prefix: "/api/futures/categories", ttl: 30 * 60_000 },
+    { prefix: "/api/mine/groups", ttl: 20_000 },
   ];
   const DEFAULT_TTL = 60_000;
 

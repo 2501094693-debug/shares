@@ -433,7 +433,7 @@ def post_shares_scheme(payload: dict[str, Any] = Body(...)):
         return err(str(exc), 500)
 @router.post("/api/analysis/select/screen")
 def post_select_screen(payload: dict = Body(...)):
-    """精选股票分析：按 compare/price/jetton 参数批量分析并按结果筛选。"""
+    """精选股票分析：按 price/jetton 参数批量分析并按结果筛选。"""
     if not isinstance(payload, dict):
         return err("body error", 400)
     symbols = payload.get("symbols")
@@ -505,40 +505,6 @@ def get_chip_analysis(
         return err(str(exc), 400)
     except Exception as exc:
         return err(str(exc), 500)
-@router.get("/api/analysis/compare")
-def get_compare_analysis(
-    company: str = Query("", description="公司名称或代码"),
-    index: str = Query("SH000001", description="对比指数代码"),
-    beg: str = Query("", description="区间开始 YYYY-MM-DD"),
-    end: str = Query("", description="区间结束 YYYY-MM-DD"),
-):
-    """对比分析：个股相对指数的 OHLC 四图偏离度。"""
-    from datetime import date, timedelta
-    from analysis.select.compare.stock_vs_index import compare_stock_vs_index
-    m = re.search(r"(\d{6})", company or "")
-    symbol = m.group(1) if m else (company or "").strip()
-    if not symbol:
-        return err("company symbol is required", 400)
-    index_code = (index or "SH000001").strip()
-    today = date.today().isoformat()
-    if not end:
-        end = today
-    if not beg:
-        try:
-            end_d = date.fromisoformat(end[:10])
-        except ValueError:
-            end_d = date.today()
-        beg = (end_d - timedelta(days=365)).isoformat()
-    try:
-        result = compare_stock_vs_index(symbol, index_code, beg[:10], end[:10])
-        return ok(result)
-    except ValueError as exc:
-        return err(str(exc), 400)
-    except Exception as exc:  # noqa: BLE001
-        msg = str(exc)
-        if "Connection aborted" in msg or "RemoteDisconnected" in msg or "ConnectionError" in type(exc).__name__:
-            return err("行情接口连接中断（东财限流/抖动），请等待10秒后点“重新计算”重试", 503)
-        return err(msg, 500)
 @router.post("/api/analysis/select/price-screen")
 def post_price_screen(payload: dict = Body(...)):
     """股票分析（价格位置）：默认全市场扫描，按 price 参数批量分析并按分位筛选。"""

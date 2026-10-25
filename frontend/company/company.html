@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=20261022" />
+  <link rel="stylesheet" href="/css/style.css?v=20261026-extremum-fill3" />
   <link rel="stylesheet" href="/css/ai-page.css?v=20261022-risk-q4" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
@@ -30,13 +30,14 @@
         <button id="refreshListBtn" class="btn ghost" type="button" hidden>刷新龙虎榜</button>
         <button id="refreshHoldersBtn" class="btn ghost" type="button" hidden>刷新持股</button>
         <button id="refreshQuotesBtn" class="btn ghost" type="button" onclick="window.refreshQuotesNow&&window.refreshQuotesNow()">刷新行情</button>
+        <button id="addGroupBtn" class="btn ghost" type="button" title="添加至分组" data-add-group="" data-code="" data-name="" hidden>分组</button>
       </div>
     </header>
 
     <div id="companyTabStack" class="company-tab-stack">
       <nav id="companyMainTabs" class="company-main-tabs" aria-label="主面板">
-        <button type="button" class="company-main-tab" data-panel="judgment" role="tab" aria-selected="false">研判</button>
-        <button type="button" class="company-main-tab is-active" data-panel="quotes" role="tab" aria-selected="true">行情</button>
+        <button type="button" class="company-main-tab is-active" data-panel="judgment" role="tab" aria-selected="true">研判</button>
+        <button type="button" class="company-main-tab" data-panel="quotes" role="tab" aria-selected="false">行情</button>
         <button type="button" class="company-main-tab" data-panel="news" role="tab" aria-selected="false">资讯</button>
         <button type="button" class="company-main-tab" data-panel="emotion" role="tab" aria-selected="false">情绪</button>
         <button type="button" class="company-main-tab" data-panel="others" role="tab" aria-selected="false">其他</button>
@@ -44,17 +45,15 @@
     </div>
 
     <div class="company-panels">
-      <div id="panel-judgment" class="company-panel" data-panel="judgment" data-judgment-view="bizprofile" data-judgment-family="business" role="tabpanel" hidden>
+      <div id="panel-judgment" class="company-panel is-active" data-panel="judgment" data-judgment-view="kline" data-judgment-family="kline" role="tabpanel">
         <div class="judgment-layout">
           <nav id="judgmentSourceBar" class="emotion-source-bar judgment-source-bar" aria-label="研判分类">
-            <button type="button" class="emotion-source-btn is-active" data-source="business" aria-selected="true">业务简述</button>
+            <button type="button" class="emotion-source-btn is-active" data-source="kline" aria-selected="true">K线分析</button>
+            <button type="button" class="emotion-source-btn" data-source="business" aria-selected="false">业务简述</button>
             <button type="button" class="emotion-source-btn" data-source="earnings" aria-selected="false">财报简述</button>
             <button type="button" class="emotion-source-btn" data-source="peers" aria-selected="false">竞争分析</button>
             <button type="button" class="emotion-source-btn" data-source="risk" aria-selected="false">风险评估</button>
-            <button type="button" class="emotion-source-btn" data-source="valuation" aria-selected="false">估值分析</button>
             <button type="button" class="emotion-source-btn" data-source="sentiment" aria-selected="false">情绪分析</button>
-            <button type="button" class="emotion-source-btn" data-source="chip" aria-selected="false">筹码分析</button>
-            <button type="button" class="emotion-source-btn" data-source="compare" aria-selected="false">对比分析</button>
           </nav>
           <div class="judgment-view">
         <div id="bizViewBar" class="judgment-view-bar" role="tablist" aria-label="业务简述视角" hidden>
@@ -62,7 +61,256 @@
           <button type="button" class="judgment-view-btn is-active" role="tab" data-biz-view="bizprofile" aria-selected="true">规则视角</button>
           <button type="button" class="judgment-view-btn" role="tab" data-biz-view="business" aria-selected="false">AI视角</button>
         </div>
-        <div class="ai-page company-analysis-page">
+        <div id="lineComparePage" class="line-compare-page">
+          <div class="line-compare-board">
+            <div class="line-compare-panels">
+              <section id="lcUndulateBox" class="line-compare-undulate" aria-label="四价波动">
+                <header class="line-compare-pane-head">
+                  <h2>四价波动</h2>
+                  <div class="line-compare-pane-tools">
+                    <div id="lcUndulateFactor" class="lc-sigma-mode" role="tablist" aria-label="价格因子">
+                      <button type="button" data-factor="close" class="is-active" role="tab" aria-selected="true">收盘价</button>
+                      <button type="button" data-factor="open" role="tab" aria-selected="false">开盘价</button>
+                      <button type="button" data-factor="high" role="tab" aria-selected="false">最高价</button>
+                      <button type="button" data-factor="low" role="tab" aria-selected="false">最低价</button>
+                    </div>
+                    <div id="lcUndulateMode" class="lc-sigma-mode" role="tablist" aria-label="纵轴口径">
+                      <button type="button" data-mode="z" class="is-active" role="tab" aria-selected="true">σ单位</button>
+                      <button type="button" data-mode="std" role="tab" aria-selected="false">涨跌幅</button>
+                    </div>
+                    <button id="lcUndulateRefresh" type="button" class="line-compare-undulate-refresh">刷新</button>
+                  </div>
+                </header>
+                <input id="lcBeg" type="hidden" />
+                <input id="lcEnd" type="hidden" />
+                <p id="lcUndulateMeta" class="muted line-compare-undulate-meta">右侧点选两根日K · 滚轮缩放 / 拖动平移 · 相对基准收盘</p>
+                <p id="lcFormMeta" class="muted line-compare-form-meta"></p>
+                <p id="lcFormError" class="error line-compare-form-error hidden"></p>
+                <div id="lcUndulateStats" class="lc-undulate-stats">
+                  <p class="muted lc-undulate-note">等待日K窗口…</p>
+                </div>
+              </section>
+            </div>
+            <section class="line-compare-index" aria-label="指数走势">
+              <article class="chart-card chart-card--kline" aria-label="指数走势">
+                <header class="chart-card__head">
+                  <div class="chart-card__title">
+                    <span class="chart-card__mark" aria-hidden="true"></span>
+                    <h3 id="lcIndexChartTitle">指数</h3>
+                  </div>
+                  <p id="lcIndexChartMeta" class="chart-card__meta muted">与右侧日K同步窗口</p>
+                  <div id="lcIndexChartHoverCard" class="chart-kline-hover chart-hover-card hidden" aria-hidden="true"></div>
+                </header>
+                <div class="chart-card__stage">
+                  <div id="lcIndexChartWrap" class="chart-canvas-wrap">
+                    <canvas id="lcIndexChart" width="720" height="360" aria-label="指数日K"></canvas>
+                    <p id="lcIndexChartEmpty" class="muted chart-empty hidden">暂无指数走势</p>
+                  </div>
+                </div>
+                <footer class="chart-card__foot">
+                  <div id="lcIndexChartAxisScroll" class="chart-axis-scroll is-disabled">
+                    <input
+                      id="lcIndexChartScrollBar"
+                      class="chart-scroll-bar"
+                      type="range"
+                      min="0"
+                      max="0"
+                      value="0"
+                      step="1"
+                      aria-label="指数窗口滚动（与个股同步）"
+                      disabled
+                    />
+                  </div>
+                </footer>
+              </article>
+            </section>
+            <div class="line-compare-side" aria-label="T王 · 筹码 · 四价前低">
+              <section id="lcTraderBox" class="line-compare-trader" aria-label="T王" data-tone="">
+                <header class="line-compare-trader-head">
+                  <div class="line-compare-trader-title">
+                    <span class="line-compare-trader-mark" aria-hidden="true"></span>
+                    <h2>T王</h2>
+                  </div>
+                  <p id="lcTraderRange" class="line-compare-trader-range" hidden></p>
+                </header>
+                <div id="lcTraderBody" class="line-compare-trader-body">
+                  <p class="muted lc-undulate-note">点选日K区间…</p>
+                </div>
+              </section>
+              <section id="lcJettonPane" class="lc-jetton" aria-label="筹码峰">
+                <header class="lc-jetton-head">
+                  <h2>筹码</h2>
+                  <p id="lcJettonMeta" class="lc-jetton-meta muted" hidden></p>
+                </header>
+                <div id="lcJettonWrap" class="lc-jetton-wrap">
+                  <canvas id="lcJettonChart" width="160" height="360" aria-label="筹码峰"></canvas>
+                  <p id="lcJettonEmpty" class="muted chart-empty hidden">暂无筹码</p>
+                </div>
+              </section>
+              <section id="lcExtremumBox" class="line-compare-extremum" aria-label="四价前低">
+                <header class="line-compare-pane-head lc-extremum-head">
+                  <div class="lc-extremum-title">
+                    <span class="lc-extremum-mark" aria-hidden="true"></span>
+                    <h2>四价前低</h2>
+                  </div>
+                  <div class="line-compare-pane-tools">
+                    <button id="lcExtremumRefresh" type="button" class="line-compare-undulate-refresh">刷新</button>
+                  </div>
+                </header>
+                <div class="lc-extremum-scroll">
+                  <section class="lc-extremum-section">
+                    <div class="lc-extremum-section-head">
+                      <span class="lc-extremum-kicker">前低回溯</span>
+                      <p id="lcExtremumMeta" class="muted lc-extremum-section-meta">点选日K终点 · 回溯各自最近更低日</p>
+                    </div>
+                    <div id="lcExtremumBody" class="lc-extremum-body">
+                      <p class="muted lc-undulate-note">等待日K窗口…</p>
+                    </div>
+                  </section>
+                  <section class="lc-extremum-section lc-position-block" aria-label="极值位置">
+                    <div class="lc-extremum-section-head">
+                      <span class="lc-extremum-kicker">极值位置</span>
+                      <p id="lcPositionMeta" class="lc-position-meta muted" hidden></p>
+                    </div>
+                    <div id="lcPositionBody" class="lc-extremum-body lc-position-body">
+                      <p class="muted lc-undulate-note">等待日K窗口…</p>
+                    </div>
+                  </section>
+                </div>
+              </section>
+            </div>
+            <section class="line-compare-chart" aria-label="日K走势">
+              <article id="lineCompareKline" class="chart-card chart-card--kline is-combo" aria-label="走势">
+                <header class="chart-card__head">
+                  <div class="chart-card__title">
+                    <span class="chart-card__mark" aria-hidden="true"></span>
+                    <h3>走势</h3>
+                  </div>
+                  <div class="chart-card__controls">
+                    <div class="chart-select-group">
+                      <label class="chart-select-wrap hidden" aria-label="周期" hidden>
+                        <select id="lcChartModeSelect" class="chart-select" disabled>
+                          <option value="day" selected>日K</option>
+                        </select>
+                      </label>
+                      <label id="lcChartAdjustWrap" class="chart-select-wrap hidden" aria-label="复权" hidden>
+                        <select id="lcChartAdjustSelect" class="chart-select" disabled>
+                          <option value="qfq" selected>前复权</option>
+                        </select>
+                      </label>
+                      <label id="lcComboMetricWrap" class="chart-select-wrap" aria-label="底部指标">
+                        <select id="lcComboMetricSelect" class="chart-select">
+                          <option value="pe">估值</option>
+                          <option value="fundflow">资金流</option>
+                          <option value="margin">融资融券</option>
+                          <option value="compare" selected>股指对比</option>
+                        </select>
+                      </label>
+                      <label id="lcCompareIndexWrap" class="chart-select-wrap" aria-label="对比指数">
+                        <select id="lcCompareIndexSelect" class="chart-select">
+                          <option value="000001" selected>上证指数</option>
+                        </select>
+                      </label>
+                      <label id="lcCompareFactorWrap" class="chart-select-wrap" aria-label="对比口径">
+                        <select id="lcCompareFactorSelect" class="chart-select">
+                          <option value="close" selected>收盘涨跌幅</option>
+                          <option value="open">开盘涨跌幅</option>
+                          <option value="high">最大涨幅</option>
+                          <option value="low">最大跌幅</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div id="lcPeLegendWrap" class="fundflow-legend hidden" aria-label="估值口径">
+                      <label class="fundflow-legend-item" data-series="dyn">
+                        <input type="checkbox" checked />
+                        <span class="fundflow-legend-swatch" style="--tier-color: #f4a261"></span>
+                        市盈率动
+                      </label>
+                      <label class="fundflow-legend-item" data-series="ttm">
+                        <input type="checkbox" checked />
+                        <span class="fundflow-legend-swatch" style="--tier-color: #2ad4b8"></span>
+                        市盈率TTM
+                      </label>
+                      <label class="fundflow-legend-item" data-series="static">
+                        <input type="checkbox" checked />
+                        <span class="fundflow-legend-swatch" style="--tier-color: #7aa2f7"></span>
+                        市盈率静
+                      </label>
+                      <label class="fundflow-legend-item" data-series="pb">
+                        <input type="checkbox" checked />
+                        <span class="fundflow-legend-swatch" style="--tier-color: #e07a5f"></span>
+                        市净率
+                      </label>
+                    </div>
+                    <div id="lcFundflowLegendWrap" class="fundflow-legend hidden" aria-label="资金流分档">
+                      <label class="fundflow-legend-item" data-tier="super">
+                        <input type="checkbox" checked />
+                        <span class="fundflow-legend-swatch" style="--tier-color: #e63946"></span>
+                        超大单
+                      </label>
+                      <label class="fundflow-legend-item" data-tier="big">
+                        <input type="checkbox" checked />
+                        <span class="fundflow-legend-swatch" style="--tier-color: #f4a261"></span>
+                        大单
+                      </label>
+                      <label class="fundflow-legend-item" data-tier="mid">
+                        <input type="checkbox" checked />
+                        <span class="fundflow-legend-swatch" style="--tier-color: #457b9d"></span>
+                        中单
+                      </label>
+                      <label class="fundflow-legend-item" data-tier="small">
+                        <input type="checkbox" checked />
+                        <span class="fundflow-legend-swatch" style="--tier-color: #2a9d8f"></span>
+                        小单
+                      </label>
+                    </div>
+                    <div id="lcMarginLegendWrap" class="fundflow-legend hidden" aria-label="融资融券口径">
+                      <label class="fundflow-legend-item" data-series="rzye">
+                        <input type="checkbox" checked />
+                        <span class="fundflow-legend-swatch" style="--tier-color: #e63946"></span>
+                        融资余额
+                      </label>
+                      <label class="fundflow-legend-item" data-series="rzrqye">
+                        <input type="checkbox" checked />
+                        <span class="fundflow-legend-swatch" style="--tier-color: #f4a261"></span>
+                        两融余额
+                      </label>
+                      <label class="fundflow-legend-item" data-series="rqye">
+                        <input type="checkbox" />
+                        <span class="fundflow-legend-swatch" style="--tier-color: #457b9d"></span>
+                        融券余额
+                      </label>
+                    </div>
+                  </div>
+                  <p id="lcChartMeta" class="chart-card__meta muted"></p>
+                  <div id="lcChartHoverCard" class="chart-kline-hover chart-hover-card hidden" aria-hidden="true"></div>
+                </header>
+                <div class="chart-card__stage">
+                  <div id="lcChartWrap" class="chart-canvas-wrap">
+                    <canvas id="lcPriceChart" width="960" height="360" aria-label="日K走势图"></canvas>
+                    <p id="lcChartEmpty" class="muted chart-empty hidden">暂无走势数据</p>
+                  </div>
+                </div>
+                <footer class="chart-card__foot">
+                  <div id="lcChartAxisScroll" class="chart-axis-scroll is-disabled">
+                    <input
+                      id="lcChartScrollBar"
+                      class="chart-scroll-bar"
+                      type="range"
+                      min="0"
+                      max="0"
+                      value="0"
+                      step="1"
+                      aria-label="时间轴滑动"
+                      disabled
+                    />
+                  </div>
+                </footer>
+              </article>
+            </section>
+          </div>
+        </div>
+        <div class="ai-page company-analysis-page" hidden aria-hidden="true">
           <div id="analysisErrorBox" class="error hidden"></div>
 
           <div id="aiBoard" class="ai-board is-idle">
@@ -122,7 +370,7 @@
         </div>
       </div>
 
-      <div id="panel-quotes" class="company-panel is-active" data-panel="quotes" role="tabpanel">
+      <div id="panel-quotes" class="company-panel" data-panel="quotes" role="tabpanel" hidden>
         <div class="quotes-layout">
           <section id="fundamentalsPanel" class="fundamentals-panel metrics-section hidden" aria-label="基本信息">
             <header class="fundamentals-head">
@@ -1188,11 +1436,13 @@
   </div>
   </div>
 
-  <script src="/js/shared/orbit-http.js?v=holders-date-20260919"></script>
+  <script src="/js/shared/orbit-http.js?v=20261026-jetton-ttl"></script>
   <script src="/js/shared/orbit-prefetch.js?v=holders-date-20260919"></script>
   <script src="/js/shared/nav.js?v=nav-industry-20261001"></script>
+  <script src="/js/shared/mine-add-group.js?v=mine-add-fix-20261023"></script>
   <script src="/js/shared/ai-modes.js?v=20261022-risk-meta"></script>
-  <script src="/js/shared/company-analysis.js?v=20261022-risk-flat"></script>
-  <script src="/js/company.js?v=20261022-risk-grp"></script>
+  <script src="/js/shared/company-analysis.js?v=20261025-kline-chrome"></script>
+  <script src="/js/shared/line-compare.js?v=20261026-lc-trader-fix"></script>
+  <script src="/js/company.js?v=20261026-extremum-2tables3"></script>
 </body>
 </html>

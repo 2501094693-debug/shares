@@ -131,7 +131,12 @@ def ensure(timeout: float = 3.0) -> bool:
     if not _job_lock.acquire(blocking=False):
         return is_authenticated()
     try:
-        client = _client()
+        try:
+            client = _client()
+        except Exception as exc:
+            # 未安装 thsdk 等：当作未登录，交给腾讯/东财
+            logger.debug("ths 客户端不可用: %s", exc)
+            return False
         try:
             resp = client.runtime.call(
                 "auth_qrcode",

@@ -34,14 +34,6 @@ AGENT_LABELS: dict[str, str] = {
     "rs_agg": "按用户计数",
     "rs_synth": "生成解读",
     "rs_save": "保存报告",
-    "va_init": "解析公司",
-    "va_fetch": "采集估值数据",
-    "va_history": "历史倍数",
-    "va_fundamentals": "财报正常化",
-    "va_buffett": "巴菲特路径",
-    "va_drivers": "收入关键因素",
-    "va_synth": "交叉对照",
-    "va_save": "保存报告",
 }
 
 PHASE_LABELS: dict[str, str] = {
@@ -76,18 +68,6 @@ RETAIL_AGENTS = [
     "rs_synth",
     "rs_save",
 ]
-VALUATION_AGENTS = [
-    "va_init",
-    "va_fetch",
-    "va_history",
-    "va_fundamentals",
-    "va_buffett",
-    "va_drivers",
-    "va_synth",
-    "va_save",
-]
-
-
 def normalize_node(node: str) -> str:
     return (node or "").replace("-", "_")
 
@@ -126,10 +106,6 @@ def init_business_explainer_agents() -> dict[str, dict[str, str]]:
 
 def init_retail_sentiment_agents() -> dict[str, dict[str, str]]:
     return init_agents_state(RETAIL_AGENTS)
-
-
-def init_valuation_analyst_agents() -> dict[str, dict[str, str]]:
-    return init_agents_state(VALUATION_AGENTS)
 
 
 def report(

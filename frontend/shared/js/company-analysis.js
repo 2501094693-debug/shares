@@ -1,6 +1,6 @@
 (() => {
   const MODES = window.AI_MODES || {};
-  const MODE_ORDER = window.AI_MODE_ORDER || ["business", "zhang-views", "peers", "risk", "valuation", "sentiment", "chip", "compare"];
+  const MODE_ORDER = window.AI_MODE_ORDER || ["business", "zhang-views", "peers", "risk", "sentiment"];
   const BUSINESS_FAMILY_VIEWS = new Set(["business", "bizprofile"]);
   const EARNINGS_VIEWS = new Set(["zhang-views"]);
 
@@ -114,7 +114,12 @@
 
   function analysisVisible() {
     const panel = $("panel-judgment");
-    return Boolean(panel && !panel.hidden);
+    if (!panel || panel.hidden) return false;
+    // 研判 · K线分析占用同一 panel，AI 壳不应抢源栏 / family
+    if (panel.dataset.judgmentFamily === "kline") return false;
+    const lc = $("lineComparePage");
+    if (lc && !lc.hidden) return false;
+    return true;
   }
 
   function esc(value) {
@@ -296,28 +301,6 @@
     return `<div class="sentiment-metrics"><div class="engine-kpis">${kpiHtml}</div>${note}</div>`;
   }
 
-  function fmtPrice(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return "—";
-    return n >= 100 ? n.toFixed(2) : String(Math.round(n * 100) / 100);
-  }
-
-  function valuationMetricsHtml(result) {
-    if (!result?.stance && !result?.primary) return "";
-    const kpis = [
-      ["综合态度", String(result.stance || "—")],
-      ["主倍数", String(result.primary || "—")],
-      ["生意类型", String(result.business_type || "—")],
-      ["综合锚股价", fmtPrice(result.anchor_mid_price)],
-      ["巴菲特下限", fmtPrice(result.mos_floor_price)],
-    ];
-    const kpiHtml = kpis.map(([label, value]) => (
-      `<div class="engine-kpi sentiment-kpi"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`
-    )).join("");
-    const note = `<p class="muted sentiment-source-note">数字由规则引擎计算；综合态度不是买卖点</p>`;
-    return `<div class="sentiment-metrics"><div class="engine-kpis">${kpiHtml}</div>${note}</div>`;
-  }
-
   function updatePipelineProgress(agents) {
     const cfg = getConfig();
     const el = $("pipelineProgress");
@@ -472,15 +455,18 @@
     const family = judgmentFamily(mode);
     const visible = analysisVisible();
     const panel = $("panel-judgment");
-    if (panel) {
-      panel.dataset.judgmentView = mode;
-      panel.dataset.judgmentFamily = family;
+    // K线分析可见时不要回写 judgmentFamily / 源栏，否则会盖掉「K线分析」高亮
+    if (visible) {
+      if (panel) {
+        panel.dataset.judgmentView = mode;
+        panel.dataset.judgmentFamily = family;
+      }
+      document.querySelectorAll("#judgmentSourceBar [data-source]").forEach((tab) => {
+        const active = tab.getAttribute("data-source") === family;
+        tab.classList.toggle("is-active", active);
+        tab.setAttribute("aria-selected", active ? "true" : "false");
+      });
     }
-    document.querySelectorAll("#judgmentSourceBar [data-source]").forEach((tab) => {
-      const active = tab.getAttribute("data-source") === family;
-      tab.classList.toggle("is-active", active && visible);
-      tab.setAttribute("aria-selected", active && visible ? "true" : "false");
-    });
     $("aiBoard")?.classList.toggle("is-engine", cfg.kind === "engine");
     const board = $("aiBoard");
     const idleOrLoading = !board
@@ -522,19 +508,13 @@
     const text = resultText(result);
     const metricsKey = cfg.id === "sentiment"
       ? JSON.stringify(result.metrics || {})
-      : cfg.id === "valuation"
-        ? JSON.stringify({ stance: result.stance, primary: result.primary })
-        : "";
+      : "";
     const reportKey = `${filename}|${text.length}|${metricsKey}`;
     if (filename) ms.activeReportFile = filename;
     if ($("reportTitle")) $("reportTitle").textContent = cfg.resultTitle?.(result) || String(filename).replace(/\.md$/i, "");
     if ($("reportMeta")) $("reportMeta").textContent = cfg.resultMeta?.(result) || "已保存";
     if (ms.renderedReportKey !== reportKey && $("reportView")) {
-      const metrics = cfg.id === "sentiment"
-        ? sentimentMetricsHtml(result)
-        : cfg.id === "valuation"
-          ? valuationMetricsHtml(result)
-          : "";
+      const metrics = cfg.id === "sentiment" ? sentimentMetricsHtml(result) : "";
       $("reportView").innerHTML = `${metrics}${renderMarkdown(text)}`;
       ms.renderedReportKey = reportKey;
     }
@@ -591,312 +571,6 @@
     return `${sign}${abs.toFixed(2)}`;
   }
 
-  function cmpFormParams() {
-    const pick = (id) => String(document.getElementById(id)?.value || "").trim();
-    const extra = {};
-    const index = pick("cmpIndex"), beg = pick("cmpBeg"), end = pick("cmpEnd");
-    if (index) extra.index = index;
-    if (beg) extra.beg = beg;
-    if (end) extra.end = end;
-    return extra;
-  }
-
-  function cmpHtml(pack) {
-    const meta = pack.meta || {};
-    const total = pack.total || {};
-    const scores = pack.scores || {};
-    const weights = { open: 0.15, high: 0.20, low: 0.25, close: 0.40 };
-    const names = { open: "开盘", high: "最高", low: "最低", close: "收盘" };
-    const scoreRows = ["open", "high", "low", "close"].map((k) => {
-      const s = Number(scores[k]);
-      const w = weights[k];
-      return `<tr>
-        <td>${names[k]}</td>
-        <td class="num">${Number.isFinite(s) ? s.toFixed(4) : "—"}</td>
-        <td class="num">${w.toFixed(2)}</td>
-        <td class="num">${Number.isFinite(s) ? (s * w).toFixed(4) : "—"}</td>
-      </tr>`;
-    }).join("");
-    const closes = [...(pack.daily?.close || [])].sort((a, b) => Math.abs(b.dif) - Math.abs(a.dif)).slice(0, 10);
-    const dayRows = closes.length ? closes.map((r) => `<tr>
-        <td>${esc(r.date || "")}</td>
-        <td class="num">${(Number(r.rs) * 100).toFixed(2)}%</td>
-        <td class="num">${(Number(r.rb) * 100).toFixed(2)}%</td>
-        <td class="num">${(Number(r.dif) * 100).toFixed(2)}%</td>
-        <td>${esc(r.dir || "")}</td>
-      </tr>`).join("") : `<tr><td colspan="5" class="muted">暂无逐日数据</td></tr>`;
-    const dirs = {};
-    (pack.daily?.close || []).forEach((r) => { dirs[r.dir] = (dirs[r.dir] || 0) + 1; });
-    const dirText = Object.entries(dirs).map(([k, v]) => `${k}${v}`).join(" · ") || "—";
-    return `
-      <div class="chip-params">
-        <label>对比指数<input id="cmpIndex" value="${esc(meta.index || "SH000001")}" /></label>
-        <label>区间<input id="cmpBeg" type="date" value="${esc(meta.beg || "")}" /></label>
-        <span class="muted">–</span>
-        <label>至<input id="cmpEnd" type="date" value="${esc(meta.end || "")}" /></label>
-        <button type="button" id="cmpRecalc" class="btn primary">计算</button>
-      </div>
-      <div class="engine-kpis">
-        <div class="engine-kpi"><span>偏离总分</span><strong>${esc(String(total.value ?? "—"))}</strong></div>
-        <div class="engine-kpi"><span>等级</span><strong>${esc(total.level || "—")}</strong></div>
-        <div class="engine-kpi"><span>对齐交易日</span><strong>${esc(String(meta.n ?? "—"))}</strong></div>
-        <div class="engine-kpi"><span>主要贡献</span><strong>${esc((total.top || []).join(" + ") || "—")}</strong></div>
-      </div>
-      <section class="engine-section"><h3>四图偏离柱状图（X=日期，Y=偏离DIF · 滚轮缩放 · 拖拽左右滚动 · 悬浮看某日数据）</h3>
-        <div class="cmp-charts">
-          <figure><figcaption>开盘偏离</figcaption><canvas id="cmpChart-open" height="180"></canvas></figure>
-          <figure><figcaption>最高偏离</figcaption><canvas id="cmpChart-high" height="180"></canvas></figure>
-          <figure><figcaption>最低偏离</figcaption><canvas id="cmpChart-low" height="180"></canvas></figure>
-          <figure><figcaption>收盘偏离</figcaption><canvas id="cmpChart-close" height="180"></canvas></figure>
-        </div>
-      </section>
-      <section class="engine-section"><h3>四图得分（${esc(meta.stock_name || meta.stock || "")} vs ${esc(meta.index_name || meta.index || "")}）</h3>
-        <div class="rot-scroll"><table class="rot-table">
-          <thead><tr><th>类型</th><th class="num">得分</th><th class="num">权重</th><th class="num">加权</th></tr></thead>
-          <tbody>${scoreRows}</tbody>
-        </table></div>
-        <p class="muted sentiment-source-note">收盘方向分布：${esc(dirText)}</p>
-      </section>
-      <section class="engine-section"><h3>偏离最大的10个交易日（收盘）</h3>
-        <div class="rot-scroll"><table class="rot-table">
-          <thead><tr><th>日期</th><th class="num">个股</th><th class="num">指数</th><th class="num">偏离</th><th>方向</th></tr></thead>
-          <tbody>${dayRows}</tbody>
-        </table></div>
-      </section>
-    `;
-  }
-
-  function chipFormParams() {    const pick = (id) => String(document.getElementById(id)?.value || "").trim();
-    const extra = {};
-    const start = pick("chipStart"), end = pick("chipEnd"), target = pick("chipTarget");
-    const order = pick("chipOrder") || "desc";
-    if (start) extra.start = start;
-    if (end) extra.end = end;
-    if (target) extra.target = target;
-    if (order) extra.order = order;
-    return extra;
-  }
-
-  function chipHtml(pack) {
-    const res = pack?.result || {};
-    const names = { open: "开盘", high: "最高", low: "最低", close: "收盘" };
-    const rows = ["open", "high", "low", "close"].map((k) => {
-      const r = res[k] || {};
-      const pct = Number(r.percent);
-      const bar = Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0;
-      return `<tr>
-        <td>${names[k]}</td>
-        <td class="num">${esc(String(r.value ?? "—"))}</td>
-        <td class="num">${esc(String(r.rank ?? "—"))} / ${esc(String(r.total ?? "—"))}</td>
-        <td><div class="chip-bar"><i style="width:${bar}%"></i></div></td>
-        <td class="num">${Number.isFinite(pct) ? pct.toFixed(2) + "%" : "—"}</td>
-      </tr>`;
-    }).join("");
-    const sub = pack.substituted
-      ? `<p class="muted sentiment-source-note">目标日 ${esc(pack.target_requested || "")} 非交易日，已取前一个交易日 ${esc(pack.target || "")}</p>`
-      : "";
-    return `
-      <div class="chip-params">
-        <label>区间<input id="chipStart" type="date" value="${esc(pack.start || "")}" /></label>
-        <span class="muted">–</span>
-        <label>至<input id="chipEnd" type="date" value="${esc(pack.end || "")}" /></label>
-        <label>目标日<input id="chipTarget" type="date" value="${esc(pack.target || "")}" /></label>
-        <label>排序<select id="chipOrder">
-          <option value="desc"${pack.order !== "asc" ? " selected" : ""}>从大到小</option>
-          <option value="asc"${pack.order === "asc" ? " selected" : ""}>从小到大</option>
-        </select></label>
-        <button type="button" id="chipRecalc" class="btn primary">计算</button>
-      </div>
-      <div class="engine-kpis">
-        <div class="engine-kpi"><span>样本交易日</span><strong>${esc(String(pack.N ?? "—"))}</strong></div>
-        <div class="engine-kpi"><span>目标日</span><strong>${esc(pack.target || "—")}</strong></div>
-        <div class="engine-kpi"><span>复权</span><strong>${esc((pack.adjust || "qfq").toUpperCase())}</strong></div>
-      </div>
-      <section class="engine-section"><h3>价格位置（百分位越高越接近区间上沿）</h3>
-        <div class="rot-scroll"><table class="rot-table">
-          <thead><tr><th>类型</th><th class="num">目标价</th><th class="num">排名/样本</th><th>百分位</th><th class="num">值</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table></div>
-      </section>
-      ${sub}
-      <p class="muted sentiment-source-note">${esc(pack.note || "")}</p>
-    `;
-  }
-
-  const CMP_STATE = {};
-  const CMP_COLORS = { "股涨指跌": "#c81e3a", "同涨": "#ff8a96", "股跌指涨": "#0f9d63", "同跌": "#7fe0b2" };
-
-  function drawCmpCharts(pack) {
-    const css = (name, fallback) => {
-      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-      return v || fallback;
-    };
-    const C_LINE = css("--line", "#2a3648"), C_MUT = css("--muted", "#8494a8");
-    const dirColor = (d) => CMP_COLORS[d] || C_MUT;
-    ["open", "high", "low", "close"].forEach((k) => {
-      const cv = document.getElementById(`cmpChart-${k}`);
-      if (!cv) return;
-      const rows = (pack.daily?.[k] || []).filter((r) => Number.isFinite(Number(r.dif)));
-      const st = CMP_STATE[k] || (CMP_STATE[k] = {});
-      st.rows = rows;
-      if (!rows.length) {
-        const ctx0 = cv.getContext("2d");
-        ctx0.clearRect(0, 0, cv.width, cv.height);
-        ctx0.fillStyle = C_MUT;
-        ctx0.font = "12px sans-serif";
-        ctx0.fillText("暂无数据", 10, 20);
-        return;
-      }
-      if (!Number.isFinite(st.a) || !Number.isFinite(st.b) || st.n !== rows.length || st.sym !== pack.symbol) {
-        st.n = rows.length;
-        st.sym = pack.symbol;
-        st.b = rows.length;
-        st.a = Math.max(0, rows.length - 120);
-      }
-      st.a = Math.max(0, Math.min(st.a, rows.length - 1));
-      st.b = Math.max(st.a + 5, Math.min(st.b, rows.length));
-      paintCmpChart(cv, k, st, { C_LINE, C_MUT, dirColor });
-      bindCmpChart(cv, k, st, { C_LINE, C_MUT, dirColor });
-    });
-  }
-
-  function paintCmpChart(cv, k, st, theme) {
-    const { C_LINE, C_MUT, dirColor } = theme;
-    const rows = st.rows;
-    const dpr = window.devicePixelRatio || 1;
-    const W = Math.max(200, cv.clientWidth || cv.parentElement.clientWidth || 400);
-    const H = 200;
-    cv.width = Math.round(W * dpr);
-    cv.height = Math.round(H * dpr);
-    cv.style.width = "100%";
-    cv.style.height = `${H}px`;
-    const ctx = cv.getContext("2d");
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, W, H);
-    const padL = 46, padR = 10, padT = 14, padB = 20;
-    const view = rows.slice(st.a, st.b);
-    const vals = view.map((r) => Number(r.dif) * 100);
-    let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
-    if (hi - lo < 1e-9) { hi += 0.05; lo -= 0.05; }
-    const plotW = W - padL - padR;
-    const bw = Math.max(1.5, plotW / Math.max(1, view.length) - 0.8);
-    const X = (i) => padL + ((i + 0.5) / Math.max(1, view.length)) * plotW - bw / 2;
-    const Y = (v) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
-    st.geom = { W, H, padL, padR, padT, padB, bw, X, Y };
-    ctx.strokeStyle = C_LINE;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    [hi, 0, lo].forEach((v) => { ctx.moveTo(padL, Y(v)); ctx.lineTo(W - padR, Y(v)); });
-    ctx.stroke();
-    ctx.fillStyle = C_MUT;
-    ctx.font = "10px sans-serif";
-    ctx.fillText(`${hi.toFixed(2)}%`, 2, Y(hi) + 3);
-    ctx.fillText("0", 2, Y(0) + 3);
-    ctx.fillText(`${lo.toFixed(2)}%`, 2, Y(lo) + 3);
-    ctx.fillText(view[0].date?.slice(5) || "", padL, H - 6);
-    ctx.fillText(view[view.length - 1].date?.slice(5) || "", W - padR - 36, H - 6);
-    if (st.b < rows.length || st.a > 0) {
-      ctx.fillText(`显示 ${st.a + 1}–${st.b} / 共${rows.length}天 · 滚轮缩放 · 拖拽平移`, padL + 4, 11);
-    } else {
-      ctx.fillText(`共${rows.length}天 · 滚轮缩放 · 拖拽平移`, padL + 4, 11);
-    }
-    const y0 = Y(0);
-    view.forEach((r, i) => {
-      const v = Number(r.dif) * 100;
-      const y = Y(v);
-      ctx.fillStyle = r === st.hover ? "#ffffff" : dirColor(r.dir);
-      ctx.globalAlpha = r === st.hover ? 1 : 0.88;
-      ctx.fillRect(X(i), Math.min(y, y0), bw, Math.max(1, Math.abs(y - y0)));
-    });
-    ctx.globalAlpha = 1;
-    const counts = { "同涨": 0, "同跌": 0, "股涨指跌": 0, "股跌指涨": 0 };
-    rows.forEach((r) => { counts[r.dir] = (counts[r.dir] || 0) + 1; });
-    const cap = cv.parentElement?.querySelector("figcaption");
-    if (cap && !cap.dataset.base) cap.dataset.base = cap.textContent;
-    if (cap) {
-      cap.innerHTML = `${esc(cap.dataset.base)} <span class="cmp-legend">` +
-        Object.entries(CMP_COLORS).map(([d, c]) =>
-          `<span class="cmp-dot" style="background:${c}"></span>${d}${counts[d] || 0}`).join(" ") + "</span>";
-    }
-    paintCmpTip(cv, st);
-  }
-
-  function paintCmpTip(cv, st) {
-    let tip = cv.parentElement?.querySelector(".cmp-tip");
-    if (!tip) {
-      tip = document.createElement("div");
-      tip.className = "cmp-tip hidden";
-      cv.parentElement?.appendChild(tip);
-    }
-    const r = st.hover;
-    if (!r || !st.geom) { tip.classList.add("hidden"); return; }
-    const idx = st.rows.indexOf(r);
-    const vi = idx - st.a;
-    const x = st.geom.X(Math.max(0, vi)) + 8;
-    tip.innerHTML = `<b>${esc(r.date || "")}</b> <span style="color:${CMP_COLORS[r.dir] || "#fff"}">${esc(r.dir || "")}</span><br>` +
-      `个股 ${(Number(r.rs) * 100).toFixed(2)}% · 指数 ${(Number(r.rb) * 100).toFixed(2)}%<br>` +
-      `偏离 <b>${(Number(r.dif) * 100).toFixed(2)}%</b>`;
-    tip.classList.remove("hidden");
-    tip.style.left = `${Math.min(x, st.geom.W - 150)}px`;
-    tip.style.top = "26px";
-  }
-
-  function bindCmpChart(cv, k, st, theme) {
-    if (cv.dataset.cmpBound === "1") return;
-    cv.dataset.cmpBound = "1";
-    const repaint = () => paintCmpChart(cv, k, st, theme);
-    const posIdx = (ev) => {
-      const rect = cv.getBoundingClientRect();
-      const x = ev.clientX - rect.left;
-      const g = st.geom;
-      if (!g) return -1;
-      const n = st.b - st.a;
-      const i = Math.floor((x - g.padL) / ((g.W - g.padL - g.padR) / Math.max(1, n)));
-      return (i >= 0 && i < n) ? st.a + i : -1;
-    };
-    cv.addEventListener("wheel", (ev) => {
-      ev.preventDefault();
-      const n = st.rows.length;
-      const c = posIdx(ev);
-      const center = c >= 0 ? c : Math.round((st.a + st.b) / 2);
-      const span = Math.max(5, st.b - st.a);
-      const next = ev.deltaY > 0 ? Math.min(n, Math.round(span * 1.25)) : Math.max(5, Math.round(span * 0.8));
-      const ratio = (center - st.a) / span;
-      st.a = Math.max(0, Math.min(n - next, Math.round(center - next * ratio)));
-      st.b = st.a + next;
-      st.hover = null;
-      repaint();
-    }, { passive: false });
-    let dragX = null, dragA = 0, dragB = 0, moved = false;
-    cv.addEventListener("mousedown", (ev) => {
-      dragX = ev.clientX; dragA = st.a; dragB = st.b; moved = false;
-    });
-    window.addEventListener("mousemove", (ev) => {
-      if (dragX == null || !cv.isConnected) return;
-      if (ev.buttons !== 1) { dragX = null; return; }
-      const rect = cv.getBoundingClientRect();
-      if (ev.clientX < rect.left - 40 || ev.clientX > rect.right + 40) return;
-      const n = st.rows.length;
-      const span = dragB - dragA;
-      const dx = Math.round((ev.clientX - dragX) / rect.width * span);
-      if (Math.abs(ev.clientX - dragX) > 3) moved = true;
-      const na = Math.max(0, Math.min(n - span, dragA - dx));
-      st.a = na; st.b = na + span;
-      st.hover = null;
-      repaint();
-    });
-    window.addEventListener("mouseup", () => { dragX = null; });
-    cv.addEventListener("mousemove", (ev) => {
-      if (dragX != null && moved) return;
-      const i = posIdx(ev);
-      const r = i >= 0 ? st.rows[i] : null;
-      if (r !== st.hover) { st.hover = r; repaint(); }
-    });
-    cv.addEventListener("mouseleave", () => {
-      st.hover = null;
-      if (st.geom) repaint();
-    });
-  }
   const ZHANG_REPORT_TYPES = [
     ["annual", "年报"],
     ["semi", "半年报"],
@@ -1929,8 +1603,6 @@
   function engineHtml(pack, mode = state.mode) {
     if (mode === "risk" || pack?.module === "riskassessment") return riskHtml(pack);
     if (mode === "bizprofile" || Array.isArray(pack?.dimensions)) return bizProfileHtml(pack);
-    if (mode === "compare" || (pack?.scores && pack?.total && pack?.daily)) return cmpHtml(pack);
-    if (mode === "chip" || pack?.method === "same_type") return chipHtml(pack);
     if (mode === "zhang-views" || (Array.isArray(pack?.views) && pack?.summary)) return zhangViewsHtml(pack);
     if (mode === "peers" || Array.isArray(pack?.by_view)) return peersHtml(pack);
     const flags = Array.isArray(pack?.flags) ? pack.flags : [];
@@ -2040,11 +1712,6 @@
     if ($("reportMeta")) $("reportMeta").textContent = cfg.resultMeta?.(pack) || "";
     if ($("reportView")) $("reportView").innerHTML = engineHtml(pack, state.mode);
     paintReportParams(pack);
-    if (state.mode === "compare") {
-      requestAnimationFrame(() => {
-        try { drawCmpCharts(pack); } catch { /* ignore */ }
-      });
-    }
     if (state.mode === "peers") {
       requestAnimationFrame(() => {
         const wrap = document.querySelector("#panel-judgment .peers-lb-wrap");
@@ -2315,9 +1982,7 @@
 
   async function startTask() {
     if (isEngineMode()) {
-      const extra = state.mode === "chip" ? chipFormParams()
-        : state.mode === "compare" ? cmpFormParams()
-        : state.mode === "zhang-views" ? { ...zhangViewsFormParams(), refresh: "1" }
+      const extra = state.mode === "zhang-views" ? { ...zhangViewsFormParams(), refresh: "1" }
         : state.mode === "peers" ? { ...peersFormParams(), refresh: "1" }
         : state.mode === "risk" ? { markdown: "0" }
         : state.mode === "bizprofile" ? { markdown: "0" }
@@ -2530,26 +2195,6 @@
   function bind() {
     $("startBtn")?.addEventListener("click", () => {
       startTask().catch((err) => showError(err.message || String(err)));
-    });
-    let cmpResizeTimer = null;
-    window.addEventListener("resize", () => {
-      if (state.mode !== "compare") return;
-      const pack = getModeState("compare").enginePack;
-      if (!pack) return;
-      clearTimeout(cmpResizeTimer);
-      cmpResizeTimer = setTimeout(() => {
-        try { drawCmpCharts(pack); } catch { /* ignore */ }
-      }, 200);
-    });
-    document.getElementById("panel-judgment")?.addEventListener("click", (ev) => {
-      if (!ev.target.closest?.("#chipRecalc")) return;
-      ev.preventDefault();
-      loadEngine("chip", { force: true, extra: chipFormParams() }).catch((err) => showError(err.message || String(err)));
-    });
-    document.getElementById("panel-judgment")?.addEventListener("click", (ev) => {
-      if (!ev.target.closest?.("#cmpRecalc")) return;
-      ev.preventDefault();
-      loadEngine("compare", { force: true, extra: cmpFormParams() }).catch((err) => showError(err.message || String(err)));
     });
     document.getElementById("panel-judgment")?.addEventListener("click", (ev) => {
       if (!ev.target.closest?.("#zvRecalc")) return;

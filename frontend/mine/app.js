@@ -1,15 +1,48 @@
 (() => {
+  const PAGE_SIZE_KEY = "mine-stock-page-size";
+  const PAGE_SIZES = new Set([20, 50, 100]);
+
+  function readPageSize() {
+    try {
+      const n = Number(localStorage.getItem(PAGE_SIZE_KEY));
+      if (PAGE_SIZES.has(n)) return n;
+    } catch {
+      /* ignore */
+    }
+    return 20;
+  }
+
+  const KLINE_MOUNT_CONCURRENCY = 2;
+  const SORT_KEYS = new Set(["rank", "change_pct", "price", "pe_ttm", "pb", "market_cap"]);
+  const SORT_LABELS = {
+    rank: "加入顺序",
+    change_pct: "涨跌",
+    price: "现价",
+    pe_ttm: "PE",
+    pb: "PB",
+    market_cap: "市值",
+  };
+
   const state = {
     groups: [],
     selectedId: "",
     group: null,
     filter: "",
+    page: 1,
+    pageSize: readPageSize(),
+    pageByGroup: {},
+    sortKey: "rank",
+    sortDir: "asc",
+    sortByGroup: {},
     fetching: false,
     syncing: false,
+    selectSeq: 0,
     suggestTimer: 0,
     suggestItems: [],
     suggestOpen: false,
     klineObserver: null,
+    klineMountQueue: [],
+    klineMountActive: 0,
     view: (() => {
       try {
         return localStorage.getItem("mine-stock-view") === "card" ? "card" : "list";
@@ -147,16 +180,169 @@
       .filter(Boolean);
   }
 
+  function sortValue(row, key) {
+    if (key === "rank") {
+      const n = Number(row?.rank);
+      return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+    }
+    const n = Number(row?.[key]);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function sortedStocks(rows) {
+    const list = Array.isArray(rows) ? rows.slice() : [];
+    const key = SORT_KEYS.has(state.sortKey) ? state.sortKey : "rank";
+    const dir = state.sortDir === "asc" ? 1 : -1;
+    list.sort((a, b) => {
+      const av = sortValue(a, key);
+      const bv = sortValue(b, key);
+      if (av == null && bv == null) {
+        return (Number(a.rank) || 0) - (Number(b.rank) || 0);
+      }
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (av !== bv) return av > bv ? dir : -dir;
+      const ar = Number(a.rank) || 0;
+      const br = Number(b.rank) || 0;
+      if (ar !== br) return ar - br;
+      return String(a.code || "").localeCompare(String(b.code || ""));
+    });
+    return list;
+  }
+
   function filteredStocks() {
     const stocks = state.group?.stocks || [];
     const kw = state.filter.trim().toLowerCase();
-    if (!kw) return stocks;
-    return stocks.filter((row) => {
-      const hay = [row.name, row.code, row.l1_name, row.l2_name, row.l3_name]
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(kw);
+    const filtered = !kw
+      ? stocks
+      : stocks.filter((row) => {
+          const hay = [row.name, row.code, row.l1_name, row.l2_name, row.l3_name]
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(kw);
+        });
+    return sortedStocks(filtered);
+  }
+
+  function rememberSort() {
+    if (!state.selectedId) return;
+    state.sortByGroup[state.selectedId] = {
+      key: state.sortKey,
+      dir: state.sortDir,
+    };
+  }
+
+  function restoreSort(groupId) {
+    const saved = state.sortByGroup[groupId];
+    if (saved && SORT_KEYS.has(saved.key)) {
+      state.sortKey = saved.key;
+      state.sortDir = saved.dir === "asc" ? "asc" : "desc";
+      return;
+    }
+    state.sortKey = "rank";
+    state.sortDir = "asc";
+  }
+
+  function setSort(key) {
+    const next = SORT_KEYS.has(key) ? key : "rank";
+    if (next === "rank") {
+      state.sortKey = "rank";
+      state.sortDir = "asc";
+    } else if (next === state.sortKey) {
+      state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+    } else {
+      state.sortKey = next;
+      // 涨跌/现价/市值默认降序，估值默认升序
+      state.sortDir = next === "pe_ttm" || next === "pb" ? "asc" : "desc";
+    }
+    rememberSort();
+    state.page = 1;
+    rememberPage();
+    renderStocks();
+  }
+
+  function syncSortButtons() {
+    const key = SORT_KEYS.has(state.sortKey) ? state.sortKey : "rank";
+    const asc = state.sortDir === "asc";
+    document.querySelectorAll("[data-mine-sort]").forEach((btn) => {
+      const btnKey = btn.getAttribute("data-mine-sort") || "";
+      // 工具栏无「加入顺序」：仅在选中 PE/PB/涨跌等时高亮；表头 # 在 rank 时高亮
+      const isSeg = Boolean(btn.closest("#sortSeg"));
+      const on = isSeg ? btnKey === key && key !== "rank" : btnKey === key;
+      btn.classList.toggle("is-active", on);
+      btn.classList.toggle("is-asc", on && asc);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
     });
+  }
+
+  function totalPages(total) {
+    return Math.max(1, Math.ceil(Math.max(0, Number(total) || 0) / state.pageSize));
+  }
+
+  function rememberPage() {
+    if (!state.selectedId) return;
+    state.pageByGroup[state.selectedId] = state.page;
+  }
+
+  function restorePage(groupId) {
+    const saved = Number(state.pageByGroup[groupId] || 1);
+    state.page = Number.isFinite(saved) && saved >= 1 ? saved : 1;
+  }
+
+  function clampPage(total) {
+    const pages = totalPages(total);
+    if (state.page > pages) state.page = pages;
+    if (state.page < 1) state.page = 1;
+    rememberPage();
+    return pages;
+  }
+
+  function pagedStocks(rows) {
+    clampPage(rows.length);
+    const start = (state.page - 1) * state.pageSize;
+    return rows.slice(start, start + state.pageSize);
+  }
+
+  function renderPager(total) {
+    const pager = $("stockPager");
+    const info = $("pageInfo");
+    const prev = $("prevPage");
+    const next = $("nextPage");
+    const sizeSel = $("pageSize");
+    if (!pager || !info || !prev || !next) return;
+    if (!state.selectedId || !state.group || total <= 0) {
+      pager.hidden = true;
+      return;
+    }
+    const pages = clampPage(total);
+    pager.hidden = false;
+    if (sizeSel && Number(sizeSel.value) !== state.pageSize) {
+      sizeSel.value = String(state.pageSize);
+    }
+    const start = (state.page - 1) * state.pageSize + 1;
+    const end = Math.min(total, state.page * state.pageSize);
+    info.textContent = `${start}-${end} / ${total} · 第 ${state.page}/${pages} 页`;
+    prev.disabled = state.page <= 1;
+    next.disabled = state.page >= pages;
+  }
+
+  function turnPage(nextPage) {
+    if (nextPage < 1) return;
+    const total = filteredStocks().length;
+    const pages = totalPages(total);
+    if (nextPage > pages) return;
+    state.page = nextPage;
+    rememberPage();
+    renderStocks();
+    const board = document.querySelector(".mine-stock-scroll") || $("stockCards");
+    if (board && typeof board.scrollTo === "function") {
+      try {
+        board.scrollTo({ top: 0, left: 0 });
+      } catch {
+        board.scrollTop = 0;
+        board.scrollLeft = 0;
+      }
+    }
   }
 
   function renderSummary() {
@@ -364,16 +550,43 @@
     </article>`;
   }
 
+  function clearKlineMountQueue() {
+    state.klineMountQueue.length = 0;
+  }
+
+  function pumpKlineMount() {
+    while (state.klineMountActive < KLINE_MOUNT_CONCURRENCY && state.klineMountQueue.length) {
+      const job = state.klineMountQueue.shift();
+      state.klineMountActive += 1;
+      Promise.resolve()
+        .then(() => job && job())
+        .finally(() => {
+          state.klineMountActive = Math.max(0, state.klineMountActive - 1);
+          pumpKlineMount();
+        });
+    }
+  }
+
+  function enqueueKlineMount(job) {
+    state.klineMountQueue.push(job);
+    pumpKlineMount();
+  }
+
   function mountCardKline(card) {
     const kline = card.querySelector(".chart-card--kline");
     const code = kline && kline.dataset.klineCode;
-    if (kline && code && window.OrbitKline) window.OrbitKline.mount(kline, { code, carousel: true });
+    if (!kline || !code || !window.OrbitKline) return;
+    enqueueKlineMount(() => {
+      if (!card.isConnected || !kline.isConnected) return;
+      window.OrbitKline.mount(kline, { code, carousel: true });
+    });
   }
 
   function observeCardKlines() {
     const cards = $("stockCards");
     if (!cards) return;
     if (state.klineObserver) state.klineObserver.disconnect();
+    clearKlineMountQueue();
     if (state.view !== "card" || !window.OrbitKline) return;
     const pending = new Set(cards.querySelectorAll(".screen-card[data-kline-new]"));
     if (!pending.size) return;
@@ -387,14 +600,28 @@
           mountCardKline(card);
         }
       },
-      { root: cards, rootMargin: "200px" }
+      { root: cards, rootMargin: "120px" }
     );
     pending.forEach((card) => state.klineObserver.observe(card));
+  }
+
+  function clearCards() {
+    const cards = $("stockCards");
+    if (state.klineObserver) {
+      state.klineObserver.disconnect();
+      state.klineObserver = null;
+    }
+    clearKlineMountQueue();
+    if (cards) cards.innerHTML = "";
   }
 
   function renderCards(rows) {
     const cards = $("stockCards");
     if (!cards) return;
+    if (state.view !== "card") {
+      clearCards();
+      return;
+    }
     cards.innerHTML = rows
       .map((row) => {
         const code = esc(row.code);
@@ -433,15 +660,18 @@
     const empty = $("stockEmpty");
     const title = $("stockTitle");
     const meta = $("stockMeta");
+    syncSortButtons();
 
     if (!state.selectedId || !state.group) {
       title.textContent = "股票";
       meta.textContent = "选择左侧分组";
       body.innerHTML = "";
-      renderCards([]);
+      clearCards();
       empty.textContent = state.groups.length ? "选择左侧分组查看成分" : "暂无分组，先在左侧新建一个";
       empty.hidden = false;
       setStockPaneEnabled(false);
+      renderPager(0);
+      applyView();
       return;
     }
 
@@ -449,33 +679,64 @@
     title.textContent = state.group.name || "股票";
     const all = state.group.stocks || [];
     const rows = filteredStocks();
-    meta.textContent = state.filter.trim()
-      ? `显示 ${rows.length} / ${all.length}`
-      : `${all.length} 只`;
+    const pages = totalPages(rows.length);
+    clampPage(rows.length);
+    const pageRows = pagedStocks(rows);
+    const startRank = (state.page - 1) * state.pageSize;
+    const loading = Boolean(state.group._loading);
+    const sortHint =
+      state.sortKey && state.sortKey !== "rank"
+        ? ` · ${SORT_LABELS[state.sortKey] || state.sortKey}${state.sortDir === "asc" ? "↑" : "↓"}`
+        : "";
+    meta.textContent = loading
+      ? "加载中…"
+      : state.filter.trim()
+        ? `显示 ${rows.length} / ${all.length} · 第 ${state.page}/${pages} 页${sortHint}`
+        : `${all.length} 只 · 第 ${state.page}/${pages} 页${sortHint}`;
+
+    if (loading) {
+      body.innerHTML = "";
+      clearCards();
+      empty.textContent = "正在加载分组…";
+      empty.hidden = false;
+      renderPager(0);
+      applyView();
+      return;
+    }
 
     if (!all.length) {
       body.innerHTML = "";
-      renderCards([]);
+      clearCards();
       empty.textContent = "分组为空，在上方搜索并添加股票";
       empty.hidden = false;
+      renderPager(0);
+      applyView();
       return;
     }
     if (!rows.length) {
       body.innerHTML = "";
-      renderCards([]);
+      clearCards();
       empty.textContent = "没有匹配的股票";
       empty.hidden = false;
+      renderPager(0);
+      applyView();
       return;
     }
 
     empty.hidden = true;
-    renderCards(rows);
     applyView();
-    body.innerHTML = rows
+    renderPager(rows.length);
+    if (state.view === "card") {
+      body.innerHTML = "";
+      renderCards(pageRows);
+      return;
+    }
+    clearCards();
+    body.innerHTML = pageRows
       .map((row, index) => {
         const code = esc(row.code);
         return `<tr class="is-row is-stock" data-code="${code}" data-industry="${esc(row.l3_code || "")}">
-          <td class="num shares-rank">${row.rank || index + 1}</td>
+          <td class="num shares-rank">${row.rank || startRank + index + 1}</td>
           <td>
             <a class="mine-stock-link" href="${esc(stockHref(row))}" title="打开公司详情">
               <span class="market-stock-name">${esc(row.name || "—")}</span>
@@ -547,27 +808,33 @@
     writeGroupToUrl(state.selectedId);
   }
 
-  async function loadGroupDetail(groupId) {
+  async function loadGroupDetail(groupId, { live = false, force = false, seq = null } = {}) {
     if (!groupId) {
       state.group = null;
-      return;
+      return null;
     }
-    const json = await api(`/api/mine/groups/${encodeURIComponent(groupId)}`, {
-      bypassCache: true,
+    const qs = live ? "?live=1" : "";
+    const json = await api(`/api/mine/groups/${encodeURIComponent(groupId)}${qs}`, {
+      bypassCache: force || live,
     });
+    if (seq != null && seq !== state.selectSeq) return null;
     state.group = json.data || null;
     state.selectedId = state.group?.id || "";
     writeGroupToUrl(state.selectedId);
+    return state.group;
   }
 
   async function refreshAll() {
     if (state.fetching) return;
     state.fetching = true;
+    const seq = ++state.selectSeq;
     setLoading(true);
     setLive("busy");
     try {
       await loadGroups();
-      if (state.selectedId) await loadGroupDetail(state.selectedId);
+      if (seq !== state.selectSeq) return;
+      if (state.selectedId) await loadGroupDetail(state.selectedId, { live: true, force: true, seq });
+      if (seq !== state.selectSeq) return;
       paint();
       showError("");
       setLive("live");
@@ -576,33 +843,60 @@
         from: "mine",
       });
     } catch (err) {
+      if (seq !== state.selectSeq) return;
       showError(err.message || String(err));
       setLive("idle");
       paint();
     } finally {
-      setLoading(false);
+      // 即使被后续切换抢占，也要放下锁/遮罩，否则刷新会永久无响应
       state.fetching = false;
+      setLoading(false);
     }
   }
 
   async function selectGroup(groupId) {
     if (!groupId) return;
-    if (groupId === state.selectedId && state.group) {
+    if (groupId === state.selectedId && state.group && !state.group._loading) {
       paint();
       return;
     }
+    rememberPage();
+    rememberSort();
+    const seq = ++state.selectSeq;
     state.selectedId = groupId;
+    restorePage(groupId);
+    restoreSort(groupId);
     writeGroupToUrl(groupId);
+    const meta = state.groups.find((g) => g.id === groupId);
+    state.group = {
+      id: groupId,
+      name: meta?.name || "",
+      count: Number(meta?.count || 0),
+      stocks: [],
+      _loading: true,
+    };
+    paint();
     setLive("busy");
     try {
-      await loadGroupDetail(groupId);
+      const detail = await loadGroupDetail(groupId, { seq });
+      if (seq !== state.selectSeq) return;
+      if (!detail) throw new Error("分组加载失败");
       showError("");
       setLive("live");
+      paint();
+      window.OrbitPrefetch?.boot("mine", {
+        stocks: (state.group?.stocks || []).slice(0, 8),
+        from: "mine",
+      });
     } catch (err) {
+      if (seq !== state.selectSeq) return;
       showError(err.message || String(err));
       setLive("idle");
+      if (state.group && state.group.id === groupId) {
+        delete state.group._loading;
+      }
+      paint();
     }
-    paint();
   }
 
   async function createGroup(name) {
@@ -611,7 +905,14 @@
       body: JSON.stringify({ name }),
     });
     const group = json.data;
+    rememberPage();
+    rememberSort();
     state.selectedId = group.id;
+    state.page = 1;
+    state.sortKey = "rank";
+    state.sortDir = "asc";
+    rememberPage();
+    rememberSort();
     state.group = group;
     await loadGroups({ keepSelection: true });
     writeGroupToUrl(state.selectedId);
@@ -622,13 +923,23 @@
     if (!state.selectedId || !state.group) return;
     const name = state.group.name || state.selectedId;
     if (!window.confirm(`确定删除分组「${name}」？其中股票也会一并移除。`)) return;
+    const removedId = state.selectedId;
     await api(`/api/mine/groups/${encodeURIComponent(state.selectedId)}`, {
       method: "DELETE",
     });
+    delete state.pageByGroup[removedId];
+    delete state.sortByGroup[removedId];
     state.selectedId = "";
     state.group = null;
     await loadGroups({ keepSelection: false });
-    if (state.selectedId) await loadGroupDetail(state.selectedId);
+    if (state.selectedId) {
+      restorePage(state.selectedId);
+      restoreSort(state.selectedId);
+      await loadGroupDetail(state.selectedId);
+    } else {
+      state.sortKey = "rank";
+      state.sortDir = "asc";
+    }
     paint();
   }
 
@@ -737,11 +1048,38 @@
 
     $("filterInput").addEventListener("input", () => {
       state.filter = $("filterInput").value;
+      state.page = 1;
+      rememberPage();
       renderStocks();
     });
 
+    $("pageSize")?.addEventListener("change", () => {
+      const n = Number($("pageSize").value) || 20;
+      state.pageSize = PAGE_SIZES.has(n) ? n : 20;
+      state.page = 1;
+      rememberPage();
+      try {
+        localStorage.setItem(PAGE_SIZE_KEY, String(state.pageSize));
+      } catch {
+        /* ignore */
+      }
+      renderStocks();
+    });
+
+    $("prevPage")?.addEventListener("click", () => turnPage(state.page - 1));
+    $("nextPage")?.addEventListener("click", () => turnPage(state.page + 1));
+
     $("viewListBtn").addEventListener("click", () => setView("list"));
     $("viewCardBtn").addEventListener("click", () => setView("card"));
+
+    const onSortClick = (event) => {
+      const btn = event.target.closest("[data-mine-sort]");
+      if (!btn) return;
+      event.preventDefault();
+      setSort(btn.getAttribute("data-mine-sort") || "rank");
+    };
+    $("sortSeg")?.addEventListener("click", onSortClick);
+    $("stockHead")?.addEventListener("click", onSortClick);
 
     $("addInput").addEventListener("input", () => {
       const value = $("addInput").value;
@@ -865,6 +1203,12 @@
 
   bind();
   applyView();
+  const sizeSel = $("pageSize");
+  if (sizeSel) sizeSel.value = String(state.pageSize);
   state.selectedId = readGroupFromUrl();
+  if (state.selectedId) {
+    restorePage(state.selectedId);
+    restoreSort(state.selectedId);
+  }
   void refreshAll();
 })();

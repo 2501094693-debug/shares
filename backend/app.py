@@ -4,6 +4,7 @@
 - ``market``：行情与申万行业（涨跌 / 资金流 / 个股榜 / 基金 / 期货；以及 ``market.industry`` 分类、成分股检索、地图标注）
 - ``company``：单只股票的盘口、K 线、资讯、龙虎榜历史上榜
 - ``world``：全球主要股指、国债收益率、原油期货
+- ``exponent``：A 股指数（东财 / 同花顺；上证 / 深证 / 沪深300 / 中证系列等）
 - ``analysis``：研判（涨跌停分析 / 行业分析 / 个股分析）
 - ``mine``：自选股票分组管理
 """
@@ -41,6 +42,11 @@ from company.analysis.competition.api import router as competition_router
 from company.analysis.riskassessment.api import router as riskassessment_router
 from company.analysis.businessoverview.interfaces.api import router as businessoverview_router
 from company.analysis.businessoverview.bizprofile.api import router as bizprofile_router
+from company.analysis.line.compare.api import router as line_compare_router
+from company.analysis.line.extremum.api import router as line_extremum_router
+from company.analysis.line.undulate.api import router as line_undulate_router
+from company.analysis.line.T.api import router as line_trader_router
+from company.analysis.line.jetton.api import router as line_jetton_router
 from company.news.periodicreport.api import router as periodicreport_router
 from market.funds.fund.api import router as fund_router
 from market.futures.api import router as futures_router
@@ -51,6 +57,7 @@ from market.futures.service import service as futures_service
 from company.statistics.list.api import router as list_router
 from market.api import router as market_router
 from world.api import router as world_router
+from exponent.api import router as exponent_router
 from analysis.api import router as screen_router
 from market.funds.otc_fund.api import router as otc_fund_router
 from market.funds.otc_fund.service import service as otc_fund_service
@@ -209,9 +216,15 @@ app.include_router(competition_router)
 app.include_router(riskassessment_router)
 app.include_router(businessoverview_router)
 app.include_router(bizprofile_router)
+app.include_router(line_compare_router)
+app.include_router(line_extremum_router)
+app.include_router(line_undulate_router)
+app.include_router(line_trader_router)
+app.include_router(line_jetton_router)
 app.include_router(periodicreport_router)
 app.include_router(market_router)
 app.include_router(world_router)
+app.include_router(exponent_router)
 app.include_router(list_router)
 app.include_router(fund_router)
 app.include_router(otc_fund_router)

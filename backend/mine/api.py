@@ -49,10 +49,13 @@ def create_group(payload: dict[str, Any] = Body(default_factory=dict)):
 
 
 @router.get("/api/mine/groups/{group_id}")
-def get_group(group_id: str):
-    """分组详情（含股票列表）。"""
+def get_group(
+    group_id: str,
+    live: int = Query(0, description="1=刷新全市场行情后再贴字段；默认用缓存"),
+):
+    """分组详情（含股票列表）。默认读行情缓存，避免切换分组时卡顿。"""
     try:
-        return ok(service.get_group(group_id))
+        return ok(service.get_group(group_id, live=bool(live)))
     except KeyError as exc:
         return err(str(exc), 404)
     except Exception as exc:  # noqa: BLE001

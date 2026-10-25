@@ -312,6 +312,7 @@ const els = {
   peChartScrollBar: document.getElementById("peChartScrollBar"),
   refreshNewsBtn: document.getElementById("refreshNewsBtn"),
   refreshQuotesBtn: document.getElementById("refreshQuotesBtn"),
+  addGroupBtn: document.getElementById("addGroupBtn"),
   panelNews: document.getElementById("panel-news"),
   newsSourceBar: document.getElementById("newsSourceBar"),
   refreshEmotionBtn: document.getElementById("refreshEmotionBtn"),
@@ -726,7 +727,8 @@ const xqEmotionState = {
 let newsGroup = normalizeNewsGroup(params.get("news") || "");
 let newsBootstrapped = { official: false, other: false, reports: false, financials: false };
 let emotionBootstrapped = { eastmoney: false, tonghuashun: false, xueqiu: false };
-const ANALYSIS_PANELS = new Set(["business", "bizprofile", "zhang-views", "peers", "risk", "sentiment", "valuation", "chip", "compare"]);
+const ANALYSIS_PANELS = new Set(["business", "bizprofile", "zhang-views", "peers", "risk", "sentiment"]);
+const KLINE_JUDGMENT_VIEWS = new Set(["kline", "line-compare", "linecompare", "k线分析", "k线"]);
 const BUSINESS_FAMILY_VIEWS = new Set(["business", "bizprofile"]);
 const EARNINGS_VIEWS = new Set(["zhang-views"]);
 const EARNINGS_FAMILY = new Set(["earnings", "财报简述", ...EARNINGS_VIEWS]);
@@ -752,9 +754,11 @@ if (["list", "lhb", "longhu"].includes(tabParamRaw)) {
     newsGroup = NEWS_GROUP_FINANCIALS;
   }
 }
-let judgmentSubTab = normalizeJudgmentSubTab(params.get("judgment") || "");
-if (isAnalysisPanel(tabParamRaw) || tabParamRaw === "analysis") {
-  judgmentSubTab = normalizeJudgmentSubTab(tabParamRaw === "analysis" ? "bizprofile" : tabParamRaw);
+let judgmentSubTab = normalizeJudgmentSubTab(params.get("judgment") || "kline");
+if (isAnalysisPanel(tabParamRaw) || tabParamRaw === "analysis" || isKlineJudgment(tabParamRaw)) {
+  judgmentSubTab = normalizeJudgmentSubTab(
+    tabParamRaw === "analysis" ? "kline" : tabParamRaw
+  );
 }
 let lastBusinessView = BUSINESS_FAMILY_VIEWS.has(judgmentSubTab) ? judgmentSubTab : "bizprofile";
 let stockDisplayName = nameHint || code;
@@ -784,8 +788,14 @@ function activeEmotionState(source = emotionSource) {
   return emotionState;
 }
 
+function isKlineJudgment(panelId = "") {
+  const raw = String(panelId || "").trim().toLowerCase();
+  return KLINE_JUDGMENT_VIEWS.has(raw);
+}
+
 function isAnalysisPanel(panelId = "") {
   const raw = String(panelId || "").trim().toLowerCase();
+  if (isKlineJudgment(raw)) return false;
   if (EARNINGS_FAMILY.has(raw)) return true;
   const aliases = window.AI_MODE_ALIASES || {};
   const mapped = aliases[raw] || raw;
@@ -793,11 +803,13 @@ function isAnalysisPanel(panelId = "") {
 }
 
 function notifyAnalysisIdentity(stock = {}, { ready = false } = {}) {
-  window.CompanyAnalysis?.syncIdentity?.({
+  const identity = {
     code: stock.code || code,
     name: stock.name || nameHint || "",
     ready,
-  });
+  };
+  window.CompanyAnalysis?.syncIdentity?.(identity);
+  window.LineCompare?.syncIdentity?.(identity);
 }
 
 function normalizeMainPanel(panelId) {
@@ -833,12 +845,20 @@ function normalizeMainPanel(panelId) {
   ) {
     return "others";
   }
-  if (panelId === "judgment" || panelId === "analysis" || isAnalysisPanel(panelId)) return "judgment";
+  if (
+    panelId === "judgment"
+    || panelId === "analysis"
+    || isAnalysisPanel(panelId)
+    || isKlineJudgment(panelId)
+  ) {
+    return "judgment";
+  }
   return "";
 }
 
 function normalizeJudgmentSubTab(view) {
   const raw = String(view || "").trim().toLowerCase();
+  if (isKlineJudgment(raw)) return "kline";
   if (raw === "earnings" || raw === "财报简述") {
     return EARNINGS_VIEWS.has(lastEarningsView) ? lastEarningsView : "zhang-views";
   }
@@ -892,6 +912,23 @@ function isNewsHubInGroup(hub, group = newsGroup) {
 
 function isQuotesPanel(panelId = activeMainPanel) {
   return panelId === "quotes";
+}
+
+function syncAddGroupBtn() {
+  const btn = els.addGroupBtn;
+  if (!btn) return;
+  const show = isQuotesPanel(activeMainPanel) && !!code;
+  btn.hidden = !show;
+  if (!code) {
+    btn.removeAttribute("data-add-group");
+    delete btn.dataset.code;
+    delete btn.dataset.name;
+    return;
+  }
+  const name = stockDisplayName || nameHint || "";
+  btn.setAttribute("data-add-group", code);
+  btn.dataset.code = code;
+  btn.dataset.name = name;
 }
 
 /** @type {{ mode: string, adjust: 'qfq'|'hfq'|'none', loading: boolean, kind: 'kline', items: any[], allItems: any[], viewStart: number, viewSize: number, preClose: number|null, source: string, meta: string, hoverAbsIndex: number|null }} */
@@ -1006,7 +1043,7 @@ function comboPanesEnabled(mode = chartState.mode) {
 }
 
 function syncComboLegend(mode = chartState.mode) {
-  const card = document.querySelector(".chart-card--kline");
+  const card = els.priceChart?.closest(".chart-card--kline");
   const combo = comboPanesEnabled(mode);
   const metric = comboMetricState;
   if (card) card.classList.toggle("is-combo", combo);
@@ -1014,6 +1051,7 @@ function syncComboLegend(mode = chartState.mode) {
   if (els.peLegendWrap) els.peLegendWrap.classList.toggle("hidden", !combo || metric !== "pe");
   if (els.fundflowLegendWrap) els.fundflowLegendWrap.classList.toggle("hidden", !combo || metric !== "fundflow");
   if (els.marginLegendWrap) els.marginLegendWrap.classList.toggle("hidden", !combo || metric !== "margin");
+  syncLcComboLegend();
 }
 
 function syncChartModeSelect(mode = chartState.mode) {
@@ -1059,17 +1097,23 @@ function maPoint(vals, index) {
   return Number.isFinite(v) ? v : null;
 }
 
-function getKlineMaBundle() {
-  const all = chartState.allItems || [];
+function getKlineMaBundle(allItems, start, size) {
+  const all = Array.isArray(allItems) ? allItems : chartState.allItems || [];
   const closes = all.map((d) => Number(d.close));
   const full = {};
   for (const line of KLINE_MA_LINES) {
     full[line.key] = computeSmaSeries(closes, line.period);
   }
-  const { start, size } = chartViewWindow();
+  let s = start;
+  let n = size;
+  if (s == null || n == null) {
+    const win = chartViewWindow();
+    s = win.start;
+    n = win.size;
+  }
   const visible = {};
   for (const line of KLINE_MA_LINES) {
-    visible[line.key] = (full[line.key] || []).slice(start, start + size);
+    visible[line.key] = (full[line.key] || []).slice(s, s + n);
   }
   return { full, visible };
 }
@@ -2249,6 +2293,7 @@ function applyStock(stock, industryMeta = {}) {
 
   renderMetrics(stock);
   notifyAnalysisIdentity(stock, { ready: true });
+  syncAddGroupBtn();
 }
 
 function cninfoWhy(item) {
@@ -2499,6 +2544,7 @@ function applyHeaderOnly(stock = {}, industryMeta = {}) {
     ? breadcrumbParts.join(" / ")
     : "公司详情";
   notifyAnalysisIdentity(stock, { ready: false });
+  syncAddGroupBtn();
 }
 
 async function loadOfficialNews() {
@@ -2622,7 +2668,22 @@ function setOthersSubTab(nextView, { reload = true } = {}) {
 function judgmentFamilyOf(view) {
   if (BUSINESS_FAMILY_VIEWS.has(view)) return "business";
   if (EARNINGS_VIEWS.has(view)) return "earnings";
+  if (view === "kline") return "kline";
   return view;
+}
+
+function syncJudgmentToolPages(view = judgmentSubTab) {
+  const isKline = view === "kline";
+  const aiPage = document.querySelector("#panel-judgment .company-analysis-page");
+  const lcPage = document.getElementById("lineComparePage");
+  if (aiPage) {
+    aiPage.hidden = isKline;
+    aiPage.setAttribute("aria-hidden", isKline ? "true" : "false");
+  }
+  if (lcPage) {
+    lcPage.hidden = !isKline;
+    lcPage.setAttribute("aria-hidden", isKline ? "false" : "true");
+  }
 }
 
 function syncJudgmentSubTabUi() {
@@ -2647,16 +2708,39 @@ function syncJudgmentSubTabUi() {
       btn.setAttribute("aria-selected", active ? "true" : "false");
     });
   }
+  syncJudgmentToolPages(view);
 }
 
 function bootstrapJudgmentSubTab(view = judgmentSubTab) {
+  syncJudgmentToolPages(view);
+  if (view === "kline") {
+    const shown = window.LineCompare?.show?.({
+      code,
+      name: stockDisplayName || nameHint || "",
+    });
+    Promise.resolve(shown).finally(() => {
+      window.requestAnimationFrame(() => {
+        syncLcChartScrollBar();
+        renderLcChart();
+      });
+    });
+    return;
+  }
+  window.LineCompare?.hide?.();
   window.CompanyAnalysis?.onPanel?.(view);
 }
 
 function setJudgmentSubTab(nextView, { reload = true } = {}) {
   const view = normalizeJudgmentSubTab(nextView);
   if (BUSINESS_FAMILY_VIEWS.has(view)) lastBusinessView = view;
-  if (view === judgmentSubTab) return;
+  if (view === judgmentSubTab) {
+    // AI syncIdentity/applyChrome 可能改坏源栏 DOM，即使 view 未变也重同步
+    syncJudgmentSubTabUi();
+    if (reload && activeMainPanel === "judgment" && view === "kline") {
+      bootstrapJudgmentSubTab(view);
+    }
+    return;
+  }
   judgmentSubTab = view;
   syncJudgmentSubTabUi();
   if (!reload || activeMainPanel !== "judgment") return;
@@ -8726,6 +8810,10 @@ function refreshChartsLayout() {
     renderChart();
     syncTicksChartScrollBar();
     renderTicksChart();
+    if (lcChartState.visible) {
+      syncLcChartScrollBar();
+      renderLcChart();
+    }
   };
   window.requestAnimationFrame(() => {
     window.requestAnimationFrame(paint);
@@ -8737,7 +8825,7 @@ function switchMainPanel(panelId) {
   const next = normalizeMainPanel(panelId);
   if (!next) return;
   if (next === activeMainPanel) {
-    if (next === "judgment" && isAnalysisPanel(rawPanel)) {
+    if (next === "judgment" && (isAnalysisPanel(rawPanel) || isKlineJudgment(rawPanel))) {
       setJudgmentSubTab(rawPanel);
     }
     return;
@@ -8762,6 +8850,7 @@ function switchMainPanel(panelId) {
   if (els.refreshQuotesBtn) {
     els.refreshQuotesBtn.hidden = !isQuotesPanel(next);
   }
+  syncAddGroupBtn();
   syncNewsRefreshButtons();
   syncOthersRefreshButtons();
 
@@ -8812,6 +8901,7 @@ function setupMainTabs() {
   if (els.refreshQuotesBtn) {
     els.refreshQuotesBtn.hidden = !isQuotesPanel(activeMainPanel);
   }
+  syncAddGroupBtn();
   syncNewsRefreshButtons();
   syncOthersRefreshButtons();
 }
@@ -10630,11 +10720,11 @@ function drawMaLines(ctx, maVisible, yAt, xAt, n) {
   }
 }
 
-function drawKlineChart(ctx, layout, items, mode, colors, hoverIndex) {
+function drawKlineChart(ctx, layout, items, mode, colors, hoverIndex, maBundle = null) {
   const n = items.length;
   if (!n) return;
 
-  const { visible: maVisible } = getKlineMaBundle();
+  const { visible: maVisible } = maBundle || getKlineMaBundle();
   const highs = items.map((d) => Number(d.high)).filter(Number.isFinite);
   const lows = items.map((d) => Number(d.low)).filter(Number.isFinite);
   const maNums = [];
@@ -12375,6 +12465,3111 @@ function handleKlineDayTap(viewIndex) {
   }
 }
 
+/* ---------- 研判 K线分析：行情日K 第二实例（锁定 day + qfq） ---------- */
+
+const lcEls = {
+  priceChart: document.getElementById("lcPriceChart"),
+  chartWrap: document.getElementById("lcChartWrap"),
+  chartEmpty: document.getElementById("lcChartEmpty"),
+  chartMeta: document.getElementById("lcChartMeta"),
+  chartHoverCard: document.getElementById("lcChartHoverCard"),
+  chartAxisScroll: document.getElementById("lcChartAxisScroll"),
+  chartScrollBar: document.getElementById("lcChartScrollBar"),
+  indexChart: document.getElementById("lcIndexChart"),
+  indexChartWrap: document.getElementById("lcIndexChartWrap"),
+  indexChartEmpty: document.getElementById("lcIndexChartEmpty"),
+  indexChartTitle: document.getElementById("lcIndexChartTitle"),
+  indexChartMeta: document.getElementById("lcIndexChartMeta"),
+  indexChartHoverCard: document.getElementById("lcIndexChartHoverCard"),
+  indexChartAxisScroll: document.getElementById("lcIndexChartAxisScroll"),
+  indexChartScrollBar: document.getElementById("lcIndexChartScrollBar"),
+  comboMetricSelect: document.getElementById("lcComboMetricSelect"),
+  comboMetricWrap: document.getElementById("lcComboMetricWrap"),
+  compareIndexWrap: document.getElementById("lcCompareIndexWrap"),
+  compareIndexSelect: document.getElementById("lcCompareIndexSelect"),
+  compareFactorWrap: document.getElementById("lcCompareFactorWrap"),
+  compareFactorSelect: document.getElementById("lcCompareFactorSelect"),
+  peLegendWrap: document.getElementById("lcPeLegendWrap"),
+  fundflowLegendWrap: document.getElementById("lcFundflowLegendWrap"),
+  marginLegendWrap: document.getElementById("lcMarginLegendWrap"),
+  undulateStats: document.getElementById("lcUndulateStats"),
+  jettonPane: document.getElementById("lcJettonPane"),
+  jettonWrap: document.getElementById("lcJettonWrap"),
+  jettonChart: document.getElementById("lcJettonChart"),
+  jettonEmpty: document.getElementById("lcJettonEmpty"),
+  jettonMeta: document.getElementById("lcJettonMeta"),
+  extremumBox: document.getElementById("lcExtremumBox"),
+};
+
+const lcChartState = {
+  mode: "day",
+  adjust: "qfq",
+  loading: false,
+  kind: "kline",
+  items: [],
+  allItems: [],
+  viewStart: 0,
+  viewSize: 90,
+  preClose: null,
+  source: "",
+  hoverAbsIndex: null,
+  historyExhausted: false,
+  historyLoading: false,
+  visible: false,
+  bound: false,
+  /** 日K点选区间：先后两根蜡烛的 YYYY-MM-DD */
+  rangePick: { a: null, b: null },
+};
+
+let lcComboMetricState = "compare";
+
+const lcIndexState = {
+  code: "",
+  name: "",
+  beg: "",
+  end: "",
+  byDate: new Map(),
+  loading: false,
+  error: "",
+  gen: 0,
+  hoverAbsIndex: null,
+};
+
+function syncLcComboLegend() {
+  const card = lcEls.priceChart?.closest(".chart-card--kline");
+  const metric = lcComboMetricState;
+  if (card) card.classList.toggle("is-combo", true);
+  if (lcEls.comboMetricWrap) lcEls.comboMetricWrap.classList.remove("hidden");
+  if (lcEls.compareIndexWrap) lcEls.compareIndexWrap.classList.toggle("hidden", metric !== "compare");
+  if (lcEls.compareFactorWrap) lcEls.compareFactorWrap.classList.toggle("hidden", metric !== "compare");
+  if (lcEls.peLegendWrap) lcEls.peLegendWrap.classList.toggle("hidden", metric !== "pe");
+  if (lcEls.fundflowLegendWrap) lcEls.fundflowLegendWrap.classList.toggle("hidden", metric !== "fundflow");
+  if (lcEls.marginLegendWrap) lcEls.marginLegendWrap.classList.toggle("hidden", metric !== "margin");
+}
+
+async function refreshLcComparePane({ force = false } = {}) {
+  if (lcComboMetricState !== "compare") return;
+  void refreshLcUndulate({ force });
+  void refreshLcExtremum({ force });
+  void refreshLcPosition({ force });
+  void refreshLcTrader({ force });
+  const sync =
+    window.LineCompare?.syncPaneWithKline ||
+    (window.LineCompare?.ensurePane
+      ? ({ code: c, items, index, force: f }) => {
+          const list = Array.isArray(items) ? items : [];
+          if (!list.length) return Promise.resolve();
+          const beg = String(list[0]?.time || "").slice(0, 10);
+          const end = String(list[list.length - 1]?.time || "").slice(0, 10);
+          return window.LineCompare.ensurePane({ code: c, beg, end, index, force: f });
+        }
+      : null);
+  if (!sync) {
+    renderLcChart();
+    return;
+  }
+  window.LineCompare.fillIndexSelect?.();
+  window.LineCompare.fillFactorSelect?.();
+  const all = lcChartState.allItems || [];
+  if (!code || !all.length) {
+    renderLcChart();
+    return;
+  }
+  const index = String(lcEls.compareIndexSelect?.value || "000001").trim() || "000001";
+  const factor = String(lcEls.compareFactorSelect?.value || "close").trim() || "close";
+  window.LineCompare.setPaneFactor?.(factor);
+  // 必须按日 K 已加载的全部交易日同步，不能只算可见窗口
+  const pending = sync({
+    code,
+    items: all,
+    index,
+    force,
+  });
+  renderLcChart();
+  await pending;
+  renderLcChart();
+  hideLcHoverCard();
+}
+
+/** 研判 K线分析：四价相对基准收盘的波动统计（区间=已点选区间，否则可见窗口） */
+async function refreshLcUndulate({ force = false } = {}) {
+  const sync = window.LineCompare?.syncUndulateWithKline;
+  if (typeof sync !== "function" || !code) return;
+  const all = lcChartState.allItems || [];
+  if (!all.length) return;
+  const pick = lcChartState.rangePick || {};
+  let beg = "";
+  let end = "";
+  if (pick.a) {
+    const lo = pick.b && pick.b < pick.a ? pick.b : pick.a;
+    const hi = pick.b && pick.b < pick.a ? pick.a : pick.b;
+    beg = lo;
+    end = hi || undefined;
+  } else {
+    const win = lcChartViewWindow().items || [];
+    if (!win.length) return;
+    beg = String(win[0]?.time || "").slice(0, 10);
+    end = String(win[win.length - 1]?.time || "").slice(0, 10);
+  }
+  try {
+    await sync({ code, items: all, beg, end, force });
+  } catch {
+    /* 统计失败不阻塞主图 */
+  }
+}
+
+/** 前低基准日：点选终点（或单根 a），否则可见窗口末日 */
+function lcExtremumTargetDate() {
+  const pick = lcChartState.rangePick || {};
+  if (pick.a) {
+    if (pick.b) return pick.a <= pick.b ? pick.b : pick.a;
+    return pick.a;
+  }
+  const win = lcChartViewWindow().items || [];
+  if (!win.length) return "";
+  return String(win[win.length - 1]?.time || "").slice(0, 10);
+}
+
+/** 研判 K线分析：四价前低回溯 */
+async function refreshLcExtremum({ force = false, date } = {}) {
+  const sync = window.LineCompare?.syncExtremumWithKline;
+  if (typeof sync !== "function" || !code) return;
+  const d = String(date || lcExtremumTargetDate() || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+  try {
+    await sync({ code, date: d, force });
+  } catch {
+    /* 前低失败不阻塞主图 */
+  }
+}
+
+/** 极值位置区间：优先点选区间；仅点起点时取可见窗口首日→起点；否则可见窗口 */
+function lcPositionRange() {
+  const pick = lcChartState.rangePick || {};
+  if (pick.a && pick.b) {
+    const lo = pick.a <= pick.b ? pick.a : pick.b;
+    const hi = pick.a <= pick.b ? pick.b : pick.a;
+    return { beg: lo, end: hi };
+  }
+  const win = lcChartViewWindow().items || [];
+  const winBeg = win.length ? String(win[0]?.time || "").slice(0, 10) : "";
+  if (pick.a) {
+    return { beg: winBeg || pick.a, end: pick.a };
+  }
+  if (!win.length) return null;
+  return {
+    beg: winBeg,
+    end: String(win[win.length - 1]?.time || "").slice(0, 10),
+  };
+}
+
+/** 研判 K线分析：四价极值位置（区间内开/收/高/低各自最低—最高—现价位置） */
+async function refreshLcPosition({ force = false } = {}) {
+  const load = window.LineCompare?.loadPosition;
+  if (typeof load !== "function" || !code) return;
+  const range = lcPositionRange();
+  if (!range || !/^\d{4}-\d{2}-\d{2}$/.test(range.beg || "")) return;
+  const end = range.end || range.beg;
+  try {
+    await load({ code, beg: range.beg, end, force });
+  } catch {
+    /* 极值位置失败不阻塞主图 */
+  }
+}
+
+/**
+ * T王区间与「四价前低 / 极值位置」同一套默认：
+ * 点选区间优先；仅点终点时取可见窗口首日→终点；否则可见窗口。
+ */
+async function refreshLcTrader({ force = false } = {}) {
+  const load = window.LineCompare?.loadTrader;
+  if (typeof load !== "function" || !code) return;
+  const range = lcPositionRange();
+  if (!range || !/^\d{4}-\d{2}-\d{2}$/.test(range.beg || "")) return;
+  const end = range.end || range.beg;
+  try {
+    await load({ code, beg: range.beg, end, force });
+  } catch {
+    /* T王失败不阻塞主图 */
+  }
+}
+
+let lcUndulateTimer = 0;
+let lcExtremumTimer = 0;
+let lcPositionTimer = 0;
+let lcTraderTimer = 0;
+let lcJettonTimer = 0;
+
+const lcJettonState = {
+  loading: false,
+  loadingSince: 0,
+  gen: 0,
+  key: "",
+  pendingKey: "",
+  centers: [],
+  H: [],
+  stats: null,
+  close: null,
+  error: "",
+  abort: null,
+  watchdog: 0,
+};
+
+/** 最多回溯的交易日数，避免全历史迭代过慢 / 请求被反复取消后一直「加载中」 */
+const LC_JETTON_MAX_BARS = 120;
+const LC_JETTON_TIMEOUT_MS = 25000;
+
+/** 视窗变化后延迟同步波动统计，避免拖动/缩放时请求风暴 */
+function scheduleLcUndulate(delay = 320) {
+  if (!lcChartState.visible) return;
+  window.clearTimeout(lcUndulateTimer);
+  lcUndulateTimer = window.setTimeout(() => {
+    void refreshLcUndulate();
+  }, delay);
+  scheduleLcExtremum(delay);
+  scheduleLcPosition(delay);
+  scheduleLcTrader(delay);
+  scheduleLcJetton(delay);
+}
+
+/** 视窗/点选变化后延迟同步四价前低 */
+function scheduleLcExtremum(delay = 320) {
+  if (!lcChartState.visible) return;
+  window.clearTimeout(lcExtremumTimer);
+  lcExtremumTimer = window.setTimeout(() => {
+    void refreshLcExtremum();
+  }, delay);
+}
+
+/** 视窗/点选变化后延迟同步极值位置 */
+function scheduleLcPosition(delay = 320) {
+  if (!lcChartState.visible) return;
+  window.clearTimeout(lcPositionTimer);
+  lcPositionTimer = window.setTimeout(() => {
+    void refreshLcPosition();
+  }, delay);
+}
+
+/** 视窗/点选变化后延迟同步 T王 */
+function scheduleLcTrader(delay = 320) {
+  if (!lcChartState.visible) return;
+  window.clearTimeout(lcTraderTimer);
+  lcTraderTimer = window.setTimeout(() => {
+    void refreshLcTrader();
+  }, delay);
+}
+
+/** 视窗/点选变化后延迟同步筹码峰 */
+function scheduleLcJetton(delay = 320) {
+  if (!lcChartState.visible) return;
+  window.clearTimeout(lcJettonTimer);
+  lcJettonTimer = window.setTimeout(() => {
+    void refreshLcJetton();
+  }, delay);
+}
+
+/** 把 [beg,end] 裁到 allItems 内，且最多 LC_JETTON_MAX_BARS 根 */
+function lcJettonClampRange(beg, end) {
+  const all = lcChartState.allItems || [];
+  if (!all.length) return null;
+  const dates = all.map((d) => String(d?.time || "").slice(0, 10));
+  let i1 = dates.indexOf(String(end || "").slice(0, 10));
+  if (i1 < 0) i1 = dates.length - 1;
+  let i0 = dates.indexOf(String(beg || "").slice(0, 10));
+  if (i0 < 0) i0 = Math.max(0, i1 - LC_JETTON_MAX_BARS + 1);
+  if (i0 > i1) {
+    const t = i0;
+    i0 = i1;
+    i1 = t;
+  }
+  if (i1 - i0 + 1 > LC_JETTON_MAX_BARS) i0 = i1 - LC_JETTON_MAX_BARS + 1;
+  const b = dates[i0];
+  const e = dates[i1];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(b) || !/^\d{4}-\d{2}-\d{2}$/.test(e)) return null;
+  return { beg: b, end: e };
+}
+
+/** 筹码计算区间：完整点选优先，否则可见末日往前最多 LC_JETTON_MAX_BARS 根 */
+function lcJettonRange() {
+  const pick = lcChartState.rangePick || {};
+  if (pick.a && pick.b) {
+    const lo = pick.a <= pick.b ? pick.a : pick.b;
+    const hi = pick.a <= pick.b ? pick.b : pick.a;
+    return lcJettonClampRange(lo, hi);
+  }
+  const win = lcChartViewWindow();
+  const items = win.items || [];
+  if (!items.length) return null;
+  const end = String(items[items.length - 1]?.time || "").slice(0, 10);
+  const endAbs = (Number(win.start) || 0) + items.length - 1;
+  const begAbs = Math.max(0, endAbs - LC_JETTON_MAX_BARS + 1);
+  const all = lcChartState.allItems || [];
+  const beg = String(all[begAbs]?.time || "").slice(0, 10);
+  return lcJettonClampRange(beg, end);
+}
+
+function setLcJettonEmpty(msg, { empty = false } = {}) {
+  if (!lcEls.jettonEmpty) return;
+  if (!empty) {
+    lcEls.jettonEmpty.classList.add("hidden");
+    return;
+  }
+  lcEls.jettonEmpty.textContent = msg || "暂无筹码";
+  lcEls.jettonEmpty.classList.remove("hidden");
+}
+
+function lcKlinePriceScaleForItems(items, priceH) {
+  const list = Array.isArray(items) ? items : [];
+  const highs = list.map((d) => Number(d.high)).filter(Number.isFinite);
+  const lows = list.map((d) => Number(d.low)).filter(Number.isFinite);
+  if (!highs.length || !lows.length) {
+    return buildPriceScale(0, 1, { tickCount: priceScaleTickCount(priceH), padRatio: 0.02 });
+  }
+  const maBundle = getKlineMaBundle(
+    lcChartState.allItems,
+    lcChartState.viewStart,
+    Number(lcChartState.viewSize) || list.length
+  );
+  const maNums = [];
+  for (const line of KLINE_MA_LINES) {
+    const vals = (maBundle.visible && maBundle.visible[line.key]) || [];
+    for (let i = 0; i < vals.length; i += 1) {
+      const v = maPoint(vals, i);
+      if (v != null) maNums.push(v);
+    }
+  }
+  const lo = Math.min(...lows, ...(maNums.length ? maNums : lows));
+  const hi = Math.max(...highs, ...(maNums.length ? maNums : highs));
+  return buildPriceScale(lo, hi, {
+    tickCount: priceScaleTickCount(priceH),
+    padRatio: 0.02,
+  });
+}
+
+/**
+ * 右下角「四价前低」高度：占满筹码峰底到侧栏底之间的空间。
+ */
+function syncLcExtremumSlot() {
+  const side = lcEls.jettonPane?.parentElement;
+  const extremum = lcEls.extremumBox;
+  const jettonPane = lcEls.jettonPane;
+  if (!side || !extremum || !jettonPane) return false;
+
+  const sideH = side.clientHeight;
+  if (sideH < 80) return false;
+
+  const jettonTop = Number.parseFloat(jettonPane.style.top) || jettonPane.offsetTop || 0;
+  const jettonH = Number.parseFloat(jettonPane.style.height) || jettonPane.offsetHeight || 0;
+  const jettonBottom = Math.round(jettonTop + jettonH);
+  const gap = 8;
+  /* 侧栏底到筹码底之间的空隙；至少留一截可滚动区 */
+  const avail = Math.max(88, sideH - jettonBottom - gap);
+  const maxPx = `${avail}px`;
+  let changed = false;
+  if (extremum.style.height !== maxPx) {
+    extremum.style.height = maxPx;
+    changed = true;
+  }
+  if (extremum.style.maxHeight !== maxPx) {
+    extremum.style.maxHeight = maxPx;
+    changed = true;
+  }
+  return changed;
+}
+
+/**
+ * 把筹码峰框对齐日K：顶=价格区顶，底=成交量柱顶（高度=价格纵轴）。
+ */
+function syncLcJettonGeometry() {
+  const dayWrap = lcEls.chartWrap;
+  const jettonPane = lcEls.jettonPane;
+  const side = jettonPane?.parentElement;
+  if (!dayWrap || !jettonPane || !side) return false;
+
+  const dw = dayWrap.clientWidth;
+  const dh = dayWrap.clientHeight;
+  if (dw < 32 || dh < 32) return false;
+
+  const metric = lcComboMetricState;
+  const fundflow = metric === "fundflow" || metric === "margin" || metric === "compare";
+  const layout = chartLayout(dw, dh, { combo: true, fundflow });
+  const price = layout?.price;
+  const volume = layout?.volume;
+  if (!price || !volume) return false;
+
+  // 价格区顶 → 成交量顶（含二者之间的 gap，底边与量柱顶齐平）
+  const axisH = Math.max(40, Math.round(volume.y - price.y));
+  const dayRect = dayWrap.getBoundingClientRect();
+  const sideRect = side.getBoundingClientRect();
+  const top = Math.round(dayRect.top + price.y - sideRect.top);
+
+  const topPx = `${Math.max(0, top)}px`;
+  const heightPx = `${axisH}px`;
+  let changed = false;
+  if (jettonPane.style.top !== topPx) {
+    jettonPane.style.top = topPx;
+    changed = true;
+  }
+  if (jettonPane.style.height !== heightPx) {
+    jettonPane.style.height = heightPx;
+    changed = true;
+  }
+  if (syncLcExtremumSlot()) changed = true;
+  return changed;
+}
+
+function paintLcJetton() {
+  const canvas = lcEls.jettonChart;
+  const wrap = lcEls.jettonWrap;
+  if (!canvas || !wrap) return;
+
+  syncLcJettonGeometry();
+
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = Math.max(72, wrap.clientWidth || 120);
+  const cssH = Math.max(40, wrap.clientHeight || 120);
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const colors = chartColors();
+  paintChartFrame(ctx, cssW, cssH, colors);
+
+  const items = lcChartState.items || [];
+  // 绘图区占满已对齐的框（高度=日K价格纵轴）
+  const price = { x: 0, y: 0, w: cssW, h: cssH };
+  const priceScale = lcKlinePriceScaleForItems(items, price.h);
+  const yAt = (p) =>
+    price.y + ((priceScale.max - p) / (priceScale.max - priceScale.min || 1)) * price.h;
+
+  // 自愈：loading 超时仍未结束时，避免永远停在「加载中」
+  if (
+    lcJettonState.loading &&
+    lcJettonState.loadingSince &&
+    Date.now() - lcJettonState.loadingSince > LC_JETTON_TIMEOUT_MS + 2000
+  ) {
+    lcJettonState.loading = false;
+    lcJettonState.pendingKey = "";
+    if (!lcJettonState.error) lcJettonState.error = "筹码加载超时，请重试";
+  }
+
+  const centers = lcJettonState.centers || [];
+  const H = lcJettonState.H || [];
+  const n = Math.min(centers.length, H.length);
+  if (!n || !items.length) {
+    if (lcJettonState.loading) setLcJettonEmpty("筹码加载中…", { empty: true });
+    else if (lcJettonState.error) setLcJettonEmpty(lcJettonState.error, { empty: true });
+    else setLcJettonEmpty(items.length ? "暂无筹码" : "等待日K…", { empty: true });
+    if (lcEls.jettonMeta) {
+      lcEls.jettonMeta.hidden = true;
+      lcEls.jettonMeta.textContent = "";
+    }
+    return;
+  }
+  // 已有筹码数据时，刷新中不盖住图，只在 meta 提示
+  setLcJettonEmpty("", { empty: false });
+  if (lcEls.jettonEmpty) lcEls.jettonEmpty.classList.add("hidden");
+
+  let maxH = 0;
+  for (let i = 0; i < n; i += 1) {
+    const v = Number(H[i]) || 0;
+    if (v > maxH) maxH = v;
+  }
+  if (maxH <= 0) {
+    setLcJettonEmpty("暂无筹码", { empty: true });
+    return;
+  }
+
+  const close = Number(lcJettonState.close ?? lcJettonState.stats?.close);
+  const padX = 4;
+  const plotW = Math.max(8, cssW - padX * 2 - 2);
+  const tick = Number(centers.length > 1 ? Math.abs(centers[1] - centers[0]) : 0) || 0.01;
+  const binH = Math.max(
+    1,
+    Math.min(6, (tick / (priceScale.max - priceScale.min || 1)) * price.h * 0.92)
+  );
+
+  ctx.save();
+  ctx.strokeStyle = colors.grid;
+  ctx.lineWidth = 1;
+  for (const t of priceScale.ticks || []) {
+    const y = yAt(t);
+    if (y < price.y - 0.5 || y > price.y + price.h + 0.5) continue;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(cssW, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  for (let i = 0; i < n; i += 1) {
+    const p = Number(centers[i]);
+    const hv = Number(H[i]) || 0;
+    if (!Number.isFinite(p) || hv <= 0) continue;
+    if (p < priceScale.min || p > priceScale.max) continue;
+    const y = yAt(p);
+    const w = Math.max(1, (hv / maxH) * plotW);
+    const profit = Number.isFinite(close) ? p <= close : true;
+    ctx.fillStyle = profit ? "rgba(255, 93, 108, 0.72)" : "rgba(61, 214, 140, 0.72)";
+    ctx.fillRect(padX, y - binH / 2, w, binH);
+  }
+
+  const avg = Number(lcJettonState.stats?.avg_cost);
+  const drawHLine = (p, color, dash) => {
+    if (!Number.isFinite(p) || p < priceScale.min || p > priceScale.max) return;
+    const y = yAt(p);
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    if (dash) ctx.setLineDash(dash);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(cssW, y);
+    ctx.stroke();
+    ctx.restore();
+  };
+  if (Number.isFinite(close)) drawHLine(close, colors.cross, [3, 2]);
+  if (Number.isFinite(avg)) drawHLine(avg, colors.avg, [2, 2]);
+
+  const st = lcJettonState.stats || {};
+  if (lcEls.jettonMeta) {
+    const pr = Number(st.profit_ratio);
+    const lines = [];
+    if (Number.isFinite(pr)) lines.push(`获利 ${fmtPct(pr * 100, 1)}`);
+    if (Number.isFinite(avg)) lines.push(`均价 ${fmtNum(avg)}`);
+    lcEls.jettonMeta.textContent = lines.join(" · ");
+    lcEls.jettonMeta.hidden = !lines.length;
+  }
+}
+
+function lcJettonAbortInflight() {
+  if (lcJettonState.watchdog) {
+    window.clearTimeout(lcJettonState.watchdog);
+    lcJettonState.watchdog = 0;
+  }
+  if (lcJettonState.abort) {
+    try {
+      lcJettonState.abort.abort();
+    } catch {
+      /* ignore */
+    }
+    lcJettonState.abort = null;
+  }
+}
+
+function lcJettonIsAbortError(err) {
+  if (!err) return false;
+  if (err.name === "AbortError") return true;
+  const msg = String(err.message || "");
+  return /aborted|abort/i.test(msg);
+}
+
+async function refreshLcJetton({ force = false } = {}) {
+  if (!code || !lcEls.jettonChart) return;
+  const range = lcJettonRange();
+  if (!range) {
+    lcJettonAbortInflight();
+    lcJettonState.loading = false;
+    lcJettonState.loadingSince = 0;
+    lcJettonState.pendingKey = "";
+    lcJettonState.centers = [];
+    lcJettonState.H = [];
+    lcJettonState.stats = null;
+    lcJettonState.error = "";
+    paintLcJetton();
+    return;
+  }
+  const key = `${code}|${range.beg}|${range.end}`;
+  if (!force && key === lcJettonState.key && (lcJettonState.centers || []).length) {
+    paintLcJetton();
+    return;
+  }
+  // 同区间已在请求中：即使 force 也不打断，否则会反复 abort → 一直「加载中」
+  if (lcJettonState.loading && lcJettonState.pendingKey === key) {
+    return;
+  }
+
+  lcJettonAbortInflight();
+  const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+  lcJettonState.abort = ctrl;
+  const gen = ++lcJettonState.gen;
+  lcJettonState.pendingKey = key;
+  lcJettonState.loading = true;
+  lcJettonState.loadingSince = Date.now();
+  lcJettonState.error = "";
+  lcJettonState.watchdog = window.setTimeout(() => {
+    if (lcJettonState.gen !== gen || !lcJettonState.loading) return;
+    try {
+      ctrl?.abort();
+    } catch {
+      /* ignore */
+    }
+  }, LC_JETTON_TIMEOUT_MS);
+
+  try {
+    paintLcJetton();
+    const qs = new URLSearchParams({
+      code,
+      beg: range.beg,
+      end: range.end,
+      f_mode: "triangle",
+      k_kind: "flat",
+      bins: "120",
+    });
+    const json = await api(`/api/stocks/line-jetton?${qs.toString()}`, {
+      signal: ctrl?.signal,
+      timeoutMs: LC_JETTON_TIMEOUT_MS,
+      bypassCache: force,
+    });
+    if (gen !== lcJettonState.gen) return;
+    const data = json.data || {};
+    lcJettonState.key = key;
+    lcJettonState.centers = Array.isArray(data.centers) ? data.centers : [];
+    lcJettonState.H = Array.isArray(data.H) ? data.H : [];
+    lcJettonState.stats = data.stats || null;
+    lcJettonState.close = data.close ?? data.stats?.close ?? null;
+    lcJettonState.error =
+      lcJettonState.centers.length && lcJettonState.H.length ? "" : "暂无筹码数据";
+  } catch (err) {
+    if (gen !== lcJettonState.gen) return;
+    if (lcJettonIsAbortError(err)) {
+      lcJettonState.error = "筹码加载超时或已取消";
+    } else {
+      lcJettonState.centers = [];
+      lcJettonState.H = [];
+      lcJettonState.stats = null;
+      lcJettonState.error = err.message || "筹码加载失败";
+    }
+  } finally {
+    if (lcJettonState.watchdog) {
+      window.clearTimeout(lcJettonState.watchdog);
+      lcJettonState.watchdog = 0;
+    }
+    if (gen === lcJettonState.gen) {
+      lcJettonState.loading = false;
+      lcJettonState.loadingSince = 0;
+      lcJettonState.pendingKey = "";
+      if (lcJettonState.abort === ctrl) lcJettonState.abort = null;
+      paintLcJetton();
+    }
+  }
+}
+
+const LC_EXTREMUM_FACTORS = [
+  { key: "open", label: "开盘价" },
+  { key: "close", label: "收盘价" },
+  { key: "high", label: "最高价" },
+  { key: "low", label: "最低价" },
+];
+
+function fmtLcExtremumGap(gap) {
+  if (gap == null || !Number.isFinite(Number(gap))) return "—";
+  const n = Number(gap);
+  if (n <= 0) return "相邻";
+  return `隔 ${n}`;
+}
+
+function fmtLcExtremumMd(date) {
+  const s = String(date || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "—";
+  return `${s.slice(5, 7)}-${s.slice(8, 10)}`;
+}
+
+/** 将日K视窗滚到指定交易日附近 */
+function jumpLcChartToDate(date) {
+  const target = String(date || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(target)) return false;
+  const all = lcChartState.allItems || [];
+  const abs = all.findIndex((d) => String(d?.time || "").slice(0, 10) === target);
+  if (abs < 0) return false;
+  const size = Math.max(1, Number(lcChartState.viewSize) || 90);
+  const nextStart = Math.max(0, abs - Math.floor(size / 2));
+  setLcChartViewStart(nextStart, { render: true });
+  return true;
+}
+
+function bindLcExtremum() {
+  const body = document.getElementById("lcExtremumBody");
+  if (!body || body.dataset.bound === "1") return;
+  body.dataset.bound = "1";
+  body.addEventListener("click", (ev) => {
+    const btn = ev.target.closest?.("button[data-lc-ext-jump]");
+    if (!btn) return;
+    const day = btn.getAttribute("data-lc-ext-jump") || "";
+    jumpLcChartToDate(day);
+  });
+}
+
+const LC_POSITION_FACTORS = [
+  { key: "open", label: "开盘价" },
+  { key: "close", label: "收盘价" },
+  { key: "high", label: "最高价" },
+  { key: "low", label: "最低价" },
+];
+
+function fmtLcPositionPct(pct) {
+  if (pct == null || !Number.isFinite(Number(pct))) return "—";
+  return `${Number(pct).toFixed(1)}%`;
+}
+
+/** 四价前低：回溯各价最近更低日（表格） */
+function renderLcExtremum() {
+  bindLcExtremum();
+  const box = document.getElementById("lcExtremumBody");
+  if (!box) return;
+  const meta = window.LineCompare?.extremumMeta?.() || {};
+  const pack = meta.pack || null;
+  if (meta.loading && !pack) {
+    box.innerHTML = `<p class="muted lc-undulate-note">加载中…</p>`;
+    return;
+  }
+  if (!pack) {
+    const msg = meta.error
+      ? `<p class="error lc-undulate-note">${escapeHtml(meta.error)}</p>`
+      : `<p class="muted lc-undulate-note">等待日K窗口…</p>`;
+    box.innerHTML = msg;
+    return;
+  }
+  const prices = pack.prices || {};
+  const ext = pack.extremum || {};
+  const rows = LC_EXTREMUM_FACTORS.map((f) => {
+    const row = ext[f.key] || {};
+    const found = row.date;
+    const miss = !found;
+    const dateCell = found
+      ? `<button type="button" class="lc-extremum-jump" data-lc-ext-jump="${escapeHtml(found)}" title="${escapeHtml(found)}">${escapeHtml(fmtLcExtremumMd(found))}</button>`
+      : "无更低";
+    return `<tr class="${miss ? "is-miss" : ""}">
+      <td class="lc-extremum-factor">${escapeHtml(f.label)}</td>
+      <td>${escapeHtml(fmtNum(row.target_price ?? prices[f.key]))}</td>
+      <td>${dateCell}</td>
+      <td>${escapeHtml(found ? fmtNum(row.found_price) : "—")}</td>
+      <td>${escapeHtml(fmtLcExtremumGap(row.gap))}</td>
+    </tr>`;
+  }).join("");
+  const errNote = meta.error
+    ? `<p class="error lc-undulate-note">${escapeHtml(meta.error)}</p>`
+    : "";
+  box.innerHTML = `${errNote}<table class="lc-extremum-table" aria-label="四价前低结果">
+      <thead><tr><th>因子</th><th>当日</th><th>前低日</th><th>前低价</th><th>间隔</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+/** 四价极值位置：区间低—高—现价所处百分位 + 升序排名（表格） */
+function renderLcPosition() {
+  const box = document.getElementById("lcPositionBody");
+  const rangeEl = document.getElementById("lcPositionMeta");
+  if (!box) return;
+  const meta = window.LineCompare?.positionMeta?.() || {};
+  const pack = meta.pack || null;
+  const setRangeMeta = (text) => {
+    if (!rangeEl) return;
+    if (text) {
+      rangeEl.textContent = text;
+      rangeEl.hidden = false;
+    } else {
+      rangeEl.textContent = "";
+      rangeEl.hidden = true;
+    }
+  };
+  if (meta.loading && !pack) {
+    setRangeMeta("");
+    box.innerHTML = `<p class="muted lc-undulate-note">加载中…</p>`;
+    return;
+  }
+  if (!pack) {
+    setRangeMeta("");
+    const msg = meta.error
+      ? `<p class="error lc-undulate-note">${escapeHtml(meta.error)}</p>`
+      : `<p class="muted lc-undulate-note">等待日K窗口…</p>`;
+    box.innerHTML = msg;
+    return;
+  }
+  const pos = pack.position || {};
+  const live = !!pack.live;
+  const priceTip = live
+    ? `最新实时 ${pack.quote_date || ""}`.trim()
+    : `区间结束日 ${pack.end || ""}`.trim();
+  const rows = LC_POSITION_FACTORS.map((f) => {
+    const row = pos[f.key] || {};
+    const pct = Number(row.pct);
+    const hasPct = Number.isFinite(pct);
+    const width = hasPct ? Math.max(0, Math.min(100, pct)) : 0;
+    const lowTip = row.min_date ? `${row.min_date} ${fmtNum(row.min)}` : "区间最低";
+    const highTip = row.max_date ? `${row.max_date} ${fmtNum(row.max)}` : "区间最高";
+    const rankNum = Number(row.rank);
+    const rankN = Number(row.n);
+    const hasRank = Number.isFinite(rankNum) && Number.isFinite(rankN) && rankN > 0;
+    const rankTip = hasRank
+      ? `区间内价格从低到高第 ${rankNum} / ${rankN}（1=最低）`
+      : "区间升序排名不可用";
+    const rankTxt = hasRank ? `${escapeHtml(String(rankNum))}/${escapeHtml(String(rankN))}` : "—";
+    return `<tr>
+      <td class="lc-position-factor">${escapeHtml(f.label)}</td>
+      <td title="${escapeHtml(lowTip)}">${escapeHtml(fmtNum(row.min))}</td>
+      <td title="${escapeHtml(highTip)}">${escapeHtml(fmtNum(row.max))}</td>
+      <td title="${escapeHtml(priceTip)}">${escapeHtml(fmtNum(row.end_price))}</td>
+      <td class="lc-position-cell">
+        <span class="lc-position-bar"><i style="width:${width.toFixed(1)}%"></i></span>
+        <span class="lc-position-pct">${escapeHtml(fmtLcPositionPct(hasPct ? pct : null))}</span>
+      </td>
+      <td class="lc-position-rank" title="${escapeHtml(rankTip)}">${rankTxt}</td>
+    </tr>`;
+  }).join("");
+  const errNote = meta.error
+    ? `<p class="error lc-undulate-note">${escapeHtml(meta.error)}</p>`
+    : "";
+  const snapped = pack.snapped ? " · 已对齐交易日" : "";
+  const priceNote = live ? " · 现价=最新实时" : " · 现价=区间末日";
+  setRangeMeta(
+    `区间 ${pack.beg || "—"} ~ ${pack.end || "—"} · ${String(pack.count ?? 0)} 日${snapped}${priceNote}`
+  );
+  box.innerHTML = `${errNote}
+    <table class="lc-position-table" aria-label="四价极值位置">
+      <thead><tr><th>因子</th><th>区间低</th><th>区间高</th><th title="${live ? "最新实时四价" : "区间结束日四价"}">现价</th><th>位置</th><th title="区间内价格从低到高排名（1=最低）">排名</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+/* ---------- 四价波动：可切换单卡（默认收盘价；开盘 / 最高 / 最低） ---------- */
+
+const LC_UNDULATE_FACTORS = [
+  { key: "close", label: "收盘价" },
+  { key: "open", label: "开盘价" },
+  { key: "high", label: "最高价" },
+  { key: "low", label: "最低价" },
+];
+
+const LC_SIGMA_MIN_VIEW = 12;
+
+const lcSigmaState = {
+  mode: "z",
+  /** 当前展示的价格因子，默认收盘价 */
+  activeFactor: "close",
+  key: "",
+  statsKey: "",
+  pointsByFactor: new Map(),
+  hoverFactor: "",
+  hoverIdx: null,
+  bound: false,
+  frame: 0,
+  /** 横轴视窗：viewSize=0 表示全部（切换因子共用） */
+  viewStart: 0,
+  viewSize: 0,
+  pan: null,
+  /** 拖动累计未满 1 根的小数，避免小位移被取整吞掉 */
+  panRemain: 0,
+};
+
+function lcSigmaFactorLabel(factor) {
+  const hit = LC_UNDULATE_FACTORS.find((f) => f.key === factor);
+  return hit ? hit.label : "收盘价";
+}
+
+function normalizeLcSigmaFactor(factor) {
+  const raw = String(factor || "").trim().toLowerCase();
+  return LC_UNDULATE_FACTORS.some((f) => f.key === raw) ? raw : "close";
+}
+
+function lcSigmaPointCount() {
+  return (lcSigmaState.pointsByFactor.get(lcSigmaState.activeFactor) || []).length;
+}
+
+function syncLcSigmaFactorUi(factor = lcSigmaState.activeFactor) {
+  const active = normalizeLcSigmaFactor(factor);
+  document.querySelectorAll("#lcUndulateFactor [data-factor]").forEach((btn) => {
+    const on = btn.getAttribute("data-factor") === active;
+    btn.classList.toggle("is-active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  document.querySelectorAll("#lcUndulateStats .lc-und-card[data-factor]").forEach((card) => {
+    const on = card.getAttribute("data-factor") === active;
+    card.classList.toggle("is-active", on);
+    card.hidden = !on;
+  });
+}
+
+function setLcSigmaFactor(nextFactor, { paint = true } = {}) {
+  const next = normalizeLcSigmaFactor(nextFactor);
+  const changed = next !== lcSigmaState.activeFactor;
+  lcSigmaState.activeFactor = next;
+  if (changed) {
+    lcSigmaState.hoverIdx = null;
+    lcSigmaState.hoverFactor = "";
+  }
+  syncLcSigmaFactorUi(next);
+  if (!paint) return next;
+  // 从 hidden 切出时需等布局后再画，否则 canvas 宽高为 0
+  window.requestAnimationFrame(() => {
+    paintLcFactorChart(next);
+  });
+  return next;
+}
+
+function lcSigmaViewWindow() {
+  const total = lcSigmaPointCount();
+  let size = Number(lcSigmaState.viewSize) || 0;
+  if (size <= 0 || size >= total) size = total || 0;
+  if (total > 0) size = Math.max(Math.min(LC_SIGMA_MIN_VIEW, total), Math.min(total, size));
+  const maxStart = Math.max(0, total - size);
+  const start = Math.min(Math.max(0, Number(lcSigmaState.viewStart) || 0), maxStart);
+  return { total, size, maxStart, start };
+}
+
+function resetLcSigmaViewport() {
+  lcSigmaState.viewStart = 0;
+  lcSigmaState.viewSize = 0;
+  lcSigmaState.pan = null;
+  lcSigmaState.panRemain = 0;
+}
+
+function setLcSigmaViewStart(nextStart, { clearRemain = true } = {}) {
+  const { maxStart, start: cur } = lcSigmaViewWindow();
+  const start = Math.min(Math.max(0, Math.round(nextStart)), maxStart);
+  if (clearRemain) lcSigmaState.panRemain = 0;
+  if (start === cur) return start;
+  lcSigmaState.viewStart = start;
+  paintLcSigmaAll();
+  return start;
+}
+
+function zoomLcSigmaViewport(anchorRatio, factor) {
+  const { total, size, start } = lcSigmaViewWindow();
+  if (total <= 1) return false;
+  const minSize = Math.min(LC_SIGMA_MIN_VIEW, total);
+  let ratio = Math.min(1, Math.max(0, Number(anchorRatio) || 0.5));
+  // 视窗已贴着最新端时，缩放钉住右边缘，避免最新日期被挤出视野
+  const pinnedRight = start + size >= total - 1;
+  if (pinnedRight) ratio = 1;
+  let nextSize = Math.round(size * factor);
+  nextSize = Math.max(minSize, Math.min(total, nextSize));
+  if (nextSize === size) return false;
+  const anchorIndex = start + ratio * size;
+  let nextStart = Math.round(anchorIndex - ratio * nextSize);
+  nextStart = Math.max(0, Math.min(nextStart, total - nextSize));
+  if (pinnedRight) nextStart = Math.max(0, total - nextSize);
+  lcSigmaState.viewSize = nextSize >= total ? 0 : nextSize;
+  lcSigmaState.viewStart = nextStart;
+  paintLcSigmaAll();
+  return true;
+}
+
+function panLcSigmaByPixels(dx, width) {
+  const { size, maxStart } = lcSigmaViewWindow();
+  if (maxStart <= 0 || size <= 0 || !(width > 0)) return;
+  const barW = width / size;
+  if (!(barW > 0)) return;
+  // 右拖看更早，左拖看更新（与日K一致）；累计小数位移
+  lcSigmaState.panRemain += -dx / barW;
+  const deltaBars = Math.trunc(lcSigmaState.panRemain);
+  if (!deltaBars) return;
+  lcSigmaState.panRemain -= deltaBars;
+  const next = setLcSigmaViewStart(lcSigmaState.viewStart + deltaBars, { clearRemain: false });
+  const fresh = lcSigmaViewWindow();
+  if (next <= 0 && lcSigmaState.panRemain < 0) lcSigmaState.panRemain = 0;
+  if (next >= fresh.maxStart && lcSigmaState.panRemain > 0) lcSigmaState.panRemain = 0;
+}
+
+/** 价格前缀统计：factor 序列 + 每日收盘（个股/指数共用，基准一律用前收） */
+function lcSigmaPrefix(priceAt, n, factor) {
+  const count = new Float64Array(n + 1);
+  const sum = new Float64Array(n + 1);
+  const sq = new Float64Array(n + 1);
+  const price = new Float64Array(n);
+  const close = new Float64Array(n);
+  for (let i = 0; i < n; i += 1) {
+    const bar = priceAt(i);
+    const v = bar ? Number(bar[factor]) : NaN;
+    const c = bar ? Number(bar.close) : NaN;
+    const ok = Number.isFinite(v);
+    price[i] = ok ? v : NaN;
+    close[i] = Number.isFinite(c) && c !== 0 ? c : NaN;
+    count[i + 1] = count[i] + (ok ? 1 : 0);
+    sum[i + 1] = sum[i] + (ok ? v : 0);
+    sq[i + 1] = sq[i] + (ok ? v * v : 0);
+  }
+  return { count, sum, sq, price, close };
+}
+
+/** 区间起始日前一交易日收盘：固定基准，缺席则继续往前找 */
+function lcSigmaPriorClose(pre, begIdx) {
+  for (let i = begIdx - 1; i >= 0; i -= 1) {
+    const c = pre.close[i];
+    if (Number.isFinite(c) && c !== 0) return { close: c, idx: i };
+  }
+  return null;
+}
+
+/** 相对固定前收的涨跌幅序列之样本 σ */
+function lcSigmaStdOfPcts(pcts) {
+  const vals = pcts.filter((v) => Number.isFinite(v));
+  if (vals.length < 2) return null;
+  let sum = 0;
+  let sum2 = 0;
+  for (const v of vals) {
+    sum += v;
+    sum2 += v * v;
+  }
+  const n = vals.length;
+  let varR = (sum2 / n - (sum / n) ** 2) * (n / (n - 1));
+  if (!(varR > 0)) varR = 0;
+  const std = Math.sqrt(varR);
+  return std > 0 ? std : null;
+}
+
+/**
+ * 横轴 = 区间内交易日；前收固定为「区间起始日前一交易日收盘」（与后端 undulate 一致）。
+ * 每日：pct = 因子价 / 固定前收 − 1（零点 = 涨跌幅 0%）
+ * σ单位：z = pct / σ（σ 为整段 pct 的样本标准差）
+ * σ值模式复用 stockStd 字段存 pct，便于纵轴按涨跌幅显示
+ */
+function computeLcSigmaPoints(factor) {
+  const all = lcChartState.allItems || [];
+  const win = lcChartViewWindow();
+  const pick = lcChartState.rangePick || {};
+  const dateIdx = (d) => {
+    const day = String(d || "").slice(0, 10);
+    if (!day) return -1;
+    for (let i = all.length - 1; i >= 0; i -= 1) {
+      if (String(all[i]?.time || "").slice(0, 10) === day) return i;
+    }
+    return -1;
+  };
+  const pickHi = pick.a && pick.b ? dateIdx(pick.a <= pick.b ? pick.b : pick.a) : -1;
+  const pickLo = pick.a && pick.b ? dateIdx(pick.a <= pick.b ? pick.a : pick.b) : -1;
+  const endAbs = pickHi >= 0 ? pickHi : win.start + win.items.length - 1;
+  const startBase = pickHi >= 0 && pickLo >= 0 ? Math.max(win.start, pickLo) : win.start;
+  if (all.length < 2 || endAbs < 0 || startBase > endAbs) return [];
+  const n = all.length;
+  const stockAt = (i) => all[i] || null;
+  const idxMap = lcIndexState.byDate || new Map();
+  const dateAt = (i) => String(all[i]?.time || "").slice(0, 10);
+  const idxAt = (i) => idxMap.get(dateAt(i)) || null;
+
+  const stockPre = lcSigmaPrefix(stockAt, n, factor);
+  const indexPre = lcSigmaPrefix(idxAt, n, factor);
+  const stockBase = lcSigmaPriorClose(stockPre, startBase);
+  const indexBase = lcSigmaPriorClose(indexPre, startBase);
+
+  const span = endAbs - startBase + 1;
+  const step = Math.max(1, Math.ceil(span / 240));
+  const indices = [];
+  for (let i = startBase; i <= endAbs; i += step) indices.push(i);
+  if (indices.length && indices[indices.length - 1] !== endAbs) indices.push(endAbs);
+
+  const stockPcts = [];
+  const indexPcts = [];
+  const dates = [];
+  for (const i of indices) {
+    const date = dateAt(i);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      stockPcts.push(null);
+      indexPcts.push(null);
+      dates.push(date);
+      continue;
+    }
+    dates.push(date);
+    const sp = stockPre.price[i];
+    const ip = indexPre.price[i];
+    stockPcts.push(
+      stockBase && Number.isFinite(sp) ? sp / stockBase.close - 1 : null
+    );
+    indexPcts.push(
+      indexBase && Number.isFinite(ip) ? ip / indexBase.close - 1 : null
+    );
+  }
+
+  const stockSig = lcSigmaStdOfPcts(stockPcts);
+  const indexSig = lcSigmaStdOfPcts(indexPcts);
+
+  const points = [];
+  for (let k = 0; k < dates.length; k += 1) {
+    const sp = stockPcts[k];
+    const ip = indexPcts[k];
+    points.push({
+      date: dates[k],
+      stockZ: sp != null && stockSig ? sp / stockSig : null,
+      indexZ: ip != null && indexSig ? ip / indexSig : null,
+      // σ值模式：直接画相对固定前收的涨跌幅
+      stockStd: sp,
+      indexStd: ip,
+    });
+  }
+  return points;
+}
+
+function lcSigmaNiceMax(absMax) {
+  const v = Math.max(0.5, Number(absMax) || 1);
+  const steps = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
+  for (const s of steps) if (v <= s) return s;
+  return Math.ceil(v);
+}
+
+/** 百分比口径的纵轴上限：取 0.5% / 1% / 2% / … 之类的整齐刻度 */
+function lcSigmaNicePct(absMax) {
+  const v = Math.max(0.005, Number(absMax) || 0.01);
+  const steps = [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.5];
+  for (const s of steps) if (v <= s) return s;
+  return Math.ceil(v * 100) / 100;
+}
+
+/** 对称纵轴刻度：按绘图高度加密，约每 16px 一条 */
+function lcSigmaYTickValues(yMax, plotH, isStd) {
+  const max = Math.abs(Number(yMax)) || (isStd ? 0.01 : 1);
+  const target = Math.max(4, Math.min(10, Math.round((plotH || 120) / 16)));
+  // 半轴目标刻度数（不含 0）
+  const halfN = Math.max(2, Math.ceil(target / 2));
+  const rawStep = max / halfN;
+  let step;
+  if (isStd) {
+    const candidates = [0.0025, 0.005, 0.01, 0.015, 0.02, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.25, 0.5];
+    step = candidates.find((s) => s >= rawStep) || Math.ceil(rawStep * 100) / 100;
+  } else {
+    const candidates = [0.25, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5];
+    step = candidates.find((s) => s >= rawStep) || Math.ceil(rawStep);
+  }
+  const ticks = [];
+  const nUp = Math.max(1, Math.round(max / step));
+  for (let i = -nUp; i <= nUp; i += 1) {
+    const v = i * step;
+    if (Math.abs(v) <= max * 1.001) ticks.push(Number(v.toFixed(8)));
+  }
+  if (!ticks.includes(0)) ticks.push(0);
+  ticks.sort((a, b) => a - b);
+  return ticks;
+}
+
+/** 横轴日期下标：约每 52px 一个，始终含首尾 */
+function lcSigmaXTickIndices(n, plotW) {
+  if (n <= 0) return [];
+  if (n === 1) return [0];
+  const target = Math.max(3, Math.min(n, Math.floor((plotW || 200) / 52) + 1));
+  const step = Math.max(1, Math.round((n - 1) / (target - 1)));
+  const out = [];
+  for (let i = 0; i < n; i += step) out.push(i);
+  if (out[out.length - 1] !== n - 1) out.push(n - 1);
+  return out;
+}
+
+function lcSigmaFmtY(v, isStd) {
+  if (!Number.isFinite(v)) return "";
+  if (Math.abs(v) < 1e-12) return isStd ? "0%" : "0σ";
+  if (isStd) {
+    const p = v * 100;
+    const digits = Math.abs(p) < 1 ? 2 : Math.abs(p) < 10 ? 2 : 1;
+    return `${p > 0 ? "+" : ""}${p.toFixed(digits)}%`;
+  }
+  const digits = Math.abs(v) < 1 ? 2 : 1;
+  return `${v > 0 ? "+" : ""}${v.toFixed(digits)}σ`;
+}
+
+function lcSigmaFmtAxisDate(d) {
+  const s = String(d || "");
+  return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(5, 10) : s.slice(0, 10);
+}
+
+function lcUndCardEls(factor) {
+  const card = document.querySelector(`#lcUndulateStats .lc-und-card[data-factor="${factor}"]`);
+  if (!card) return null;
+  return {
+    card,
+    canvas: card.querySelector("canvas"),
+    wrap: card.querySelector(".lc-und-card-chart"),
+    foot: card.querySelector(".lc-und-card-foot"),
+  };
+}
+
+function paintLcFactorChart(factor) {
+  const card = lcUndCardEls(factor);
+  if (!card) return;
+  const { canvas, wrap } = card;
+  if (!canvas || !wrap) return;
+  const cssW = Math.max(120, wrap.clientWidth || 280);
+  const cssH = Math.max(90, wrap.clientHeight || 130);
+  const dpr = Math.min(2.5, window.devicePixelRatio || 1);
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  canvas.style.width = `${cssW}px`;
+  canvas.style.height = `${cssH}px`;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const allPoints = lcSigmaState.pointsByFactor.get(factor) || [];
+  const win = lcSigmaViewWindow();
+  const points =
+    win.total > 0 ? allPoints.slice(win.start, win.start + win.size) : allPoints;
+  const muted = cssVar("--muted", "#8494a8");
+  const ink = cssVar("--ink", "#e8eef7");
+  // 左侧留给加密纵轴标签；底边只留刻度短线（日期在 HTML 轴）
+  const pad = { top: 12, right: 10, bottom: 10, left: 40 };
+  const plot = {
+    x: pad.left,
+    y: pad.top,
+    w: Math.max(20, cssW - pad.left - pad.right),
+    h: Math.max(30, cssH - pad.top - pad.bottom),
+  };
+  if (!points.length) {
+    ctx.fillStyle = muted;
+    ctx.font = "11px sans-serif";
+    ctx.fillText("等待日K窗口…", plot.x + 4, plot.y + 16);
+    return;
+  }
+
+  const isStd = lcSigmaState.mode === "std";
+  const sKey = isStd ? "stockStd" : "stockZ";
+  const iKey = isStd ? "indexStd" : "indexZ";
+  let absMax = isStd ? 0.01 : 0.5;
+  for (const p of points) {
+    for (const v of [p[sKey], p[iKey]]) {
+      if (Number.isFinite(v)) absMax = Math.max(absMax, Math.abs(v));
+    }
+  }
+  const yMax = isStd ? lcSigmaNicePct(absMax * 1.08) : lcSigmaNiceMax(absMax * 1.08);
+  const yMin = -yMax;
+  const n = points.length;
+  const xAt = (i) => plot.x + (n <= 1 ? plot.w / 2 : (i / (n - 1)) * plot.w);
+  const yAt = (v) => plot.y + plot.h - ((v - yMin) / (yMax - yMin)) * plot.h;
+  const yTicks = lcSigmaYTickValues(yMax, plot.h, isStd);
+  const xTicks = lcSigmaXTickIndices(n, plot.w);
+
+  // 纵轴网格 + 刻度标签
+  ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (const v of yTicks) {
+    const y = yAt(v);
+    const isZero = Math.abs(v) < 1e-12;
+    ctx.strokeStyle = isZero ? "rgba(132, 148, 168, 0.55)" : "rgba(42, 212, 184, 0.1)";
+    ctx.lineWidth = isZero ? 1.1 : 1;
+    ctx.beginPath();
+    ctx.moveTo(plot.x, y);
+    ctx.lineTo(plot.x + plot.w, y);
+    ctx.stroke();
+    // 左侧短刻度
+    ctx.strokeStyle = isZero ? "rgba(168, 180, 196, 0.7)" : "rgba(132, 148, 168, 0.35)";
+    ctx.beginPath();
+    ctx.moveTo(plot.x - 3, y);
+    ctx.lineTo(plot.x, y);
+    ctx.stroke();
+    ctx.fillStyle = isZero ? ink : muted;
+    ctx.fillText(lcSigmaFmtY(v, isStd), plot.x - 5, y);
+  }
+
+  // 横轴底边 + 竖向浅网格
+  ctx.strokeStyle = "rgba(132, 148, 168, 0.28)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(plot.x, plot.y + plot.h);
+  ctx.lineTo(plot.x + plot.w, plot.y + plot.h);
+  ctx.stroke();
+  for (const i of xTicks) {
+    const x = xAt(i);
+    ctx.strokeStyle = "rgba(42, 212, 184, 0.06)";
+    ctx.beginPath();
+    ctx.moveTo(x, plot.y);
+    ctx.lineTo(x, plot.y + plot.h);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(132, 148, 168, 0.4)";
+    ctx.beginPath();
+    ctx.moveTo(x, plot.y + plot.h);
+    ctx.lineTo(x, plot.y + plot.h + 3);
+    ctx.stroke();
+  }
+
+  const drawSeries = (key, color) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.7;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    let started = false;
+    ctx.beginPath();
+    points.forEach((p, i) => {
+      const v = p[key];
+      if (!Number.isFinite(v)) {
+        started = false;
+        return;
+      }
+      const x = xAt(i);
+      const y = yAt(v);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    ctx.stroke();
+  };
+  const stockColor = cssVar("--accent", "#2ad4b8");
+  const indexColor = "#7aa2f7";
+  drawSeries(iKey, indexColor);
+  drawSeries(sKey, stockColor);
+
+  const hiAbs = lcSigmaState.hoverFactor === factor ? lcSigmaState.hoverIdx : null;
+  const hi = hiAbs != null ? hiAbs - win.start : null;
+  if (hi != null && hi >= 0 && hi < n && points[hi]) {
+    const x = xAt(hi);
+    ctx.strokeStyle = "rgba(232, 238, 247, 0.32)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, plot.y);
+    ctx.lineTo(x, plot.y + plot.h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const dot = (v, color) => {
+      if (!Number.isFinite(v)) return;
+      ctx.fillStyle = "rgba(7, 11, 18, 0.85)";
+      ctx.beginPath();
+      ctx.arc(x, yAt(v), 3.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, yAt(v), 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    dot(points[hi][iKey], indexColor);
+    dot(points[hi][sKey], stockColor);
+  }
+
+  // 横轴日期放 HTML 层（防裁切）；canvas 只留刻度短线
+  const axisBits = xTicks.map((i, k) => {
+    const align = k === 0 ? "left" : k === xTicks.length - 1 ? "right" : "center";
+    const cls = align === "left" ? "is-start" : align === "right" ? "is-end" : "is-mid";
+    return `<span class="${cls}">${lcSigmaFmtAxisDate(points[i].date)}</span>`;
+  });
+  const axisEl = card.card?.querySelector?.(".lc-und-card-axis");
+  if (axisEl) {
+    axisEl.style.paddingLeft = `${pad.left}px`;
+    axisEl.style.paddingRight = `${pad.right}px`;
+    axisEl.innerHTML = axisBits.join("");
+  }
+
+  // 视窗未铺满全长时画底部缩略条，提示可左右拖 / 滚轮缩放
+  if (win.total > win.size && win.total > 0) {
+    const barY = cssH - 3;
+    const barH = 2;
+    const barX = plot.x;
+    const barW = plot.w;
+    ctx.fillStyle = "rgba(132, 148, 168, 0.22)";
+    ctx.fillRect(barX, barY, barW, barH);
+    const thumbX = barX + (win.start / win.total) * barW;
+    const thumbW = Math.max(4, (win.size / win.total) * barW);
+    ctx.fillStyle = "rgba(42, 212, 184, 0.55)";
+    ctx.fillRect(thumbX, barY, thumbW, barH);
+  }
+
+  // 悬浮读数放到标题「收盘价」等文字右侧，不挡曲线
+  const hoverEl = card.card?.querySelector?.(".lc-und-card-hover");
+  if (hoverEl) {
+    if (hi != null && hi >= 0 && hi < n && points[hi]) {
+      const p = points[hi];
+      const stockTxt = fmtSigma(isStd ? p.stockStd : p.stockZ, isStd);
+      const indexTxt = fmtSigma(isStd ? p.indexStd : p.indexZ, isStd);
+      const dateTxt = String(p.date).slice(5);
+      hoverEl.hidden = false;
+      hoverEl.innerHTML = `<em class="lc-und-hover-date">${escapeHtml(dateTxt)}</em>`
+        + `<span class="lc-und-hover-pair" data-series="stock"><i>股</i><b>${escapeHtml(stockTxt)}</b></span>`
+        + `<span class="lc-und-hover-pair" data-series="index"><i>指</i><b>${escapeHtml(indexTxt)}</b></span>`;
+    } else {
+      hoverEl.hidden = true;
+      hoverEl.innerHTML = "";
+    }
+  }
+}
+
+/** 小数涨跌幅 → 带符号百分比（后端返回的是小数，如 0.0191） */
+function lcUndPct(v) {
+  if (v == null || !Number.isFinite(Number(v))) return "—";
+  const n = Number(v) * 100;
+  return `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
+}
+
+/** 标准差单位值 → 带符号σ（后端 end_z：结束日涨跌幅以σ为单位） */
+function lcUndSigma(v) {
+  if (v == null || !Number.isFinite(Number(v))) return "—";
+  const n = Number(v);
+  return `${n > 0 ? "+" : ""}${n.toFixed(2)}σ`;
+}
+
+/** 单张卡的统计块：名称 + 区间/均值/σ/极差指标格 */
+function lcUndStatRowHtml(label, series, row) {
+  if (!row || row.min == null) {
+    return `<div class="lc-und-stat" data-series="${series}">
+      <div class="lc-und-stat-head"><span class="lc-und-stat-dot" aria-hidden="true"></span><strong>${escapeHtml(label)}</strong></div>
+      <div class="lc-und-stat-empty">暂无统计</div>
+    </div>`;
+  }
+  const endSigmaVal = row.end_sigma ?? row.end_z;
+  const endSigmaNum = endSigmaVal == null ? null : Number(endSigmaVal);
+  const std = row.std == null ? null : Number(row.std);
+  const meanNum = row.mean == null ? null : Number(row.mean);
+  // 均值换算为以标准差为单位（mean / σ）
+  const meanSigmaNum =
+    std != null && Number.isFinite(std) && std > 0 && meanNum != null && Number.isFinite(meanNum)
+      ? meanNum / std
+      : null;
+  const metrics = [
+    { k: "区间", v: `${lcUndPct(row.min)} ~ ${lcUndPct(row.max)}`, primary: true },
+    { k: "均值", v: lcUndPct(row.mean) },
+    { k: "σ", v: lcUndPct(row.std) },
+    { k: "极差", v: lcUndPct(row.range) },
+    {
+      k: "均值σ",
+      v: meanSigmaNum == null ? "—" : lcUndSigma(meanSigmaNum),
+      tone: meanSigmaNum != null && meanSigmaNum !== 0 ? (meanSigmaNum > 0 ? "change-up" : "change-down") : "",
+      title: "均值换算为标准差单位（均值 / σ）",
+    },
+    {
+      k: "结束σ",
+      v: endSigmaNum == null || !Number.isFinite(endSigmaNum) ? "—" : lcUndSigma(endSigmaNum),
+      tone: Number.isFinite(endSigmaNum) && endSigmaNum !== 0 ? (endSigmaNum > 0 ? "change-up" : "change-down") : "",
+      title: row.end_date ? `结束日 ${row.end_date} 涨跌幅 ${row.end_pct == null ? "—" : lcUndPct(row.end_pct)}` : "",
+    },
+  ];
+  return `<div class="lc-und-stat" data-series="${series}">
+    <div class="lc-und-stat-head">
+      <span class="lc-und-stat-dot" aria-hidden="true"></span>
+      <strong>${escapeHtml(label)}</strong>
+    </div>
+    <div class="lc-und-stat-metrics">
+      ${metrics
+        .map(
+          (m) => `<div class="lc-und-metric${m.primary ? " is-primary" : ""}"${m.title ? ` title="${escapeHtml(m.title)}"` : ""}>
+        <em>${escapeHtml(m.k)}</em><b${m.tone ? ` class="${m.tone}"` : ""}>${escapeHtml(m.v)}</b>
+      </div>`
+        )
+        .join("")}
+    </div>
+  </div>`;
+}
+
+function fmtSigma(v, isStd = false) {
+  if (!Number.isFinite(v)) return "—";
+  if (isStd) {
+    const p = v * 100;
+    return `${p > 0 ? "+" : ""}${p.toFixed(2)}%`;
+  }
+  return `${v >= 0 ? "+" : ""}${v.toFixed(2)}σ`;
+}
+
+/** 构建四张卡骨架（同时只展示 activeFactor；结构变化时才重建） */
+function buildLcUndulateCards() {
+  const box = document.getElementById("lcUndulateStats");
+  if (!box) return false;
+  if (box.querySelector(".lc-und-grid") && box.dataset.built === "v6") return false;
+  box.dataset.built = "v6";
+  const active = normalizeLcSigmaFactor(lcSigmaState.activeFactor);
+  lcSigmaState.activeFactor = active;
+  box.innerHTML = `<div class="lc-und-grid">${LC_UNDULATE_FACTORS.map((f) => {
+    const on = f.key === active;
+    return `<article class="lc-und-card${on ? " is-active" : ""}" data-factor="${f.key}"${on ? "" : " hidden"}>
+        <header class="lc-und-card-head">
+          <div class="lc-und-card-title">
+            <strong>${f.label}</strong>
+            <span class="lc-und-card-hover" hidden aria-live="polite"></span>
+          </div>
+          <span class="lc-und-card-legend">
+            <i data-series="stock"></i>个股
+            <i data-series="index"></i>指数
+          </span>
+        </header>
+        <div class="lc-und-card-chart"><canvas></canvas></div>
+        <div class="lc-und-card-axis" aria-hidden="true"></div>
+        <footer class="lc-und-card-foot"></footer>
+      </article>`;
+  }).join("")}</div>`;
+  syncLcSigmaFactorUi(active);
+  return true;
+}
+
+/** 每张卡底部的统计数字：个股 / 指数各一行 */
+function fillLcUndulateFooters() {
+  const meta = window.LineCompare?.undulateMeta?.() || {};
+  const stockStats = meta.stats || {};
+  const indexStats = meta.index?.stats || {};
+  const stockName = String(meta.name || meta.code || "").trim() || "个股";
+  const indexName = meta.index?.name || "指数";
+  const errorOnly = !meta.stats && !meta.index?.stats && meta.error ? String(meta.error) : "";
+  LC_UNDULATE_FACTORS.forEach((f) => {
+    const el = lcUndCardEls(f.key);
+    if (!el?.foot) return;
+    if (errorOnly) {
+      el.foot.innerHTML = `<p class="error lc-undulate-note">${escapeHtml(errorOnly)}</p>`;
+      return;
+    }
+    el.foot.innerHTML =
+      lcUndStatRowHtml(stockName, "stock", stockStats[f.key]) +
+      lcUndStatRowHtml(indexName, "index", indexStats[f.key]);
+  });
+}
+
+function renderLcUndulate({ force = false } = {}) {
+  const box = document.getElementById("lcUndulateStats");
+  if (!box) return;
+  const rebuilt = buildLcUndulateCards();
+  const win = lcChartViewWindow();
+  const pick = lcChartState.rangePick || {};
+  const meta = window.LineCompare?.undulateMeta?.() || {};
+  const pointsKey = [
+    win.start,
+    win.items.length,
+    lcIndexState.code,
+    lcIndexState.byDate.size,
+    (lcChartState.allItems || []).length,
+    pick.a || "",
+    pick.b || "",
+  ].join("|");
+  if (force || rebuilt || pointsKey !== lcSigmaState.key) {
+    lcSigmaState.key = pointsKey;
+    lcSigmaState.hoverIdx = null;
+    lcSigmaState.hoverFactor = "";
+    resetLcSigmaViewport();
+    LC_UNDULATE_FACTORS.forEach((f) => {
+      lcSigmaState.pointsByFactor.set(f.key, computeLcSigmaPoints(f.key));
+    });
+  }
+  const statsKey = [
+    meta.name || "",
+    meta.code || "",
+    meta.beg || "",
+    meta.end || "",
+    meta.base?.date || "",
+    meta.index?.name || "",
+    meta.index?.beg || "",
+    meta.index?.end || "",
+    meta.key || "",
+    meta.index?.key || "",
+  ].join("|");
+  if (force || rebuilt || statsKey !== lcSigmaState.statsKey) {
+    lcSigmaState.statsKey = statsKey;
+    fillLcUndulateFooters();
+  }
+  syncLcSigmaFactorUi();
+  paintLcSigmaAll();
+}
+
+function paintLcSigmaAll() {
+  paintLcFactorChart(lcSigmaState.activeFactor);
+}
+
+function bindLcSigma() {
+  const box = document.getElementById("lcUndulateStats");
+  if (!box || lcSigmaState.bound) return;
+  lcSigmaState.bound = true;
+
+  document.querySelectorAll("#lcUndulateFactor [data-factor]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setLcSigmaFactor(btn.getAttribute("data-factor") || "close");
+    });
+  });
+
+  document.querySelectorAll("#lcUndulateMode button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mode = btn.getAttribute("data-mode") === "std" ? "std" : "z";
+      if (mode === lcSigmaState.mode) return;
+      lcSigmaState.mode = mode;
+      document.querySelectorAll("#lcUndulateMode button").forEach((b) => {
+        const on = b === btn;
+        b.classList.toggle("is-active", on);
+        b.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      paintLcSigmaAll();
+    });
+  });
+
+  const chartFromEvent = (evt) => {
+    const card = evt.target.closest?.(".lc-und-card");
+    const wrap = card?.querySelector(".lc-und-card-chart");
+    const canvas = wrap?.querySelector("canvas") || card?.querySelector("canvas");
+    if (!card || !canvas) return null;
+    return {
+      card,
+      wrap,
+      canvas,
+      factor: card.getAttribute("data-factor") || "",
+    };
+  };
+
+  const padL = 40;
+  const padR = 10;
+
+  /** 返回全序列绝对下标；悬停映射到当前视窗 */
+  const idxFromEvent = (evt, canvas) => {
+    const win = lcSigmaViewWindow();
+    if (win.total <= 0 || win.size <= 0) return null;
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(20, rect.width - padL - padR);
+    const x = evt.clientX - rect.left - padL;
+    if (x < -4 || x > w + 4) return null;
+    if (win.size <= 1) return win.start;
+    const rel = Math.min(win.size - 1, Math.max(0, Math.round((x / w) * (win.size - 1))));
+    return win.start + rel;
+  };
+
+  const anchorRatioFromEvent = (evt, canvas) => {
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(20, rect.width - padL - padR);
+    const x = evt.clientX - rect.left - padL;
+    if (x < 0 || x > w) return 0.5;
+    return Math.min(1, Math.max(0, x / w));
+  };
+
+  const clearHover = () => {
+    const factor = lcSigmaState.hoverFactor;
+    lcSigmaState.hoverIdx = null;
+    lcSigmaState.hoverFactor = "";
+    if (factor) paintLcFactorChart(factor);
+  };
+
+  const setHover = (factor, next) => {
+    const changed = next !== lcSigmaState.hoverIdx || factor !== lcSigmaState.hoverFactor;
+    const prev = lcSigmaState.hoverFactor;
+    lcSigmaState.hoverFactor = factor;
+    lcSigmaState.hoverIdx = next;
+    if (!changed) return;
+    if (prev && prev !== factor) paintLcFactorChart(prev);
+    if (factor) paintLcFactorChart(factor);
+  };
+
+  box.addEventListener("pointerdown", (evt) => {
+    if (evt.button != null && evt.button !== 0) return;
+    const hit = chartFromEvent(evt);
+    if (!hit) return;
+    const rect = hit.canvas.getBoundingClientRect();
+    lcSigmaState.pan = {
+      factor: hit.factor,
+      wrap: hit.wrap,
+      canvas: hit.canvas,
+      originX: evt.clientX,
+      lastX: evt.clientX,
+      width: Math.max(20, rect.width - padL - padR),
+      moved: false,
+      pointerId: evt.pointerId,
+    };
+    hit.wrap?.classList.add("is-panning");
+    try {
+      hit.canvas.setPointerCapture(evt.pointerId);
+    } catch {
+      /* ignore */
+    }
+  });
+
+  box.addEventListener("pointermove", (evt) => {
+    const pan = lcSigmaState.pan;
+    if (pan) {
+      const dx = evt.clientX - pan.lastX;
+      pan.lastX = evt.clientX;
+      if (!pan.moved && Math.abs(evt.clientX - pan.originX) > 3) {
+        pan.moved = true;
+        clearHover();
+      }
+      if (pan.moved && dx) panLcSigmaByPixels(dx, pan.width);
+      return;
+    }
+    const hit = chartFromEvent(evt);
+    if (!hit) return;
+    setHover(hit.factor, idxFromEvent(evt, hit.canvas));
+  });
+
+  const endPan = (evt) => {
+    const pan = lcSigmaState.pan;
+    if (!pan) return;
+    const wasPan = pan.moved;
+    const { factor, wrap, canvas } = pan;
+    lcSigmaState.pan = null;
+    wrap?.classList.remove("is-panning");
+    try {
+      canvas.releasePointerCapture(pan.pointerId);
+    } catch {
+      /* ignore */
+    }
+    if (!wasPan && evt) {
+      setHover(factor, idxFromEvent(evt, canvas));
+    }
+  };
+
+  box.addEventListener("pointerup", endPan);
+  box.addEventListener("pointercancel", endPan);
+  box.addEventListener("pointerleave", () => {
+    if (lcSigmaState.pan) return;
+    clearHover();
+  });
+
+  box.addEventListener(
+    "wheel",
+    (evt) => {
+      const hit = chartFromEvent(evt);
+      if (!hit) return;
+      const win = lcSigmaViewWindow();
+      if (win.total <= 1) return;
+      evt.preventDefault();
+      clearHover();
+
+      if (Math.abs(evt.deltaX) > Math.abs(evt.deltaY) * 1.15) {
+        if (win.maxStart <= 0) return;
+        const step = Math.max(1, Math.round(Math.abs(evt.deltaX) / 40));
+        setLcSigmaViewStart(win.start + (evt.deltaX > 0 ? step : -step));
+        return;
+      }
+
+      const steps = Math.max(1, Math.min(6, Math.round(Math.abs(evt.deltaY) / 56) || 1));
+      const base = evt.deltaY > 0 ? 1.22 : 1 / 1.22;
+      zoomLcSigmaViewport(anchorRatioFromEvent(evt, hit.canvas), base ** steps);
+    },
+    { passive: false }
+  );
+
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => {
+      window.cancelAnimationFrame(lcSigmaState.frame);
+      lcSigmaState.frame = window.requestAnimationFrame(() => paintLcSigmaAll());
+    });
+    ro.observe(box);
+    lcSigmaState.ro = ro;
+  }
+}
+
+function compareDirBarColor(dir, { active = true } = {}) {
+  if (window.LineCompare?.dirBarColor) return window.LineCompare.dirBarColor(dir, active);
+  const colors = window.LineCompare?.DIR_BAR_COLORS || {
+    股跌指涨: "#0f7a4a",
+    同跌: "#3dd68c",
+    同涨: "#ff8a95",
+    股涨指跌: "#d62839",
+  };
+  const key = String(dir || "");
+  if (active) return colors[key] || cssVar("--muted", "#8494a8");
+  const dim = {
+    股跌指涨: "rgba(15, 122, 74, 0.38)",
+    同跌: "rgba(61, 214, 140, 0.38)",
+    同涨: "rgba(255, 138, 149, 0.38)",
+    股涨指跌: "rgba(214, 40, 57, 0.38)",
+  };
+  return dim[key] || "rgba(132, 148, 168, 0.35)";
+}
+
+function fmtComparePct(n, digits = 2) {
+  if (n == null || !Number.isFinite(Number(n))) return "—";
+  const v = Number(n) * 100;
+  const sign = v > 0 ? "+" : "";
+  return `${sign}${v.toFixed(digits)}%`;
+}
+
+function drawCompareDifBars(ctx, layout, items, colors, hoverIndex) {
+  const n = items.length;
+  if (!n) return false;
+  const { price } = layout;
+  const values = [];
+  for (const d of items) {
+    if (d?.dif != null && Number.isFinite(Number(d.dif))) values.push(Number(d.dif));
+  }
+  if (!values.length) return false;
+
+  const absVals = values.map((v) => Math.abs(v)).sort((a, b) => a - b);
+  const p95 = quantile(absVals, 0.95);
+  const peak = absVals.length ? absVals[absVals.length - 1] : 0;
+  const maxAbs = Math.max(p95 ?? peak, 1e-6);
+  const priceScale = buildPriceScale(-maxAbs, maxAbs, {
+    tickCount: priceScaleTickCount(price.h),
+    padRatio: 0.08,
+    center: 0,
+  });
+  const yAt = (p) =>
+    price.y + ((priceScale.max - p) / (priceScale.max - priceScale.min || 1)) * price.h;
+  const yZero = yAt(0);
+  const slot = price.w / n;
+  const gap = Math.min(3, slot * 0.22);
+  const barW = Math.max(1, slot - gap);
+
+  const yTicks = (priceScale.ticks || []).map(yAt);
+  const xTicks = [0, 0.5, 1].map((t) => price.x + price.w * t);
+  drawGrid(ctx, price, yTicks, xTicks, colors);
+
+  ctx.save();
+  ctx.strokeStyle = colors.muted || "#8494a8";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(price.x, yZero);
+  ctx.lineTo(price.x + price.w, yZero);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = colors.muted || "#8494a8";
+  ctx.font = '10px "JetBrains Mono", Consolas, monospace';
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (const frac of [-1, 0, 1]) {
+    const v = frac * maxAbs;
+    ctx.fillText(fmtComparePct(v, 1), price.x - 6, yAt(v));
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(price.x, price.y, price.w, price.h);
+  ctx.clip();
+
+  for (let i = 0; i < n; i += 1) {
+    const d = items[i];
+    const dif = Number(d?.dif);
+    if (!Number.isFinite(dif)) continue;
+    const active = hoverIndex == null || hoverIndex === i;
+    const x = price.x + i * slot + (slot - barW) / 2;
+    const y1 = yAt(Math.max(-maxAbs, Math.min(maxAbs, dif)));
+    const top = Math.min(yZero, y1);
+    const h = Math.max(1, Math.abs(y1 - yZero));
+    if (active && hoverIndex === i) {
+      ctx.fillStyle = "rgba(232, 238, 247, 0.06)";
+      ctx.fillRect(price.x + i * slot, price.y, slot, price.h);
+    }
+    ctx.fillStyle = compareDirBarColor(d.dir, { active });
+    ctx.fillRect(x, top, barW, h);
+    if (active && hoverIndex === i) {
+      ctx.strokeStyle = compareDirBarColor(d.dir, { active: true });
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, top + 0.5, Math.max(0, barW - 1), Math.max(0, h - 1));
+    }
+  }
+  ctx.restore();
+
+  if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
+    const x = price.x + (hoverIndex + 0.5) * slot;
+    ctx.save();
+    ctx.strokeStyle = colors.cross;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, price.y);
+    ctx.lineTo(x, price.y + price.h);
+    ctx.stroke();
+    ctx.restore();
+  }
+  return true;
+}
+
+function compareHoverRows(hit, row) {
+  if (!hit || hit.dif == null || !Number.isFinite(Number(hit.dif))) return [];
+  const dirColor = compareDirBarColor(hit.dir, { active: true });
+  const meta = window.LineCompare?.paneMeta?.() || {};
+  const idxName = meta.indexName || meta.index || "指数";
+  const factorName = meta.factorLabel || "收盘涨跌幅";
+  return [
+    row(factorName, `<span style="color:#f0b429">${escapeHtml(fmtComparePct(hit.dif))}</span>`),
+    row("方向", `<span style="color:${dirColor}">${escapeHtml(hit.dir || "—")}</span>`),
+    row("个股", escapeHtml(fmtComparePct(hit.rs))),
+    row(idxName, escapeHtml(fmtComparePct(hit.rb))),
+  ];
+}
+
+/** 四价相对区间基准收盘的涨跌幅（/api/stocks/line-undulate/volatility） */
+function undulateHoverRows(time, row) {
+  const meta = window.LineCompare?.undulateMeta?.() || {};
+  const base = meta.base || {};
+  if (!base.date) return [];
+  const labels = [
+    ["open", "开幅"],
+    ["high", "高幅"],
+    ["low", "低幅"],
+    ["close", "收幅"],
+  ];
+  const rows = labels
+    .map(([factor, label]) => {
+      const hit = window.LineCompare?.undulateAtDate?.(time, factor);
+      if (!hit || hit.pct == null) return "";
+      const n = Number(hit.pct);
+      const cls = n > 0 ? "change-up" : n < 0 ? "change-down" : "";
+      return row(label, `<span class="${cls}">${escapeHtml(fmtComparePct(n))}</span>`);
+    })
+    .filter(Boolean);
+  if (!rows.length) return [];
+  return [
+    row("基准", escapeHtml(`${String(base.date).slice(5)} ${fmtNum(base.close)}`)),
+    ...rows,
+  ];
+}
+
+function setLcChartSource(text) {
+  if (lcEls.chartMeta) lcEls.chartMeta.textContent = text || "";
+}
+
+function setLcChartStatus(message, { empty = false } = {}) {
+  if (lcEls.chartEmpty) {
+    lcEls.chartEmpty.textContent = empty ? message || "暂无走势数据" : "暂无走势数据";
+    lcEls.chartEmpty.classList.toggle("hidden", !empty);
+  }
+}
+
+function lcChartViewWindow() {
+  const all = lcChartState.allItems || [];
+  const total = all.length;
+  let size = Number(lcChartState.viewSize) || 0;
+  if (size <= 0 || size >= total) size = total;
+  const maxStart = Math.max(0, total - size);
+  const start = Math.min(Math.max(0, Number(lcChartState.viewStart) || 0), maxStart);
+  return {
+    all,
+    total,
+    size,
+    maxStart,
+    start,
+    items: total ? all.slice(start, start + size) : [],
+  };
+}
+
+function refreshLcChartWindowStatus() {
+  if (!(lcChartState.allItems || []).length) return;
+  const first = String((lcChartState.allItems[0] || {}).time || "").slice(0, 10);
+  const tail =
+    lcChartState.historyExhausted && first ? ` · 自 ${first}上市起` : "";
+  const loading = lcChartState.historyLoading ? " · 正在加载更早日线…" : "";
+  setLcChartSource((lcChartState.source || "") + tail + loading);
+}
+
+function syncLcChartScrollBar() {
+  const { maxStart, start, total, size } = lcChartViewWindow();
+  const canScroll = total > size && maxStart > 0;
+  const moreHistory = !lcChartState.historyExhausted;
+  const disabled = !canScroll && !lcChartState.historyLoading && !moreHistory;
+  const ratio = total > 0 ? Math.min(1, size / total) : 1;
+  const thumbPx = Math.max(28, Math.round(48 + ratio * 72));
+  const apply = (bar, wrap) => {
+    if (!bar) return;
+    if (wrap) wrap.classList.toggle("is-disabled", disabled);
+    bar.disabled = !canScroll;
+    bar.min = "0";
+    bar.max = String(Math.max(0, maxStart));
+    bar.value = String(start);
+    bar.style.setProperty("--thumb-w", `${thumbPx}px`);
+  };
+  apply(lcEls.chartScrollBar, lcEls.chartAxisScroll);
+  apply(lcEls.indexChartScrollBar, lcEls.indexChartAxisScroll);
+}
+
+function resetLcChartViewport(allItems) {
+  const modeConf = CHART_MODES.day;
+  lcChartState.allItems = Array.isArray(allItems) ? allItems : [];
+  lcChartState.historyExhausted = false;
+  lcChartState.historyLoading = false;
+  const total = lcChartState.allItems.length;
+  let viewSize = Number(modeConf.viewSize) || 90;
+  lcChartState.viewSize = viewSize;
+  lcChartState.viewStart = Math.max(0, total - (viewSize > 0 && viewSize < total ? viewSize : total));
+  lcChartState.items = lcChartViewWindow().items;
+  syncLcChartScrollBar();
+}
+
+function setLcChartViewStart(nextStart, { render = true, hoverIndex = null } = {}) {
+  const { maxStart } = lcChartViewWindow();
+  const start = Math.min(Math.max(0, Math.round(nextStart)), maxStart);
+  if (start === lcChartState.viewStart && lcChartState.items.length) {
+    syncLcChartScrollBar();
+    if (render) renderLcChart(hoverIndex);
+    if (start <= 15) void loadOlderLcKline();
+    scheduleLcUndulate();
+    return start;
+  }
+  lcChartState.viewStart = start;
+  lcChartState.items = lcChartViewWindow().items;
+  syncLcChartScrollBar();
+  if (render) renderLcChart(hoverIndex);
+  if (start <= 15) void loadOlderLcKline();
+  scheduleLcUndulate();
+  return start;
+}
+
+function zoomLcChartViewport(anchorRatio, factor, { render = true } = {}) {
+  const total = (lcChartState.allItems || []).length;
+  if (total <= 1) return false;
+  const win = lcChartViewWindow();
+  const minSize = chartMinViewSize(total);
+  const ratio = Math.min(1, Math.max(0, Number(anchorRatio) || 0.5));
+  let nextSize = Math.round(win.size * factor);
+  nextSize = Math.max(minSize, Math.min(total, nextSize));
+  if (nextSize === win.size) {
+    if (factor > 1 && !lcChartState.historyExhausted) void loadOlderLcKline();
+    return false;
+  }
+  const anchorIndex = win.start + ratio * win.size;
+  let nextStart = Math.round(anchorIndex - ratio * nextSize);
+  nextStart = Math.max(0, Math.min(nextStart, total - nextSize));
+  lcChartState.viewSize = nextSize;
+  lcChartState.viewStart = nextStart;
+  lcChartState.items = lcChartViewWindow().items;
+  syncLcChartScrollBar();
+  refreshLcChartWindowStatus();
+  if (render) renderLcChart();
+  scheduleLcUndulate();
+  if (factor > 1 && !lcChartState.historyExhausted) {
+    const capped = nextSize >= total || nextStart <= 15 || nextStart + nextSize >= total - 5;
+    if (capped) {
+      const before = total;
+      void loadOlderLcKline().then(async () => {
+        const nt = (lcChartState.allItems || []).length;
+        const added = nt - before;
+        if (added > 0) {
+          lcChartState.viewSize = Math.min(nt, (Number(lcChartState.viewSize) || nextSize) + added);
+          lcChartState.viewStart = Math.max(
+            0,
+            Math.min(lcChartState.viewStart + added, nt - lcChartState.viewSize)
+          );
+          lcChartState.items = lcChartViewWindow().items;
+          syncLcChartScrollBar();
+          refreshLcChartWindowStatus();
+          if (lcComboMetricState === "compare") await refreshLcComparePane();
+          else renderLcChart();
+        }
+      });
+    }
+  }
+  return true;
+}
+
+async function loadOlderLcKline() {
+  if (!code || lcChartState.historyLoading || lcChartState.historyExhausted) return;
+  const all = lcChartState.allItems || [];
+  if (!all.length) return;
+  const first = String(all[0]?.time || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(first)) {
+    lcChartState.historyExhausted = true;
+    refreshLcChartWindowStatus();
+    return;
+  }
+  lcChartState.historyLoading = true;
+  refreshLcChartWindowStatus();
+  try {
+    const endDay = shiftIsoDate(first, -1);
+    const qs = new URLSearchParams({
+      code,
+      period: "day",
+      adjust: "qfq",
+      limit: "2000",
+      end: endDay || first,
+    });
+    const json = await api(`/api/stocks/line?${qs.toString()}`);
+    const older = (json.data?.items || []).filter(
+      (d) => String(d?.time || "").slice(0, 10) < first
+    );
+    if (!older.length) {
+      if (json.data?.source) lcChartState.source = json.data.source;
+      if (json.data && json.data.full_history) lcChartState.historyExhausted = true;
+    } else {
+      const seen = new Set(older.map((d) => String(d?.time || "").slice(0, 10)));
+      const merged = [...older, ...all.filter((d) => !seen.has(String(d?.time || "").slice(0, 10)))];
+      const keepSize = Number(lcChartState.viewSize) || 90;
+      lcChartState.allItems = merged;
+      lcChartState.viewStart = older.length;
+      lcChartState.viewSize = keepSize;
+      lcChartState.items = lcChartViewWindow().items;
+      if (json.data?.source) lcChartState.source = json.data.source;
+      if (json.data && json.data.full_history) lcChartState.historyExhausted = true;
+    }
+  } catch {
+    /* ignore */
+  } finally {
+    lcChartState.historyLoading = false;
+    syncLcChartScrollBar();
+    if (lcChartState.allItems.length) {
+      refreshLcChartWindowStatus();
+      if (lcComboMetricState === "compare") {
+        try {
+          await refreshLcComparePane();
+        } catch {
+          renderLcChart();
+        }
+      } else {
+        renderLcChart();
+      }
+      void ensureLcIndexBars();
+      scheduleLcJetton(0);
+    }
+  }
+}
+
+function clearLcRangePick({ silent = false } = {}) {
+  lcChartState.rangePick = { a: null, b: null };
+  if (!silent) window.LineCompare?.setFormMeta?.("");
+  scheduleLcUndulate(0);
+  scheduleLcExtremum(0);
+}
+
+function lcRangePickHint() {
+  const pick = lcChartState.rangePick || {};
+  if (pick.a && !pick.b) return `已选起点 ${pick.a} · 再点终点日K`;
+  if (pick.a && pick.b) {
+    const lo = pick.a <= pick.b ? pick.a : pick.b;
+    const hi = pick.a <= pick.b ? pick.b : pick.a;
+    return `选区 ${lo} ~ ${hi}`;
+  }
+  return "";
+}
+
+function drawLcRangePick(ctx, layout, items) {
+  const pick = lcChartState.rangePick || {};
+  const a = pick.a;
+  const b = pick.b;
+  if (!a && !b) return;
+  const n = items.length;
+  if (!n) return;
+  const dates = items.map((d) => String(d?.time || "").slice(0, 10));
+  const idxA = a ? dates.indexOf(a) : -1;
+  const idxB = b ? dates.indexOf(b) : -1;
+  const { price, volume } = layout;
+  const slot = price.w / n;
+  const accent = cssVar("--accent", "#2ad4b8");
+
+  if (idxA >= 0 && idxB >= 0) {
+    const lo = Math.min(idxA, idxB);
+    const hi = Math.max(idxA, idxB);
+    const x0 = price.x + lo * slot;
+    const w = (hi - lo + 1) * slot;
+    ctx.save();
+    ctx.fillStyle = "rgba(42, 212, 184, 0.14)";
+    ctx.fillRect(x0, price.y, w, price.h);
+    if (volume?.h) ctx.fillRect(x0, volume.y, w, volume.h);
+    ctx.restore();
+  }
+
+  const mark = (i, label) => {
+    if (i < 0) return;
+    const x = price.x + (i + 0.5) * slot;
+    ctx.save();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, price.y);
+    ctx.lineTo(x, price.y + price.h);
+    if (volume?.h) {
+      ctx.moveTo(x, volume.y);
+      ctx.lineTo(x, volume.y + volume.h);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = accent;
+    ctx.font = '10px "IBM Plex Sans", "Noto Sans SC", sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(label, x, price.y + 4);
+    ctx.restore();
+  };
+  mark(idxA, b ? "起" : "①");
+  if (b) mark(idxB, "止");
+}
+
+function handleLcRangeTap(viewIndex) {
+  const items = lcChartState.items || [];
+  if (viewIndex == null || viewIndex < 0 || viewIndex >= items.length) return;
+  const day = String(items[viewIndex]?.time || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
+
+  const pick = lcChartState.rangePick || (lcChartState.rangePick = { a: null, b: null });
+  if (!pick.a || (pick.a && pick.b)) {
+    pick.a = day;
+    pick.b = null;
+    window.LineCompare?.setFormMeta?.(lcRangePickHint());
+    renderLcChart(viewIndex);
+    void refreshLcUndulate();
+    void refreshLcExtremum({ date: day });
+    void refreshLcPosition();
+    void refreshLcTrader();
+    void refreshLcJetton();
+    return;
+  }
+
+  pick.b = day;
+  window.LineCompare?.setFormMeta?.(lcRangePickHint());
+  renderLcChart(viewIndex);
+  void refreshLcUndulate();
+  const lo = pick.a <= pick.b ? pick.a : pick.b;
+  const hi = pick.a <= pick.b ? pick.b : pick.a;
+  void refreshLcExtremum({ date: hi });
+  void refreshLcPosition();
+  void refreshLcTrader();
+  void refreshLcJetton({ force: true });
+  const run = window.LineCompare?.applyRangeAndRun;
+  if (typeof run === "function") {
+    Promise.resolve(run({ beg: lo, end: hi })).catch(() => {});
+  }
+}
+
+function lcIndexDay(value) {
+  const raw = String(value || "").trim().replace(/\//g, "-");
+  if (/^\d{8}$/.test(raw)) {
+    return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+  }
+  return raw.slice(0, 10);
+}
+
+function lcIndexVisibleItems() {
+  const stock = lcChartViewWindow().items || [];
+  const map = lcIndexState.byDate;
+  return stock.map((d) => {
+    const day = lcIndexDay(d?.time);
+    const hit = map.get(day);
+    if (!hit) return { time: day };
+    return {
+      ...hit,
+      time: day,
+      open: Number(hit.open),
+      high: Number(hit.high),
+      low: Number(hit.low),
+      close: Number(hit.close),
+      volume: Number(hit.volume) || 0,
+    };
+  });
+}
+
+function setLcIndexChartStatus(message, { empty = false } = {}) {
+  if (lcEls.indexChartMeta) {
+    lcEls.indexChartMeta.textContent = message || "与右侧日K同步窗口";
+  }
+  if (lcEls.indexChartEmpty) {
+    lcEls.indexChartEmpty.textContent = empty ? message || "暂无指数走势" : "暂无指数走势";
+    lcEls.indexChartEmpty.classList.toggle("hidden", !empty);
+  }
+}
+
+/**
+ * 指数画布宽度由网格决定；高度只改指数侧，使
+ * 「成交量柱底 → 表头底」高度 / 走势图宽度
+ * 与日K（combo：价+量，量下方还有指标区）一致。
+ */
+function syncLcIndexCanvasAspect() {
+  const idxWrap = lcEls.indexChartWrap;
+  const dayWrap = lcEls.chartWrap;
+  if (!idxWrap || !dayWrap) return false;
+  const dw = dayWrap.clientWidth;
+  const dh = dayWrap.clientHeight;
+  const iw = idxWrap.clientWidth;
+  if (dw < 32 || dh < 32 || iw < 32) return false;
+
+  const metric = lcComboMetricState;
+  const fundflow = metric === "fundflow" || metric === "margin" || metric === "compare";
+  const dayLayout = chartLayout(dw, dh, { combo: true, fundflow });
+  // 日K：画布顶≈表头底 → 成交量底；指数非 combo 时成交量底 = h - pad.bottom
+  const daySpan = dayLayout.volume.y + dayLayout.volume.h;
+  const padBottom = Number(dayLayout.pad?.bottom) || 22;
+  const h = Math.max(120, Math.round((iw * daySpan) / dw + padBottom));
+  const next = `${h}px`;
+  if (idxWrap.style.height === next) return false;
+  idxWrap.style.height = next;
+  return true;
+}
+
+function renderLcIndexChart(hoverIndex = null) {
+  const canvas = lcEls.indexChart;
+  const wrap = lcEls.indexChartWrap;
+  if (!canvas || !wrap) return;
+  syncLcIndexCanvasAspect();
+  const title =
+    lcIndexState.name ||
+    lcEls.compareIndexSelect?.selectedOptions?.[0]?.textContent?.trim() ||
+    "指数";
+  if (lcEls.indexChartTitle) lcEls.indexChartTitle.textContent = title;
+
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = Math.max(280, wrap.clientWidth || 480);
+  const cssH = Math.max(120, wrap.clientHeight || 240);
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const colors = chartColors();
+  paintChartFrame(ctx, cssW, cssH, colors);
+
+  const stockItems = lcChartState.items || [];
+  if (!stockItems.length) {
+    setLcIndexChartStatus(lcIndexState.loading ? "指数加载中…" : "等待日K", { empty: true });
+    return;
+  }
+  const items = lcIndexVisibleItems();
+  const drawable = items.some((d) =>
+    [d.open, d.close, d.high, d.low].every((n) => Number.isFinite(Number(n)))
+  );
+  if (!drawable) {
+    setLcIndexChartStatus(
+      lcIndexState.loading ? "指数加载中…" : lcIndexState.error || "暂无指数走势",
+      { empty: true }
+    );
+    return;
+  }
+  const n = items.filter((d) => Number.isFinite(Number(d.close))).length;
+  setLcIndexChartStatus(`同步窗口 · ${n}/${stockItems.length} 日`);
+  const layout = chartLayout(cssW, cssH);
+  const emptyMa = { visible: {} };
+  drawKlineChart(ctx, layout, items, "day", colors, hoverIndex, emptyMa);
+  drawLcRangePick(ctx, layout, items);
+}
+
+function pointerLcIndexOnIndex(evt) {
+  const canvas = lcEls.indexChart;
+  const items = lcChartState.items || [];
+  if (!canvas || !items.length) return null;
+  const rect = canvas.getBoundingClientRect();
+  const x = evt.clientX - rect.left;
+  const layout = chartLayout(rect.width, rect.height);
+  if (x < layout.price.x || x > layout.price.x + layout.price.w) return null;
+  const t = (x - layout.price.x) / layout.price.w;
+  return Math.min(items.length - 1, Math.max(0, Math.floor(t * items.length)));
+}
+
+function fillLcIndexHoverCard(absIndex) {
+  const card = lcEls.indexChartHoverCard;
+  if (!card) return;
+  const stockAll = lcChartState.allItems || [];
+  if (absIndex == null || absIndex < 0 || absIndex >= stockAll.length) {
+    card.classList.add("hidden");
+    card.setAttribute("aria-hidden", "true");
+    card.innerHTML = "";
+    return;
+  }
+  const day = lcIndexDay(stockAll[absIndex]?.time);
+  const hit = day ? lcIndexState.byDate.get(day) : null;
+  if (!hit || !Number.isFinite(Number(hit.close))) {
+    card.classList.add("hidden");
+    card.setAttribute("aria-hidden", "true");
+    card.innerHTML = "";
+    return;
+  }
+  const row = (label, valueHtml, valueCls = "") =>
+    `<span class="chart-hover-item"><span class="k">${escapeHtml(label)}</span><span class="v ${valueCls}">${valueHtml}</span></span>`;
+  let pct = Number(hit.pct_chg);
+  if (!Number.isFinite(pct) && absIndex > 0) {
+    const prevDay = lcIndexDay(stockAll[absIndex - 1]?.time);
+    const prev = prevDay ? lcIndexState.byDate.get(prevDay) : null;
+    const prevClose = Number(prev?.close);
+    const close = Number(hit.close);
+    if (Number.isFinite(prevClose) && prevClose && Number.isFinite(close)) {
+      pct = ((close - prevClose) / prevClose) * 100;
+    }
+  }
+  const closeCls =
+    Number.isFinite(pct) && pct > 0
+      ? "change-up"
+      : Number.isFinite(pct) && pct < 0
+        ? "change-down"
+        : "";
+  let pctRow = "";
+  if (Number.isFinite(pct)) {
+    const sign = pct > 0 ? "+" : "";
+    const pctCls = pct > 0 ? "change-up" : pct < 0 ? "change-down" : "";
+    pctRow = row("涨跌幅", escapeHtml(`${sign}${pct.toFixed(2)}%`), `chart-hover-pct ${pctCls}`);
+  }
+  const quoteRows = [
+    row("开盘", escapeHtml(fmtNum(hit.open))),
+    row("最低", escapeHtml(fmtNum(hit.low))),
+    row("最高", escapeHtml(fmtNum(hit.high))),
+    row("收盘", escapeHtml(fmtNum(hit.close)), closeCls),
+    pctRow,
+    Number.isFinite(Number(hit.volume)) && Number(hit.volume)
+      ? row("成交量", escapeHtml(fmtVol(hit.volume)))
+      : "",
+  ].filter(Boolean);
+  card.innerHTML = `<div class="chart-hover-card-stack"><div class="chart-hover-card-rows chart-hover-card-rows--inline"><span class="chart-hover-card-time">${escapeHtml(
+    day || ""
+  )}</span>${quoteRows.join("")}</div></div>`;
+  card.classList.remove("hidden");
+  card.setAttribute("aria-hidden", "false");
+}
+
+function hideLcIndexHoverCard() {
+  lcIndexState.hoverAbsIndex = null;
+  const stockAll = lcChartState.allItems || [];
+  const view = lcChartViewWindow();
+  const lastAbs = view.total ? view.start + Math.max(0, (view.items || []).length - 1) : -1;
+  fillLcIndexHoverCard(stockAll.length ? lastAbs : -1);
+}
+
+function updateLcIndexHoverLabel(index) {
+  const items = lcChartState.items || [];
+  if (index == null || index < 0 || index >= items.length) {
+    hideLcIndexHoverCard();
+    return;
+  }
+  lcIndexState.hoverAbsIndex = (Number(lcChartState.viewStart) || 0) + index;
+  fillLcIndexHoverCard(lcIndexState.hoverAbsIndex);
+}
+
+/** 指数图悬停：写指数卡，并同步右侧个股悬浮（同窗口下标） */
+function updateLcIndexHoverPair(index) {
+  const items = lcChartState.items || [];
+  if (index == null || index < 0 || index >= items.length) {
+    /* 避免 hideLcHoverCard ↔ hideLcIndex 交叉递归，两侧各自复位末日 */
+    lcChartState.hoverAbsIndex = null;
+    lcIndexState.hoverAbsIndex = null;
+    const all = lcChartState.allItems || [];
+    const lastAbs = all.length ? all.length - 1 : -1;
+    fillLcKlineQuoteCard(lastAbs);
+    fillLcIndexHoverCard(lastAbs);
+    return;
+  }
+  updateLcIndexHoverLabel(index);
+  lcChartState.hoverAbsIndex = (Number(lcChartState.viewStart) || 0) + index;
+  fillLcKlineQuoteCard(lcChartState.hoverAbsIndex);
+}
+
+function hideLcIndexHoverPair() {
+  updateLcIndexHoverPair(null);
+}
+
+async function fetchLcIndexKline(index, beg, end) {
+  const begYmd = beg.replace(/-/g, "");
+  const endYmd = end.replace(/-/g, "");
+  // 同花顺优先：东财外网易 RemoteDisconnected / 长时间挂起，拖慢左下指数图
+  const sources = ["tonghuashun", "eastmoney"];
+  let lastErr = null;
+  for (const source of sources) {
+    try {
+      const qs = new URLSearchParams({
+        code: index,
+        period: "day",
+        beg: begYmd,
+        end: endYmd,
+        limit: "5000",
+        source,
+      });
+      const json = await api(`/api/exponent/kline?${qs.toString()}`);
+      const rows = Array.isArray(json.data?.items) ? json.data.items : [];
+      if (!rows.length) {
+        lastErr = new Error(`${source} 空 K 线`);
+        continue;
+      }
+      return {
+        code: String(json.data?.code || index),
+        name: String(json.data?.name || "").trim(),
+        source: String(json.data?.source || source),
+        items: rows,
+      };
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error("指数走势加载失败");
+}
+
+async function ensureLcIndexBars({ force = false } = {}) {
+  const all = lcChartState.allItems || [];
+  if (!all.length || !lcEls.indexChart) return;
+  const index = String(lcEls.compareIndexSelect?.value || "000001").trim() || "000001";
+  const beg = lcIndexDay(all[0]?.time);
+  const end = lcIndexDay(all[all.length - 1]?.time);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(beg) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return;
+  const covered =
+    !force &&
+    lcIndexState.code === index &&
+    lcIndexState.byDate.size &&
+    lcIndexState.beg &&
+    lcIndexState.end &&
+    lcIndexState.beg <= beg &&
+    lcIndexState.end >= end;
+  if (covered) {
+    renderLcIndexChart();
+    return;
+  }
+
+  // 仅向前补缺口时保留已有 map，避免整段重拉闪烁
+  let fetchBeg = beg;
+  let fetchEnd = end;
+  let merge = false;
+  if (
+    !force &&
+    lcIndexState.code === index &&
+    lcIndexState.byDate.size &&
+    lcIndexState.beg &&
+    lcIndexState.end
+  ) {
+    if (beg < lcIndexState.beg && end <= lcIndexState.end) {
+      fetchBeg = beg;
+      fetchEnd = lcIndexState.beg;
+      merge = true;
+    } else if (beg >= lcIndexState.beg && end > lcIndexState.end) {
+      fetchBeg = lcIndexState.end;
+      fetchEnd = end;
+      merge = true;
+    }
+  }
+
+  const gen = ++lcIndexState.gen;
+  lcIndexState.loading = true;
+  lcIndexState.error = "";
+  renderLcIndexChart();
+  try {
+    const pack = await fetchLcIndexKline(index, fetchBeg, fetchEnd);
+    if (gen !== lcIndexState.gen) return;
+    const map = merge ? new Map(lcIndexState.byDate) : new Map();
+    for (const row of pack.items) {
+      const day = lcIndexDay(row?.time);
+      if (day) map.set(day, row);
+    }
+    lcIndexState.code = pack.code || index;
+    lcIndexState.name = pack.name || lcIndexState.name;
+    if (merge) {
+      lcIndexState.beg = beg < (lcIndexState.beg || beg) ? beg : lcIndexState.beg;
+      lcIndexState.end = end > (lcIndexState.end || end) ? end : lcIndexState.end;
+    } else {
+      lcIndexState.beg = beg;
+      lcIndexState.end = end;
+    }
+    lcIndexState.byDate = map;
+    lcIndexState.error = map.size ? "" : "暂无指数走势";
+  } catch (err) {
+    if (gen !== lcIndexState.gen) return;
+    if (!merge) lcIndexState.byDate = new Map();
+    lcIndexState.error = err.message || "指数走势加载失败";
+  } finally {
+    if (gen === lcIndexState.gen) {
+      lcIndexState.loading = false;
+      renderLcIndexChart();
+      renderLcUndulate();
+      hideLcIndexHoverCard();
+    }
+  }
+}
+
+function renderLcChart(hoverIndex = null) {
+  renderLcIndexChart(hoverIndex);
+  renderLcUndulate();
+  const canvas = lcEls.priceChart;
+  const wrap = lcEls.chartWrap;
+  if (!canvas || !wrap) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = Math.max(320, wrap.clientWidth || 640);
+  const cssH = Math.max(240, wrap.clientHeight || 320);
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const colors = chartColors();
+  paintChartFrame(ctx, cssW, cssH, colors);
+  const items = lcChartState.items || [];
+  if (!items.length) {
+    paintLcJetton();
+    return;
+  }
+
+  const metric = lcComboMetricState;
+  const fundflow = metric === "fundflow";
+  const margin = metric === "margin";
+  const compare = metric === "compare";
+  const layout = chartLayout(cssW, cssH, {
+    combo: true,
+    fundflow: fundflow || margin || compare,
+  });
+  const maBundle = getKlineMaBundle(
+    lcChartState.allItems,
+    lcChartState.viewStart,
+    Number(lcChartState.viewSize) || items.length
+  );
+  drawKlineChart(ctx, layout, items, "day", colors, hoverIndex, maBundle);
+  drawLcRangePick(ctx, layout, items);
+  if (!layout.pe) {
+    paintLcJetton();
+    return;
+  }
+
+  const metricColors = {
+    accent: cssVar("--accent", "#2ad4b8"),
+    muted: colors.muted,
+    up: colors.up,
+    down: colors.down,
+    grid: colors.grid,
+    cross: colors.cross,
+  };
+  const metricPane = {
+    price: layout.pe,
+    volume: { x: layout.pe.x, y: layout.pe.y + layout.pe.h, w: layout.pe.w, h: 0 },
+  };
+  if (compare) {
+    const cmpItems = window.LineCompare?.paneAligned?.(items) || items.map((d) => ({ time: d.time }));
+    const meta = window.LineCompare?.paneMeta?.() || {};
+    const painted = drawCompareDifBars(ctx, metricPane, cmpItems, metricColors, hoverIndex);
+    if (!painted) {
+      drawPaneCenterLabel(
+        ctx,
+        layout.pe,
+        meta.loading ? "股指对比加载中…" : meta.error || "暂无股指差值",
+        metricColors
+      );
+    }
+    paintLcJetton();
+    return;
+  }
+  if (fundflow) {
+    const ffItems = alignFundflowToKline(items, fundflowState.allItems, "day");
+    if (hasFundflowData(ffItems)) {
+      drawGroupedSignedBars(ctx, metricPane, ffItems, visibleFundflowTiers(), metricColors, hoverIndex, {
+        mode: "day",
+      });
+    } else {
+      drawPaneCenterLabel(
+        ctx,
+        layout.pe,
+        fundflowState.loading ? "资金流加载中…" : "暂无资金流数据",
+        metricColors
+      );
+    }
+    paintLcJetton();
+    return;
+  }
+  if (margin) {
+    const mgItems = alignMetricsToKline(items, marginState.allItems);
+    if (hasMarginSeriesData(mgItems)) {
+      drawPeOverlayChart(ctx, metricPane, mgItems, visibleMarginSeries(), metricColors, hoverIndex, {
+        yFormat: fmtVol,
+        mode: "day",
+        skipHoverHair: true,
+      });
+    } else {
+      drawPaneCenterLabel(
+        ctx,
+        layout.pe,
+        marginState.loading ? "两融加载中…" : "暂无融资融券数据",
+        metricColors
+      );
+    }
+    paintLcJetton();
+    return;
+  }
+  const peItems = alignMetricsToKline(items, peState.allItems);
+  if (hasPeSeriesData(peItems)) {
+    drawPeOverlayChart(ctx, metricPane, peItems, visiblePeSeries(), metricColors, hoverIndex, {
+      formatLabel: fmtNum,
+      mode: "day",
+      skipHoverHair: true,
+    });
+  } else {
+    drawPaneCenterLabel(ctx, layout.pe, peState.loading ? "估值加载中…" : "暂无估值", metricColors);
+  }
+  paintLcJetton();
+}
+
+function fillLcKlineQuoteCard(absIndex) {
+  if (!lcEls.chartHoverCard) return;
+  const all = lcChartState.allItems || [];
+  if (absIndex == null || absIndex < 0 || absIndex >= all.length) {
+    lcEls.chartHoverCard.classList.add("hidden");
+    lcEls.chartHoverCard.setAttribute("aria-hidden", "true");
+    lcEls.chartHoverCard.innerHTML = "";
+    return;
+  }
+  const d = all[absIndex];
+  const row = (label, valueHtml, valueCls = "") =>
+    `<span class="chart-hover-item"><span class="k">${escapeHtml(label)}</span><span class="v ${valueCls}">${valueHtml}</span></span>`;
+  const pctText = (pct) => {
+    if (pct == null || !Number.isFinite(Number(pct))) return null;
+    const n = Number(pct);
+    const cls = n > 0 ? "change-up" : n < 0 ? "change-down" : "";
+    const sign = n > 0 ? "+" : "";
+    return { text: `${sign}${n.toFixed(2)}%`, cls: `chart-hover-pct ${cls}` };
+  };
+  let pct = Number(d.pct_chg);
+  if ((!Number.isFinite(pct) || pct === 0) && absIndex > 0) {
+    const prevClose = Number(all[absIndex - 1].close);
+    const close = Number(d.close);
+    if (Number.isFinite(prevClose) && prevClose && Number.isFinite(close)) {
+      const calc = ((close - prevClose) / prevClose) * 100;
+      if (Number.isFinite(calc) && calc !== 0) pct = calc;
+      else if (!Number.isFinite(pct)) pct = calc;
+    }
+  }
+  const closeCls =
+    Number.isFinite(pct) && pct > 0
+      ? "change-up"
+      : Number.isFinite(pct) && pct < 0
+        ? "change-down"
+        : "";
+  const p = pctText(pct);
+  const { full: maFull } = getKlineMaBundle(
+    lcChartState.allItems,
+    lcChartState.viewStart,
+    lcChartState.viewSize
+  );
+  const maRows = KLINE_MA_LINES.map((line) => {
+    const v = maPoint(maFull[line.key] || [], absIndex);
+    if (v == null) return "";
+    return row(line.label, `<span style="color:${line.color}">${escapeHtml(fmtNum(v))}</span>`);
+  }).filter(Boolean);
+  const quoteRows = [
+    row("开盘", escapeHtml(fmtNum(d.open))),
+    row("最低", escapeHtml(fmtNum(d.low))),
+    row("最高", escapeHtml(fmtNum(d.high))),
+    row("收盘", escapeHtml(fmtNum(d.close)), closeCls),
+    p ? row("涨跌幅", escapeHtml(p.text), p.cls) : "",
+    row("成交量", escapeHtml(fmtVol(d.volume))),
+  ].filter(Boolean);
+  const auxRows = [...maRows];
+  if (lcComboMetricState === "fundflow") {
+    const ff = fundflowAtTime(d.time);
+    if (ff) auxRows.push(...fundflowHoverRows(ff, row));
+  } else if (lcComboMetricState === "margin") {
+    const mg = marginAtTime(d.time);
+    if (mg) auxRows.push(...marginHoverRows(mg, row));
+  } else if (lcComboMetricState === "compare") {
+    const hit = window.LineCompare?.paneAtDate?.(d.time);
+    if (hit) auxRows.push(...compareHoverRows(hit, row));
+    auxRows.push(...undulateHoverRows(d.time, row));
+  } else {
+    const peRow = alignMetricsToKline([d], peState.allItems)[0];
+    if (peRow) auxRows.push(...peHoverRows(peRow, row));
+  }
+  const line = (items, withTime = false) =>
+    `<div class="chart-hover-card-rows chart-hover-card-rows--inline">${
+      withTime ? `<span class="chart-hover-card-time">${escapeHtml(d.time || "")}</span>` : ""
+    }${items.join("")}</div>`;
+  lcEls.chartHoverCard.innerHTML = `<div class="chart-hover-card-stack">${line(quoteRows, true)}${
+    auxRows.length ? line(auxRows) : ""
+  }</div>`;
+  lcEls.chartHoverCard.classList.remove("hidden");
+  lcEls.chartHoverCard.setAttribute("aria-hidden", "false");
+}
+
+function hideLcHoverCard() {
+  lcChartState.hoverAbsIndex = null;
+  const all = lcChartState.allItems || [];
+  fillLcKlineQuoteCard(all.length ? all.length - 1 : -1);
+  hideLcIndexHoverCard();
+}
+
+function updateLcHoverLabel(index) {
+  const items = lcChartState.items || [];
+  if (index == null || index < 0 || index >= items.length) {
+    hideLcHoverCard();
+    return;
+  }
+  lcChartState.hoverAbsIndex = (Number(lcChartState.viewStart) || 0) + index;
+  fillLcKlineQuoteCard(lcChartState.hoverAbsIndex);
+  /* 左右同窗口：个股悬停时同步指数悬浮卡 */
+  updateLcIndexHoverLabel(index);
+}
+
+function pointerLcIndex(evt) {
+  const canvas = lcEls.priceChart;
+  const wrap = lcEls.chartWrap;
+  const items = lcChartState.items || [];
+  if (!canvas || !wrap || !items.length) return null;
+  const rect = canvas.getBoundingClientRect();
+  const x = evt.clientX - rect.left;
+  const layout = chartLayout(rect.width, rect.height, { combo: true });
+  if (x < layout.price.x || x > layout.price.x + layout.price.w) return null;
+  const t = (x - layout.price.x) / layout.price.w;
+  return Math.min(items.length - 1, Math.max(0, Math.floor(t * items.length)));
+}
+
+function panLcChartByPixels(dx, canvasWidth) {
+  const { size, maxStart } = lcChartViewWindow();
+  if (maxStart <= 0 || size <= 0) return false;
+  const layout = chartLayout(canvasWidth, 300);
+  const barW = layout.price.w / size;
+  if (barW <= 0) return false;
+  const deltaBars = Math.round(-dx / barW);
+  if (!deltaBars) return false;
+  setLcChartViewStart(lcChartState.viewStart + deltaBars, { render: true });
+  return true;
+}
+
+function applyLcComboMetric(metric) {
+  if (!["pe", "fundflow", "margin", "compare"].includes(metric) || metric === lcComboMetricState) return;
+  lcComboMetricState = metric;
+  if (lcEls.comboMetricSelect && lcEls.comboMetricSelect.value !== metric) {
+    lcEls.comboMetricSelect.value = metric;
+  }
+  syncLcComboLegend();
+  if (metric === "fundflow" && !fundflowState.loading && !(fundflowState.allItems || []).length) {
+    void loadFundflowChart();
+  } else if (metric === "margin" && !marginState.loading && !(marginState.allItems || []).length) {
+    void loadMarginChart();
+  } else if (metric === "compare") {
+    void refreshLcComparePane();
+    return;
+  }
+  renderLcChart();
+  hideLcHoverCard();
+}
+
+async function loadLcChart({ force = false } = {}) {
+  if (!code || !lcEls.priceChart) return;
+  lcChartState.mode = "day";
+  lcChartState.adjust = "qfq";
+  lcChartState.loading = true;
+  setLcChartSource("加载中…");
+  setLcChartStatus(`正在加载日K…`);
+  hideLcHoverCard();
+
+  try {
+    const canReuse =
+      !force &&
+      chartState.mode === "day" &&
+      chartState.adjust === "qfq" &&
+      Array.isArray(chartState.allItems) &&
+      chartState.allItems.length;
+    if (canReuse) {
+      resetLcChartViewport(chartState.allItems.slice());
+      lcChartState.source = chartState.source || "";
+      lcChartState.historyExhausted = Boolean(chartState.historyExhausted);
+    } else {
+      const conf = CHART_MODES.day;
+      const qs = new URLSearchParams({
+        code,
+        period: "day",
+        adjust: "qfq",
+        limit: String(conf.limit || 320),
+      });
+      const json = await api(`/api/stocks/line?${qs.toString()}`);
+      const data = json.data || {};
+      resetLcChartViewport(data.items || []);
+      lcChartState.historyExhausted = Boolean(data.full_history);
+      lcChartState.source = data.source || "";
+    }
+
+    const count = lcChartState.allItems.length;
+    if (!count) {
+      setLcChartSource("");
+      setLcChartStatus("暂无走势数据", { empty: true });
+      hideLcHoverCard();
+      renderLcChart();
+      return;
+    }
+    refreshLcChartWindowStatus();
+    syncLcComboLegend();
+    hideLcHoverCard();
+    void refreshLcUndulate();
+    void refreshLcJetton({ force: true });
+    if (lcComboMetricState === "compare") {
+      await refreshLcComparePane();
+    } else {
+      renderLcChart();
+    }
+  } catch (err) {
+    resetLcChartViewport([]);
+    lcChartState.source = "";
+    setLcChartSource("");
+    setLcChartStatus(err.message || "走势加载失败", { empty: true });
+    hideLcHoverCard();
+    renderLcChart();
+  } finally {
+    lcChartState.loading = false;
+    if ((lcChartState.allItems || []).length) void ensureLcIndexBars();
+  }
+}
+
+function refreshLcChartIfVisible() {
+  if (!lcChartState.visible || !lcEls.priceChart) return;
+  renderLcChart();
+}
+
+function setupLcChart() {
+  if (!lcEls.priceChart || lcChartState.bound) return;
+  lcChartState.bound = true;
+  bindLcSigma();
+
+  lcEls.comboMetricSelect?.addEventListener("change", () => {
+    applyLcComboMetric(lcEls.comboMetricSelect.value);
+  });
+  lcEls.compareIndexSelect?.addEventListener("change", () => {
+    const next = String(lcEls.compareIndexSelect.value || "000001").trim() || "000001";
+    window.LineCompare?.setPaneIndex?.(next);
+    if (lcComboMetricState === "compare") void refreshLcComparePane({ force: true });
+    window.LineCompare?.rerunForPaneIndex?.(next)?.catch?.(() => {});
+    void ensureLcIndexBars({ force: true });
+  });
+  lcEls.compareFactorSelect?.addEventListener("change", () => {
+    const next = String(lcEls.compareFactorSelect.value || "close").trim() || "close";
+    window.LineCompare?.setActiveFactor?.(next);
+    if (lcComboMetricState !== "compare") return;
+    renderLcChart();
+    hideLcHoverCard();
+  });
+
+  const bindLegend = (wrap, kind) => {
+    if (!wrap) return;
+    wrap.querySelectorAll(".fundflow-legend-item input[type=checkbox]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const label = input.closest(".fundflow-legend-item");
+        if (kind === "fundflow") {
+          const tier = label?.getAttribute("data-tier");
+          if (!tier) return;
+          if (input.checked) fundflowState.visibleTiers.add(tier);
+          else if (fundflowState.visibleTiers.size <= 1) {
+            input.checked = true;
+            return;
+          } else fundflowState.visibleTiers.delete(tier);
+          syncFundflowLegendUi();
+          syncLcFundflowLegendUi();
+        } else if (kind === "pe") {
+          const series = label?.getAttribute("data-series");
+          if (!series || !PE_SERIES[series]) return;
+          if (input.checked) peState.visibleSeries.add(series);
+          else if (peState.visibleSeries.size <= 1) {
+            input.checked = true;
+            return;
+          } else peState.visibleSeries.delete(series);
+          syncPeLegendUi();
+          syncLcPeLegendUi();
+        } else if (kind === "margin") {
+          const series = label?.getAttribute("data-series");
+          if (!series || !MARGIN_SERIES[series]) return;
+          if (input.checked) marginState.visibleSeries.add(series);
+          else if (marginState.visibleSeries.size <= 1) {
+            input.checked = true;
+            return;
+          } else marginState.visibleSeries.delete(series);
+          syncMarginLegendUi();
+          syncLcMarginLegendUi();
+        }
+        renderChart();
+        refreshKlineQuoteCard();
+        renderLcChart();
+        hideLcHoverCard();
+      });
+    });
+  };
+  bindLegend(lcEls.fundflowLegendWrap, "fundflow");
+  bindLegend(lcEls.peLegendWrap, "pe");
+  bindLegend(lcEls.marginLegendWrap, "margin");
+  syncLcFundflowLegendUi();
+  syncLcPeLegendUi();
+  syncLcMarginLegendUi();
+  syncLcComboLegend();
+
+  bindChartPaneInteractions({
+    canvas: lcEls.priceChart,
+    wrap: lcEls.chartWrap,
+    scrollBar: lcEls.chartScrollBar,
+    hideHover: hideLcHoverCard,
+    updateHover: updateLcHoverLabel,
+    render: renderLcChart,
+    pointerIndexAt: pointerLcIndex,
+    panByPixels: panLcChartByPixels,
+    viewWindow: lcChartViewWindow,
+    setViewStart: setLcChartViewStart,
+    zoomViewport: zoomLcChartViewport,
+    syncScrollBar: syncLcChartScrollBar,
+    onTap: handleLcRangeTap,
+  });
+
+  if (lcEls.indexChart) {
+    bindChartPaneInteractions({
+      canvas: lcEls.indexChart,
+      wrap: lcEls.indexChartWrap,
+      scrollBar: lcEls.indexChartScrollBar,
+      hideHover: hideLcIndexHoverPair,
+      updateHover: updateLcIndexHoverPair,
+      render: renderLcChart,
+      pointerIndexAt: pointerLcIndexOnIndex,
+      panByPixels: panLcChartByPixels,
+      viewWindow: lcChartViewWindow,
+      setViewStart: setLcChartViewStart,
+      zoomViewport: zoomLcChartViewport,
+      syncScrollBar: syncLcChartScrollBar,
+      onTap: handleLcRangeTap,
+    });
+  }
+
+  if (typeof ResizeObserver !== "undefined" && lcEls.chartWrap) {
+    let lcAspectFrame = 0;
+    const ro = new ResizeObserver(() => {
+      window.cancelAnimationFrame(lcAspectFrame);
+      lcAspectFrame = window.requestAnimationFrame(() => {
+        if (syncLcIndexCanvasAspect()) renderLcChart();
+      });
+    });
+    ro.observe(lcEls.chartWrap);
+  }
+}
+
+function syncLcFundflowLegendUi() {
+  if (!lcEls.fundflowLegendWrap) return;
+  lcEls.fundflowLegendWrap.querySelectorAll(".fundflow-legend-item").forEach((label) => {
+    const tier = label.getAttribute("data-tier");
+    const input = label.querySelector("input[type=checkbox]");
+    if (!tier || !input) return;
+    input.checked = fundflowState.visibleTiers.has(tier);
+  });
+}
+
+function syncLcPeLegendUi() {
+  if (!lcEls.peLegendWrap) return;
+  lcEls.peLegendWrap.querySelectorAll(".fundflow-legend-item").forEach((label) => {
+    const series = label.getAttribute("data-series");
+    const input = label.querySelector("input[type=checkbox]");
+    if (!series || !input) return;
+    input.checked = peState.visibleSeries.has(series);
+  });
+}
+
+function syncLcMarginLegendUi() {
+  if (!lcEls.marginLegendWrap) return;
+  lcEls.marginLegendWrap.querySelectorAll(".fundflow-legend-item").forEach((label) => {
+    const series = label.getAttribute("data-series");
+    const input = label.querySelector("input[type=checkbox]");
+    if (!series || !input) return;
+    input.checked = marginState.visibleSeries.has(series);
+  });
+}
+
+function lcVisibleWindowRange() {
+  const all = lcChartState.allItems || [];
+  if (!all.length) return null;
+  const win = lcChartViewWindow();
+  if (!win.items.length) return null;
+  const beg = String(win.items[0]?.time || "").slice(0, 10);
+  const end = String(win.items[win.items.length - 1]?.time || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(beg) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return null;
+  return { beg, end };
+}
+
+window.CompanyLcKline = {
+  show(identity = {}) {
+    lcChartState.visible = true;
+    if (identity.code) {
+      /* code is page-global */
+    }
+    clearLcRangePick({ silent: true });
+    syncLcComboLegend();
+    return loadLcChart().then(() => {
+      requestAnimationFrame(() => {
+        renderLcChart();
+        if (lcComboMetricState === "compare") void refreshLcComparePane();
+        void refreshLcExtremum();
+        void refreshLcPosition();
+      });
+    });
+  },
+  hide() {
+    lcChartState.visible = false;
+    window.clearTimeout(lcUndulateTimer);
+    window.clearTimeout(lcExtremumTimer);
+    window.clearTimeout(lcPositionTimer);
+    window.clearTimeout(lcJettonTimer);
+    lcJettonState.gen += 1;
+    lcJettonAbortInflight();
+    lcJettonState.loading = false;
+    lcJettonState.loadingSince = 0;
+    lcJettonState.pendingKey = "";
+    clearLcRangePick({ silent: true });
+  },
+  sync() {
+    if (!lcChartState.visible) return Promise.resolve();
+    clearLcRangePick({ silent: true });
+    return loadLcChart({ force: true });
+  },
+  render: refreshLcChartIfVisible,
+  renderUndulate: renderLcUndulate,
+  renderExtremum: renderLcExtremum,
+  renderPosition: renderLcPosition,
+  visibleWindowRange: lcVisibleWindowRange,
+  clearRangePick: clearLcRangePick,
+};
+
 function setupChart() {
   if (!els.chartModeSelect || !els.priceChart) return;
 
@@ -13006,12 +16201,14 @@ async function loadPeChart() {
       setPeStatus(peEmptyHint(), { empty: true });
       renderPeChart();
       refreshKlineQuoteCard();
+      refreshLcChartIfVisible();
       return;
     }
     setPeStatus("");
     refreshPeWindowStatus();
     renderPeChart();
     refreshKlineQuoteCard();
+    refreshLcChartIfVisible();
   } catch (err) {
     resetPeViewport([]);
     setPeStatus(err.message || "估值加载失败", { empty: true });
@@ -13150,8 +16347,10 @@ function setupComboMetric() {
           fundflowState.visibleTiers.delete(tier);
         }
         syncFundflowLegendUi();
+        syncLcFundflowLegendUi();
         renderChart();
         refreshKlineQuoteCard();
+        refreshLcChartIfVisible();
       });
     });
     syncFundflowLegendUi();
@@ -13171,8 +16370,10 @@ function setupComboMetric() {
           peState.visibleSeries.delete(series);
         }
         syncPeLegendUi();
+        syncLcPeLegendUi();
         renderChart();
         refreshKlineQuoteCard();
+        refreshLcChartIfVisible();
       });
     });
     syncPeLegendUi();
@@ -13192,8 +16393,10 @@ function setupComboMetric() {
           marginState.visibleSeries.delete(series);
         }
         syncMarginLegendUi();
+        syncLcMarginLegendUi();
         renderChart();
         refreshKlineQuoteCard();
+        refreshLcChartIfVisible();
       });
     });
     syncMarginLegendUi();
@@ -13232,6 +16435,7 @@ async function loadFundflowChart() {
     fundflowState.loading = false;
     renderChart();
     refreshKlineQuoteCard();
+    refreshLcChartIfVisible();
   }
 }
 
@@ -13266,6 +16470,7 @@ async function loadMarginChart() {
     marginState.loading = false;
     renderChart();
     refreshKlineQuoteCard();
+    refreshLcChartIfVisible();
   }
 }
 
@@ -13369,7 +16574,9 @@ function setupChartsViewport() {
   if (tab === "others" && (NEWS_FINANCIALS_ALIASES.has(othersRaw) || NEWS_REPORTS_ALIASES.has(othersRaw))) {
     tab = "news";
   }
-  if (tab) switchMainPanel(tab);
+  // 无 tab 时默认进入研判 · K线分析（activeMainPanel 初值 quotes，确保 switch 会 bootstrap）
+  if (!tab) tab = "judgment";
+  switchMainPanel(tab);
   fitChartsToViewport();
 }
 
@@ -13392,9 +16599,12 @@ setupChartsViewport();
 setupMetricTips();
 bindFundamentalsFold();
 setupChart();
+setupLcChart();
 setupTicksChart();
 setupPeChart();
 setupComboMetric();
+window.OrbitMineAdd?.bindRoot(document);
+syncAddGroupBtn();
 (async () => {
   await loadProfile();
   await loadChart("day");
