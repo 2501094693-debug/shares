@@ -13328,7 +13328,7 @@ function renderLcPosition() {
   );
   box.innerHTML = `${errNote}
     <table class="lc-position-table" aria-label="四价极值位置">
-      <thead><tr><th>因子</th><th>区间低</th><th>区间高</th><th title="${live ? "最新实时四价" : "区间结束日四价"}">现价</th><th>位置</th><th title="区间内价格从低到高排名（1=最低）">排名</th></tr></thead>
+      <thead><tr><th>因子</th><th>区间低</th><th>区间高</th><th title="区间结束日四价">末日</th><th>位置</th><th title="区间内价格从低到高排名（1=最低）">排名</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
 }

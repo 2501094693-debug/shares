@@ -202,10 +202,12 @@ def analyze_position(
     end: str = "",
     *,
     adjust: str = "qfq",
+    use_live: bool = False,
 ) -> dict[str, Any]:
     """主入口：个股区间四价极值位置百分比（默认前复权）。
 
     现价优先用最新实时四价；实时行情缺失时回退到区间结束日。
+    use_live=False 时仅使用区间结束日价格，不拉取实时行情。
     """
     norm = normalize_code(code)
     if not norm:
@@ -218,7 +220,9 @@ def analyze_position(
     hist = _fetch_day_range(
         norm, beg_iso=beg_iso, end_iso=end_iso, adjust=adjust
     )
-    live_prices, live_date = _fetch_live_prices(norm, adjust=adjust)
+    live_prices, live_date = ({}, "")
+    if use_live:
+        live_prices, live_date = _fetch_live_prices(norm, adjust=adjust)
     result = compute_position(
         list(hist.get("items") or []),
         beg_iso,

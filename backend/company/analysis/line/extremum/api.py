@@ -40,12 +40,13 @@ def stocks_line_extremum_position(
     beg: str = Query(..., description="起始日期 YYYY-MM-DD 或 YYYYMMDD"),
     end: str = Query("", description="结束日期，默认今天"),
     adjust: str = Query("qfq", description="复权方式：qfq 前复权 / hfq 后复权 / none 不复权"),
+    live: bool = Query(False, description="是否使用最新实时四价作为现价；默认 false，使用结束日价格"),
 ):
     """区间四价极值位置：(结束日 − 最低) / (最高 − 最低) × 100%，及从小到大排名。"""
     if not code:
         return err("缺少参数 code", 400)
     try:
-        data = analyze_position(code, beg, end, adjust=adjust)
+        data = analyze_position(code, beg, end, adjust=adjust, use_live=live)
         return ok(data)
     except ValueError as exc:
         return err(str(exc), 400)
