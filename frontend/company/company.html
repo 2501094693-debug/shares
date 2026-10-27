@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=20261026-extremum-enddate" />
+  <link rel="stylesheet" href="/css/style.css?v=20261027-deal-tape" />
   <link rel="stylesheet" href="/css/ai-page.css?v=20261022-risk-q4" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
@@ -49,6 +49,7 @@
         <div class="judgment-layout">
           <nav id="judgmentSourceBar" class="emotion-source-bar judgment-source-bar" aria-label="研判分类">
             <button type="button" class="emotion-source-btn is-active" data-source="kline" aria-selected="true">K线分析</button>
+            <button type="button" class="emotion-source-btn" data-source="deal" aria-selected="false">成交分析</button>
             <button type="button" class="emotion-source-btn" data-source="business" aria-selected="false">业务简述</button>
             <button type="button" class="emotion-source-btn" data-source="earnings" aria-selected="false">财报简述</button>
             <button type="button" class="emotion-source-btn" data-source="peers" aria-selected="false">竞争分析</button>
@@ -308,6 +309,29 @@
                 </footer>
               </article>
             </section>
+          </div>
+        </div>
+        <div id="dealAnalysisPage" class="deal-analysis-page" hidden aria-hidden="true">
+          <div class="deal-analysis-board">
+            <div class="deal-analysis-left quotes-layout" aria-label="分时成交 · 资金动向 · 实时走势">
+              <section id="dealHeroSlot" class="company-hero" aria-label="分时成交与资金动向"></section>
+              <div id="dealChartsSlot" class="charts-deck deal-charts-deck" aria-label="实时走势"></div>
+            </div>
+            <div class="deal-analysis-right" aria-label="逐笔成交明细">
+              <section class="deal-window-panel" aria-label="逐笔成交明细">
+                <header class="deal-window-head">
+                  <div class="deal-window-title-block">
+                    <h4 class="metrics-section-title">逐笔成交明细</h4>
+                    <p id="dealWindowMeta" class="deal-window-meta muted"></p>
+                  </div>
+                  <button id="dealWindowRefreshBtn" class="btn ghost sm" type="button">刷新</button>
+                </header>
+                <div id="dealWindowSummary" class="deal-window-summary" hidden></div>
+                <div id="dealWindowBody" class="deal-window-body">
+                  <p class="muted">进入成交分析后加载还原明细</p>
+                </div>
+              </section>
+            </div>
           </div>
         </div>
         <div class="ai-page company-analysis-page" hidden aria-hidden="true">
@@ -1436,13 +1460,13 @@
   </div>
   </div>
 
-  <script src="/js/shared/orbit-http.js?v=20261026-jetton-ttl"></script>
+  <script src="/js/shared/orbit-http.js?v=20261027-deal-window"></script>
   <script src="/js/shared/orbit-prefetch.js?v=holders-date-20260919"></script>
   <script src="/js/shared/nav.js?v=nav-industry-20261001"></script>
   <script src="/js/shared/mine-add-group.js?v=mine-add-fix-20261023"></script>
   <script src="/js/shared/ai-modes.js?v=20261022-risk-meta"></script>
-  <script src="/js/shared/company-analysis.js?v=20261025-kline-chrome"></script>
+  <script src="/js/shared/company-analysis.js?v=20261027-deal-analysis"></script>
   <script src="/js/shared/line-compare.js?v=20261026-lc-trader-fix"></script>
-  <script src="/js/company.js?v=20261026-extremum-enddate"></script>
+  <script src="/js/company.js?v=20261027-deal-tape2"></script>
 </body>
 </html>

@@ -4669,14 +4669,24 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .c
   min-height: 0;
 }
 
-/* K线分析时隐藏 AI 研判板（display:flex 会压过裸 [hidden]） */
+/* K线分析 / 成交分析时隐藏 AI 研判板（display:flex 会压过裸 [hidden]） */
 .company-panel[data-panel="judgment"] .judgment-view > .company-analysis-page[hidden],
-.company-panel[data-panel="judgment"][data-judgment-family="kline"] .company-analysis-page {
+.company-panel[data-panel="judgment"][data-judgment-family="kline"] .company-analysis-page,
+.company-panel[data-panel="judgment"][data-judgment-family="deal"] .company-analysis-page {
   display: none !important;
 }
 
 .company-panel[data-panel="judgment"][data-judgment-family="kline"] .line-compare-page {
   display: flex !important;
+}
+
+.company-panel[data-panel="judgment"][data-judgment-family="deal"] .deal-analysis-page {
+  display: flex !important;
+}
+
+.company-panel[data-panel="judgment"][data-judgment-family="deal"] .line-compare-page,
+.company-panel[data-panel="judgment"][data-judgment-family="kline"] .deal-analysis-page {
+  display: none !important;
 }
 
 .company-panel[data-panel="emotion"] {
@@ -13902,6 +13912,342 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .l
 
 .company-panel[data-panel="judgment"] .judgment-view > .line-compare-page[hidden] {
   display: none !important;
+}
+
+/* 公司详情研判 · 成交分析（借用行情分时成交 / 资金动向 / 实时走势） */
+.company-panel[data-panel="judgment"] .judgment-view > .deal-analysis-page,
+html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .deal-analysis-page {
+  flex: 1 1 0%;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.company-panel[data-panel="judgment"] .judgment-view > .deal-analysis-page[hidden] {
+  display: none !important;
+}
+
+.deal-analysis-page {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.deal-analysis-board {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 10px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.deal-analysis-left,
+html.company-charts-on .deal-analysis-left.quotes-layout {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  /* 成交分析左侧不展示基本信息条，直接 hero | charts */
+  grid-template-columns: minmax(280px, min(380px, 34%)) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "hero charts";
+  overflow: hidden;
+}
+
+.deal-analysis-left .company-hero {
+  /* 只挂 metricsPanels，去掉身份区后的留白 */
+  padding-top: 12px;
+}
+
+.deal-analysis-left .deal-charts-deck,
+.deal-analysis-left .charts-deck {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.deal-analysis-left .chart-card--ticks {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.deal-analysis-right {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(42, 212, 184, 0.1);
+  border-radius: calc(var(--radius) + 2px);
+  background: rgba(4, 8, 14, 0.35);
+}
+
+.deal-window-panel {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px 8px;
+  gap: 8px;
+}
+
+.deal-window-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(42, 212, 184, 0.1);
+}
+
+.deal-window-title-block {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.deal-window-head .metrics-section-title {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.deal-window-meta {
+  margin: 0;
+  font-size: 0.66rem;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+}
+
+.deal-window-summary {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 10px;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.deal-window-summary strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.deal-window-body {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.deal-window-body > p {
+  margin: 0;
+}
+
+.deal-tape {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.deal-tape-head {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 4.4rem 4rem 3rem minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 4px;
+  padding: 0 2px 6px;
+  font-size: 0.64rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-bottom: 1px solid rgba(42, 212, 184, 0.12);
+}
+
+.deal-tape-head > span:nth-child(2),
+.deal-tape-head > span:nth-child(3) {
+  text-align: right;
+}
+
+.deal-tape-head > span:nth-child(4),
+.deal-tape-head > span:nth-child(5) {
+  text-align: center;
+}
+
+.deal-tape-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(42, 212, 184, 0.35) transparent;
+}
+
+.deal-tape-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.deal-tape-scroll::-webkit-scrollbar-thumb {
+  background: rgba(42, 212, 184, 0.28);
+  border-radius: 99px;
+}
+
+.deal-tape-canvas {
+  position: relative;
+  width: 100%;
+}
+
+.deal-tape-window {
+  position: absolute;
+  left: 0;
+  right: 0;
+  will-change: transform;
+}
+
+.deal-tape-row {
+  display: grid;
+  grid-template-columns: 4.4rem 4rem 3rem minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 4px;
+  align-items: stretch;
+  padding: 0 2px;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.14);
+  box-sizing: border-box;
+}
+
+.deal-tape-row.is-group-end {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.deal-tape-time {
+  color: var(--muted);
+  align-self: center;
+  font-size: 0.72rem;
+}
+
+.deal-tape-price {
+  text-align: right;
+  align-self: center;
+  font-weight: 700;
+}
+
+.deal-tape-price.is-up {
+  color: var(--up);
+}
+
+.deal-tape-price.is-down {
+  color: var(--down);
+}
+
+.deal-tape-price.is-flat {
+  color: var(--ink);
+}
+
+.deal-tape-hand {
+  text-align: right;
+  align-self: center;
+  color: var(--ink);
+  font-size: 0.72rem;
+}
+
+.deal-tape-side {
+  position: relative;
+  min-width: 0;
+  overflow: visible;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.deal-tape-chip {
+  position: relative;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(100% - 2px);
+  margin: 1px 0;
+  border-radius: 2px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+}
+
+.deal-tape-chip--buy {
+  background: rgba(255, 93, 108, 0.2);
+  color: var(--up);
+}
+
+.deal-tape-chip--sell {
+  background: rgba(61, 214, 140, 0.18);
+  color: var(--down);
+}
+
+.deal-tape-chip.is-counter {
+  font-weight: 500;
+  opacity: 0.92;
+}
+
+.deal-tape-chip.is-aggressor {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.deal-span {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 1px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.deal-span--buy {
+  background: rgba(255, 93, 108, 0.28);
+  color: #ff8a96;
+}
+
+.deal-span--sell {
+  background: rgba(61, 214, 140, 0.24);
+  color: #6be3a8;
+}
+
+.deal-span-flag {
+  position: absolute;
+  top: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+
+.deal-span--buy .deal-span-flag,
+.deal-tape-chip--buy .deal-span-flag {
+  left: 0;
+  border-width: 8px 8px 0 0;
+  border-color: var(--up) transparent transparent transparent;
+}
+
+.deal-span--sell .deal-span-flag,
+.deal-tape-chip--sell .deal-span-flag {
+  right: 0;
+  left: auto;
+  border-width: 0 8px 8px 0;
+  border-color: transparent var(--down) transparent transparent;
 }
 
 .line-compare-page {

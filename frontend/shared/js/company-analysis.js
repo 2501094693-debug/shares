@@ -115,10 +115,13 @@
   function analysisVisible() {
     const panel = $("panel-judgment");
     if (!panel || panel.hidden) return false;
-    // 研判 · K线分析占用同一 panel，AI 壳不应抢源栏 / family
-    if (panel.dataset.judgmentFamily === "kline") return false;
+    // 研判 · K线分析 / 成交分析占用同一 panel，AI 壳不应抢源栏 / family
+    const family = panel.dataset.judgmentFamily || "";
+    if (family === "kline" || family === "deal") return false;
     const lc = $("lineComparePage");
     if (lc && !lc.hidden) return false;
+    const deal = $("dealAnalysisPage");
+    if (deal && !deal.hidden) return false;
     return true;
   }
 

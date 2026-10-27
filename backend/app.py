@@ -47,6 +47,7 @@ from company.analysis.line.extremum.api import router as line_extremum_router
 from company.analysis.line.undulate.api import router as line_undulate_router
 from company.analysis.line.T.api import router as line_trader_router
 from company.analysis.line.jetton.api import router as line_jetton_router
+from company.analysis.deal.api import router as deal_window_router
 from company.news.periodicreport.api import router as periodicreport_router
 from market.funds.fund.api import router as fund_router
 from market.futures.api import router as futures_router
@@ -221,6 +222,7 @@ app.include_router(line_extremum_router)
 app.include_router(line_undulate_router)
 app.include_router(line_trader_router)
 app.include_router(line_jetton_router)
+app.include_router(deal_window_router)
 app.include_router(periodicreport_router)
 app.include_router(market_router)
 app.include_router(world_router)
