@@ -755,6 +755,11 @@ const dealWindowState = {
   name: "",
   loadGen: 0,
   bound: false,
+  rowByClock: new Map(),
+  rowByEvent: new Map(),
+  rowByOrderTime: new Map(),
+  hoverTargets: [],
+  hoverPrimary: -1,
 };
 const DEAL_WINDOW_ROW_H = 26;
 const DEAL_WINDOW_OVERSCAN = 16;
@@ -1132,7 +1137,11 @@ function renderDealWindowMeta() {
     return;
   }
   const notes = (dealWindowState.notes || []).slice(0, 1).join("；");
-  meta.textContent = [dealWindowState.day || ticksViewDay(), notes].filter(Boolean).join(" · ");
+  meta.textContent = [
+    dealWindowState.day || ticksViewDay(),
+    "区间为左闭右开 3 秒窗",
+    notes,
+  ].filter(Boolean).join(" · ");
 }
 
 function dealTapePriceClass(price, prevPrice) {
@@ -1208,9 +1217,63 @@ function dealTapeCounterCell(kind, row, span) {
   return `<span class="${cls}"><span>${escapeHtml(fmtDealLots(row?.lots))}手</span></span>`;
 }
 
+/** 分时档右端点 → 左闭右开区间文案，如 09:30:38 → ``09:30:35–38`` = [09:30:35, 09:30:38)。 */
+function dealTapeShiftSeconds(hhmmss, deltaSec) {
+  const key = tickClockSecond(hhmmss);
+  if (!key) return "";
+  const parts = key.split(":").map((x) => Number(x));
+  let total = parts[0] * 3600 + parts[1] * 60 + parts[2] + Number(deltaSec || 0);
+  if (total < 0) total = 0;
+  const hh = Math.floor(total / 3600) % 24;
+  const mm = Math.floor((total % 3600) / 60);
+  const ss = total % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
+function dealTapeIsAuctionStamp(stamp) {
+  const key = tickClockSecond(stamp);
+  if (!key) return false;
+  return (key >= "09:25:00" && key < "09:26:00") || (key >= "15:00:00" && key < "15:01:00");
+}
+
+function dealTapeIntervalLabel(stamp) {
+  const end = tickClockSecond(stamp);
+  if (!end) return displayValue(stamp);
+  // 集合竞价撮合点本身就是成交时刻，不套 3 秒回溯窗
+  if (dealTapeIsAuctionStamp(end)) return end;
+  const start = dealTapeShiftSeconds(end, -3);
+  if (!start) return end;
+  if (start.slice(0, 6) === end.slice(0, 6)) {
+    return `${start}–${end.slice(6)}`;
+  }
+  if (start.slice(0, 3) === end.slice(0, 3)) {
+    return `${start}–${end.slice(3)}`;
+  }
+  return `${start}–${end}`;
+}
+
+function dealTapeTimeTitle(row) {
+  const end = tickClockSecond(row?.window_time || row?.time);
+  const bits = [];
+  if (end && !dealTapeIsAuctionStamp(end)) {
+    const start = dealTapeShiftSeconds(end, -3);
+    bits.push(`左闭右开 [${start}, ${end})`);
+    bits.push(`分时档右端 ${end}`);
+  } else if (end) {
+    bits.push(`集合竞价撮合 ${end}`);
+  }
+  const ot = tickClockSecond(row?.order_time);
+  if (ot && row?.kind === "order") {
+    bits.push(`大单完成 ${ot}`);
+  }
+  return bits.join(" · ");
+}
+
 function dealTapeRowHtml(row, index, visStart, spans, rows, prevPrice) {
   const span = spans[index] || {};
-  const time = displayValue(row?.time);
+  const stamp = row?.window_time || row?.time;
+  const timeLabel = dealTapeIntervalLabel(stamp);
+  const timeTitle = dealTapeTimeTitle(row);
   const price = fmtNum(row?.price);
   const priceCls = dealTapePriceClass(row?.price, prevPrice);
   const hand = fmtDealLots(row?.lots);
@@ -1228,13 +1291,116 @@ function dealTapeRowHtml(row, index, visStart, spans, rows, prevPrice) {
   const sellCell =
     sellBlock || dealTapeCounterCell("sell", row, span) || dealTapeSideCell("sell", row, span);
 
-  return `<div class="deal-tape-row${groupEnd}" data-clock="${escapeHtml(tickClockSecond(row?.time) || time)}" style="height:${DEAL_WINDOW_ROW_H}px">
-    <div class="deal-tape-time">${escapeHtml(time)}</div>
+  return `<div class="deal-tape-row${groupEnd}" data-clock="${escapeHtml(tickClockSecond(stamp) || timeLabel)}" data-window-clock="${escapeHtml(tickClockSecond(stamp) || "")}" data-row-index="${index}" data-order-time="${escapeHtml(tickClockSecond(row?.order_time) || "")}" data-order-id="${escapeHtml(String(row?.order_id || ""))}" data-order-peer-id="${escapeHtml(String(row?.order_id_peer || ""))}" data-order-event-id="${escapeHtml(String(row?.order_event_id || ""))}" data-order-peer-event-id="${escapeHtml(String(row?.order_peer_event_id || ""))}" data-kind="${escapeHtml(String(row?.kind || ""))}" style="height:${DEAL_WINDOW_ROW_H}px">
+    <div class="deal-tape-time" title="${escapeHtml(timeTitle)}">${escapeHtml(timeLabel)}</div>
     <div class="deal-tape-price ${priceCls}">${escapeHtml(price)}</div>
     <div class="deal-tape-hand">${escapeHtml(hand)}</div>
     <div class="deal-tape-side deal-tape-buy">${buyCell}</div>
     <div class="deal-tape-side deal-tape-sell">${sellCell}</div>
   </div>`;
+}
+
+/** 逐笔明细联动索引：分时档 / 大单事件 / 完成时刻 → 行号。 */
+function buildDealWindowLinkIndex(rows) {
+  const byClock = new Map();
+  const byEvent = new Map();
+  const byOrderTime = new Map();
+  const push = (map, key, index) => {
+    if (!key) return;
+    const list = map.get(key);
+    if (list) list.push(index);
+    else map.set(key, [index]);
+  };
+  (rows || []).forEach((row, index) => {
+    push(byClock, tickClockSecond(row?.window_time || row?.time), index);
+    push(byEvent, String(row?.order_event_id || ""), index);
+    push(byEvent, String(row?.order_peer_event_id || ""), index);
+    push(byOrderTime, tickClockSecond(row?.order_time), index);
+  });
+  return { byClock, byEvent, byOrderTime };
+}
+
+/** 当前悬浮对应的逐笔行：资金动向优先按事件 id，分时成交按窗口时刻。 */
+function resolveDealWindowHoverTargets() {
+  const rows = dealWindowState.rows || [];
+  if (!rows.length) return { indexes: [], primary: -1 };
+  const clock = tickClockSecond(ticksState.hoverSecond || "");
+  const prefId = String(ticksState.hoverDealPreferred?.event_id || "");
+  if (!clock && !prefId) return { indexes: [], primary: -1 };
+  if (prefId) {
+    const hit = dealWindowState.rowByEvent.get(prefId);
+    if (hit?.length) {
+      const primary = hit.find((i) => tickClockSecond(rows[i]?.order_time) === clock);
+      return { indexes: hit.slice(), primary: primary ?? hit[0] };
+    }
+  }
+  if (clock) {
+    const hit = dealWindowState.rowByClock.get(clock);
+    if (hit?.length) return { indexes: hit.slice(), primary: hit[0] };
+    // 分时成交行严格按窗口时刻；资金动向 / 图表悬浮才允许退化到「完成时刻」匹配
+    if (ticksState.hoverOrigin !== "ticks") {
+      const byOrder = dealWindowState.rowByOrderTime.get(clock);
+      if (byOrder?.length) {
+        // 旧缓存可能没有 event_id：用完成行反查 order_id，再展开该订单的全部切片
+        const orderIds = new Set();
+        for (const i of byOrder) {
+          const oid = String(rows[i]?.order_id || "");
+          const pid = String(rows[i]?.order_id_peer || "");
+          if (oid) orderIds.add(oid);
+          if (pid) orderIds.add(pid);
+        }
+        if (orderIds.size) {
+          const indexes = [];
+          rows.forEach((row, i) => {
+            if (orderIds.has(String(row?.order_id || "")) || orderIds.has(String(row?.order_id_peer || ""))) {
+              indexes.push(i);
+            }
+          });
+          if (indexes.length) return { indexes, primary: byOrder[0] };
+        }
+        return { indexes: byOrder.slice(), primary: byOrder[0] };
+      }
+    }
+  }
+  return { indexes: [], primary: -1 };
+}
+
+function applyDealWindowHoverClasses() {
+  const windowEl = document.querySelector("#dealWindowBody .deal-tape-window");
+  if (!windowEl) return;
+  const targets = new Set(dealWindowState.hoverTargets || []);
+  const primary = Number(dealWindowState.hoverPrimary);
+  windowEl.querySelectorAll(".deal-tape-row[data-row-index]").forEach((el) => {
+    const index = Number(el.dataset.rowIndex);
+    const on = targets.has(index);
+    el.classList.toggle("is-linked", on);
+    el.classList.toggle("is-linked-primary", on && index === primary);
+  });
+}
+
+function scrollDealWindowToRow(index) {
+  if (!dealWindowVisible() || !Number.isFinite(Number(index)) || Number(index) < 0) return;
+  const scroller = document.querySelector("#dealWindowBody .deal-tape-scroll");
+  if (!scroller) return;
+  const target = Math.max(
+    0,
+    Number(index) * DEAL_WINDOW_ROW_H - (scroller.clientHeight - DEAL_WINDOW_ROW_H) / 2
+  );
+  const maxTop = Math.max(0, (scroller.scrollHeight || 0) - (scroller.clientHeight || 0));
+  const next = Math.min(maxTop, target);
+  if (Math.abs((scroller.scrollTop || 0) - next) > 1) scroller.scrollTop = next;
+  paintDealWindowRows(scroller);
+  applyDealWindowHoverClasses();
+}
+
+function syncDealWindowLinkHighlight({ scroll = false } = {}) {
+  const { indexes, primary } = resolveDealWindowHoverTargets();
+  dealWindowState.hoverTargets = indexes;
+  dealWindowState.hoverPrimary = primary;
+  if (scroll && indexes.length) {
+    scrollDealWindowToRow(primary >= 0 ? primary : indexes[0]);
+  }
+  applyDealWindowHoverClasses();
 }
 
 function paintDealWindowRows(scroller) {
@@ -1267,6 +1433,7 @@ function paintDealWindowRows(scroller) {
     html += dealTapeRowHtml(rows[i], i, start, spans, rows, prevPrice);
   }
   windowEl.innerHTML = html;
+  applyDealWindowHoverClasses();
 }
 
 function refreshDealWindowPanel() {
@@ -1292,7 +1459,7 @@ function refreshDealWindowPanel() {
   body.innerHTML = `
     <div class="deal-tape">
       <div class="deal-tape-head" aria-hidden="true">
-        <span>成交时间</span>
+        <span title="左闭右开 3 秒窗，如 09:30:35–38 表示 [09:30:35, 09:30:38)">成交区间</span>
         <span>成交价</span>
         <span>成交量</span>
         <span>买方</span>
@@ -1307,6 +1474,7 @@ function refreshDealWindowPanel() {
   const scroller = body.querySelector(".deal-tape-scroll");
   if (scroller) scroller.scrollTop = keepScroll;
   paintDealWindowRows(scroller);
+  syncDealWindowLinkHighlight({ scroll: Boolean(ticksState.listHover) });
 }
 
 async function loadDealWindow({ force = false } = {}) {
@@ -1330,6 +1498,10 @@ async function loadDealWindow({ force = false } = {}) {
     const rows = Array.isArray(data.rows) ? data.rows : [];
     dealWindowState.rows = rows;
     dealWindowState.spans = buildDealTapeSpans(rows);
+    const linkIndex = buildDealWindowLinkIndex(rows);
+    dealWindowState.rowByClock = linkIndex.byClock;
+    dealWindowState.rowByEvent = linkIndex.byEvent;
+    dealWindowState.rowByOrderTime = linkIndex.byOrderTime;
     dealWindowState.summary = data.summary || null;
     dealWindowState.reconcile = data.reconcile || null;
     dealWindowState.notes = Array.isArray(data.notes) ? data.notes : [];
@@ -2121,9 +2293,11 @@ function tickLinkInterval(items, index) {
   if (index < 0 || index >= items.length) return null;
   const to = timeToSec(items[index]?.time);
   if (to == null) return null;
-  if (index === 0) return { from: -Infinity, to, indexes: [index] };
+  // 分时档本身是左闭右开 [上一档, 本档)，联动资金动向时按右开取数
+  const rightOpen = !dealTapeIsAuctionStamp(items[index]?.time);
+  if (index === 0) return { from: -Infinity, to, indexes: [index], rightOpen };
   const from = timeToSec(items[index - 1]?.time);
-  return { from: from == null ? -Infinity : from, to, indexes: [index] };
+  return { from: from == null ? -Infinity : from, to, indexes: [index], rightOpen };
 }
 
 function tickLinkRangeForClock(clock) {
@@ -2174,7 +2348,11 @@ function quoteClockForEvent(clock) {
 function dealInHoverRange(clock, range = ticksState.hoverRange) {
   if (!range) return false;
   const sec = timeToSec(clock);
-  return sec != null && sec > range.from && sec <= range.to;
+  if (sec == null) return false;
+  // 悬浮分时成交档：资金动向取左闭右开窗口 [上一档, 本档)
+  if (range.rightOpen) return sec >= range.from && sec < range.to;
+  // 悬浮资金动向 / 图表：保持左开右闭，确保命中的这一笔本身被包含
+  return sec > range.from && sec <= range.to;
 }
 
 function tapeLinkOriginOfRow(row) {
@@ -2227,6 +2405,7 @@ function syncTapeLinkHighlight({ scroll = false, origin = "" } = {}) {
       window.requestAnimationFrame(() => scrollTapeRowsToCenter(root, focusRows));
     }
   }
+  syncDealWindowLinkHighlight({ scroll });
 }
 
 function ensureTicksSecondVisible(clock) {
@@ -11026,8 +11205,11 @@ function drawRealtimeChart(ctx, layout, items, preClose, mode, colors, hoverInde
     ctx.beginPath();
     let startedAvg = false;
     for (let i = 0; i < n; i += 1) {
-      const avg = Number(items[i].avg_price);
-      if (!Number.isFinite(avg)) continue;
+      const avgRaw = items[i].avg_price;
+      // 09:25 前均线为 null：必须显式跳过，不能用 Number(null)=0 画到图底
+      if (avgRaw == null || avgRaw === "") continue;
+      const avg = Number(avgRaw);
+      if (!Number.isFinite(avg) || avg <= 0) continue;
       const x = xAt(i);
       const y = yAt(avg);
       if (!startedAvg) {
@@ -11854,20 +12036,32 @@ function inferTicksTradeDate(data, items) {
   return "";
 }
 
+/**
+ * 分时均价是否计入该笔：从 09:25 开盘撮合第一笔正式成交起算。
+ * 09:15–09:25 / 14:57–15:00 为虚拟撮合快照，09:26–09:30 为空窗，均不计入。
+ */
+function tickCountsTowardAvg(time) {
+  const key = tickClockSecond(time);
+  if (!key || key < "09:25:00") return false;
+  if (key >= "09:26:00" && key < "09:30:00") return false;
+  if (key >= "14:57:00" && key < "15:00:00") return false;
+  return true;
+}
+
 function withTickAvg(items) {
   let pv = 0;
   let volSum = 0;
   return items.map((d) => {
     const price = Number(d.price);
     const vol = Number(d.volume) || 0;
-    if (Number.isFinite(price) && vol > 0) {
+    if (tickCountsTowardAvg(d.time) && Number.isFinite(price) && vol > 0) {
       pv += price * vol;
       volSum += vol;
     }
-    const avg = Number(d.avg_price);
     return {
       ...d,
-      avg_price: Number.isFinite(avg) ? avg : volSum ? pv / volSum : price,
+      // 09:25 前不画均线；之后按正式成交累计 VWAP（忽略源里可能带的 avg_price）
+      avg_price: volSum > 0 ? pv / volSum : null,
     };
   });
 }
@@ -11885,6 +12079,16 @@ function decimateTicksPreservingExtrema(items, maxN) {
   if (!Array.isArray(items) || items.length <= maxN) return items;
   const n = items.length;
   const bucketCount = Math.max(1, Math.floor(maxN / 3));
+  // 均线首个有点的索引（09:25 第一笔正式成交），抽稀时必须保留，否则均线起点会后移
+  let firstAvg = -1;
+  for (let i = 0; i < n; i += 1) {
+    const a = items[i].avg_price;
+    if (a == null || a === "") continue;
+    if (Number.isFinite(Number(a))) {
+      firstAvg = i;
+      break;
+    }
+  }
   const out = [];
   let prev = -1;
   for (let b = 0; b < bucketCount; b += 1) {
@@ -11907,8 +12111,10 @@ function decimateTicksPreservingExtrema(items, maxN) {
         maxI = i;
       }
     }
-    const picks = [...new Set([minI, maxI, end - 1])].sort((a, b) => a - b);
-    for (const i of picks) {
+    const picks = [minI, maxI, end - 1];
+    if (firstAvg >= start && firstAvg < end) picks.push(firstAvg);
+    picks.sort((a, b) => a - b);
+    for (const i of new Set(picks)) {
       if (i === prev) continue;
       out.push(items[i]);
       prev = i;

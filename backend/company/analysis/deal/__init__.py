@@ -12,6 +12,11 @@ from company.analysis.deal.service import (
     format_window_lines,
     run_deal_window_reconstruct,
 )
+from company.analysis.deal.validate import (
+    enforce_constraints,
+    repair_tape,
+    validate_tape,
+)
 from company.analysis.deal.window import (
     DEFAULT_AVG_LOTS_PER_TICK,
     DEFAULT_MIN_LOTS,
@@ -33,11 +38,14 @@ __all__ = [
     "TRADE_MIN_LOTS",
     "build_windows",
     "emit_window",
+    "enforce_constraints",
     "format_window_lines",
     "normalize_orders",
     "place_orders",
     "plan_window",
     "plan_windows",
     "reconstruct_windows",
+    "repair_tape",
     "run_deal_window_reconstruct",
+    "validate_tape",
 ]

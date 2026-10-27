@@ -2988,10 +2988,11 @@ html.company-charts-on .company-page.app {
 
 .ticks-tape-head {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: 2px;
   margin: 0 0 6px;
   padding-bottom: 4px;
   border-bottom: 1px solid rgba(42, 212, 184, 0.1);
@@ -3031,13 +3032,13 @@ html.company-charts-on .company-page.app {
 
 .ticks-tape-meta {
   margin: 0;
-  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: right;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
   font-size: 0.66rem;
+  line-height: 1.35;
   letter-spacing: 0.02em;
 }
 
@@ -13934,10 +13935,14 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
 }
 
 .deal-analysis-board {
+  --deal-side-col: minmax(280px, min(380px, 34%));
   flex: 1 1 0%;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  /* 分时成交 | 实时走势 | 逐笔明细：两侧同宽 */
+  grid-template-columns: var(--deal-side-col) minmax(0, 1fr) var(--deal-side-col);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "hero charts deal";
   gap: 10px;
   height: 100%;
   overflow: hidden;
@@ -13945,24 +13950,23 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
 
 .deal-analysis-left,
 html.company-charts-on .deal-analysis-left.quotes-layout {
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
+  /* 子节点直接参与 board 三列，保证与分时成交同宽 */
+  display: contents;
   padding: 0;
-  /* 成交分析左侧不展示基本信息条，直接 hero | charts */
-  grid-template-columns: minmax(280px, min(380px, 34%)) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  grid-template-areas: "hero charts";
-  overflow: hidden;
 }
 
 .deal-analysis-left .company-hero {
+  grid-area: hero;
   /* 只挂 metricsPanels，去掉身份区后的留白 */
   padding-top: 12px;
 }
 
 .deal-analysis-left .deal-charts-deck,
 .deal-analysis-left .charts-deck {
+  grid-area: charts;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -13972,6 +13976,7 @@ html.company-charts-on .deal-analysis-left.quotes-layout {
 }
 
 .deal-analysis-right {
+  grid-area: deal;
   min-width: 0;
   min-height: 0;
   height: 100%;
@@ -13981,6 +13986,27 @@ html.company-charts-on .deal-analysis-left.quotes-layout {
   border: 1px solid rgba(42, 212, 184, 0.1);
   border-radius: calc(var(--radius) + 2px);
   background: rgba(4, 8, 14, 0.35);
+}
+
+@media (max-width: 960px) {
+  .deal-analysis-board {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(280px, 0.5fr) minmax(360px, 1fr);
+    grid-template-areas:
+      "hero"
+      "charts"
+      "deal";
+    overflow: auto;
+  }
+
+  .deal-analysis-left .company-hero {
+    height: auto;
+    max-height: none;
+  }
+
+  .deal-analysis-right {
+    min-height: 360px;
+  }
 }
 
 .deal-window-panel {
@@ -14059,7 +14085,7 @@ html.company-charts-on .deal-analysis-left.quotes-layout {
 .deal-tape-head {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: 4.4rem 4rem 3rem minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 6.2rem 3.6rem 2.8rem minmax(0, 1fr) minmax(0, 1fr);
   gap: 0 4px;
   padding: 0 2px 6px;
   font-size: 0.64rem;
@@ -14111,7 +14137,7 @@ html.company-charts-on .deal-analysis-left.quotes-layout {
 
 .deal-tape-row {
   display: grid;
-  grid-template-columns: 4.4rem 4rem 3rem minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 6.2rem 3.6rem 2.8rem minmax(0, 1fr) minmax(0, 1fr);
   gap: 0 4px;
   align-items: stretch;
   padding: 0 2px;
@@ -14126,10 +14152,21 @@ html.company-charts-on .deal-analysis-left.quotes-layout {
   border-bottom: 1px solid rgba(148, 163, 184, 0.28);
 }
 
+.deal-tape-row.is-linked {
+  background: rgba(42, 212, 184, 0.12);
+}
+
+.deal-tape-row.is-linked-primary {
+  background: rgba(42, 212, 184, 0.22);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
 .deal-tape-time {
   color: var(--muted);
   align-self: center;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
+  white-space: nowrap;
+  cursor: help;
 }
 
 .deal-tape-price {

@@ -107,6 +107,9 @@ def format_window_lines(pack: dict[str, Any]) -> list[str]:
         f"笔数不符窗口 {reconcile.get('count_mismatch_windows')}  "
         f"约束无解窗口 {reconcile.get('infeasible_windows')}  "
         f"未放置订单 {reconcile.get('unplaced_count')}",
+        f"  约束验收：{'通过' if reconcile.get('constraints_ok') else '未通过'}"
+        f"（硬 {reconcile.get('constraints_hard_count', 0)} / "
+        f"软 {reconcile.get('constraints_soft_count', 0)}）",
         f"  解空间：{ambiguity.get('undetermined_windows')} 个窗口需猜测分配，"
         f"约 10^{ambiguity.get('solutions_log10')} 种可行解",
     ]

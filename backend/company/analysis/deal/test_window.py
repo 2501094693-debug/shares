@@ -25,9 +25,7 @@ from company.analysis.deal.window import (
     reconstruct_windows,
 )
 
-# 价格 1000 元 => 单笔上限 = 300000 / 1000 / 100 = 3 手
 PRICE = 1000.0
-CAP_LOTS = DEFAULT_TRADE_THRESHOLD / PRICE / 100.0
 
 
 def _window(lots: float, count: int, stamp: str = "09:30:03", side: str = "buy") -> dict:
@@ -155,30 +153,28 @@ class PlanWindowTests(unittest.TestCase):
         self.assertAlmostEqual(plan["small_lots"], 7.0, places=3)
         self.assertLessEqual(plan["fills_lo"], plan["fills_hi"])
 
-    def test_dense_window_needs_multi_trade_records(self) -> None:
-        """10 手 / 3 条记录 = 每条 3.33 手 > 门槛 3 手。不是无解，是记录内含多笔。"""
+    def test_dense_window_keeps_exact_count(self) -> None:
+        """10 手 / 3 笔：笔数硬约束优先，不再按金额门槛拆成更多笔。"""
         plan = plan_window(_window(10.0, 3), [])
         self.assertTrue(plan["feasible"])
         self.assertTrue(plan["multi_trade"])
         self.assertGreater(plan["trades_min"], plan["count"])
         rows = emit_window(plan, [])
-        self.assertGreaterEqual(len(rows), plan["trades_min"])
+        self.assertEqual(len(rows), 3)
         self.assertAlmostEqual(sum(row["lots"] for row in rows), 10.0, places=2)
         for row in rows:
-            self.assertLess(row["lots"], CAP_LOTS + 1e-6)
             self.assertTrue(row["buy_id"].startswith("B"))
             self.assertTrue(row["sell_id"].startswith("S"))
 
     def test_real_sweep_window(self) -> None:
-        """真实逐笔 14:05:17：东财 8 手 / 3 条记录；超门槛时拆成真正逐笔。"""
+        """真实逐笔 14:05:17：东财 8 手 / 3 笔，精确守恒。"""
         window = {"time": "14:05:17", "lots": 8.0, "count": 3, "price": 1341.76, "side": "buy"}
         plan = plan_window(window, [], threshold=300_000.0)
         self.assertTrue(plan["feasible"])
         rows = emit_window(plan, [])
-        self.assertGreaterEqual(len(rows), 3)
+        self.assertEqual(len(rows), 3)
         self.assertAlmostEqual(sum(row["lots"] for row in rows), 8.0, places=2)
         for row in rows:
-            self.assertLessEqual(row["lots"], plan["cap_lots"] + 1e-6)
             self.assertEqual(set(row) & {"time", "price", "lots", "buy_id", "sell_id"},
                              {"time", "price", "lots", "buy_id", "sell_id"})
 
@@ -375,28 +371,32 @@ class EmitWindowTests(unittest.TestCase):
         self.assertGreaterEqual(len(rows), 5)
 
     def test_no_fold_inflate_order_lots(self) -> None:
-        """单边大单占不满窗口时，残余归小单，不得撑破资金动向手数。"""
+        """单边大单占不满且仅 1 笔：残余并入胶带，归因手数仍等于资金动向。"""
         window = _window(28.0, 1, "10:00:00")
         placed = [{"order": _order("O12", 13.0, "10:00:00"), "lots": 13.0}]
         plan = plan_window(window, placed)
         rows = emit_window(plan, placed)
-        order_lots = sum(r["lots"] for r in rows if r.get("order_id") == "O12")
-        self.assertAlmostEqual(order_lots, 13.0, places=2)
+        self.assertEqual(len(rows), 1)
         self.assertAlmostEqual(sum(r["lots"] for r in rows), 28.0, places=2)
+        order_rows = [r for r in rows if r.get("order_id") == "O12"]
+        self.assertEqual(len(order_rows), 1)
+        self.assertAlmostEqual(order_rows[0].get("attributed_lots"), 13.0, places=2)
 
-    def test_deadline_fill_uses_fund_flow_time(self) -> None:
-        """截止窗内大单逐笔时间 = 资金动向最后成交时间，不是分时档位。"""
+    def test_deadline_fill_uses_interval_time(self) -> None:
+        """胶带 time ∈ [prev, stamp)；完成时刻落在本窗则 time=完成时刻；window_time=档位。"""
         window = _window(547.0, 74, "09:30:15")
         placed = [
             {"order": _order("O1", 258.0, "09:30:14", side="buy"), "lots": 258.0},
             {"order": _order("O2", 232.0, "09:30:14", side="sell"), "lots": 232.0},
         ]
         plan = plan_window(window, placed)
+        plan["prev_time"] = "09:30:12"
         rows = emit_window(plan, placed)
         order_rows = [r for r in rows if r.get("kind") == "order"]
         self.assertTrue(order_rows)
         self.assertTrue(all(r["time"] == "09:30:14" for r in order_rows))
         self.assertTrue(all(r.get("window_time") == "09:30:15" for r in order_rows))
+        self.assertTrue(all(r.get("order_time") == "09:30:14" for r in order_rows))
         buy = sum(r["lots"] for r in order_rows if r.get("order_id") == "O1" or r.get("order_id_peer") == "O1")
         sell = sum(r["lots"] for r in order_rows if r.get("order_id") == "O2" or r.get("order_id_peer") == "O2")
         self.assertAlmostEqual(buy, 258.0, places=2)
@@ -421,12 +421,11 @@ class EmitWindowTests(unittest.TestCase):
         # 其余笔数由小单补足到窗口笔数
         self.assertGreaterEqual(len(rows), plan["count"])
 
-    def test_small_trades_below_cap(self) -> None:
+    def test_small_trades_exact_count(self) -> None:
         plan = plan_window(_window(10.0, 5), [])
         rows = emit_window(plan, [])
-        self.assertGreaterEqual(len(rows), 5)
+        self.assertEqual(len(rows), 5)
         for row in rows:
-            self.assertLess(row["lots"], CAP_LOTS + 1e-6)
             self.assertGreaterEqual(row["lots"], DEFAULT_MIN_LOTS - 1e-9)
             self.assertEqual(row["lots"], int(row["lots"]))
             self.assertTrue(row["buy_id"] and row["sell_id"])
@@ -509,6 +508,30 @@ class ReconstructWindowsTests(unittest.TestCase):
         self.assertEqual(pack["reconcile"]["lot_mismatch_windows"], 0)
         self.assertAlmostEqual(sum(row["lots"] for row in pack["rows"]), 5.0, places=2)
         self.assertTrue(any(row.get("order_id_peer") for row in pack["rows"]))
+
+    def test_order_event_ids_round_trip(self) -> None:
+        """逐笔行携带资金动向 event_id，前端据此联动高亮。"""
+        ticks = [
+            {"time": "09:30:03", "price": PRICE, "volume": 10, "count": 5, "side": "buy"},
+            {"time": "09:30:06", "price": PRICE, "volume": 8, "count": 4, "side": "sell"},
+        ]
+        big = [
+            {"time": "09:30:03", "price": PRICE, "volume": 300, "volume_lots": 3,
+             "amount": 3 * PRICE * 100, "side": "buy", "aggressor": "active",
+             "event_id": "111|1|300"},
+            {"time": "09:30:06", "price": PRICE, "volume": 200, "volume_lots": 2,
+             "amount": 2 * PRICE * 100, "side": "sell", "aggressor": "active",
+             "event_id": "222|2|200"},
+        ]
+        pack = reconstruct_windows(ticks, big, code="600519", view="all")
+        seen: set[str] = set()
+        for row in pack["rows"]:
+            if row["kind"] != "order":
+                continue
+            seen.add(str(row.get("order_event_id") or ""))
+            seen.add(str(row.get("order_peer_event_id") or ""))
+        self.assertIn("111|1|300", seen)
+        self.assertIn("222|2|200", seen)
 
     def test_order_lots_preserved(self) -> None:
         pack = reconstruct_windows(self._ticks(), self._big(), code="600519", view="aggressor")

@@ -7,29 +7,21 @@
 
 算法
 ----
-1. 把分时档当成互不重叠的 3 秒窗口；按大单最后成交时间落入
-   ``time(W) <= T_j`` 的最右窗口（截止窗）。
-2. **尽可能撮合大单**，但同时满足：
-   - 窗内大单手数 ``B <= V``（不超过区间总手数）
-   - 若窗内还有剩余笔数，为其预留 ``min_lots`` 手数（``min_lots=0`` 时允许 0 手）
-   - 大单最后一笔必须钉在截止窗（完全成交时间不错）
-3. 大单落位后，向区间填充小单，使笔数、总手数、均价对齐。
-4. 输出逐笔：``time / lots / sell_id / buy_id``。手数一律整手，允许 0。
+1. 把分时档当成互不重叠的左闭右开 3 秒窗口；按大单最后成交时间落入截止窗。
+2. 尽可能撮合大单，但窗内大单手数 ≤ 区间总手数；剩余笔数按 min_lots 预留。
+3. 大单落位后填小单，使笔数、总手数对齐；有小单时再回校均价（大单价不改）。
+4. 输出逐笔 ``time / lots / sell_id / buy_id``：
+   ``window_time`` = 分时档右端点（对账用）；``time`` ∈ 左闭右开区间内的真实成交时刻
+   （完成落在本窗则用资金动向完成时刻，不再显示成右端点如 09:30:38）。
+5. 生成后由 ``validate.validate_tape`` 做硬约束验收，结果写入 ``reconcile.constraints``。
 
-约束（逐窗口）
---------------
-============  ==================================================
-C1 量守恒      ``Σ 每笔手数 = V``
-C2 笔数守恒    ``笔数 = C``（连续竞价；集合竞价可放宽）
-C3 整手        每笔 ``∈ {0,1,2,…}``，禁止小数手
-C4 时序        订单成交落在 ``<= T_j`` 的窗口；最后一笔钉在截止窗
-C5 余量预留    剩余笔数保有可用手数（按 ``min_lots``，可为 0）
-C6 撮合优先    截止窗锚点之后，残余量按大单优先回溯填充
-============  ==================================================
+硬约束（验收清单，详见 ``validate.py``）
+----------------------------------------
+R2 窗内大单 ≤ 分时容量　R4 完成时刻/截止窗　R5 笔数·手数·(可调时)均价
+R6 输出字段　R7 整手可 0　R8 一对买卖一笔　R9 同档大单连续
+R10 大单价=资金动向价　R11 按 window_time 汇总=分时手数
 
 集合竞价真实成交只在撮合点：开盘 ``09:25``、收盘 ``15:00``。
-``09:15–09:25`` / ``14:57–15:00`` 是虚拟撮合快照；``09:26–09:30`` 通常无成交。
-集合竞价多对多配对，不要求「订单数 ≤ 笔数」；连续竞价一单至少占一笔。
 """
 
 from __future__ import annotations
@@ -375,6 +367,8 @@ def normalize_orders(
                 "side": "buy" if is_buy else "sell",
                 "view": aggression or ("active" if mode == "aggressor" else mode),
                 "super": amount >= threshold * 10,
+                # 与资金动向列表对齐的外部事件键：逐笔行带上它，前端即可联动高亮
+                "event_id": str(row.get("event_id") or ""),
             }
         )
     orders.sort(key=lambda order: (order["time"], -order["lots"]))
@@ -549,16 +543,44 @@ def _deadline_index(stamps: list[str], stamp: str) -> int:
     return index
 
 
-def _order_fill_stamp(window_stamp: str, order: Mapping[str, Any] | None) -> str:
-    """截止窗内的大单成交时间改用资金动向时刻，便于与左侧列表对照。
+def _shift_stamp(stamp: str, seconds: int) -> str:
+    """``HH:MM:SS`` 加减秒，失败则原样返回。"""
+    key = _stamp_key(stamp)
+    if not key:
+        return str(stamp or "")
+    try:
+        hh, mm, ss = (int(p) for p in key.split(":"))
+        total = hh * 3600 + mm * 60 + ss + int(seconds)
+        if total < 0:
+            total = 0
+        return f"{total // 3600:02d}:{(total % 3600) // 60:02d}:{total % 60:02d}"
+    except (TypeError, ValueError):
+        return key
 
-    回溯到更早窗口的切片仍用分时档时间（订单尚未完全成交）。
+
+def _order_fill_stamp(
+    window_stamp: str,
+    order: Mapping[str, Any] | None,
+    *,
+    prev_stamp: str = "",
+) -> str:
+    """大单胶带 ``time``：落在分时档左闭右开区间 ``[prev, stamp)`` 内的真实时刻。
+
+    - 资金动向完成时刻若 ∈ ``[prev, stamp)``（截止窗）→ 用完成时刻
+      （例：完成 09:30:35、档 09:30:38 → 显示 09:30:35，不是 09:30:38）
+    - 否则为回溯窗 → 用区间左端 ``prev``（严格早于完成时刻）
+    - ``window_time`` 仍为档位右端点，按窗汇总与分时对账
     """
     win = _stamp_key(window_stamp)
     order_t = _stamp_key((order or {}).get("time"))
-    if order_t and win and win >= order_t:
+    left = _stamp_key(prev_stamp) if prev_stamp else (_shift_stamp(win, -3) if win else "")
+    if not win:
+        return order_t or str(window_stamp or "")
+    if order_t and (not left or left <= order_t < win):
         return order_t
-    return win or str(window_stamp or "")
+    if left and left < win:
+        return left
+    return _shift_stamp(win, -1) if win else win
 
 
 def _anchor_lots(need: float, available: float, *, min_lots: float = DEFAULT_MIN_LOTS) -> float:
@@ -705,14 +727,12 @@ def place_orders(
             continue
         side = _order_side(order)
         caps, slots = _caps_slots(side)
-        # 左闭右开：完成时刻恰是档位（on-grid）时，这笔大单的「最后一笔」是落在
-        # 截止窗 index 左端的一笔（锚点已钉），其余成交都在它之前 → 从上一档回溯；
-        # 完成时刻落在档间（off-grid）时，截止窗本身已含其部分成交 → 从 index 回溯。
-        bulk_end = index
-        if index > 0 and stamps[index - 1] == _stamp_key(order["time"]):
-            bulk_end = index - 1
+        # 截止窗优先填满，再向前回溯。若 on-grid 时把主量都压到上一档、截止窗只留
+        # 锚点 1 手，买卖大单会在前窗部分配对，截止窗锚点又因 pair_done 无法再配对，
+        # 残留只能找匿名对手 → 同一大单编号被拆开。截止窗本身是 [T, T+3)（含完成时刻），
+        # 主量落在此窗合法，也能让一对买卖大单在同一窗整笔撮合。
         floor_index = max(0, index - max_lookback) if max_lookback > 0 else 0
-        cursor = bulk_end
+        cursor = index
         while need_of[oid] > 0 and cursor >= floor_index:
             already = oid in filled.get(cursor, {})
             can_add = caps[cursor] > 0 and (already or slots[cursor] > 0)
@@ -780,6 +800,80 @@ def _record_trades(lots: float, cap_lots: float) -> int:
     return max(1, int(math.ceil(lots / cap_lots - 1e-9)))
 
 
+def _fold_residual_lots(rows: list[dict[str, Any]], residual: int) -> None:
+    """残余手数并入最后一行，不新增笔数。
+
+    订单行先冻结 ``attributed_lots``（归因仍按资金动向），胶带 ``lots`` 可被抬高
+    以保住窗口量守恒与笔数守恒。
+    """
+    left = int(residual)
+    if left <= 0 or not rows:
+        return
+    for row in rows:
+        if row.get("kind") == "order" and row.get("attributed_lots") is None:
+            row["attributed_lots"] = float(_lots_int(row.get("lots")))
+    rows[-1]["lots"] = float(_lots_int(rows[-1].get("lots")) + left)
+
+
+def _align_window_vwap(rows: list[dict[str, Any]], target_price: float) -> None:
+    """回校窗内成交价，使 ``Σ(lots·price)/Σ lots = 分时均价``。
+
+    **只改小单价格**；大单始终保留资金动向价（跨窗同一大单不能一段 17.48、
+    一段被改成窗均价 17.49）。
+
+    若无小单可调，或回校后小单价会变成 ``<=0``，则放弃本窗均价对齐——
+    大单价优先于窗均价。
+    """
+    if not rows:
+        return
+    target = _f(target_price)
+    if target <= 0:
+        return
+    total_lots = sum(_lots_int(row.get("lots")) for row in rows)
+    if total_lots <= 0:
+        return
+    target_amount = target * total_lots
+    order_rows = [row for row in rows if row.get("kind") == "order"]
+    small_rows = [row for row in rows if row.get("kind") != "order"]
+    small_lots = sum(_lots_int(row.get("lots")) for row in small_rows)
+    # 大单吃满窗口：无法在不改大单价的前提下对齐均价 → 保持资金动向价
+    if small_lots <= 0:
+        return
+
+    order_amount = sum(
+        float(_lots_int(row.get("lots"))) * float(row.get("price") or 0)
+        for row in order_rows
+    )
+    need = target_amount - order_amount
+    px = need / small_lots
+    # 小单价必须为正；否则放弃对齐，绝不改写大单
+    if not math.isfinite(px) or px <= 0:
+        return
+
+    positive = [row for row in small_rows if _lots_int(row.get("lots")) > 0]
+    for row in small_rows:
+        if _lots_int(row.get("lots")) <= 0:
+            row["price"] = round(target, 4)
+        else:
+            row["price"] = round(px, 4)
+    # 最后一笔小单吃掉四舍五入误差，保证窗内 VWAP 严格对齐
+    if positive:
+        fixed = sum(
+            float(_lots_int(row.get("lots"))) * float(row.get("price") or 0)
+            for row in rows
+            if row is not positive[-1]
+        )
+        last_lots = _lots_int(positive[-1].get("lots"))
+        if last_lots > 0:
+            last_px = (target_amount - fixed) / last_lots
+            if not math.isfinite(last_px) or last_px <= 0:
+                # 回滚小单改价，保持大单不动
+                for row in small_rows:
+                    row["price"] = round(target, 4)
+                return
+            positive[-1]["price"] = round(last_px, 4)
+
+
 class _OrderIds:
     """全天递增的买单 / 卖单编号。大单跨窗口复用同一编号。"""
 
@@ -787,16 +881,39 @@ class _OrderIds:
         self._buy = 0
         self._sell = 0
         self._bound: dict[str, str] = {}
-        # 已成交过的「买大单, 卖大单」配对：一对真实买卖大单只能有一笔成交，
-        # 左闭右开把同一对单的尾巴/主量拆到相邻两档时，后到的窗口不再重复配对。
+        # 已成交过的「买大单, 卖大单」配对：一对真实买卖大单只能有一笔成交。
+        # 跨窗残留通过 virtual_pair 并入原配对行的 attributed_lots，不再出第二笔。
         self._paired: set[tuple[str, str]] = set()
+        self._pair_row: dict[tuple[str, str], dict[str, Any]] = {}
 
-    def pair_done(self, buy_id: str, sell_id: str) -> bool:
-        return bool(buy_id) and bool(sell_id) and (buy_id, sell_id) in self._paired
+    def pair_done(self, buy_oid: str, sell_oid: str) -> bool:
+        return bool(buy_oid) and bool(sell_oid) and (buy_oid, sell_oid) in self._paired
 
-    def mark_pair(self, buy_id: str, sell_id: str) -> None:
-        if buy_id and sell_id:
-            self._paired.add((buy_id, sell_id))
+    def mark_pair(
+        self,
+        buy_oid: str,
+        sell_oid: str,
+        row: dict[str, Any] | None = None,
+    ) -> None:
+        if not buy_oid or not sell_oid:
+            return
+        key = (buy_oid, sell_oid)
+        self._paired.add(key)
+        if row is not None:
+            self._pair_row[key] = row
+
+    def virtual_pair(self, buy_oid: str, sell_oid: str, lots: float) -> float:
+        """跨窗已配对过的买卖：本窗不再出第二笔，只把量并入原配对行归因。"""
+        take = _lots_int(lots)
+        if take <= 0 or not buy_oid or not sell_oid:
+            return 0.0
+        row = self._pair_row.get((buy_oid, sell_oid))
+        if row is None:
+            return 0.0
+        if row.get("attributed_lots") is None:
+            row["attributed_lots"] = float(_lots_int(row.get("lots")))
+        row["attributed_lots"] = float(row["attributed_lots"]) + float(take)
+        return float(take)
 
     def bind(self, order: Mapping[str, Any]) -> str:
         key = str(order.get("order_id") or "")
@@ -827,6 +944,7 @@ def _append_matches(
     aggressor: str,
     aggressor_id: str | None = None,
     order_id: str = "",
+    order_event_id: str = "",
     order_time: str = "",
     window_time: str = "",
     kind: str = "small",
@@ -860,6 +978,8 @@ def _append_matches(
                     "sell_id": ids.next_sell(),
                     "side": side,
                     "order_id": order_id,
+                    "order_event_id": order_event_id,
+                    "order_peer_event_id": "",
                     "kind": kind,
                     "real": real,
                 }
@@ -878,6 +998,8 @@ def _append_matches(
                     "sell_id": sell_id,
                     "side": side,
                     "order_id": order_id,
+                    "order_event_id": order_event_id,
+                    "order_peer_event_id": "",
                     "kind": kind,
                     "real": real,
                 }
@@ -930,7 +1052,7 @@ def _emit_auction_window(
     _scale_side(buy_idx)
     _scale_side(sell_idx)
 
-    # slot: [lots, display_id, order_id, order_price, order_time]
+    # slot: [lots, display_id, order_id, order_price, order_time, event_id]
     buys: list[list[Any]] = []
     sells: list[list[Any]] = []
     for item, lots in zip(placed, raw_lots):
@@ -940,7 +1062,14 @@ def _emit_auction_window(
         display = ids.bind(order)
         order_px = _f(order.get("price")) or price
         order_t = _stamp_key(order.get("time"))
-        slot = [lots, display, str(order.get("order_id") or ""), order_px, order_t]
+        slot = [
+            lots,
+            display,
+            str(order.get("order_id") or ""),
+            order_px,
+            order_t,
+            str(order.get("event_id") or ""),
+        ]
         if (order.get("side") or "buy") == "buy":
             buys.append(slot)
         else:
@@ -958,6 +1087,8 @@ def _emit_auction_window(
         *,
         order_id: str = "",
         order_id_peer: str = "",
+        order_event_id: str = "",
+        order_peer_event_id: str = "",
         kind: str = "order",
         real: bool = True,
         row_price: float | None = None,
@@ -977,6 +1108,8 @@ def _emit_auction_window(
                 "side": side,
                 "order_id": order_id,
                 "order_id_peer": order_id_peer,
+                "order_event_id": order_event_id,
+                "order_peer_event_id": order_peer_event_id,
                 "kind": kind,
                 "real": real,
             }
@@ -989,6 +1122,8 @@ def _emit_auction_window(
         *,
         order_id: str = "",
         order_id_peer: str = "",
+        order_event_id: str = "",
+        order_peer_event_id: str = "",
         kind: str = "order",
         real: bool = True,
         refresh_buy: bool = False,
@@ -1006,22 +1141,31 @@ def _emit_auction_window(
         缺省时按单笔金额门槛推出最少笔数。
         """
         lots_i = _lots_int(lots)
-        if lots_i <= 0:
-            return 0.0
         use_cap = piece_cap if piece_cap is not None else cap_lots
         n_pieces = int(piece_count) if piece_count and piece_count > 0 else _record_trades(lots_i, use_cap)
+        if lots_i <= 0 and not (kind == "small" and n_pieces > 0):
+            return 0.0
         total = 0.0
-        for piece in _split(lots_i, n_pieces):
-            if piece <= 0:
+        pieces = _split(lots_i, n_pieces) if n_pieces > 0 else []
+        if not pieces and kind == "small" and n_pieces > 0:
+            pieces = [0.0] * n_pieces
+        for piece in pieces:
+            if piece <= 0 and kind != "small":
                 continue
             bid = ids.next_buy() if refresh_buy else buy_id
             sid = ids.next_sell() if refresh_sell else sell_id
+            if not bid:
+                bid = ids.next_buy()
+            if not sid:
+                sid = ids.next_sell()
             _append_row(
                 piece,
                 bid,
                 sid,
                 order_id=order_id,
                 order_id_peer=order_id_peer,
+                order_event_id=order_event_id,
+                order_peer_event_id=order_peer_event_id,
                 kind=kind,
                 real=real,
                 row_price=row_price,
@@ -1038,6 +1182,9 @@ def _emit_auction_window(
 
     def _slot_t(slot: list[Any]) -> str:
         return str(slot[4]) if len(slot) > 4 and slot[4] else ""
+
+    def _slot_evt(slot: list[Any]) -> str:
+        return str(slot[5]) if len(slot) > 5 and slot[5] else ""
 
     matched = 0.0
     # 买卖大单只撮合「同价（同一 tick）」的对手盘：一笔成交的买卖双方必然同价。
@@ -1056,72 +1203,132 @@ def _emit_auction_window(
                 continue
             if abs(_slot_px(sell_slot) - bpx) > 0.005:
                 continue
-            # 同一对买卖大单已在此前窗口成交过：不再重复配对（保持「一对一笔」），
-            # 本窗的尾部残留改由下方 leftover 各自与匿名小单成交。
-            if ids.pair_done(str(buy_slot[2]), str(sell_slot[2])):
-                continue
+            buy_oid, sell_oid = str(buy_slot[2]), str(sell_slot[2])
             take = min(buy_slot[0], sell_slot[0])
+            # 同一对已在此前窗口成交：本窗只做虚拟撮合（并入原行归因），
+            # 胶带手数由小单补足，避免「一对两笔」或买卖双边重复占量。
+            # 截止窗的量经 virtual 归入首笔；R4 以 order_time 为准（见 validate）。
+            if ids.pair_done(buy_oid, sell_oid):
+                virtual = ids.virtual_pair(buy_oid, sell_oid, take)
+                if virtual > 0:
+                    buy_slot[0] -= virtual
+                    sell_slot[0] -= virtual
+                continue
             buy_t, sell_t = _slot_t(buy_slot), _slot_t(sell_slot)
-            # 同一笔成交两端各有完成时刻：取较早者作为成交落点，较晚一单的完成时刻
-            # 由 _ensure_completion_mark 事后改贴保证，不改手数、不新增编号。
-            candidates = [t for t in (buy_t, sell_t) if t and stamp >= t]
-            row_t = min(candidates) if candidates else stamp
+            # 完成时刻因果：资金动向 time 是「最后成交（完全成交）时间」。
+            # 一笔撮合若把某一侧大单一次吃完，则该侧最后成交就在此刻，不能晚于
+            # 对手的完成时间，否则会出现「09:30:00 已卖完的卖单吃掉 09:30:02 才
+            # 买完的买单」这种因果倒挂。晚完成的一侧必须留到与小单/更晚对手成交。
+            if buy_t and sell_t and buy_t != sell_t:
+                fully_buy = take >= buy_slot[0] - 1e-9
+                fully_sell = take >= sell_slot[0] - 1e-9
+                if (fully_buy and buy_t > sell_t) or (fully_sell and sell_t > buy_t):
+                    continue
+            # 胶带 time ∈ [prev, stamp)；完成时刻落在本窗则显示完成时刻。
+            candidates = [t for t in (buy_t, sell_t) if t]
+            order_t = min(candidates) if candidates else ""
+            row_t = _order_fill_stamp(
+                stamp,
+                {"time": order_t} if order_t else None,
+                prev_stamp=str(plan.get("prev_time") or ""),
+            )
+            before = len(rows)
             matched += _flush_pair(
                 take,
                 buy_slot[1],
                 sell_slot[1],
-                order_id=buy_slot[2],
-                order_id_peer=sell_slot[2],
+                order_id=buy_oid,
+                order_id_peer=sell_oid,
+                order_event_id=_slot_evt(buy_slot),
+                order_peer_event_id=_slot_evt(sell_slot),
                 row_price=bpx,
                 side="buy",
                 piece_cap=_cap_lots_int(threshold, bpx, min_lots=min_lots),
                 row_time=row_t,
-                order_time=row_t,
+                order_time=order_t or row_t,
                 # 一对真实买卖大单只能在同一笔成交：同一买/卖编号不能拆成多笔
                 piece_count=1,
             )
             buy_slot[0] -= take
             sell_slot[0] -= take
-            ids.mark_pair(str(buy_slot[2]), str(sell_slot[2]))
+            pair_row = rows[before] if len(rows) > before else None
+            ids.mark_pair(buy_oid, sell_oid, pair_row)
 
+    # 统一决定「补大单的小单」的目标单笔手数：尽量贴近本档笔均
+    # window_lots / count，让同档各笔手数接近；若大单量过大导致按笔均拆会
+    # 超出本档笔数，则放大到刚好装进剩余笔数（仍受金额门槛约束，保证匿名
+    # 对手不会变成大额买单）。这样避免一档里同时出现 2 手和 144 手。
+    count_target = max(1, int(plan.get("count") or 0))
+    avg_lots = window_lots / count_target
+    if not math.isfinite(avg_lots) or avg_lots <= 0:
+        avg_lots = 1.0
+    leftover_lots = sum(float(s[0]) for s in buys if s[0] > 0) + sum(
+        float(s[0]) for s in sells if s[0] > 0
+    )
+    order_lots_now = matched + leftover_lots
+    genuine_small = max(0.0, window_lots - order_lots_now)
+    small_rows_reserve = int(math.ceil(genuine_small / avg_lots - 1e-9)) if genuine_small > 0 else 0
+    pair_rows = len(rows)
+    leftover_budget = max(1, count_target - pair_rows - small_rows_reserve)
+    leftover_piece_cap = (
+        max(avg_lots, leftover_lots / leftover_budget) if leftover_lots > 0 else avg_lots
+    )
+
+    def _flush_leftover(slot: list[Any], *, side: str) -> float:
+        lots = slot[0]
+        if lots <= 0:
+            return 0.0
+        display, order_id, order_px = slot[1], slot[2], slot[3]
+        order_t = str(slot[4]) if len(slot) > 4 else ""
+        order_evt = _slot_evt(slot)
+        row_t = _order_fill_stamp(
+            stamp,
+            {"time": order_t} if order_t else None,
+            prev_stamp=str(plan.get("prev_time") or ""),
+        )
+        # 大单残留拆成多笔、与匿名小单成交。拆笔目标由窗口统一算出的
+        # leftover_piece_cap 决定（≈ 本档笔均手数），使同档各笔手数接近；
+        # 同时不超过金额门槛（匿名对手仍需低于 30 万，避免凭空冒出大额买单）。
+        # 真实大单侧只占一个编号，多笔残片共享它，前端仍合并成一个整块。
+        cap_by_threshold = _cap_lots_int(threshold, order_px or price, min_lots=min_lots)
+        piece_cap = min(cap_by_threshold, max(1.0, float(leftover_piece_cap)))
+        if side == "buy":
+            took = _flush_pair(
+                lots, display, "",
+                order_id=order_id, order_event_id=order_evt, refresh_sell=True,
+                row_price=order_px or price, side="buy",
+                row_time=row_t, order_time=order_t or row_t, piece_cap=piece_cap,
+            )
+        else:
+            took = _flush_pair(
+                lots, "", display,
+                order_id=order_id, order_event_id=order_evt, refresh_buy=True,
+                row_price=order_px or price, side="sell",
+                row_time=row_t, order_time=order_t or row_t, piece_cap=piece_cap,
+            )
+        slot[0] = 0
+        return took
+
+    # 每对真实买卖撮合后，立刻冲掉该对两侧残留，保证同一大单编号连续；
+    # 从未配对的大单最后再发。
+    buy_by_oid = {str(slot[2]): slot for slot in buys if slot[2]}
+    sell_by_oid = {str(slot[2]): slot for slot in sells if slot[2]}
+    for row in list(rows):
+        if row.get("kind") != "order" or not row.get("order_id_peer"):
+            continue
+        b_oid = str(row.get("order_id") or "")
+        s_oid = str(row.get("order_id_peer") or "")
+        if b_oid in buy_by_oid:
+            matched += _flush_leftover(buy_by_oid[b_oid], side="buy")
+        if s_oid in sell_by_oid:
+            matched += _flush_leftover(sell_by_oid[s_oid], side="sell")
     for slot in buys:
-        lots, buy_id, order_id, order_px = slot[0], slot[1], slot[2], slot[3]
-        order_t = str(slot[4]) if len(slot) > 4 else ""
-        fill_t = order_t if order_t and stamp >= order_t else stamp
-        matched += _flush_pair(
-            lots,
-            buy_id,
-            "",
-            order_id=order_id,
-            refresh_sell=True,
-            row_price=order_px or price,
-            side="buy",
-            piece_cap=_cap_lots_int(threshold, order_px or price, min_lots=min_lots),
-            row_time=fill_t,
-            order_time=order_t,
-        )
-
+        matched += _flush_leftover(slot, side="buy")
     for slot in sells:
-        lots, sell_id, order_id, order_px = slot[0], slot[1], slot[2], slot[3]
-        order_t = str(slot[4]) if len(slot) > 4 else ""
-        fill_t = order_t if order_t and stamp >= order_t else stamp
-        matched += _flush_pair(
-            lots,
-            "",
-            sell_id,
-            order_id=order_id,
-            refresh_buy=True,
-            row_price=order_px or price,
-            side="sell",
-            piece_cap=_cap_lots_int(threshold, order_px or price, min_lots=min_lots),
-            row_time=fill_t,
-            order_time=order_t,
-        )
+        matched += _flush_leftover(slot, side="sell")
 
-    # 完成时刻锚点：只改时间、不新增行。旧实现给每单额外塞一笔 1 手新编号，
-    # 会插在对手大单的连续成交中间把它劈成两块（2089 手卖单就被切成 1102+987）。
-    # 这里改为：某单在窗内没有任何一笔落在它自己的资金动向完成时刻时，把它最晚
-    # 的一笔改贴到完成时刻即可 —— 手数不变，连续大单保持整块。
+    # 完成时刻只写入 order_time，绝不改贴 time（time 必须等于分时档，否则
+    # 按秒汇总会把跨窗大单叠到完成秒上，和该秒分时容量对不上）。
     def _ensure_completion_mark(order: Mapping[str, Any]) -> None:
         order_id = str(order.get("order_id") or "")
         order_t = _stamp_key(order.get("time"))
@@ -1132,9 +1339,8 @@ def _emit_auction_window(
             if row.get("kind") == "order"
             and (row.get("order_id") == order_id or row.get("order_id_peer") == order_id)
         ]
-        if not idxs or any(str(rows[i].get("time") or "") == order_t for i in idxs):
+        if not idxs or any(str(rows[i].get("order_time") or "") == order_t for i in idxs):
             return
-        # 优先挪「自己这一侧、对手匿名」的残留行，避免连累对手大单的时间
         own = [
             i for i in idxs
             if (rows[i].get("order_id") == order_id and not rows[i].get("order_id_peer"))
@@ -1142,7 +1348,6 @@ def _emit_auction_window(
         ]
         pool = own or idxs
         src = max(pool, key=lambda i: (str(rows[i].get("time") or ""), float(rows[i].get("lots") or 0)))
-        rows[src]["time"] = order_t
         rows[src]["order_time"] = order_t
 
     for item in placed:
@@ -1150,24 +1355,37 @@ def _emit_auction_window(
 
     small_lots = max(0, window_lots - int(matched))
     if small_lots > 0:
-        # 残余小单要按分时档笔数拆：大单已占掉的笔数除外（大单整块不拆，
-        # 但窗口笔数守恒由小单补足 —— 74 笔窗口大单占 5 笔，剩 69 笔小单）。
-        # 拆分数取「剩余笔数」与「门槛要求的最少笔数」的较大者，避免单笔超限。
+        # 残余小单按剩余笔数拆；若已无剩余笔数，并入已有行（不增笔）。
         order_rows = sum(1 for row in rows if row.get("kind") == "order")
-        residual_count = int(plan.get("count") or 0) - order_rows
-        min_needed = _record_trades(small_lots, cap_lots)
-        n_small = max(1, residual_count, min_needed)
-        matched += _flush_pair(
-            small_lots,
-            "",
-            "",
-            kind="small",
-            real=False,
-            refresh_buy=True,
-            refresh_sell=True,
-            row_time=stamp,
-            piece_count=n_small,
-        )
+        residual_count = max(0, int(plan.get("count") or 0) - order_rows)
+        if residual_count > 0:
+            # 笔数硬约束：小单笔数 = 剩余笔数（门槛拆笔让位于笔数守恒）
+            _flush_pair(
+                small_lots,
+                "",
+                "",
+                kind="small",
+                real=False,
+                refresh_buy=True,
+                refresh_sell=True,
+                row_time=stamp,
+                piece_count=residual_count,
+            )
+        elif rows:
+            _fold_residual_lots(rows, small_lots)
+        else:
+            _flush_pair(
+                small_lots,
+                "",
+                "",
+                kind="small",
+                real=False,
+                refresh_buy=True,
+                refresh_sell=True,
+                row_time=stamp,
+                piece_count=1,
+            )
+    _align_window_vwap(rows, price)
     return rows
 
 
@@ -1190,6 +1408,7 @@ def emit_window(
         return _emit_auction_window(plan, placed, book)
 
     stamp = plan["time"]
+    prev_stamp = str(plan.get("prev_time") or "")
     price = _f(plan.get("price")) or 0.0
     window_lots = _lots_int(plan.get("lots"))
     window_count = int(plan.get("count") or 0)
@@ -1255,9 +1474,7 @@ def emit_window(
     order_rows_total = sum(share for share in shares if share > 0) if placed else 0
     small_count = max(0, window_count - order_rows_total)
     small_lots = max(0, window_lots - order_lots_total)
-    # 有残余手数但没小单槽位：开槽承接，绝不把残余摊进大单（会撑破资金动向手数）
-    if small_lots > 0 and small_count <= 0:
-        small_count = 1
+    # 有残余手数但没小单槽位：并入已有行（不增笔）；归因用 attributed_lots 保资金动向手数
 
     for item, share, lots_i in zip(placed, shares, order_lots):
         if lots_i <= 0:
@@ -1266,14 +1483,13 @@ def emit_window(
         k = max(1, share)
         # 大单用资金动向价格，便于与左侧列表对照
         order_price = _f(order.get("price")) or price
-        cap_lots = _cap_lots_int(threshold, order_price, min_lots=max(1.0, min_lots))
+        # 笔数硬约束：单边大单不按金额门槛再拆笔（否则会撑破窗口笔数）
         aggressor_id = book.bind(order)
         aggressor = order.get("side") or "buy"
-        fill_stamp = _order_fill_stamp(stamp, order)
+        fill_stamp = _order_fill_stamp(stamp, order, prev_stamp=prev_stamp)
         for lots in _split(lots_i, k):
             if lots <= 0:
                 continue
-            trades = _record_trades(lots, cap_lots)
             _append_matches(
                 rows,
                 book,
@@ -1281,14 +1497,25 @@ def emit_window(
                 window_time=stamp,
                 price=order_price,
                 lots=lots,
-                trades=trades,
+                trades=1,
                 aggressor=aggressor,
                 aggressor_id=aggressor_id,
                 order_id=str(order.get("order_id") or ""),
+                order_event_id=str(order.get("event_id") or ""),
                 order_time=_stamp_key(order.get("time")),
                 kind="order",
                 real=True,
             )
+
+    # 小单 time 用窗左端（与同窗回溯大单一致），避免按 time 排序时
+    # 出现「大单113 @左端 → 小单10 @右端 → 大单87 @完成秒」夹心。
+    small_stamp = (
+        _stamp_key(prev_stamp)
+        if prev_stamp and _stamp_key(prev_stamp) < stamp
+        else (_shift_stamp(stamp, -3) if stamp else stamp)
+    )
+    if not small_stamp:
+        small_stamp = stamp
 
     if small_count > 0:
         if floor_i > 0:
@@ -1296,22 +1523,38 @@ def emit_window(
         if small_count > 0:
             sizes = _split(small_lots, small_count)
             side = plan.get("side") or "buy"
-            small_cap = _cap_lots_int(threshold, price, min_lots=max(1.0, min_lots))
             for lots in sizes:
-                trades = 1 if lots <= 0 else _record_trades(lots, small_cap)
                 _append_matches(
                     rows,
                     book,
-                    stamp=stamp,
+                    stamp=small_stamp,
                     window_time=stamp,
                     price=price,
                     lots=lots,
-                    trades=trades,
+                    trades=1,
                     aggressor=side,
                     kind="small",
                     real=False,
                     allow_zero=True,
                 )
+    elif small_lots > 0:
+        if rows:
+            _fold_residual_lots(rows, small_lots)
+        else:
+            _append_matches(
+                rows,
+                book,
+                stamp=small_stamp,
+                window_time=stamp,
+                price=price,
+                lots=small_lots,
+                trades=1,
+                aggressor=plan.get("side") or "buy",
+                kind="small",
+                real=False,
+                allow_zero=True,
+            )
+    _align_window_vwap(rows, price)
     return rows
 
 
@@ -1374,19 +1617,108 @@ def reconstruct_windows(
     rows: list[dict[str, Any]] = []
     if with_rows:
         book = _OrderIds()
-        for plan in plans:
+        for index, plan in enumerate(plans):
+            plan = dict(plan)
+            plan["prev_time"] = str(windows[index - 1]["time"]) if index > 0 else ""
             rows.extend(emit_window(plan, allocation.get(plan["index"], []), ids=book))
-        # 大单改用资金动向时刻后，按真实成交时间重排
-        rows.sort(
-            key=lambda row: (
-                str(row.get("time") or ""),
-                str(row.get("window_time") or ""),
-                0 if row.get("kind") == "order" else 1,
-                str(row.get("order_id") or ""),
-            )
-        )
+        # 排序目标：跨窗大单整块连续（禁止 113 + 小单10 + 87 夹心），
+        # 同时按分时档 window_time 对账。
+        # 规则：跨多窗大单以首窗为锚；同锚下先排「早于该大单首窗的小单」，
+        # 再排大单各窗切片（按 window_time），该窗残余小单挪到整块大单之后。
+        for emit_i, row in enumerate(rows):
+            row["_emit"] = emit_i
+        oid_wins: dict[str, set[str]] = {}
+        for row in rows:
+            if row.get("kind") != "order":
+                continue
+            wt = str(row.get("window_time") or row.get("time") or "")
+            for key in (row.get("order_id"), row.get("order_id_peer")):
+                oid = str(key or "")
+                if not oid:
+                    continue
+                oid_wins.setdefault(oid, set()).add(wt)
+        multi_oids = {oid for oid, wins in oid_wins.items() if len(wins) > 1}
+        # 每个分时档：若有跨窗大单占用以该档为锚，则本档小单改挂到「大单块之后」
+        span_anchor_by_win: dict[str, str] = {}
+        for oid in multi_oids:
+            anchor = min(oid_wins[oid])
+            for wt in oid_wins[oid]:
+                prev = span_anchor_by_win.get(wt)
+                if prev is None or anchor < prev:
+                    span_anchor_by_win[wt] = anchor
+
+        # 同一分时档内，把「同一张真实大单」的多笔成交排到一起（R9）。
+        # 一张大卖单可能连续吃掉多张被动买单（839 = 501 + 172 + 166），
+        # 若按逐笔撮合顺序出胶带，这些切片会被别的订单隔开，前端就只能
+        # 各显示各的手数。这里用并查集把同一笔成交的 buy_id / sell_id 连成
+        # 一族，同族订单行在档内按族聚拢，前端相邻同编号即可合并成整块。
+        parent: dict[str, str] = {}
+
+        def _find(key: str) -> str:
+            parent.setdefault(key, key)
+            root = key
+            while parent[root] != root:
+                root = parent[root]
+            while parent[key] != root:
+                parent[key], key = root, parent[key]
+            return root
+
+        def _union(a: str, b: str) -> None:
+            ra, rb = _find(a), _find(b)
+            if ra == rb:
+                return
+            # 取字典序小的做根，保证输出稳定可复现
+            if ra <= rb:
+                parent[rb] = ra
+            else:
+                parent[ra] = rb
+
+        for row in rows:
+            if row.get("kind") != "order":
+                continue
+            bid = str(row.get("buy_id") or "")
+            sid = str(row.get("sell_id") or "")
+            if bid and sid:
+                _union(bid, sid)
+            elif bid:
+                _find(bid)
+            elif sid:
+                _find(sid)
+        for row in rows:
+            if row.get("kind") != "order":
+                continue
+            bid = str(row.get("buy_id") or "")
+            sid = str(row.get("sell_id") or "")
+            anchor_id = bid or sid
+            row["_grp"] = _find(anchor_id) if anchor_id else ""
+
+        def _tape_sort_key(row: dict[str, Any]) -> tuple:
+            wt = str(row.get("window_time") or row.get("time") or "")
+            emit = int(row.get("_emit") or 0)
+            if row.get("kind") != "order":
+                anchor = span_anchor_by_win.get(wt)
+                if anchor is not None:
+                    # 本窗有跨窗大单：小单排在该大单整块之前（同锚、相位 0），
+                    # 避免夹在两段大单中间。
+                    return (anchor, 0, wt, "", emit)
+                return (wt, 0, wt, "", emit)
+            oids = [
+                str(key)
+                for key in (row.get("order_id"), row.get("order_id_peer"))
+                if key
+            ]
+            grp = str(row.get("_grp") or "")
+            spanning = [oid for oid in oids if oid in multi_oids]
+            if spanning:
+                anchor = min(oid_wins[spanning[0]])
+                return (anchor, 1, wt, grp, emit)
+            return (wt, 1, wt, grp, emit)
+
+        rows.sort(key=_tape_sort_key)
         for seq, row in enumerate(rows, start=1):
             row["seq"] = seq
+            row.pop("_emit", None)
+            row.pop("_grp", None)
 
     infeasible = [
         {
@@ -1415,18 +1747,25 @@ def reconstruct_windows(
                 lot_mismatch += 1
             if plan.get("auction"):
                 continue
-            if got[1] < plan["count"]:
+            # 连续竞价：笔数必须精确相等（允许 0 手占位）
+            if got[1] != plan["count"]:
                 count_mismatch += 1
 
-    # 逐订单归因：order_id + order_id_peer 合计应等于资金动向手数
+    # 逐订单归因：order_id + order_id_peer 合计应等于资金动向手数。
+    # 笔数不够时残余并入胶带 lots，归因改读 attributed_lots（若有）。
+    # 配对行两侧共用同一 lots；折叠抬高后两侧仍只计 attributed_lots。
     attributed: dict[str, float] = {str(order.get("order_id") or ""): 0.0 for order in orders}
     for row in rows:
         if row.get("kind") != "order":
             continue
+        fill = row.get("attributed_lots")
+        if fill is None:
+            fill = row.get("lots") or 0
+        fill_f = float(fill)
         for key in (row.get("order_id"), row.get("order_id_peer")):
             kid = str(key or "")
             if kid in attributed:
-                attributed[kid] += float(row.get("lots") or 0)
+                attributed[kid] += fill_f
     order_lot_mismatch = []
     matched_order_lots = 0.0
     for order in orders:
@@ -1467,6 +1806,14 @@ def reconstruct_windows(
         "order_ratio": round(100.0 * filled_order_lots / total_lots, 2) if total_lots else 0.0,
         "windows": len(windows),
     }
+    # 生成后按需求清单验收；硬伤则定向修复再验（不是盲目重掷）
+    from company.analysis.deal.validate import enforce_constraints
+
+    constraints = (
+        enforce_constraints(rows, windows, orders, min_lots=min_lots)
+        if rows
+        else {"ok": True, "hard": [], "soft": [], "hard_count": 0, "soft_count": 0, "checks": {}, "repairs": []}
+    )
     pack["reconcile"] = {
         "lot_mismatch_windows": lot_mismatch,
         "count_mismatch_windows": count_mismatch,
@@ -1476,6 +1823,11 @@ def reconstruct_windows(
         "unplaced_count": len(unplaced),
         "order_lot_mismatch": order_lot_mismatch[:20],
         "order_lot_mismatch_count": len(order_lot_mismatch),
+        "constraints_ok": bool(constraints.get("ok")),
+        "constraints_hard_count": int(constraints.get("hard_count") or 0),
+        "constraints_soft_count": int(constraints.get("soft_count") or 0),
+        "constraints_repairs": list(constraints.get("repairs") or []),
+        "constraints": constraints,
     }
     pack["fills"] = _fill_stats(rows, orders)
     pack["ambiguity"] = _ambiguity(plans)
@@ -1502,6 +1854,21 @@ def reconstruct_windows(
     if lot_mismatch or count_mismatch:
         pack["notes"].append(
             f"对账：手数不符窗口 {lot_mismatch}，笔数不符窗口 {count_mismatch}"
+        )
+    if constraints.get("repairs"):
+        pack["notes"].append(
+            f"约束修复 {len(constraints['repairs'])} 步：{', '.join(constraints['repairs'][:5])}"
+        )
+    if not constraints.get("ok"):
+        hard = constraints.get("hard") or []
+        codes = ", ".join(str(item.get("code") or "?") for item in hard[:5])
+        pack["notes"].append(
+            f"硬约束未通过 {constraints.get('hard_count') or 0} 项（{codes}）"
+        )
+    elif constraints.get("soft_count"):
+        pack["notes"].append(
+            f"软约束提示 {constraints.get('soft_count')} 项"
+            f"（如大单吃满窗时均价与资金动向价不可兼得）"
         )
 
     if with_windows:
