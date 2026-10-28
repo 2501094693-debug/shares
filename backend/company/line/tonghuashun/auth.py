@@ -104,6 +104,35 @@ def _cancel_quiet(client) -> None:
         pass
 
 
+def _call_auth(
+    client,
+    params: Any = None,
+    timeout_ms: int | None = None,
+    attempts: int = 6,
+) -> Any:
+    """调 ``auth_qrcode`` 并对 native 的 ``rate_limited`` 做退避重试。
+
+    thsdk native 要求相邻两次调用 ≥50ms；并发探测 / 数据请求抢占时首发常被拒，
+    不重试会直接把 ``rate_limited`` 当成致命错误丢给前端。``retry_after_ms``
+    缺失时按自身步长退避。
+    """
+    resp: Any = None
+    for i in range(attempts):
+        resp = client.runtime.call("auth_qrcode", params, timeout_ms=timeout_ms)
+        _, err_msg = _unwrap(resp)
+        if not err_msg or "rate_limited" not in err_msg:
+            return resp
+        time.sleep(min(1.0, 0.15 * (i + 1)))
+    return resp
+
+
+def _has_session_file() -> bool:
+    try:
+        return (SESSION_DIR / "account.session").is_file()
+    except OSError:
+        return False
+
+
 def status() -> dict[str, Any]:
     with _lock:
         snap = dict(_state)
@@ -165,11 +194,14 @@ def ensure(timeout: float = 3.0) -> bool:
 
 def _run_job(timeout: float, poll_interval: float) -> None:
     with _job_lock:
+        # ensure()/数据请求探测刚 cancel 完，thsdk 要求相邻两次调用 ≥50ms，
+        # 否则首发 auth_qrcode 直接吃 rate_limited，二维码根本发不下来。
+        time.sleep(0.15)
         client = _client()
         deadline = time.monotonic() + timeout
         try:
-            resp = client.runtime.call(
-                "auth_qrcode",
+            resp = _call_auth(
+                client,
                 {
                     "session_dir": str(SESSION_DIR),
                     "timeout_seconds": max(1, math.ceil(timeout)),
@@ -207,8 +239,8 @@ def _run_job(timeout: float, poll_interval: float) -> None:
             if time.monotonic() >= deadline:
                 break
             try:
-                resp = client.runtime.call(
-                    "auth_qrcode",
+                resp = _call_auth(
+                    client,
                     timeout_ms=int(min(20000, max(1000, (deadline - time.monotonic()) * 1000))),
                 )
                 state, err_msg = _unwrap(resp)
@@ -239,7 +271,9 @@ def _run_job(timeout: float, poll_interval: float) -> None:
 def start_login(timeout: float = 120.0) -> dict[str, Any]:
     """前端点击登录：已认证直接返回；否则拉起唯一的后台扫码任务并等首图。"""
     global _worker
-    if ensure():
+    # 无会话文件时 ensure() 只会拉起一次性挑战再 cancel，正好把后续首个
+    # auth_qrcode 顶进 rate_limited；直接跳过，进入扫码任务。
+    if _has_session_file() and ensure():
         return status()
     with _lock:
         if _state["pending"] and (_state["image_url"] or _state["scan_url"]):
