@@ -7,6 +7,7 @@
     { period: 20, key: "ma20", label: "MA20", color: "#d48cff" },
   ];
   const klineCache = new Map();
+  const extremaCache = new Map();
   const views = new WeakMap();
 
   function cssVar(name, fallback) {
@@ -368,6 +369,34 @@
 
     drawMaLines(ctx, maVisible, yAt, xAt, n);
 
+    // 局部极值点标记
+    const extrema = Array.isArray(state.extrema) ? state.extrema : [];
+    for (const e of extrema) {
+      const idx = Number(e && e.index);
+      if (!Number.isFinite(idx)) continue;
+      const local = idx - (state.viewStart || 0);
+      if (local < 0 || local >= n) continue;
+      const price = Number(e.price);
+      if (!Number.isFinite(price)) continue;
+      const x = xAt(local);
+      const y = yAt(price);
+      const isPeak = String(e.type || "") === "peak";
+      const color = isPeak ? colors.up : colors.down;
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.font = 'bold 8px "JetBrains Mono", Consolas, monospace';
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(isPeak ? "峰" : "谷", x, y);
+      ctx.restore();
+    }
+
     if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
       const x = xAt(hoverIndex);
       const yBottom = layout.showVolume !== false && volume.h > 0 ? volume.y + volume.h : price.y + price.h;
@@ -486,6 +515,7 @@
           ? state.allItems.length - 1
           : null;
     fillHover(state, abs);
+    scheduleExtremaForVisible(state);
   }
 
   function pointerIndex(state, evt) {
@@ -544,6 +574,57 @@
       });
     klineCache.set(code, pending);
     return pending;
+  }
+
+  async function loadLocalExtrema(code, items) {
+    if (!code || !Array.isArray(items) || !items.length) return [];
+    const beg = String(items[0].time || items[0].date || "").replace(/-/g, "");
+    const end = String(items[items.length - 1].time || items[items.length - 1].date || "").replace(/-/g, "");
+    if (!beg || !end) return [];
+    const key = `${code}|${beg}|${end}`;
+    if (extremaCache.has(key)) return extremaCache.get(key);
+    const pending = fetch(
+      `/api/stocks/line-local-extrema?code=${encodeURIComponent(code)}&beg=${beg}&end=${end}&series=close&w=5&min_distance=3&prominence_pct=3`
+    )
+      .then((res) => res.json())
+      .then((json) => {
+        if (!json.ok) throw new Error(json.error || "极值加载失败");
+        const data = json.data || {};
+        return Array.isArray(data.extrema) ? data.extrema : [];
+      })
+      .catch((err) => {
+        extremaCache.delete(key);
+        throw err;
+      });
+    extremaCache.set(key, pending);
+    return pending;
+  }
+
+  function scheduleExtremaForVisible(state) {
+    if (!state.code) return;
+    const items = state.items || [];
+    if (!items.length) return;
+    const beg = String(items[0]?.time || items[0]?.date || "").replace(/-/g, "");
+    const end = String(items[items.length - 1]?.time || items[items.length - 1]?.date || "").replace(/-/g, "");
+    if (!beg || !end) return;
+    if (state.extremaRangeBeg === beg && state.extremaRangeEnd === end) return;
+    if (state.extremaFetching) return;
+    state.extremaFetching = true;
+    loadLocalExtrema(state.code, items)
+      .then((extrema) => {
+        state.extrema = Array.isArray(extrema) ? extrema : [];
+        state.extremaRangeBeg = beg;
+        state.extremaRangeEnd = end;
+        render(state);
+      })
+      .catch(() => {
+        state.extrema = [];
+        state.extremaRangeBeg = beg;
+        state.extremaRangeEnd = end;
+      })
+      .finally(() => {
+        state.extremaFetching = false;
+      });
   }
 
   function panByPixels(state, dx, canvasWidth) {
@@ -718,6 +799,9 @@
     if (state.metaEl) {
       state.metaEl.textContent = metaText || (total ? "日K" : "暂无数据");
     }
+    state.extrema = [];
+    state.extremaRangeBeg = "";
+    state.extremaRangeEnd = "";
     render(state);
   }
 
@@ -741,6 +825,7 @@
     if (views.has(cardEl)) {
       const prev = views.get(cardEl);
       prev.carousel = !!carousel;
+      if (code) prev.code = code;
       if (showVolume != null) prev.forceShowVolume = showVolume;
       if (items != null) {
         applyItems(prev, normalizeItems(items), { metaText: meta });
@@ -766,10 +851,16 @@
       scrollBar,
       scrollWrap,
       carousel: !!carousel,
+      code: code || "",
       forceShowVolume: showVolume,
       showVolume: showVolume != null ? Boolean(showVolume) : null,
       allItems: [],
       items: [],
+      extrema: [],
+      extremaRangeBeg: "",
+      extremaRangeEnd: "",
+      extremaFetching: false,
+      extremaTimer: 0,
       viewSize: VIEW_SIZE,
       viewStart: 0,
       layout: null,

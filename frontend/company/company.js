@@ -1562,6 +1562,11 @@ const chartState = {
   hoverAbsIndex: null,
   historyExhausted: false,
   historyLoading: false,
+  extrema: [],
+  extremaRangeBeg: "",
+  extremaRangeEnd: "",
+  extremaFetching: false,
+  extremaTimer: 0,
 };
 
 /** 走势 combo 底部指标：pe 估值 | fundflow 资金流 | margin 融资融券 */
@@ -11450,6 +11455,32 @@ function drawKlineChart(ctx, layout, items, mode, colors, hoverIndex, maBundle =
 
   drawMaLines(ctx, maVisible, yAt, xAt, n);
 
+  // 局部极值点标记（波峰 / 波谷）
+  const extrema = Array.isArray(chartState.extrema) ? chartState.extrema : [];
+  for (const e of extrema) {
+    const idx = items.findIndex((d) => String(d?.time || "").slice(0, 10) === String(e?.date || "").slice(0, 10));
+    if (idx < 0) continue;
+    const price = Number(e.price);
+    if (!Number.isFinite(price)) continue;
+    const x = xAt(idx);
+    const y = yAt(price);
+    const isPeak = String(e.type || "") === "peak";
+    const color = isPeak ? colors.up : colors.down;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.font = 'bold 8px "JetBrains Mono", Consolas, monospace';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(isPeak ? "峰" : "谷", x, y);
+    ctx.restore();
+  }
+
   if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
     const x = xAt(hoverIndex);
     const crossBottom = layout.pe ? layout.pe.y + layout.pe.h : volume.y + volume.h;
@@ -11754,6 +11785,47 @@ function drawGroupedSignedBars(ctx, layout, items, tiers, colors, hoverIndex, { 
     yFormat: fmtVol,
     skipTimeLabels: false,
   });
+  scheduleExtremaForVisible();
+}
+
+async function loadCompanyLocalExtrema(code, items, beg, end) {
+  if (!code || !Array.isArray(items) || !items.length) return [];
+  const b = beg || String(items[0].time || items[0].date || "").replace(/-/g, "");
+  const e = end || String(items[items.length - 1].time || items[items.length - 1].date || "").replace(/-/g, "");
+  if (!b || !e) return [];
+  try {
+    const res = await fetch(`/api/stocks/line-local-extrema?code=${encodeURIComponent(code)}&beg=${b}&end=${e}&series=close&w=5&min_distance=3&prominence_pct=3`);
+    const json = await res.json();
+    if (!json.ok) return [];
+    const data = json.data || {};
+    return Array.isArray(data.extrema) ? data.extrema : [];
+  } catch {
+    return [];
+  }
+}
+
+function scheduleExtremaForVisible() {
+  if (chartState.mode !== "day") return;
+  const items = chartState.items || [];
+  if (!items.length) return;
+  const lcBeg = String(document.getElementById("lcBeg")?.value || "").trim();
+  const begRaw = lcBeg || String(items[0]?.time || items[0]?.date || "").slice(0, 10);
+  const beg = begRaw.replace(/-/g, "");
+  const end = String(items[items.length - 1]?.time || items[items.length - 1]?.date || "").slice(0, 10).replace(/-/g, "");
+  if (!beg || !end) return;
+  if (chartState.extremaRangeBeg === beg && chartState.extremaRangeEnd === end) return;
+  if (chartState.extremaFetching) return;
+  chartState.extremaFetching = true;
+  loadCompanyLocalExtrema(code, items, beg, end)
+    .then((extrema) => {
+      chartState.extrema = Array.isArray(extrema) ? extrema : [];
+      chartState.extremaRangeBeg = beg;
+      chartState.extremaRangeEnd = end;
+      renderChart();
+    })
+    .finally(() => {
+      chartState.extremaFetching = false;
+    });
 }
 
 function renderChart(hoverIndex = null) {
@@ -17294,4 +17366,13 @@ syncAddGroupBtn();
   ]);
   propagateLinkedAxis("kline");
   if (isTicksSurfaceActive()) refreshChartsLayout();
+  const lcBegEl = document.getElementById("lcBeg");
+  if (lcBegEl) {
+    lcBegEl.addEventListener("input", () => {
+      chartState.extremaRangeBeg = "";
+      chartState.extremaRangeEnd = "";
+      renderChart();
+    });
+  }
+
 })();

@@ -13,11 +13,20 @@ venv/
 .env.local
 .env.*.local
 *.session
+*.session.bak*
 backend/account.session
 
 # App caches
 backend/cache/
 agent/cache/
+cache/thsdk/*.bak*
+
+# Large binaries / captures (do not commit)
+cache/*.zip
+cache/*.pcapng
+cache/*.etl
+cache/*.cab
+*.zip
 
 # Logs / diagnostics
 *.log

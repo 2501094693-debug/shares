@@ -216,6 +216,9 @@
     if ($("lcBeg")) $("lcBeg").value = b || "";
     if ($("lcEnd")) $("lcEnd").value = e || "";
     syncRangeDisplay(b, e);
+    // 通知 K 线极值重新计算
+    const lcBegEl = $("lcBeg");
+    if (lcBegEl) lcBegEl.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   function ensureDefaults() {

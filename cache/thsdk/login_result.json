@@ -1,0 +1,24 @@
+{
+  "stage": "done",
+  "authenticated": true,
+  "permissions": {
+    "loaded": true,
+    "a_stock_level2": true,
+    "a_stock_extended_level2": true,
+    "hong_kong_level2": true,
+    "ai_intraday_top_bottom": false,
+    "magic_wave": false,
+    "main_capital": false,
+    "us_stock_realtime": false,
+    "cme_realtime": false,
+    "cbot_realtime": false,
+    "comex_realtime": false,
+    "nymex_realtime": false
+  },
+  "tick_spacing": {
+    "rows": 50,
+    "min_diff": 3,
+    "max_diff": 711,
+    "all_3s": false
+  }
+}
