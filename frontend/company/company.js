@@ -1565,6 +1565,8 @@ const chartState = {
   extrema: [],
   extremaRangeBeg: "",
   extremaRangeEnd: "",
+  extremaLayer: 2,
+  extremaRangeLayer: 2,
   extremaFetching: false,
   extremaTimer: 0,
 };
@@ -11788,13 +11790,14 @@ function drawGroupedSignedBars(ctx, layout, items, tiers, colors, hoverIndex, { 
   scheduleExtremaForVisible();
 }
 
-async function loadCompanyLocalExtrema(code, items, beg, end) {
+async function loadCompanyLocalExtrema(code, items, beg, end, layers) {
+  const L = Number(layers || chartState.extremaLayer || 2) || 2;
   if (!code || !Array.isArray(items) || !items.length) return [];
   const b = beg || String(items[0].time || items[0].date || "").replace(/-/g, "");
   const e = end || String(items[items.length - 1].time || items[items.length - 1].date || "").replace(/-/g, "");
   if (!b || !e) return [];
   try {
-    const res = await fetch(`/api/stocks/line-local-extrema-alternating?code=${encodeURIComponent(code)}&beg=${b}&end=${e}&series=close`);
+    const res = await fetch(`/api/stocks/line-local-extrema-alternating?code=${encodeURIComponent(code)}&beg=${b}&end=${e}&series=close&layers=${L}`);
     const json = await res.json();
     if (!json.ok) return [];
     const data = json.data || {};
@@ -11812,23 +11815,53 @@ function scheduleExtremaForVisible() {
   const lcAll = lcVisible ? (lcChartState.allItems || []) : [];
   const baseItems = lcVisible ? lcItems : topItems;
   if (!baseItems.length) return;
+  const layer = Number(lcEls.extremaLayerSelect?.value || chartState.extremaLayer || 2) || 2;
+  chartState.extremaLayer = layer;
   const lcBeg = String(document.getElementById("lcBeg")?.value || "").trim();
+  const lcEnd = String(document.getElementById("lcEnd")?.value || "").trim();
+  const pick = lcChartState.rangePick || {};
+  let pickBeg = "";
+  let pickEnd = "";
+  if (pick.a) {
+    const lo = pick.b && pick.b < pick.a ? pick.b : pick.a;
+    const hi = pick.b && pick.b < pick.a ? pick.a : pick.b;
+    pickBeg = lo;
+    pickEnd = hi || lo;
+  }
   const begSourceItems = lcVisible && lcItems.length ? lcItems : baseItems;
-  const begRaw = lcBeg || String(begSourceItems[0]?.time || begSourceItems[0]?.date || "").slice(0, 10);
+  const begRaw =
+    pickBeg ||
+    lcBeg ||
+    String(begSourceItems[0]?.time || begSourceItems[0]?.date || "").slice(0, 10);
   const beg = begRaw.replace(/-/g, "");
   const endSourceItems = lcVisible && lcAll.length ? lcAll : baseItems;
-  const end = String(endSourceItems[endSourceItems.length - 1]?.time || endSourceItems[endSourceItems.length - 1]?.date || "").slice(0, 10).replace(/-/g, "");
+  const endRaw =
+    pickEnd ||
+    lcEnd ||
+    String(
+      endSourceItems[endSourceItems.length - 1]?.time ||
+        endSourceItems[endSourceItems.length - 1]?.date ||
+        ""
+    ).slice(0, 10);
+  const end = endRaw.replace(/-/g, "");
   if (!beg || !end) return;
-  if (chartState.extremaRangeBeg === beg && chartState.extremaRangeEnd === end) return;
+  if (chartState.extremaRangeBeg === beg && chartState.extremaRangeEnd === end && chartState.extremaRangeLayer === layer) return;
   if (chartState.extremaFetching) return;
   chartState.extremaFetching = true;
-  loadCompanyLocalExtrema(code, baseItems, beg, end)
+  loadCompanyLocalExtrema(code, baseItems, beg, end, layer)
     .then((extrema) => {
       chartState.extrema = Array.isArray(extrema) ? extrema : [];
       chartState.extremaRangeBeg = beg;
       chartState.extremaRangeEnd = end;
+      chartState.extremaRangeLayer = layer;
       if (chartState.mode === "day") renderChart();
       if (lcChartState.visible) renderLcChart();
+    })
+    .catch(() => {
+      chartState.extrema = [];
+      chartState.extremaRangeBeg = beg;
+      chartState.extremaRangeEnd = end;
+      chartState.extremaRangeLayer = layer;
     })
     .finally(() => {
       chartState.extremaFetching = false;
@@ -13244,6 +13277,8 @@ const lcEls = {
   compareIndexSelect: document.getElementById("lcCompareIndexSelect"),
   compareFactorWrap: document.getElementById("lcCompareFactorWrap"),
   compareFactorSelect: document.getElementById("lcCompareFactorSelect"),
+  extremaLayerWrap: document.getElementById("lcExtremaLayerWrap"),
+  extremaLayerSelect: document.getElementById("lcExtremaLayerSelect"),
   peLegendWrap: document.getElementById("lcPeLegendWrap"),
   fundflowLegendWrap: document.getElementById("lcFundflowLegendWrap"),
   marginLegendWrap: document.getElementById("lcMarginLegendWrap"),
@@ -17379,6 +17414,19 @@ syncAddGroupBtn();
     lcBegEl.addEventListener("input", () => {
       chartState.extremaRangeBeg = "";
       chartState.extremaRangeEnd = "";
+      chartState.extremaFetching = false;
+      renderChart();
+      if (lcChartState.visible) renderLcChart();
+      scheduleExtremaForVisible();
+    });
+  }
+  const lcLayerEl = lcEls.extremaLayerSelect;
+  if (lcLayerEl) {
+    lcLayerEl.addEventListener("change", () => {
+      chartState.extrema = [];
+      chartState.extremaRangeBeg = "";
+      chartState.extremaRangeEnd = "";
+      chartState.extremaRangeLayer = 0;
       chartState.extremaFetching = false;
       renderChart();
       if (lcChartState.visible) renderLcChart();

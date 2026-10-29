@@ -37,6 +37,7 @@ def stocks_line_local_extrema(
     end: str = Query("", description="结束日期，默认今天"),
     series: str = Query("close", description="分析序列：open/close/high/low/ohlc4"),
     smooth: int = Query(1, ge=1, le=15, description="平滑窗口；1 表示不平滑"),
+    layers: int = Query(1, ge=1, le=20, description="层级数"),
     adjust: str = Query("qfq", description="复权方式：qfq 前复权 / hfq 后复权 / none 不复权"),
 ):
     """日线局部极值点：返回按交易日从远到近排列的峰谷序列 extrema。"""
@@ -50,6 +51,7 @@ def stocks_line_local_extrema(
             series=series,
             smooth_window=smooth,
             adjust=adjust,
+            layers=layers,
         )
         return ok(data)
     except ValueError as exc:
@@ -65,9 +67,10 @@ def stocks_line_local_extrema_alternating(
     end: str = Query("", description="结束日期，默认今天"),
     series: str = Query("close", description="分析序列：open/close/high/low/ohlc4"),
     smooth: int = Query(1, ge=1, le=15, description="平滑窗口；1 表示不平滑"),
+    layers: int = Query(1, ge=1, le=20, description="层级数"),
     adjust: str = Query("qfq", description="复权方式：qfq 前复权 / hfq 后复权 / none 不复权"),
 ):
-    """峰谷交替序列：返回严格交替的 extrema，并过滤左右任一侧不足 min_side、或 span_days < min_span 的小峰小谷。"""
+    """峰谷交替序列：返回严格交替的 extrema。"""
     if not code:
         return err("缺少参数 code", 400)
     try:
@@ -78,6 +81,7 @@ def stocks_line_local_extrema_alternating(
             series=series,
             smooth_window=smooth,
             adjust=adjust,
+            layers=layers,
         )
         return ok(data)
     except ValueError as exc:

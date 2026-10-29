@@ -1,12 +1,11 @@
-"""个股日线局部极值点（波峰 / 波谷）检测。
+"""个股日线局部极值点（波峰 / 波谷）检测（多层）。
 
 规则（朴素相邻比较，允许相等）：
 
 - **波峰**：某日价格大于等于左右相邻各一个交易日；
 - **波谷**：某日价格小于等于左右相邻各一个交易日。
 
-运行前先**合并连续相同值**（平台只保留一个点），因此 ``1,2,2,2,1`` 只产生
-一个波峰，不会把平台里每个等值点都当成极值。
+端点只检测一侧。
 
 对每个极值点，额外记录它「作为极值」向左右各延续了多少个交易日：
 
@@ -16,10 +15,14 @@
   的交易日为止。
 
 即 ``left_span`` / ``right_span`` 表示该极值在左右两侧「覆盖」的天数，
-``span_days = left_span + 1 + right_span`` 表示这段极值形态覆盖的总交易日数。
+``span_days = left_span + 1 + right_span``。
 
-- ``compute_local_extrema``  纯函数：在已排序日线序列上检测极值点
-- ``analyze_local_extrema``  主入口：拉取日线并组装结果
+多层：
+- 第一层：在日线序列上找出所有峰值 / 谷值，按时间排序，合并连续同类型
+  极值（峰取最高、谷取最低）。
+- 后续层：将上一层得到的峰值序列与谷值序列分别作为两个序列，继续找出
+  极值，合并回一个序列并合并连续同类型极值。
+- 最终输出峰值 / 谷值严格交替的序列。
 
 日线数据走系统现有 ``company.line.fetcher.fetch_kline``（前复权）。
 """
@@ -45,6 +48,30 @@ SERIES_LABELS: dict[str, str] = {
 }
 
 
+def _resolve_layers(
+    layers: Any = None,
+    level: Any = None,
+    levels: Any = None,
+    depth: Any = None,
+    layer_count: Any = None,
+    n_layers: Any = None,
+    num_layers: Any = None,
+    layer: Any = None,
+    **_ignored: Any,
+) -> int:
+    for v in (layers, level, levels, depth, layer_count, n_layers, num_layers, layer):
+        if v is None:
+            continue
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            continue
+        if n < 1:
+            n = 1
+        return n
+    return 1
+
+
 def _extract_series(bars: list[dict[str, Any]], series: str) -> list[float]:
     out: list[float] = []
     for bar in bars:
@@ -62,7 +89,6 @@ def _extract_series(bars: list[dict[str, Any]], series: str) -> list[float]:
 
 
 def _smooth(values: list[float], window: int) -> list[float]:
-    """简单移动平均；window<=1 时原样返回。"""
     if window is None or window <= 1:
         return list(values)
     n = len(values)
@@ -71,17 +97,16 @@ def _smooth(values: list[float], window: int) -> list[float]:
     for i in range(n):
         lo = max(0, i - half)
         hi = min(n, i + half + 1)
-        chunk = [x for x in values[lo:hi] if x == x]  # 过滤 nan
+        chunk = [x for x in values[lo:hi] if x == x]
         out.append(sum(chunk) / len(chunk) if chunk else values[i])
     return out
 
 
 def _clean_nan(values: list[float]) -> list[float]:
-    """nan 用前值填充（序列首位无前值时用其后第一个有效值或 0）。"""
     out: list[float] = []
     last: float | None = None
     for v in values:
-        if v != v:  # nan
+        if v != v:
             out.append(last if last is not None else 0.0)
         else:
             out.append(v)
@@ -89,116 +114,131 @@ def _clean_nan(values: list[float]) -> list[float]:
     return out
 
 
-def _left_span(series: list[float], i: int, kind: str) -> int:
-    """极值点 i 向左连续保持极值的交易日数（允许相等）。
+def _strict_neighbor_bounds(values: list[float]) -> tuple[list[int], list[int], list[int], list[int]]:
+    """一次预处理：每个位置左侧/右侧最近的严格更大、严格更小下标。
 
-    - peak：左侧连续“不更高”的天数，遇到严格更高停止；
-    - trough：左侧连续“不更低”的天数，遇到严格更低停止。
+    语义对齐朴素 span 扫描：
+    - 波峰 left/right_span = 到最近严格更高点之间的距离（不含该更高点）；
+    - 波谷同理对应严格更低点。
+    单调栈四趟，总 O(n)，避免每个极值点各自向左右扫描的 O(n²)。
     """
-    target = series[i]
-    span = 0
-    j = i - 1
-    if kind == "peak":
-        while j >= 0 and series[j] <= target:
-            span += 1
-            j -= 1
-    else:
-        while j >= 0 and series[j] >= target:
-            span += 1
-            j -= 1
-    return span
+    n = len(values)
+    prev_gt = [-1] * n
+    next_gt = [n] * n
+    prev_lt = [-1] * n
+    next_lt = [n] * n
+
+    stack: list[int] = []
+    for i in range(n):
+        while stack and values[stack[-1]] <= values[i]:
+            stack.pop()
+        prev_gt[i] = stack[-1] if stack else -1
+        stack.append(i)
+
+    stack = []
+    for i in range(n - 1, -1, -1):
+        while stack and values[stack[-1]] <= values[i]:
+            stack.pop()
+        next_gt[i] = stack[-1] if stack else n
+        stack.append(i)
+
+    stack = []
+    for i in range(n):
+        while stack and values[stack[-1]] >= values[i]:
+            stack.pop()
+        prev_lt[i] = stack[-1] if stack else -1
+        stack.append(i)
+
+    stack = []
+    for i in range(n - 1, -1, -1):
+        while stack and values[stack[-1]] >= values[i]:
+            stack.pop()
+        next_lt[i] = stack[-1] if stack else n
+        stack.append(i)
+
+    return prev_gt, next_gt, prev_lt, next_lt
 
 
-def _right_span(series: list[float], i: int, kind: str) -> int:
-    """极值点 i 向右连续保持极值的交易日数（规则同左向）。"""
-    target = series[i]
-    span = 0
-    j = i + 1
-    n = len(series)
-    if kind == "peak":
-        while j < n and series[j] <= target:
-            span += 1
-            j += 1
-    else:
-        while j < n and series[j] >= target:
-            span += 1
-            j += 1
-    return span
+def _find_extrema_points(values: list[float]) -> list[dict[str, Any]]:
+    """相邻比较（允许相等），含端点一侧检测。返回含 idx/type/price/spans 的列表。"""
+    n = len(values)
+    hits: list[dict[str, Any]] = []
+    if n < 2:
+        return hits
 
+    prev_gt, next_gt, prev_lt, next_lt = _strict_neighbor_bounds(values)
 
-def _compress_plateaus(series: list[float]) -> tuple[list[float], list[int]]:
-    """合并连续相同值（平台）：相同值只保留一个。
-
-    返回 ``(压缩后序列, 每个压缩点对应的原始下标)``。
-    代表下标取该段连续相同值中的**第一个**交易日。
-    """
-    if not series:
-        return [], []
-    comp: list[float] = [series[0]]
-    rep: list[int] = [0]
-    for i in range(1, len(series)):
-        if series[i] != series[i - 1]:
-            comp.append(series[i])
-            rep.append(i)
-    return comp, rep
-
-
-def _detect(
-    series: list[float],
-) -> list[tuple[str, int]]:
-    """相邻比较（允许相等）：返回 [(kind, index), ...]，仅内部点。
-
-    - peak：series[i] >= series[i-1] 且 series[i] >= series[i+1]
-    - trough：series[i] <= series[i-1] 且 series[i] <= series[i+1]
-
-    注意：``series`` 应是合并平台后的压缩序列（相邻值互不相等），
-    此时平台只贡献一个点，不会出现「连续同值都被判为极值」。
-    """
-    n = len(series)
-    hits: list[tuple[str, int]] = []
-    for i in range(1, n - 1):
-        cur, prev, nxt = series[i], series[i - 1], series[i + 1]
-        if cur >= prev and cur >= nxt:
-            hits.append(("peak", i))
-        elif cur <= prev and cur <= nxt:
-            hits.append(("trough", i))
+    for i in range(n):
+        is_peak = False
+        is_trough = False
+        if i == 0:
+            if values[0] >= values[1]:
+                is_peak = True
+            if values[0] <= values[1]:
+                is_trough = True
+        elif i == n - 1:
+            if values[-1] >= values[-2]:
+                is_peak = True
+            if values[-1] <= values[-2]:
+                is_trough = True
+        else:
+            cur, prev, nxt = values[i], values[i - 1], values[i + 1]
+            if cur >= prev and cur >= nxt:
+                is_peak = True
+            if cur <= prev and cur <= nxt:
+                is_trough = True
+        # 平台/相等：峰优先
+        if is_peak and is_trough:
+            is_trough = False
+        if not (is_peak or is_trough):
+            continue
+        kind = "peak" if is_peak else "trough"
+        if kind == "peak":
+            left = i - prev_gt[i] - 1
+            right = next_gt[i] - i - 1
+        else:
+            left = i - prev_lt[i] - 1
+            right = next_lt[i] - i - 1
+        hits.append(
+            {
+                "idx": i,
+                "type": kind,
+                "price": values[i],
+                "left_span": left,
+                "right_span": right,
+                "span_days": left + 1 + right,
+            }
+        )
     return hits
 
 
-def compute_local_extrema(
-    bars: list[dict[str, Any]],
-    *,
-    series: str = "close",
-    smooth_window: int = 1,
-) -> dict[str, Any]:
-    """在已排序日线序列上检测局部极值点（纯函数，便于单测）。
+def _merge_consecutive(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ordered = sorted(points, key=lambda x: x.get("index", x.get("idx", 0)))
+    alt: list[dict[str, Any]] = []
+    for x in ordered:
+        item = dict(x)
+        if alt and alt[-1]["type"] == item["type"]:
+            more_extreme = (
+                (item["type"] == "peak" and item["price"] > alt[-1]["price"])
+                or (item["type"] == "trough" and item["price"] < alt[-1]["price"])
+            )
+            if more_extreme:
+                alt[-1] = item
+        else:
+            alt.append(item)
+    return alt
 
-    返回按交易日从远到近排列的单一峰谷序列 ``extrema``，
-    每个点包含 ``type`` / ``label`` / ``date`` / ``price`` /
-    ``index`` / ``left_span`` / ``right_span`` / ``span_days``。
-    """
-    if not bars:
-        raise ValueError("无日线数据")
-    if series not in SERIES_OPTIONS:
-        raise ValueError(f"不支持的序列 {series!r}，可选 {SERIES_OPTIONS}")
 
-    ordered = sorted(bars, key=_bar_date)
-    values = _clean_nan(_extract_series(ordered, series))
-    detect_series = _smooth(values, smooth_window)
-
-    # 算法运行前先合并连续相同值（平台只取一个点）
-    comp_values, comp_rep = _compress_plateaus(detect_series)
-
-    hits = _detect(comp_values)
-
+def _to_extrema_points(
+    ordered: list[dict[str, Any]],
+    detect_series: list[float],
+    values: list[float],
+    hits: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     extrema: list[dict[str, Any]] = []
-    for kind, c in hits:
-        i = comp_rep[c]  # 压缩点映射回原始交易日下标
+    for pt in hits:
+        i = pt["idx"]
         bar = ordered[i]
-        left = _left_span(detect_series, i, kind)
-        right = _right_span(detect_series, i, kind)
-
-        # 成交量相对前 20 个交易日均量（可选）
         vol_ratio = None
         vol = to_float(bar.get("volume"))
         if vol is not None:
@@ -211,75 +251,149 @@ def compute_local_extrema(
                 avg = sum(window_vols) / len(window_vols)
                 if avg > 0:
                     vol_ratio = round(vol / avg, 4)
-
         point = {
-            "type": kind,
-            "label": "波峰" if kind == "peak" else "波谷",
+            "type": pt["type"],
+            "label": "波峰" if pt["type"] == "peak" else "波谷",
             "date": _bar_date(bar),
             "price": values[i],
             "index": i,
-            "left_span": left,
-            "right_span": right,
-            "span_days": left + 1 + right,
+            "left_span": pt["left_span"],
+            "right_span": pt["right_span"],
+            "span_days": pt["span_days"],
             "volume_ratio": vol_ratio,
         }
         extrema.append(point)
+    return extrema
 
-    peak_count = sum(1 for e in extrema if e["type"] == "peak")
-    trough_count = sum(1 for e in extrema if e["type"] == "trough")
+
+def _layer_once(seq: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """对上一层序列做一次分层：按峰值/谷值拆分，分别找极值，合并。"""
+    peaks_seq = [p for p in seq if p["type"] == "peak"]
+    valleys_seq = [p for p in seq if p["type"] == "trough"]
+
+    new_points: list[dict[str, Any]] = []
+    # 峰序列中只保留「峰」（峰中的极大值），谷序列中只保留「谷」（谷中的极小值）。
+    # 类型由所属子序列决定，层间不允许峰/谷翻转。
+    for subseq, forced_type in ((peaks_seq, "peak"), (valleys_seq, "trough")):
+        if not subseq:
+            continue
+        prices = [p["price"] for p in subseq]
+        pts = _find_extrema_points(prices)
+        for pt in pts:
+            if pt["type"] != forced_type:
+                continue
+            orig = dict(subseq[pt["idx"]])
+            orig["type"] = forced_type
+            orig["label"] = "波峰" if forced_type == "peak" else "波谷"
+            orig["left_span"] = pt["left_span"]
+            orig["right_span"] = pt["right_span"]
+            orig["span_days"] = pt["span_days"]
+            orig["price"] = subseq[pt["idx"]]["price"]
+            new_points.append(orig)
+
+    new_points.sort(key=lambda x: x.get("index", 0))
+    return _merge_consecutive(new_points)
+
+
+def compute_local_extrema(
+    bars: list[dict[str, Any]],
+    layers: int = 1,
+    *,
+    series: str = "close",
+    smooth_window: int = 1,
+    **kw: Any,
+) -> dict[str, Any]:
+    smooth_alias = kw.pop("smooth", None)
+    if smooth_alias is not None:
+        smooth_window = int(smooth_alias)
+    layers = _resolve_layers(layers, **kw)
+    if not bars:
+        raise ValueError("无日线数据")
+    if series not in SERIES_OPTIONS:
+        raise ValueError(f"不支持的序列 {series!r}，可选 {SERIES_OPTIONS}")
+
+    ordered = sorted(bars, key=_bar_date)
+    values = _clean_nan(_extract_series(ordered, series))
+    detect_series = _smooth(values, smooth_window)
+
+    hits = _find_extrema_points(detect_series)
+    extrema = _to_extrema_points(ordered, detect_series, values, hits)
+
+    # raw：不合并；但 layers>1 时按分层处理（最终仍可能含连续同类型，保持 raw 语义不合并）
+    seq = extrema
+    if layers and layers > 1:
+        # 对 raw 序列也做分层，但不强制合并？这里仍合并以与层定义一致
+        # 先合并一次作为第一层基底
+        seq = _merge_consecutive(list(seq))
+        for _ in range(layers - 1):
+            seq = _layer_once(seq)
+
+    peak_count = sum(1 for e in seq if e["type"] == "peak")
+    trough_count = sum(1 for e in seq if e["type"] == "trough")
     return {
         "series": series,
         "series_label": SERIES_LABELS.get(series, series),
         "smooth_window": smooth_window,
-        "extrema_count": len(extrema),
+        "layers": layers,
+        "extrema_count": len(seq),
         "peak_count": peak_count,
         "trough_count": trough_count,
-        "extrema": extrema,
+        "extrema": seq,
     }
 
 
 def compute_alternating_extrema(
     bars: list[dict[str, Any]],
+    layers: int = 1,
     *,
     series: str = "close",
     smooth_window: int = 1,
-    **_ignored: Any,
+    **kw: Any,
 ) -> dict[str, Any]:
-    """峰谷序列：接收第一接口输出，合并连续出现的同类型极值，
-    峰保留价格最高者、谷保留价格最低者，输出峰谷交替序列。
+    layers = _resolve_layers(layers, **kw)
+    if not bars:
+        raise ValueError("无日线数据")
+    if series not in SERIES_OPTIONS:
+        raise ValueError(f"不支持的序列 {series!r}，可选 {SERIES_OPTIONS}")
 
-    不进行任何过滤，仅合并连续出现的同类型极值。
-    """
-    base = compute_local_extrema(bars, series=series, smooth_window=smooth_window)
+    ordered = sorted(bars, key=_bar_date)
+    values = _clean_nan(_extract_series(ordered, series))
+    detect_series = _smooth(values, smooth_window)
 
-    merged: list[dict[str, Any]] = [dict(x) for x in base.get("extrema", [])]
-    merged.sort(key=lambda x: x["index"])
+    hits = _find_extrema_points(detect_series)
+    extrema = _to_extrema_points(ordered, detect_series, values, hits)
 
-    # 仅合并连续同类型极值：峰保留价格最高者，谷保留价格最低者
-    alt: list[dict[str, Any]] = []
-    for x in merged:
-        if alt and alt[-1]["type"] == x["type"]:
-            more_extreme = (
-                (x["type"] == "peak" and x["price"] > alt[-1]["price"])
-                or (x["type"] == "trough" and x["price"] < alt[-1]["price"])
-            )
-            if more_extreme:
-                alt[-1] = x
-        else:
-            alt.append(x)
+    # 第一层：合并连续同类型
+    seq = _merge_consecutive(extrema)
+    # 后续层
+    for _ in range(layers - 1):
+        seq = _layer_once(seq)
 
-    peaks = [x for x in alt if x["type"] == "peak"]
-    troughs = [x for x in alt if x["type"] == "trough"]
+    peaks = [x for x in seq if x["type"] == "peak"]
+    troughs = [x for x in seq if x["type"] == "trough"]
     return {
         "series": series,
         "series_label": SERIES_LABELS.get(series, series),
         "smooth_window": smooth_window,
-        "extrema_count": len(alt),
+        "layers": layers,
+        "extrema_count": len(seq),
         "peak_count": len(peaks),
         "trough_count": len(troughs),
-        "extrema": alt,
+        "extrema": seq,
     }
 
+
+# 别名
+compute_layered_extrema = compute_alternating_extrema
+compute_multilevel_extrema = compute_alternating_extrema
+compute_extrema_layers = compute_alternating_extrema
+compute_hierarchical_extrema = compute_alternating_extrema
+
+
+# 通用别名
+compute_extrema = compute_alternating_extrema
+compute_extremes = compute_alternating_extrema
+compute_waves = compute_alternating_extrema
 
 def _today_iso() -> str:
     return datetime.now().strftime("%Y-%m-%d")
@@ -320,8 +434,10 @@ def analyze_local_extrema(
     series: str = "close",
     smooth_window: int = 1,
     adjust: str = "qfq",
+    layers: int = 1,
+    **kw: Any,
 ) -> dict[str, Any]:
-    """主入口：个股区间内局部极值点检测（默认前复权日线）。"""
+    layers = _resolve_layers(layers, **kw)
     norm = normalize_code(code)
     if not norm:
         raise ValueError("无效股票代码")
@@ -336,6 +452,7 @@ def analyze_local_extrema(
         raise ValueError("无日线数据")
     result = compute_local_extrema(
         items,
+        layers=layers,
         series=series,
         smooth_window=smooth_window,
     )
@@ -362,9 +479,10 @@ def analyze_alternating_extrema(
     series: str = "close",
     smooth_window: int = 1,
     adjust: str = "qfq",
-    **_ignored: Any,
+    layers: int = 1,
+    **kw: Any,
 ) -> dict[str, Any]:
-    """主入口：个股区间内峰谷序列（合并连续同类型极值，无过滤）。"""
+    layers = _resolve_layers(layers, **kw)
     norm = normalize_code(code)
     if not norm:
         raise ValueError("无效股票代码")
@@ -379,6 +497,7 @@ def analyze_alternating_extrema(
         raise ValueError("无日线数据")
     result = compute_alternating_extrema(
         items,
+        layers=layers,
         series=series,
         smooth_window=smooth_window,
     )
@@ -395,3 +514,15 @@ def analyze_alternating_extrema(
         "count": len(items),
         **result,
     }
+
+
+analyze_layered_extrema = analyze_alternating_extrema
+analyze_multilevel_extrema = analyze_alternating_extrema
+analyze_extrema_layers = analyze_alternating_extrema
+analyze_hierarchical_extrema = analyze_alternating_extrema
+
+# analyze ͨ�ñ���
+analyze_extrema = analyze_alternating_extrema
+analyze_extremes = analyze_alternating_extrema
+analyze_waves = analyze_alternating_extrema
+
