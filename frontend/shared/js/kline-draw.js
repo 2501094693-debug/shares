@@ -369,8 +369,10 @@
 
     drawMaLines(ctx, maVisible, yAt, xAt, n);
 
-    // 局部极值点标记（峰谷交替，主要峰谷）
-    const extrema = Array.isArray(state.extrema) ? state.extrema : [];
+    // 局部极值点标记（峰谷交替，主要峰谷）：只有显式开启 markExtrema 的图才标注，
+    // 日线走势图的峰谷标注只保留在 K线分析主图（company.js 自绘）
+    const extrema =
+      state.markExtrema === true && Array.isArray(state.extrema) ? state.extrema : [];
     if (extrema.length) {
       const dateToLocal = new Map();
       for (let i = 0; i < n; i += 1) {
@@ -521,7 +523,7 @@
           ? state.allItems.length - 1
           : null;
     fillHover(state, abs);
-    scheduleExtremaForVisible(state);
+    if (state.markExtrema === true) scheduleExtremaForVisible(state);
   }
 
   function pointerIndex(state, evt) {
@@ -608,6 +610,7 @@
   }
 
   function scheduleExtremaForVisible(state) {
+    if (state.markExtrema !== true) return;
     if (!state.code) return;
     const items = state.items || [];
     if (!items.length) return;
@@ -826,7 +829,7 @@
       .filter((d) => Number.isFinite(Number(d.close)));
   }
 
-  function mount(cardEl, { code, items, meta, carousel, showVolume } = {}) {
+  function mount(cardEl, { code, items, meta, carousel, showVolume, markExtrema } = {}) {
     if (!cardEl) return null;
     if (!code && items == null) return null;
     if (views.has(cardEl)) {
@@ -834,6 +837,14 @@
       prev.carousel = !!carousel;
       if (code) prev.code = code;
       if (showVolume != null) prev.forceShowVolume = showVolume;
+      if (markExtrema != null) {
+        prev.markExtrema = Boolean(markExtrema);
+        if (!prev.markExtrema) {
+          prev.extrema = [];
+          prev.extremaRangeBeg = "";
+          prev.extremaRangeEnd = "";
+        }
+      }
       if (items != null) {
         applyItems(prev, normalizeItems(items), { metaText: meta });
       } else {
@@ -868,6 +879,8 @@
       extremaRangeEnd: "",
       extremaFetching: false,
       extremaTimer: 0,
+      // 峰/谷标注开关：默认关闭（其他日线走势图不标注），只有 K线分析主图另用 company.js 自绘
+      markExtrema: Boolean(markExtrema),
       viewSize: VIEW_SIZE,
       viewStart: 0,
       layout: null,

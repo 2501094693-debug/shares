@@ -22,6 +22,7 @@ from urllib.parse import quote
 import requests
 
 from core.codes import em_code, normalize_code, safe_str
+from core.http import is_conn_reset
 
 logger = logging.getLogger(__name__)
 
@@ -297,18 +298,26 @@ class _Client:
     ) -> Any:
         self.warmup()
         with self._lock:
-            sess = self._ensure_session()
-            hdrs = dict(headers or {})
-            cookie = hdrs.get("Cookie") or hdrs.get("cookie") or ""
-            built = _cookie_header(sess)
-            if built and "xq_a_token=" not in cookie:
-                hdrs["Cookie"] = f"{cookie}; {built}".strip("; ")
-            return sess.get(
-                url,
-                params=params,
-                headers=hdrs,
-                timeout=timeout,
-            )
+            for attempt in range(2):
+                sess = self._ensure_session()
+                hdrs = dict(headers or {})
+                cookie = hdrs.get("Cookie") or hdrs.get("cookie") or ""
+                built = _cookie_header(sess)
+                if built and "xq_a_token=" not in cookie:
+                    hdrs["Cookie"] = f"{cookie}; {built}".strip("; ")
+                try:
+                    return sess.get(
+                        url,
+                        params=params,
+                        headers=hdrs,
+                        timeout=timeout,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    # 常驻会话的 keep-alive 被对端掐掉（10054）时，换一个全新会话再试
+                    if attempt or not is_conn_reset(exc):
+                        raise
+                    logger.info("雪球连接被重置，重建会话重试: %s", exc)
+                    self._sess = None
 
 
 _CLIENT = _Client()

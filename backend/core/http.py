@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import random
 import time
 from typing import Any
 from urllib.parse import urlparse, urlunparse
@@ -34,8 +35,67 @@ _UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/122.0.0.0 Safari/537.36"
 )
-_RETRY_EXC = (requests.Timeout, requests.ConnectionError)
+_RETRY_EXC = (
+    requests.Timeout,
+    requests.ConnectionError,
+    requests.exceptions.ChunkedEncodingError,
+    urllib3.exceptions.ProtocolError,
+)
+# 对端掐连接时额外多试几次：行情源（东财 / 同花顺 / 腾讯）盘中偶发 10054
+_CONN_RESET_EXTRA = 2
+_RESET_MARKERS = (
+    "connection aborted",
+    "connection reset",
+    "connectionreseterror",
+    "connection reset by peer",
+    "connection broken",
+    "remote end closed",
+    "remotedisconnected",
+    "forcibly closed",
+    "远程主机强迫关闭",
+    "broken pipe",
+    "recv failure",
+    "curl: (56)",
+    "connection was reset",
+    "incompleteread",
+    "incomplete read",
+    "response ended prematurely",
+    "peer closed connection",
+)
 _IMPERSONATE_DROP = {"user-agent", "sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform"}
+
+
+def is_conn_reset(exc: BaseException) -> bool:
+    """是否为「对端掐连接」类错误（Windows 10054 / RST / 断管道）。
+
+    这类错误在行情源上很常见、且几乎总是瞬时的，值得再试几次。
+    """
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+            return True
+        text = str(cur).lower()
+        if any(marker in text for marker in _RESET_MARKERS):
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return False
+
+
+def retry_conn_reset(call, *, attempts: int = 3):
+    """执行 ``call()``；只在断连类错误上重试，其余异常原样抛出。"""
+    total = max(1, int(attempts))
+    last: Exception | None = None
+    for index in range(total):
+        try:
+            return call()
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            if index >= total - 1 or not is_conn_reset(exc):
+                raise
+            time.sleep(0.5 * (index + 1) + random.uniform(0.0, 0.2))
+    raise last  # pragma: no cover
 
 
 def _impersonate_headers(headers: dict[str, str] | None) -> dict[str, str]:
@@ -180,7 +240,8 @@ def _get(
         except Exception as exc:  # noqa: BLE001
             last_error = exc
 
-    for attempt in range(attempts):
+    attempt = 0
+    while True:
         try:
             sess = _session(verify=verify)
             resp = sess.get(
@@ -199,9 +260,11 @@ def _get(
                 return _get_via_ip(
                     url, params=params, headers=headers, timeout=timeout
                 )
-            if attempt >= attempts - 1:
+            attempt += 1
+            limit = attempts + (_CONN_RESET_EXTRA if is_conn_reset(exc) else 0)
+            if attempt >= limit:
                 raise
-            time.sleep(0.4 * (attempt + 1))
+            time.sleep(min(2.0, 0.4 * attempt) + random.uniform(0.0, 0.2))
     raise last_error  # pragma: no cover
 
 
@@ -215,15 +278,20 @@ def get_json(
     verify: bool = True,
 ) -> Any:
     """GET 并解析 JSON；HTTP 错误抛 ``requests.HTTPError``。"""
-    resp = _get(
-        url,
-        params=params,
-        headers=headers,
-        timeout=timeout,
-        retries=retries,
-        verify=verify,
-    )
-    return resp.json()
+
+    def call() -> Any:
+        resp = _get(
+            url,
+            params=params,
+            headers=headers,
+            timeout=timeout,
+            retries=retries,
+            verify=verify,
+        )
+        return resp.json()
+
+    # 响应体读到一半被对端 RST（10054）时整段重取
+    return retry_conn_reset(call, attempts=2)
 
 
 def get_text(
@@ -237,17 +305,22 @@ def get_text(
     verify: bool = True,
 ) -> str:
     """GET 返回文本。``encoding`` 非空时强制解码（腾讯行情页偶发编码错）。"""
-    resp = _get(
-        url,
-        params=params,
-        headers=headers,
-        timeout=timeout,
-        retries=retries,
-        verify=verify,
-    )
-    if encoding:
-        resp.encoding = encoding
-    return resp.text
+
+    def call() -> str:
+        resp = _get(
+            url,
+            params=params,
+            headers=headers,
+            timeout=timeout,
+            retries=retries,
+            verify=verify,
+        )
+        if encoding:
+            resp.encoding = encoding
+        return resp.text
+
+    # 响应体读到一半被对端 RST（10054）时整段重取
+    return retry_conn_reset(call, attempts=2)
 
 
 def browser_get(
@@ -269,16 +342,19 @@ def browser_get(
 
     if curl_requests is not None:
         # 不要覆盖 User-Agent：和 TLS 指纹不一致时，巨潮 WAF 直接 403。
-        return curl_requests.get(
-            url,
-            params=params,
-            headers=_impersonate_headers(headers),
-            timeout=timeout,
-            impersonate="chrome",
+        return retry_conn_reset(
+            lambda: curl_requests.get(
+                url,
+                params=params,
+                headers=_impersonate_headers(headers),
+                timeout=timeout,
+                impersonate="chrome",
+            )
         )
     hdrs = {"User-Agent": _UA, **(headers or {})}
-    sess = _session()
-    return sess.get(url, params=params, headers=hdrs, timeout=timeout)
+    return retry_conn_reset(
+        lambda: _session().get(url, params=params, headers=hdrs, timeout=timeout)
+    )
 
 
 def browser_post(
@@ -302,24 +378,27 @@ def browser_post(
 
     if curl_requests is not None:
         # 不要覆盖 User-Agent：和 TLS 指纹不一致时，巨潮 WAF 直接 403。
-        return curl_requests.post(
+        return retry_conn_reset(
+            lambda: curl_requests.post(
+                url,
+                params=params,
+                data=data,
+                json=json_body,
+                headers=_impersonate_headers(headers),
+                timeout=timeout,
+                impersonate="chrome",
+            )
+        )
+    hdrs = {"User-Agent": _UA, **(headers or {})}
+    return retry_conn_reset(
+        lambda: _session().post(
             url,
             params=params,
             data=data,
             json=json_body,
-            headers=_impersonate_headers(headers),
+            headers=hdrs,
             timeout=timeout,
-            impersonate="chrome",
         )
-    hdrs = {"User-Agent": _UA, **(headers or {})}
-    sess = _session()
-    return sess.post(
-        url,
-        params=params,
-        data=data,
-        json=json_body,
-        headers=hdrs,
-        timeout=timeout,
     )
 
 
@@ -331,6 +410,11 @@ def get_bytes(
     timeout: int = 60,
 ) -> bytes:
     """GET 返回原始字节（公告 PDF 等）。优先 curl_cffi。"""
-    resp = browser_get(url, params=params, headers=headers, timeout=timeout)
-    resp.raise_for_status()
-    return resp.content
+
+    def call() -> bytes:
+        resp = browser_get(url, params=params, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        return resp.content
+
+    # 大文件读到一半被掐（10054）时整段重取一次
+    return retry_conn_reset(call, attempts=2)

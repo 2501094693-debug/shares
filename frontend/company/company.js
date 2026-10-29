@@ -1562,6 +1562,7 @@ const chartState = {
   hoverAbsIndex: null,
   historyExhausted: false,
   historyLoading: false,
+  // 峰/谷数据只服务 K线分析主图（研判）；行情页日K不标注、也不请求
   extrema: [],
   extremaRangeBeg: "",
   extremaRangeEnd: "",
@@ -11379,7 +11380,7 @@ function drawMaLines(ctx, maVisible, yAt, xAt, n) {
   }
 }
 
-function drawKlineChart(ctx, layout, items, mode, colors, hoverIndex, maBundle = null) {
+function drawKlineChart(ctx, layout, items, mode, colors, hoverIndex, maBundle = null, extrema = null) {
   const n = items.length;
   if (!n) return;
 
@@ -11457,9 +11458,10 @@ function drawKlineChart(ctx, layout, items, mode, colors, hoverIndex, maBundle =
 
   drawMaLines(ctx, maVisible, yAt, xAt, n);
 
-  // 局部极值点标记（波峰 / 波谷）
-  const extrema = Array.isArray(chartState.extrema) ? chartState.extrema : [];
-  for (const e of extrema) {
+  // 局部极值点标记（波峰 / 波谷）：只由调用方显式传入才画——
+  // 目前仅 K线分析主图（renderLcChart）传入；行情页日K与指数走势图不标注
+  const marks = Array.isArray(extrema) ? extrema : [];
+  for (const e of marks) {
     const idx = items.findIndex((d) => String(d?.time || "").slice(0, 10) === String(e?.date || "").slice(0, 10));
     if (idx < 0) continue;
     const price = Number(e.price);
@@ -11787,7 +11789,6 @@ function drawGroupedSignedBars(ctx, layout, items, tiers, colors, hoverIndex, { 
     yFormat: fmtVol,
     skipTimeLabels: false,
   });
-  scheduleExtremaForVisible();
 }
 
 async function loadCompanyLocalExtrema(code, items, beg, end, layers) {
@@ -11809,11 +11810,11 @@ async function loadCompanyLocalExtrema(code, items, beg, end, layers) {
 }
 
 function scheduleExtremaForVisible() {
-  const lcVisible = Boolean(lcChartState.visible);
-  const topItems = chartState.mode === "day" ? (chartState.items || []) : [];
-  const lcItems = lcVisible ? (lcChartState.items || []) : [];
-  const lcAll = lcVisible ? (lcChartState.allItems || []) : [];
-  const baseItems = lcVisible ? lcItems : topItems;
+  // 峰/谷只服务 K线分析主图：行情页日K不再标注，也就不再触发极值请求
+  if (!lcChartState.visible) return;
+  const lcItems = lcChartState.items || [];
+  const lcAll = lcChartState.allItems || [];
+  const baseItems = lcItems;
   if (!baseItems.length) return;
   const layer = Number(lcEls.extremaLayerSelect?.value || chartState.extremaLayer || 2) || 2;
   chartState.extremaLayer = layer;
@@ -11828,13 +11829,13 @@ function scheduleExtremaForVisible() {
     pickBeg = lo;
     pickEnd = hi || lo;
   }
-  const begSourceItems = lcVisible && lcItems.length ? lcItems : baseItems;
+  const begSourceItems = lcItems.length ? lcItems : baseItems;
   const begRaw =
     pickBeg ||
     lcBeg ||
     String(begSourceItems[0]?.time || begSourceItems[0]?.date || "").slice(0, 10);
   const beg = begRaw.replace(/-/g, "");
-  const endSourceItems = lcVisible && lcAll.length ? lcAll : baseItems;
+  const endSourceItems = lcAll.length ? lcAll : baseItems;
   const endRaw =
     pickEnd ||
     lcEnd ||
@@ -11854,7 +11855,6 @@ function scheduleExtremaForVisible() {
       chartState.extremaRangeBeg = beg;
       chartState.extremaRangeEnd = end;
       chartState.extremaRangeLayer = layer;
-      if (chartState.mode === "day") renderChart();
       if (lcChartState.visible) renderLcChart();
     })
     .catch(() => {
@@ -13499,13 +13499,16 @@ const lcJettonState = {
   centers: [],
   H: [],
   stats: null,
+  meta: null,
   close: null,
+  // 筹码接口是不复权价；画到前复权日K上时按末日价差整体平移
+  shift: 0,
   error: "",
   abort: null,
   watchdog: 0,
 };
 
-/** 最多回溯的交易日数，避免全历史迭代过慢 / 请求被反复取消后一直「加载中」 */
+/** 筹码快照最多回溯的交易日数；服务端从上市起累积，这里只用于定位取数日 */
 const LC_JETTON_MAX_BARS = 120;
 const LC_JETTON_TIMEOUT_MS = 25000;
 
@@ -13579,7 +13582,7 @@ function lcJettonClampRange(beg, end) {
   return { beg: b, end: e };
 }
 
-/** 筹码计算区间：完整点选优先，否则可见末日往前最多 LC_JETTON_MAX_BARS 根 */
+/** 筹码取数日：点选终点优先，否则可见窗口末日 */
 function lcJettonRange() {
   const pick = lcChartState.rangePick || {};
   if (pick.a && pick.b) {
@@ -13601,11 +13604,15 @@ function lcJettonRange() {
 function setLcJettonEmpty(msg, { empty = false } = {}) {
   if (!lcEls.jettonEmpty) return;
   if (!empty) {
+    // 清空文案，避免样式失效/重绘时残留「筹码加载中…」
+    lcEls.jettonEmpty.textContent = "";
     lcEls.jettonEmpty.classList.add("hidden");
+    lcEls.jettonEmpty.setAttribute("aria-hidden", "true");
     return;
   }
   lcEls.jettonEmpty.textContent = msg || "暂无筹码";
   lcEls.jettonEmpty.classList.remove("hidden");
+  lcEls.jettonEmpty.removeAttribute("aria-hidden");
 }
 
 function lcKlinePriceScaleForItems(items, priceH) {
@@ -13772,6 +13779,8 @@ function paintLcJetton() {
   }
 
   const close = Number(lcJettonState.close ?? lcJettonState.stats?.close);
+  // 不复权筹码 → 当前日K复权价：整体平移末日价差（收盘价/成本线同移，获利比例不变）
+  const shift = Number(lcJettonState.shift) || 0;
   const padX = 4;
   const plotW = Math.max(8, cssW - padX * 2 - 2);
   const tick = Number(centers.length > 1 ? Math.abs(centers[1] - centers[0]) : 0) || 0.01;
@@ -13794,13 +13803,13 @@ function paintLcJetton() {
   ctx.restore();
 
   for (let i = 0; i < n; i += 1) {
-    const p = Number(centers[i]);
+    const p = Number(centers[i]) + shift;
     const hv = Number(H[i]) || 0;
     if (!Number.isFinite(p) || hv <= 0) continue;
     if (p < priceScale.min || p > priceScale.max) continue;
     const y = yAt(p);
     const w = Math.max(1, (hv / maxH) * plotW);
-    const profit = Number.isFinite(close) ? p <= close : true;
+    const profit = Number.isFinite(close) ? p <= close + shift : true;
     ctx.fillStyle = profit ? "rgba(255, 93, 108, 0.72)" : "rgba(61, 214, 140, 0.72)";
     ctx.fillRect(padX, y - binH / 2, w, binH);
   }
@@ -13819,15 +13828,28 @@ function paintLcJetton() {
     ctx.stroke();
     ctx.restore();
   };
-  if (Number.isFinite(close)) drawHLine(close, colors.cross, [3, 2]);
-  if (Number.isFinite(avg)) drawHLine(avg, colors.avg, [2, 2]);
+  if (Number.isFinite(close)) drawHLine(close + shift, colors.cross, [3, 2]);
+  if (Number.isFinite(avg)) drawHLine(avg + shift, colors.avg, [2, 2]);
 
   const st = lcJettonState.stats || {};
   if (lcEls.jettonMeta) {
     const pr = Number(st.profit_ratio);
     const lines = [];
     if (Number.isFinite(pr)) lines.push(`获利 ${fmtPct(pr * 100, 1)}`);
-    if (Number.isFinite(avg)) lines.push(`均价 ${fmtNum(avg)}`);
+    if (Number.isFinite(avg)) lines.push(`均价 ${fmtNum(avg + shift)}`);
+    const lo = Number(st.cost90_low);
+    const hi = Number(st.cost90_high);
+    const meta = lcJettonState.meta || {};
+    const tips = [];
+    if (Number.isFinite(lo) && Number.isFinite(hi)) {
+      tips.push(`90% 成本 ${fmtNum(lo + shift)}~${fmtNum(hi + shift)}`);
+    }
+    if (meta.peak) {
+      const decay = Number(meta.decay);
+      tips.push(`口径 ${meta.peak}${Number.isFinite(decay) ? `/${fmtNum(decay)}` : ""}`);
+    }
+    if (tips.length) lcEls.jettonMeta.title = tips.join(" · ");
+    else lcEls.jettonMeta.removeAttribute("title");
     lcEls.jettonMeta.textContent = lines.join(" · ");
     lcEls.jettonMeta.hidden = !lines.length;
   }
@@ -13866,11 +13888,15 @@ async function refreshLcJetton({ force = false } = {}) {
     lcJettonState.centers = [];
     lcJettonState.H = [];
     lcJettonState.stats = null;
+    lcJettonState.meta = null;
+    lcJettonState.close = null;
+    lcJettonState.shift = 0;
     lcJettonState.error = "";
     paintLcJetton();
     return;
   }
-  const key = `${code}|${range.beg}|${range.end}`;
+  // 新接口按「截至 end 的筹码分布」取数，beg 只影响序列，曲线只跟 end 走
+  const key = `${code}|${range.end}`;
   if (!force && key === lcJettonState.key && (lcJettonState.centers || []).length) {
     paintLcJetton();
     return;
@@ -13899,15 +13925,17 @@ async function refreshLcJetton({ force = false } = {}) {
 
   try {
     paintLcJetton();
+    // 同花顺手机端日线筹码分布：grid/chips 即价格轴与筹码量
     const qs = new URLSearchParams({
       code,
-      beg: range.beg,
       end: range.end,
-      f_mode: "triangle",
-      k_kind: "flat",
-      bins: "120",
+      // 全历史价格跨度大（如茅台 35~2600），细分箱才画得出近期筹码峰
+      bins: "800",
+      decay: "1",
+      source: "auto",
+      series_limit: "1",
     });
-    const json = await api(`/api/stocks/line-jetton?${qs.toString()}`, {
+    const json = await api(`/api/stocks/line-chip?${qs.toString()}`, {
       signal: ctrl?.signal,
       timeoutMs: LC_JETTON_TIMEOUT_MS,
       bypassCache: force,
@@ -13915,10 +13943,24 @@ async function refreshLcJetton({ force = false } = {}) {
     if (gen !== lcJettonState.gen) return;
     const data = json.data || {};
     lcJettonState.key = key;
-    lcJettonState.centers = Array.isArray(data.centers) ? data.centers : [];
-    lcJettonState.H = Array.isArray(data.H) ? data.H : [];
+    lcJettonState.centers = Array.isArray(data.grid) ? data.grid : [];
+    lcJettonState.H = Array.isArray(data.chips) ? data.chips : [];
     lcJettonState.stats = data.stats || null;
+    lcJettonState.meta = data.meta || null;
     lcJettonState.close = data.close ?? data.stats?.close ?? null;
+    // 筹码接口给不复权价，日K是前复权价：按筹码实际末日两边收盘价差整体平移
+    const endDay = String(data.date || range.end || "").slice(0, 10);
+    const chartBar = (lcChartState.allItems || []).find(
+      (d) => String(d?.time || "").slice(0, 10) === endDay
+    );
+    const chartClose = Number(chartBar?.close);
+    const rawClose = Number(lcJettonState.close);
+    lcJettonState.shift =
+      lcChartState.adjust === "qfq" &&
+      Number.isFinite(chartClose) &&
+      Number.isFinite(rawClose)
+        ? chartClose - rawClose
+        : 0;
     lcJettonState.error =
       lcJettonState.centers.length && lcJettonState.H.length ? "" : "暂无筹码数据";
   } catch (err) {
@@ -13929,6 +13971,9 @@ async function refreshLcJetton({ force = false } = {}) {
       lcJettonState.centers = [];
       lcJettonState.H = [];
       lcJettonState.stats = null;
+      lcJettonState.meta = null;
+      lcJettonState.close = null;
+      lcJettonState.shift = 0;
       lcJettonState.error = err.message || "筹码加载失败";
     }
   } finally {
@@ -15859,8 +15904,9 @@ function renderLcChart(hoverIndex = null) {
     lcChartState.viewStart,
     Number(lcChartState.viewSize) || items.length
   );
-  drawKlineChart(ctx, layout, items, "day", colors, hoverIndex, maBundle);
+  drawKlineChart(ctx, layout, items, "day", colors, hoverIndex, maBundle, chartState.extrema);
   drawLcRangePick(ctx, layout, items);
+  scheduleExtremaForVisible();
   if (!layout.pe) {
     paintLcJetton();
     return;

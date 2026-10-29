@@ -14668,6 +14668,12 @@ html.company-charts-on .deal-analysis-left.quotes-layout {
   z-index: 1;
 }
 
+/* 上面这条 display:flex 与 .chart-empty.hidden 同权重且更靠后，会把 hidden 顶掉；
+   这里补回隐藏语义，否则筹码加载完成后「筹码加载中…」仍压在图上。 */
+.lc-jetton-wrap .chart-empty.hidden {
+  display: none;
+}
+
 /* 与行情 .charts-deck .chart-card__foot 一致：隐藏底栏，画布区高度对齐 */
 .line-compare-chart .chart-card__foot {
   display: none;

@@ -28,6 +28,7 @@ import requests
 
 from core.codes import detect_market, normalize_code
 from core.fmt import to_float
+from core.http import retry_conn_reset
 
 logger = logging.getLogger(__name__)
 
@@ -131,14 +132,19 @@ def _post(
     headers = dict(_HEADERS)
     headers["Referer"] = referer
     headers["Origin"] = "https://stockpage.10jqka.com.cn"
-    session = requests.Session()
-    session.trust_env = False
-    try:
-        resp = session.post(url, json=payload, headers=headers, timeout=timeout)
-        resp.raise_for_status()
-        body = resp.json()
-    finally:
-        session.close()
+
+    def call():
+        session = requests.Session()
+        session.trust_env = False
+        try:
+            resp = session.post(url, json=payload, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+            return resp.json()
+        finally:
+            session.close()
+
+    # 同花顺对并发/复用的连接爱直接 RST（Windows 10054），断连再多试几次
+    body = retry_conn_reset(call)
     if not isinstance(body, dict):
         raise ThsMobileError("同花顺手机端返回非 JSON 对象")
     if body.get("status_code") not in (0, "0", None):
