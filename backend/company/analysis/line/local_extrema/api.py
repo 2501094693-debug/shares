@@ -1,6 +1,19 @@
 """股票日线局部极值点 HTTP 路由。
 
-- ``/api/stocks/line-local-extrema``  区间内波峰 / 波谷检测
+- ``/api/stocks/line-local-extrema``             自起始日起的波峰 / 波谷检测
+- ``/api/stocks/line-local-extrema-alternating`` 峰谷交替序列（过滤小峰小谷）
+
+输入：一只股票（code）+ 起始日期（beg）。
+
+输出：
+
+- 极值接口：按交易日从远到近排列的单一峰谷序列（extrema）；
+- 交替接口：单一序列（extrema），峰谷严格交替；每个峰/谷左右两侧都必须
+  至少延续 ``min_side`` 个交易日（默认 3），且过滤 ``span_days < min_span``
+  的小峰小谷。
+
+规则：相邻比较——大于等于左右即波峰，小于等于左右即波谷；相同值运行前合并；
+并输出每个极值点左右各延续多少个交易日（left_span / right_span）。
 """
 
 from __future__ import annotations
@@ -9,7 +22,10 @@ from fastapi import APIRouter, Query
 
 from core.api import err, ok
 
-from company.analysis.line.local_extrema.service import analyze_local_extrema
+from company.analysis.line.local_extrema.service import (
+    analyze_alternating_extrema,
+    analyze_local_extrema,
+)
 
 router = APIRouter()
 
@@ -20,14 +36,10 @@ def stocks_line_local_extrema(
     beg: str = Query(..., description="起始日期 YYYY-MM-DD 或 YYYYMMDD"),
     end: str = Query("", description="结束日期，默认今天"),
     series: str = Query("close", description="分析序列：open/close/high/low/ohlc4"),
-    w: int = Query(5, ge=1, le=30, description="Pivot 窗口半径（交易日）"),
-    min_distance: int = Query(3, ge=1, le=30, description="同类极值最小间隔（交易日）"),
     smooth: int = Query(1, ge=1, le=15, description="平滑窗口；1 表示不平滑"),
-    prominence: float | None = Query(None, description="突出度绝对阈值（价格单位）"),
-    prominence_pct: float | None = Query(None, description="突出度相对阈值（百分比）"),
     adjust: str = Query("qfq", description="复权方式：qfq 前复权 / hfq 后复权 / none 不复权"),
 ):
-    """日线局部极值点：区间内波峰 / 波谷，含 prominence 过滤与波段振幅。"""
+    """日线局部极值点：返回按交易日从远到近排列的峰谷序列 extrema。"""
     if not code:
         return err("缺少参数 code", 400)
     try:
@@ -36,10 +48,34 @@ def stocks_line_local_extrema(
             beg,
             end,
             series=series,
-            w=w,
-            prominence=prominence,
-            prominence_pct=prominence_pct,
-            min_distance=min_distance,
+            smooth_window=smooth,
+            adjust=adjust,
+        )
+        return ok(data)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/stocks/line-local-extrema-alternating")
+def stocks_line_local_extrema_alternating(
+    code: str = Query("", description="股票代码，如 600519"),
+    beg: str = Query(..., description="起始日期 YYYY-MM-DD 或 YYYYMMDD"),
+    end: str = Query("", description="结束日期，默认今天"),
+    series: str = Query("close", description="分析序列：open/close/high/low/ohlc4"),
+    smooth: int = Query(1, ge=1, le=15, description="平滑窗口；1 表示不平滑"),
+    adjust: str = Query("qfq", description="复权方式：qfq 前复权 / hfq 后复权 / none 不复权"),
+):
+    """峰谷交替序列：返回严格交替的 extrema，并过滤左右任一侧不足 min_side、或 span_days < min_span 的小峰小谷。"""
+    if not code:
+        return err("缺少参数 code", 400)
+    try:
+        data = analyze_alternating_extrema(
+            code,
+            beg,
+            end,
+            series=series,
             smooth_window=smooth,
             adjust=adjust,
         )

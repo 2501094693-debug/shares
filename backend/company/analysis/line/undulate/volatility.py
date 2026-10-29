@@ -145,7 +145,9 @@ def _fetch_index_day_range(
         datetime.strptime(beg_iso, "%Y-%m-%d") - timedelta(days=40)
     ).strftime("%Y%m%d")
     end_compact = end_iso.replace("-", "")
-    sources = ("eastmoney", "tonghuashun")
+    # 同花顺优先：东财外网偶发 RemoteDisconnected / 长时间挂起，会让指数统计比个股慢很多。
+    # 与前端左下指数图（fetchLcIndexKline）保持同一取数优先级。
+    sources = ("tonghuashun", "eastmoney")
     last_err: Exception | None = None
     for source in sources:
         try:

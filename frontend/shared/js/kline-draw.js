@@ -369,32 +369,38 @@
 
     drawMaLines(ctx, maVisible, yAt, xAt, n);
 
-    // 局部极值点标记
+    // 局部极值点标记（峰谷交替，主要峰谷）
     const extrema = Array.isArray(state.extrema) ? state.extrema : [];
-    for (const e of extrema) {
-      const idx = Number(e && e.index);
-      if (!Number.isFinite(idx)) continue;
-      const local = idx - (state.viewStart || 0);
-      if (local < 0 || local >= n) continue;
-      const price = Number(e.price);
-      if (!Number.isFinite(price)) continue;
-      const x = xAt(local);
-      const y = yAt(price);
-      const isPeak = String(e.type || "") === "peak";
-      const color = isPeak ? colors.up : colors.down;
-      ctx.save();
-      ctx.fillStyle = color;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#fff";
-      ctx.font = 'bold 8px "JetBrains Mono", Consolas, monospace';
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(isPeak ? "峰" : "谷", x, y);
-      ctx.restore();
+    if (extrema.length) {
+      const dateToLocal = new Map();
+      for (let i = 0; i < n; i += 1) {
+        const key = String(items[i]?.time || items[i]?.date || "").slice(0, 10);
+        if (key) dateToLocal.set(key, i);
+      }
+      for (const e of extrema) {
+        const dkey = String(e?.date || "").slice(0, 10);
+        const local = dateToLocal.has(dkey) ? dateToLocal.get(dkey) : -1;
+        if (local < 0 || local >= n) continue;
+        const price = Number(e.price);
+        if (!Number.isFinite(price)) continue;
+        const x = xAt(local);
+        const y = yAt(price);
+        const isPeak = String(e.type || "") === "peak";
+        const color = isPeak ? colors.up : colors.down;
+        ctx.save();
+        ctx.fillStyle = color;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.font = 'bold 8px "JetBrains Mono", Consolas, monospace';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(isPeak ? "峰" : "谷", x, y);
+        ctx.restore();
+      }
     }
 
     if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
@@ -584,13 +590,14 @@
     const key = `${code}|${beg}|${end}`;
     if (extremaCache.has(key)) return extremaCache.get(key);
     const pending = fetch(
-      `/api/stocks/line-local-extrema?code=${encodeURIComponent(code)}&beg=${beg}&end=${end}&series=close&w=5&min_distance=3&prominence_pct=3`
+      `/api/stocks/line-local-extrema-alternating?code=${encodeURIComponent(code)}&beg=${beg}&end=${end}&series=close`
     )
       .then((res) => res.json())
       .then((json) => {
         if (!json.ok) throw new Error(json.error || "极值加载失败");
         const data = json.data || {};
-        return Array.isArray(data.extrema) ? data.extrema : [];
+        const all = Array.isArray(data.extrema) ? data.extrema : [];
+        return all;
       })
       .catch((err) => {
         extremaCache.delete(key);

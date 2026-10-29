@@ -11794,34 +11794,41 @@ async function loadCompanyLocalExtrema(code, items, beg, end) {
   const e = end || String(items[items.length - 1].time || items[items.length - 1].date || "").replace(/-/g, "");
   if (!b || !e) return [];
   try {
-    const res = await fetch(`/api/stocks/line-local-extrema?code=${encodeURIComponent(code)}&beg=${b}&end=${e}&series=close&w=5&min_distance=3&prominence_pct=3`);
+    const res = await fetch(`/api/stocks/line-local-extrema-alternating?code=${encodeURIComponent(code)}&beg=${b}&end=${e}&series=close`);
     const json = await res.json();
     if (!json.ok) return [];
     const data = json.data || {};
-    return Array.isArray(data.extrema) ? data.extrema : [];
+    const all = Array.isArray(data.extrema) ? data.extrema : [];
+    return all;
   } catch {
     return [];
   }
 }
 
 function scheduleExtremaForVisible() {
-  if (chartState.mode !== "day") return;
-  const items = chartState.items || [];
-  if (!items.length) return;
+  const lcVisible = Boolean(lcChartState.visible);
+  const topItems = chartState.mode === "day" ? (chartState.items || []) : [];
+  const lcItems = lcVisible ? (lcChartState.items || []) : [];
+  const lcAll = lcVisible ? (lcChartState.allItems || []) : [];
+  const baseItems = lcVisible ? lcItems : topItems;
+  if (!baseItems.length) return;
   const lcBeg = String(document.getElementById("lcBeg")?.value || "").trim();
-  const begRaw = lcBeg || String(items[0]?.time || items[0]?.date || "").slice(0, 10);
+  const begSourceItems = lcVisible && lcItems.length ? lcItems : baseItems;
+  const begRaw = lcBeg || String(begSourceItems[0]?.time || begSourceItems[0]?.date || "").slice(0, 10);
   const beg = begRaw.replace(/-/g, "");
-  const end = String(items[items.length - 1]?.time || items[items.length - 1]?.date || "").slice(0, 10).replace(/-/g, "");
+  const endSourceItems = lcVisible && lcAll.length ? lcAll : baseItems;
+  const end = String(endSourceItems[endSourceItems.length - 1]?.time || endSourceItems[endSourceItems.length - 1]?.date || "").slice(0, 10).replace(/-/g, "");
   if (!beg || !end) return;
   if (chartState.extremaRangeBeg === beg && chartState.extremaRangeEnd === end) return;
   if (chartState.extremaFetching) return;
   chartState.extremaFetching = true;
-  loadCompanyLocalExtrema(code, items, beg, end)
+  loadCompanyLocalExtrema(code, baseItems, beg, end)
     .then((extrema) => {
       chartState.extrema = Array.isArray(extrema) ? extrema : [];
       chartState.extremaRangeBeg = beg;
       chartState.extremaRangeEnd = end;
-      renderChart();
+      if (chartState.mode === "day") renderChart();
+      if (lcChartState.visible) renderLcChart();
     })
     .finally(() => {
       chartState.extremaFetching = false;
@@ -14645,11 +14652,11 @@ function lcUndSigma(v) {
 }
 
 /** 单张卡的统计块：名称 + 区间/均值/σ/极差指标格 */
-function lcUndStatRowHtml(label, series, row) {
+function lcUndStatRowHtml(label, series, row, loading = false) {
   if (!row || row.min == null) {
     return `<div class="lc-und-stat" data-series="${series}">
       <div class="lc-und-stat-head"><span class="lc-und-stat-dot" aria-hidden="true"></span><strong>${escapeHtml(label)}</strong></div>
-      <div class="lc-und-stat-empty">暂无统计</div>
+      <div class="lc-und-stat-empty">${loading ? "统计加载中…" : "暂无统计"}</div>
     </div>`;
   }
   const endSigmaVal = row.end_sigma ?? row.end_z;
@@ -14751,8 +14758,8 @@ function fillLcUndulateFooters() {
       return;
     }
     el.foot.innerHTML =
-      lcUndStatRowHtml(stockName, "stock", stockStats[f.key]) +
-      lcUndStatRowHtml(indexName, "index", indexStats[f.key]);
+      lcUndStatRowHtml(stockName, "stock", stockStats[f.key], Boolean(meta.loading)) +
+      lcUndStatRowHtml(indexName, "index", indexStats[f.key], Boolean(meta.index?.loading));
   });
 }
 
@@ -16289,6 +16296,7 @@ window.CompanyLcKline = {
         if (lcComboMetricState === "compare") void refreshLcComparePane();
         void refreshLcExtremum();
         void refreshLcPosition();
+        scheduleExtremaForVisible();
       });
     });
   },
@@ -17371,7 +17379,10 @@ syncAddGroupBtn();
     lcBegEl.addEventListener("input", () => {
       chartState.extremaRangeBeg = "";
       chartState.extremaRangeEnd = "";
+      chartState.extremaFetching = false;
       renderChart();
+      if (lcChartState.visible) renderLcChart();
+      scheduleExtremaForVisible();
     });
   }
 
