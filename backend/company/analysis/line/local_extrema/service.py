@@ -36,6 +36,7 @@ from core.codes import normalize_code
 from core.fmt import to_float
 
 from company.analysis.line.extremum.service import _bar_date, _iso
+from company.analysis.line.local_extrema.score import score_extrema
 
 
 SERIES_OPTIONS: tuple[str, ...] = ("open", "close", "high", "low", "ohlc4")
@@ -330,6 +331,7 @@ def compute_local_extrema(
 
     peak_count = sum(1 for e in seq if e["type"] == "peak")
     trough_count = sum(1 for e in seq if e["type"] == "trough")
+    scored = score_extrema(seq)
     return {
         "series": series,
         "series_label": SERIES_LABELS.get(series, series),
@@ -339,6 +341,7 @@ def compute_local_extrema(
         "peak_count": peak_count,
         "trough_count": trough_count,
         "extrema": seq,
+        **scored,
     }
 
 
@@ -371,6 +374,7 @@ def compute_alternating_extrema(
 
     peaks = [x for x in seq if x["type"] == "peak"]
     troughs = [x for x in seq if x["type"] == "trough"]
+    scored = score_extrema(seq)
     return {
         "series": series,
         "series_label": SERIES_LABELS.get(series, series),
@@ -380,6 +384,7 @@ def compute_alternating_extrema(
         "peak_count": len(peaks),
         "trough_count": len(troughs),
         "extrema": seq,
+        **scored,
     }
 
 

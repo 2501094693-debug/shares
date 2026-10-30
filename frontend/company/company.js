@@ -1564,10 +1564,12 @@ const chartState = {
   historyLoading: false,
   // 峰/谷数据只服务 K线分析主图（研判）；行情页日K不标注、也不请求
   extrema: [],
+  peakScores: [],
+  troughScores: [],
   extremaRangeBeg: "",
   extremaRangeEnd: "",
-  extremaLayer: 2,
   extremaRangeLayer: 2,
+  extremaLayer: 2,
   extremaFetching: false,
   extremaTimer: 0,
 };
@@ -11793,19 +11795,24 @@ function drawGroupedSignedBars(ctx, layout, items, tiers, colors, hoverIndex, { 
 
 async function loadCompanyLocalExtrema(code, items, beg, end, layers) {
   const L = Number(layers || chartState.extremaLayer || 2) || 2;
-  if (!code || !Array.isArray(items) || !items.length) return [];
+  if (!code || !Array.isArray(items) || !items.length) {
+    return { extrema: [], peakScores: [], troughScores: [] };
+  }
   const b = beg || String(items[0].time || items[0].date || "").replace(/-/g, "");
   const e = end || String(items[items.length - 1].time || items[items.length - 1].date || "").replace(/-/g, "");
-  if (!b || !e) return [];
+  if (!b || !e) return { extrema: [], peakScores: [], troughScores: [] };
   try {
     const res = await fetch(`/api/stocks/line-local-extrema-alternating?code=${encodeURIComponent(code)}&beg=${b}&end=${e}&series=close&layers=${L}`);
     const json = await res.json();
-    if (!json.ok) return [];
+    if (!json.ok) return { extrema: [], peakScores: [], troughScores: [] };
     const data = json.data || {};
-    const all = Array.isArray(data.extrema) ? data.extrema : [];
-    return all;
+    return {
+      extrema: Array.isArray(data.extrema) ? data.extrema : [],
+      peakScores: Array.isArray(data.peak_scores) ? data.peak_scores : [],
+      troughScores: Array.isArray(data.trough_scores) ? data.trough_scores : [],
+    };
   } catch {
-    return [];
+    return { extrema: [], peakScores: [], troughScores: [] };
   }
 }
 
@@ -11850,8 +11857,11 @@ function scheduleExtremaForVisible() {
   if (chartState.extremaFetching) return;
   chartState.extremaFetching = true;
   loadCompanyLocalExtrema(code, baseItems, beg, end, layer)
-    .then((extrema) => {
-      chartState.extrema = Array.isArray(extrema) ? extrema : [];
+    .then((pack) => {
+      const data = pack && typeof pack === "object" ? pack : {};
+      chartState.extrema = Array.isArray(data.extrema) ? data.extrema : [];
+      chartState.peakScores = Array.isArray(data.peakScores) ? data.peakScores : [];
+      chartState.troughScores = Array.isArray(data.troughScores) ? data.troughScores : [];
       chartState.extremaRangeBeg = beg;
       chartState.extremaRangeEnd = end;
       chartState.extremaRangeLayer = layer;
@@ -11859,12 +11869,15 @@ function scheduleExtremaForVisible() {
     })
     .catch(() => {
       chartState.extrema = [];
+      chartState.peakScores = [];
+      chartState.troughScores = [];
       chartState.extremaRangeBeg = beg;
       chartState.extremaRangeEnd = end;
       chartState.extremaRangeLayer = layer;
     })
     .finally(() => {
       chartState.extremaFetching = false;
+      if (lcChartState.visible) renderLcExtremum();
     });
 }
 
@@ -13341,7 +13354,6 @@ async function refreshLcComparePane({ force = false } = {}) {
   if (lcComboMetricState !== "compare") return;
   void refreshLcUndulate({ force });
   void refreshLcExtremum({ force });
-  void refreshLcPosition({ force });
   void refreshLcTrader({ force });
   const sync =
     window.LineCompare?.syncPaneWithKline ||
@@ -13408,32 +13420,28 @@ async function refreshLcUndulate({ force = false } = {}) {
   }
 }
 
-/** 前低基准日：点选终点（或单根 a），否则可见窗口末日 */
-function lcExtremumTargetDate() {
-  const pick = lcChartState.rangePick || {};
-  if (pick.a) {
-    if (pick.b) return pick.a <= pick.b ? pick.b : pick.a;
-    return pick.a;
-  }
-  const win = lcChartViewWindow().items || [];
-  if (!win.length) return "";
-  return String(win[win.length - 1]?.time || "").slice(0, 10);
+/** 现价：日K全序列末日收盘（无则取可见窗口末日） */
+function lcCurrentPrice() {
+  const all = lcChartState.allItems || [];
+  const win = lcChartState.items || [];
+  const src = all.length ? all : win;
+  if (!src.length) return null;
+  const last = src[src.length - 1];
+  const p = Number(last?.close);
+  return Number.isFinite(p) ? p : null;
 }
 
-/** 研判 K线分析：四价前低回溯 */
-async function refreshLcExtremum({ force = false, date } = {}) {
-  const sync = window.LineCompare?.syncExtremumWithKline;
-  if (typeof sync !== "function" || !code) return;
-  const d = String(date || lcExtremumTargetDate() || "").slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
-  try {
-    await sync({ code, date: d, force });
-  } catch {
-    /* 前低失败不阻塞主图 */
+/** 研判 K线分析：峰谷一维价轴（依赖 chartState.extrema） */
+function refreshLcExtremum({ force = false } = {}) {
+  if (force) {
+    chartState.extremaRangeBeg = "";
+    chartState.extremaRangeEnd = "";
+    scheduleExtremaForVisible();
   }
+  renderLcExtremum();
 }
 
-/** 极值位置区间：优先点选区间；仅点起点时取可见窗口首日→起点；否则可见窗口 */
+/** T王等侧栏区间：优先点选区间；仅点起点时取可见窗口首日→起点；否则可见窗口 */
 function lcPositionRange() {
   const pick = lcChartState.rangePick || {};
   if (pick.a && pick.b) {
@@ -13453,22 +13461,8 @@ function lcPositionRange() {
   };
 }
 
-/** 研判 K线分析：四价极值位置（区间内开/收/高/低各自最低—最高—现价位置） */
-async function refreshLcPosition({ force = false } = {}) {
-  const load = window.LineCompare?.loadPosition;
-  if (typeof load !== "function" || !code) return;
-  const range = lcPositionRange();
-  if (!range || !/^\d{4}-\d{2}-\d{2}$/.test(range.beg || "")) return;
-  const end = range.end || range.beg;
-  try {
-    await load({ code, beg: range.beg, end, force });
-  } catch {
-    /* 极值位置失败不阻塞主图 */
-  }
-}
-
 /**
- * T王区间与「四价前低 / 极值位置」同一套默认：
+ * T王区间默认：
  * 点选区间优先；仅点终点时取可见窗口首日→终点；否则可见窗口。
  */
 async function refreshLcTrader({ force = false } = {}) {
@@ -13486,7 +13480,6 @@ async function refreshLcTrader({ force = false } = {}) {
 
 let lcUndulateTimer = 0;
 let lcExtremumTimer = 0;
-let lcPositionTimer = 0;
 let lcTraderTimer = 0;
 let lcJettonTimer = 0;
 
@@ -13520,26 +13513,16 @@ function scheduleLcUndulate(delay = 320) {
     void refreshLcUndulate();
   }, delay);
   scheduleLcExtremum(delay);
-  scheduleLcPosition(delay);
   scheduleLcTrader(delay);
   scheduleLcJetton(delay);
 }
 
-/** 视窗/点选变化后延迟同步四价前低 */
+/** 视窗/点选变化后延迟刷新峰谷价轴 */
 function scheduleLcExtremum(delay = 320) {
   if (!lcChartState.visible) return;
   window.clearTimeout(lcExtremumTimer);
   lcExtremumTimer = window.setTimeout(() => {
-    void refreshLcExtremum();
-  }, delay);
-}
-
-/** 视窗/点选变化后延迟同步极值位置 */
-function scheduleLcPosition(delay = 320) {
-  if (!lcChartState.visible) return;
-  window.clearTimeout(lcPositionTimer);
-  lcPositionTimer = window.setTimeout(() => {
-    void refreshLcPosition();
+    refreshLcExtremum();
   }, delay);
 }
 
@@ -13644,7 +13627,7 @@ function lcKlinePriceScaleForItems(items, priceH) {
 }
 
 /**
- * 右下角「四价前低」高度：占满筹码峰底到侧栏底之间的空间。
+ * 右下角「峰谷价轴」高度：占满筹码峰底到侧栏底之间的空间。
  */
 function syncLcExtremumSlot() {
   const side = lcEls.jettonPane?.parentElement;
@@ -13991,26 +13974,6 @@ async function refreshLcJetton({ force = false } = {}) {
   }
 }
 
-const LC_EXTREMUM_FACTORS = [
-  { key: "open", label: "开盘价" },
-  { key: "close", label: "收盘价" },
-  { key: "high", label: "最高价" },
-  { key: "low", label: "最低价" },
-];
-
-function fmtLcExtremumGap(gap) {
-  if (gap == null || !Number.isFinite(Number(gap))) return "—";
-  const n = Number(gap);
-  if (n <= 0) return "相邻";
-  return `隔 ${n}`;
-}
-
-function fmtLcExtremumMd(date) {
-  const s = String(date || "").slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "—";
-  return `${s.slice(5, 7)}-${s.slice(8, 10)}`;
-}
-
 /** 将日K视窗滚到指定交易日附近 */
 function jumpLcChartToDate(date) {
   const target = String(date || "").slice(0, 10);
@@ -14036,136 +13999,189 @@ function bindLcExtremum() {
   });
 }
 
-const LC_POSITION_FACTORS = [
-  { key: "open", label: "开盘价" },
-  { key: "close", label: "收盘价" },
-  { key: "high", label: "最高价" },
-  { key: "low", label: "最低价" },
-];
-
-function fmtLcPositionPct(pct) {
-  if (pct == null || !Number.isFinite(Number(pct))) return "—";
-  return `${Number(pct).toFixed(1)}%`;
+function lcPvAxisPct(price, lo, hi) {
+  const span = hi - lo;
+  if (!(span > 0)) return 50;
+  return Math.max(0, Math.min(100, ((price - lo) / span) * 100));
 }
 
-/** 四价前低：回溯各价最近更低日（表格） */
+/**
+ * 现价评分：最近的谷分 × (1 − |相对价距|)。
+ * 相对价距 dist_rel = (现价 − 谷) / 谷，取绝对值；|dist_rel|≥1 时现价分为 0。
+ * 「最近」= 相对价距绝对值最小的谷（不再限定谷价低于现价）。
+ */
+function lcNearTroughComposite(nowPrice, troughScores) {
+  const now = Number(nowPrice);
+  if (!Number.isFinite(now) || now <= 0) return null;
+  const list = Array.isArray(troughScores) ? troughScores : [];
+  let best = null;
+  for (const row of list) {
+    const price = Number(row?.price);
+    if (!Number.isFinite(price) || price <= 0) continue;
+    const distRel = (now - price) / price;
+    const absDistRel = Math.abs(distRel);
+    if (!best || absDistRel < best.absDistRel) {
+      best = { row, price, distRel, absDistRel };
+    }
+  }
+  if (!best) return null;
+  const valleyScore = Number(best.row.score);
+  const scoreValley = Number.isFinite(valleyScore) ? Math.max(0, valleyScore) : 0;
+  const factor = Math.max(0, 1 - best.absDistRel);
+  const score = scoreValley * factor;
+  return {
+    date: String(best.row.date || "").slice(0, 10),
+    price: best.price,
+    index: best.row.index,
+    valleyScore: roundLcPv(scoreValley, 2),
+    distRel: roundLcPv(best.absDistRel, 6),
+    distPct: roundLcPv(best.absDistRel * 100, 2),
+    distAbs: roundLcPv(Math.abs(now - best.price), 4),
+    factor: roundLcPv(factor, 4),
+    score: roundLcPv(score, 2),
+  };
+}
+
+function roundLcPv(n, digits = 2) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 0;
+  const p = 10 ** digits;
+  return Math.round(x * p) / p;
+}
+
+/** 单条一维价轴：峰或谷标记 + 现价；可选高亮最近谷 */
+function renderLcPvAxisHtml(kind, points, lo, hi, nowPrice, highlightDate = "") {
+  const tag = kind === "peak" ? "峰" : "谷";
+  const hiDay = String(highlightDate || "").slice(0, 10);
+  const marks = points
+    .map((pt) => {
+      const left = lcPvAxisPct(Number(pt.price), lo, hi);
+      const day = String(pt.date || "").slice(0, 10);
+      const tip = `${day} · ${fmtNum(pt.price)}`;
+      const near = kind === "trough" && hiDay && day === hiDay ? " is-near" : "";
+      return `<button type="button" class="lc-pv-mark lc-pv-mark--${kind}${near}" style="left:${left.toFixed(2)}%" data-lc-ext-jump="${escapeHtml(day)}" title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}"></button>`;
+    })
+    .join("");
+  let nowMark = "";
+  if (nowPrice != null && Number.isFinite(nowPrice)) {
+    const left = lcPvAxisPct(nowPrice, lo, hi);
+    nowMark = `<span class="lc-pv-mark lc-pv-mark--now" style="left:${left.toFixed(2)}%" title="现价 ${escapeHtml(fmtNum(nowPrice))}" aria-label="现价 ${escapeHtml(fmtNum(nowPrice))}"></span>`;
+  }
+  return `<div class="lc-pv-axis lc-pv-axis--${kind}">
+    <div class="lc-pv-axis-head">
+      <span class="lc-pv-axis-tag">${tag}</span>
+      <span class="lc-pv-axis-count">${points.length}</span>
+    </div>
+    <div class="lc-pv-axis-track" role="img" aria-label="${tag}价轴">
+      <i class="lc-pv-axis-rail" aria-hidden="true"></i>
+      ${marks}${nowMark}
+    </div>
+    <div class="lc-pv-axis-scale">
+      <span>${escapeHtml(fmtNum(lo))}</span>
+      <span>${escapeHtml(fmtNum(hi))}</span>
+    </div>
+  </div>`;
+}
+
+function renderLcNearTroughScoreHtml(nowPrice, near) {
+  if (nowPrice == null || !Number.isFinite(nowPrice)) {
+    return `<p class="lc-pv-now muted">暂无现价</p>`;
+  }
+  if (!near) {
+    return `<p class="lc-pv-now">现价 <b>${escapeHtml(fmtNum(nowPrice))}</b><span class="lc-pv-now-sub">暂无谷可评分</span></p>`;
+  }
+  const tip = `最近谷 ${near.date} @ ${fmtNum(near.price)} · 谷分 ${near.valleyScore} × (1−${near.distPct}%) = ${near.score}`;
+  return `<div class="lc-pv-score" title="${escapeHtml(tip)}">
+    <p class="lc-pv-now">现价 <b>${escapeHtml(fmtNum(nowPrice))}</b>
+      <span class="lc-pv-score-val">评分 <b>${escapeHtml(String(near.score))}</b></span>
+    </p>
+    <p class="lc-pv-score-meta">最近谷 ${escapeHtml(near.date || "—")} · ${escapeHtml(fmtNum(near.price))}
+      · 谷分 ${escapeHtml(String(near.valleyScore))} × (1−${escapeHtml(String(near.distPct))}%)</p>
+  </div>`;
+}
+
+/** 峰谷价轴：两条一维坐标分别标注峰 / 谷，并标现价 + 最近谷综合分 */
 function renderLcExtremum() {
   bindLcExtremum();
   const box = document.getElementById("lcExtremumBody");
+  const metaEl = document.getElementById("lcExtremumMeta");
   if (!box) return;
-  const meta = window.LineCompare?.extremumMeta?.() || {};
-  const pack = meta.pack || null;
-  if (meta.loading && !pack) {
-    box.innerHTML = `<p class="muted lc-undulate-note">加载中…</p>`;
-    return;
-  }
-  if (!pack) {
-    const msg = meta.error
-      ? `<p class="error lc-undulate-note">${escapeHtml(meta.error)}</p>`
-      : `<p class="muted lc-undulate-note">等待日K窗口…</p>`;
-    box.innerHTML = msg;
-    return;
-  }
-  const prices = pack.prices || {};
-  const ext = pack.extremum || {};
-  const rows = LC_EXTREMUM_FACTORS.map((f) => {
-    const row = ext[f.key] || {};
-    const found = row.date;
-    const miss = !found;
-    const dateCell = found
-      ? `<button type="button" class="lc-extremum-jump" data-lc-ext-jump="${escapeHtml(found)}" title="${escapeHtml(found)}">${escapeHtml(fmtLcExtremumMd(found))}</button>`
-      : "无更低";
-    return `<tr class="${miss ? "is-miss" : ""}">
-      <td class="lc-extremum-factor">${escapeHtml(f.label)}</td>
-      <td>${escapeHtml(fmtNum(row.target_price ?? prices[f.key]))}</td>
-      <td>${dateCell}</td>
-      <td>${escapeHtml(found ? fmtNum(row.found_price) : "—")}</td>
-      <td>${escapeHtml(fmtLcExtremumGap(row.gap))}</td>
-    </tr>`;
-  }).join("");
-  const errNote = meta.error
-    ? `<p class="error lc-undulate-note">${escapeHtml(meta.error)}</p>`
-    : "";
-  box.innerHTML = `${errNote}<table class="lc-extremum-table" aria-label="四价前低结果">
-      <thead><tr><th>因子</th><th>当日</th><th>前低日</th><th>前低价</th><th>间隔</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-}
 
-/** 四价极值位置：区间低—高—现价所处百分位 + 升序排名（表格） */
-function renderLcPosition() {
-  const box = document.getElementById("lcPositionBody");
-  const rangeEl = document.getElementById("lcPositionMeta");
-  if (!box) return;
-  const meta = window.LineCompare?.positionMeta?.() || {};
-  const pack = meta.pack || null;
-  const setRangeMeta = (text) => {
-    if (!rangeEl) return;
-    if (text) {
-      rangeEl.textContent = text;
-      rangeEl.hidden = false;
+  const extrema = Array.isArray(chartState.extrema) ? chartState.extrema : [];
+  let troughScores = Array.isArray(chartState.troughScores) ? chartState.troughScores : [];
+  if (!troughScores.length && extrema.length) {
+    troughScores = extrema
+      .filter((e) => e?.type === "trough")
+      .map((e) => ({
+        date: e.date,
+        price: e.price,
+        index: e.index,
+        score: 50,
+      }));
+  }
+  const loading = !!chartState.extremaFetching;
+  const nowPrice = lcCurrentPrice();
+  const near = lcNearTroughComposite(nowPrice, troughScores);
+
+  if (metaEl) {
+    if (loading && !extrema.length) {
+      metaEl.textContent = "加载峰谷…";
+    } else if (!extrema.length && !chartState.extremaRangeBeg) {
+      metaEl.textContent = "一维价轴 · 标注峰谷与现价";
     } else {
-      rangeEl.textContent = "";
-      rangeEl.hidden = true;
+      const peaks = extrema.filter((e) => e?.type === "peak").length;
+      const troughs = extrema.filter((e) => e?.type === "trough").length;
+      const scoreTxt = near ? ` · 评分 ${near.score}` : "";
+      metaEl.textContent = `峰 ${peaks} · 谷 ${troughs}${scoreTxt}${loading ? " · 更新中…" : ""}`;
     }
-  };
-  if (meta.loading && !pack) {
-    setRangeMeta("");
+  }
+
+  if (loading && !extrema.length) {
     box.innerHTML = `<p class="muted lc-undulate-note">加载中…</p>`;
     return;
   }
-  if (!pack) {
-    setRangeMeta("");
-    const msg = meta.error
-      ? `<p class="error lc-undulate-note">${escapeHtml(meta.error)}</p>`
-      : `<p class="muted lc-undulate-note">等待日K窗口…</p>`;
-    box.innerHTML = msg;
+  if (!extrema.length) {
+    box.innerHTML = `<p class="muted lc-undulate-note">${chartState.extremaRangeBeg ? "暂无峰谷" : "等待日K窗口…"}</p>`;
     return;
   }
-  const pos = pack.position || {};
-  const live = !!pack.live;
-  const priceTip = live
-    ? `最新实时 ${pack.quote_date || ""}`.trim()
-    : `区间结束日 ${pack.end || ""}`.trim();
-  const rows = LC_POSITION_FACTORS.map((f) => {
-    const row = pos[f.key] || {};
-    const pct = Number(row.pct);
-    const hasPct = Number.isFinite(pct);
-    const width = hasPct ? Math.max(0, Math.min(100, pct)) : 0;
-    const lowTip = row.min_date ? `${row.min_date} ${fmtNum(row.min)}` : "区间最低";
-    const highTip = row.max_date ? `${row.max_date} ${fmtNum(row.max)}` : "区间最高";
-    const rankNum = Number(row.rank);
-    const rankN = Number(row.n);
-    const hasRank = Number.isFinite(rankNum) && Number.isFinite(rankN) && rankN > 0;
-    const rankTip = hasRank
-      ? `区间内价格从低到高第 ${rankNum} / ${rankN}（1=最低）`
-      : "区间升序排名不可用";
-    const rankTxt = hasRank ? `${escapeHtml(String(rankNum))}/${escapeHtml(String(rankN))}` : "—";
-    return `<tr>
-      <td class="lc-position-factor">${escapeHtml(f.label)}</td>
-      <td title="${escapeHtml(lowTip)}">${escapeHtml(fmtNum(row.min))}</td>
-      <td title="${escapeHtml(highTip)}">${escapeHtml(fmtNum(row.max))}</td>
-      <td title="${escapeHtml(priceTip)}">${escapeHtml(fmtNum(row.end_price))}</td>
-      <td class="lc-position-cell">
-        <span class="lc-position-bar"><i style="width:${width.toFixed(1)}%"></i></span>
-        <span class="lc-position-pct">${escapeHtml(fmtLcPositionPct(hasPct ? pct : null))}</span>
-      </td>
-      <td class="lc-position-rank" title="${escapeHtml(rankTip)}">${rankTxt}</td>
-    </tr>`;
-  }).join("");
-  const errNote = meta.error
-    ? `<p class="error lc-undulate-note">${escapeHtml(meta.error)}</p>`
-    : "";
-  const snapped = pack.snapped ? " · 已对齐交易日" : "";
-  const priceNote = live ? " · 现价=最新实时" : " · 现价=区间末日";
-  setRangeMeta(
-    `区间 ${pack.beg || "—"} ~ ${pack.end || "—"} · ${String(pack.count ?? 0)} 日${snapped}${priceNote}`
-  );
-  box.innerHTML = `${errNote}
-    <table class="lc-position-table" aria-label="四价极值位置">
-      <thead><tr><th>因子</th><th>区间低</th><th>区间高</th><th title="区间结束日四价">末日</th><th>位置</th><th title="区间内价格从低到高排名（1=最低）">排名</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+
+  const peaks = [];
+  const troughs = [];
+  for (const e of extrema) {
+    const price = Number(e?.price);
+    if (!Number.isFinite(price)) continue;
+    const row = { type: e.type, date: String(e.date || "").slice(0, 10), price };
+    if (e.type === "peak") peaks.push(row);
+    else if (e.type === "trough") troughs.push(row);
+  }
+
+  const prices = [
+    ...peaks.map((p) => p.price),
+    ...troughs.map((p) => p.price),
+    ...(nowPrice != null ? [nowPrice] : []),
+  ];
+  if (!prices.length) {
+    box.innerHTML = `<p class="muted lc-undulate-note">暂无峰谷</p>`;
+    return;
+  }
+  let lo = Math.min(...prices);
+  let hi = Math.max(...prices);
+  if (hi <= lo) {
+    const pad = Math.max(Math.abs(lo) * 0.01, 0.01);
+    lo -= pad;
+    hi += pad;
+  } else {
+    const pad = (hi - lo) * 0.04;
+    lo -= pad;
+    hi += pad;
+  }
+
+  const nearDay = near?.date || "";
+  box.innerHTML = `<div class="lc-pv-axes" aria-label="峰谷一维价轴">
+    ${renderLcPvAxisHtml("peak", peaks, lo, hi, nowPrice)}
+    ${renderLcPvAxisHtml("trough", troughs, lo, hi, nowPrice, nearDay)}
+    ${renderLcNearTroughScoreHtml(nowPrice, near)}
+  </div>`;
 }
 
 /* ---------- 四价波动：可切换单卡（默认收盘价；开盘 / 最高 / 最低） ---------- */
@@ -15511,22 +15527,22 @@ function handleLcRangeTap(viewIndex) {
     window.LineCompare?.setFormMeta?.(lcRangePickHint());
     renderLcChart(viewIndex);
     void refreshLcUndulate();
-    void refreshLcExtremum({ date: day });
-    void refreshLcPosition();
+    refreshLcExtremum();
     void refreshLcTrader();
     void refreshLcJetton();
+    scheduleExtremaForVisible();
     return;
   }
 
   pick.b = day;
+  const lo = pick.a <= pick.b ? pick.a : pick.b;
+  const hi = pick.a <= pick.b ? pick.b : pick.a;
   window.LineCompare?.setFormMeta?.(lcRangePickHint());
   renderLcChart(viewIndex);
   void refreshLcUndulate();
-  const lo = pick.a <= pick.b ? pick.a : pick.b;
-  const hi = pick.a <= pick.b ? pick.b : pick.a;
-  void refreshLcExtremum({ date: hi });
-  void refreshLcPosition();
+  refreshLcExtremum();
   void refreshLcTrader();
+  scheduleExtremaForVisible();
   void refreshLcJetton({ force: true });
   const run = window.LineCompare?.applyRangeAndRun;
   if (typeof run === "function") {
@@ -16376,7 +16392,6 @@ window.CompanyLcKline = {
         renderLcChart();
         if (lcComboMetricState === "compare") void refreshLcComparePane();
         void refreshLcExtremum();
-        void refreshLcPosition();
         scheduleExtremaForVisible();
       });
     });
@@ -16385,7 +16400,6 @@ window.CompanyLcKline = {
     lcChartState.visible = false;
     window.clearTimeout(lcUndulateTimer);
     window.clearTimeout(lcExtremumTimer);
-    window.clearTimeout(lcPositionTimer);
     window.clearTimeout(lcJettonTimer);
     lcJettonState.gen += 1;
     lcJettonAbortInflight();
@@ -16402,7 +16416,7 @@ window.CompanyLcKline = {
   render: refreshLcChartIfVisible,
   renderUndulate: renderLcUndulate,
   renderExtremum: renderLcExtremum,
-  renderPosition: renderLcPosition,
+  refreshExtremum: refreshLcExtremum,
   visibleWindowRange: lcVisibleWindowRange,
   clearRangePick: clearLcRangePick,
 };
@@ -17470,12 +17484,17 @@ syncAddGroupBtn();
   if (lcLayerEl) {
     lcLayerEl.addEventListener("change", () => {
       chartState.extrema = [];
+      chartState.peakScores = [];
+      chartState.troughScores = [];
       chartState.extremaRangeBeg = "";
       chartState.extremaRangeEnd = "";
       chartState.extremaRangeLayer = 0;
       chartState.extremaFetching = false;
       renderChart();
-      if (lcChartState.visible) renderLcChart();
+      if (lcChartState.visible) {
+        renderLcChart();
+        renderLcExtremum();
+      }
       scheduleExtremaForVisible();
     });
   }

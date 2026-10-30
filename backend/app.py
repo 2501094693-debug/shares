@@ -5,7 +5,7 @@
 - ``company``：单只股票的盘口、K 线、资讯、龙虎榜历史上榜
 - ``world``：全球主要股指、国债收益率、原油期货
 - ``exponent``：A 股指数（东财 / 同花顺；上证 / 深证 / 沪深300 / 中证系列等）
-- ``analysis``：研判（涨跌停分析 / 行业分析 / 个股分析）
+- ``analysis``：研判（涨跌停分析 / 行业分析）
 - ``mine``：自选股票分组管理
 """
 
@@ -395,15 +395,6 @@ def analysis_page():
 def js_analysis():
     return FileResponse(
         FRONTEND / "analysis" / "app.js",
-        media_type="application/javascript",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
-
-
-@app.get("/js/analysis-select.js")
-def js_analysis_select():
-    return FileResponse(
-        FRONTEND / "analysis" / "select.js",
         media_type="application/javascript",
         headers={"Cache-Control": "no-store, max-age=0"},
     )

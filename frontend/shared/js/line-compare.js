@@ -1558,19 +1558,9 @@
       });
     });
     $("lcExtremumRefresh")?.addEventListener("click", () => {
-      const d =
-        toDateInput(extremum.date) ||
-        toDateInput($("lcEnd")?.value) ||
-        visibleWindowRange()?.end ||
-        "";
-      if (!d) return;
-      void loadExtremum({ code: state.code, date: d, force: true });
-      void loadPosition({
-        code: state.code,
-        beg: toDateInput($("lcBeg")?.value) || visibleWindowRange()?.beg || d,
-        end: d,
-        force: true,
-      });
+      const forceExt = window.CompanyLcKline?.refreshExtremum;
+      if (typeof forceExt === "function") forceExt({ force: true });
+      else window.CompanyLcKline?.renderExtremum?.();
     });
   }
 

@@ -28,6 +28,7 @@ from core.resolve import (
     is_eastmoney_push2_host,
     mark_bad_ip,
     remember_host,
+    remember_ip,
 )
 
 _UA = (
@@ -175,6 +176,21 @@ def _probe_timeout(
     return (min(connect, 2.5), read)
 
 
+def _is_unreachable(exc: BaseException) -> bool:
+    """WinError 10065 / 网络不可达：换 IP，短拉黑，别把整段候选打光。"""
+    text = str(exc).lower()
+    return any(
+        token in text
+        for token in (
+            "10065",
+            "network is unreachable",
+            "host is unreachable",
+            "无法连接的主机",
+            "no route to host",
+        )
+    )
+
+
 def _get_via_ip(
     url: str,
     *,
@@ -189,26 +205,54 @@ def _get_via_ip(
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     last_error: Exception | None = None
     probe = _probe_timeout(timeout)
-    for index, ip in enumerate(ips):
-        # 第一个（DNS 优先）用原超时；后续快速跳过坏节点
-        wait = timeout if index == 0 else probe
-        try:
-            sess = _session(verify=False)
-            sess.mount("https://", _SNIAdapter(host))
-            hdrs = {"User-Agent": _UA, **(headers or {}), "Host": host}
-            resp = sess.get(
-                _url_with_ip(url, ip),
-                params=params,
-                headers=hdrs,
-                timeout=wait,
-                allow_redirects=False,
-            )
-            resp.raise_for_status()
+    tried: set[str] = set()
+    unreachable = False
+
+    def _attempt(candidates: list[str]) -> requests.Response | None:
+        nonlocal last_error, unreachable
+        for ip in candidates:
+            if not ip or ip in tried:
+                continue
+            remaining = sum(1 for item in candidates if item and item not in tried)
+            tried.add(ip)
+            # 多 IP 试连一律收紧 connect，避免 10065/死节点拖满整页资金流
+            wait = probe if remaining > 1 or len(tried) > 1 else timeout
+            try:
+                sess = _session(verify=False)
+                sess.mount("https://", _SNIAdapter(host))
+                hdrs = {"User-Agent": _UA, **(headers or {}), "Host": host}
+                resp = sess.get(
+                    _url_with_ip(url, ip),
+                    params=params,
+                    headers=hdrs,
+                    timeout=wait,
+                    allow_redirects=False,
+                )
+                resp.raise_for_status()
+                remember_ip(host, ip)
+                return resp
+            except Exception as exc:  # noqa: BLE001
+                drop_ip(host, ip)
+                # 不可达 / 403 类：短拉黑，给其它边缘和新鲜 DNS 留机会
+                ttl = 30.0 if _is_unreachable(exc) else None
+                if _is_unreachable(exc):
+                    unreachable = True
+                if isinstance(exc, requests.HTTPError) and getattr(
+                    exc.response, "status_code", 0
+                ) in (403, 404):
+                    ttl = 120.0
+                mark_bad_ip(ip, host=host, ttl=ttl)
+                last_error = exc
+        return None
+
+    resp = _attempt(ips)
+    if resp is not None:
+        return resp
+    # 静态段 10065 / 全灭后：黑名单已生效，再 dial 一次走 recovery（新鲜 DNS）
+    if unreachable or last_error is not None:
+        resp = _attempt(dial_ips(host))
+        if resp is not None:
             return resp
-        except Exception as exc:  # noqa: BLE001
-            drop_ip(host, ip)
-            mark_bad_ip(ip, host=host)
-            last_error = exc
     forget_host(host)
     raise last_error or requests.ConnectionError(f"无法连接 {host}")
 

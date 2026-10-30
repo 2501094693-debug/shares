@@ -29,29 +29,51 @@ _PUSH2_FALLBACK_HOSTS = (
     "push2.eastmoney.com",
 )
 # DoH / 系统 DNS 全挂时兜底。只在当次请求使用，不写入缓存。
-# 注意：同一 IP 对不同 Host/SNI 可能 200 或 404，按主机分开维护。
+# 注意：同一 IP 对不同 Host/SNI 可能 200 / 403 / 空响应，按主机分开维护。
 _PUSH2_STATIC_IPS = (
     "101.226.30.136",
     "103.220.167.67",
-    "43.144.251.121",
+    "61.129.249.5",
+    "47.112.165.11",
 )
 _PUSH2_STATIC_BY_HOST: dict[str, tuple[str, ...]] = {
-    # 61.129.249.5 对 delay 常 404；103.220.167.67 对 ex 常 404
-    PUSH2_DELAY_HOST: ("101.226.30.136", "103.220.167.67", "43.144.251.121"),
-    "push2.eastmoney.com": ("101.226.30.136", "43.144.251.121", "14.103.191.91"),
-    "push2ex.eastmoney.com": ("140.207.67.212", "43.137.75.211", "61.129.249.5"),
-    "push2his.eastmoney.com": ("140.207.67.156", "101.42.128.173"),
+    # delay：43.144 / 47.112 对 delay SNI 常 403；61.152.229.217 空响应
+    # 61.129.249.5 对 delay clist 可用，作 101/103 段 10065 时的备胎
+    PUSH2_DELAY_HOST: ("101.226.30.136", "103.220.167.67", "61.129.249.5"),
+    "push2.eastmoney.com": (
+        "101.226.30.136",
+        "103.220.167.67",
+        "61.129.249.5",
+        "47.112.165.11",
+        "14.103.191.91",
+        "43.144.251.121",
+    ),
+    "push2ex.eastmoney.com": (
+        "114.80.72.158",
+        "103.220.165.159",
+        "117.184.45.25",
+        "117.184.38.248",
+        "140.207.67.212",
+        "43.137.75.211",
+        "61.129.249.5",
+    ),
+    "push2his.eastmoney.com": ("140.207.67.156", "101.42.128.173", "101.226.30.221"),
 }
 _ALL_STATIC_IPS = frozenset(
     ip for ips in _PUSH2_STATIC_BY_HOST.values() for ip in ips
 ) | frozenset(_PUSH2_STATIC_IPS)
-# 仅保留实测会 RemoteDisconnected 的节点；过宽黑名单会滤光系统 DNS，
-# 只剩静态 IP，静态不可达时（WinError 10065）资金流/涨跌停整页失败。
-_DEAD_IPS = frozenset(
-    {
-        "61.152.229.217",
-    }
-)
+# 全局永久死节点（对所有 Host/SNI 都不可用）。Host 相关坏点用 _DEAD_BY_HOST。
+_DEAD_IPS: frozenset[str] = frozenset()
+# 按 Host/SNI 永久排除：同一 IP 对 push2 可用、对 delay 403/空包很常见。
+_DEAD_BY_HOST: dict[str, frozenset[str]] = {
+    PUSH2_DELAY_HOST: frozenset(
+        {
+            "61.152.229.217",
+            "43.144.251.121",
+            "47.112.165.11",
+        }
+    ),
+}
 # key: "ip" 或 "host|ip"；404/掐线按主机隔离，避免 delay 的坏点拖死 ex。
 _BAD_UNTIL: dict[str, float] = {}
 _BAD_TTL = 300.0
@@ -188,13 +210,34 @@ def resolve_ipv4(host: str) -> list[str]:
     return _usable(list(_static_ips(lookup_host) or _static_ips(host)), host=host)
 
 
+def _is_dead(ip: str, host: str | None = None) -> bool:
+    if not ip or ip in _DEAD_IPS:
+        return True
+    host = (host or "").strip().lower().rstrip(".")
+    if host and ip in _DEAD_BY_HOST.get(host, frozenset()):
+        return True
+    return False
+
+
+def _fresh_dns(host: str) -> list[str]:
+    """绕过内存缓存，直接系统 DNS + DoH（仍尊重永久死节点）。"""
+    host = (host or "").strip().lower().rstrip(".")
+    if not host or _is_ipv4(host):
+        return []
+    ordered: list[str] = []
+    for ip in _system_dns(host) + _doh_uncached(host):
+        if ip and not _is_dead(ip, host) and ip not in ordered:
+            ordered.append(ip)
+    return ordered
+
+
 def dial_ips(host: str) -> list[str]:
-    """拨号候选：静态好节点优先，DNS/DoH 结果垫后（不写入 DNS 缓存）。
+    """拨号候选：最近成功 IP → 静态好节点 → DNS/DoH（不写入 DNS 缓存）。
 
     Windows 上系统 DNS 常解析到会 RemoteDisconnected / 慢连接的 CDN 边缘；
     静态 IP（``101.226.30.136`` 等）实测可通。若 DNS 仍放最前，并发资金流
     会在死节点上耗尽 connect timeout，单页拖到 30s+，行业树资金列变空。
-    临时拉黑把候选滤光时，仍强制垫底试静态，避免「无法解析」。
+    临时拉黑把候选滤光时：先试新鲜 DNS，再忽略 TTL 重试静态，避免死循环打 10065。
     """
     host = (host or "").strip().lower().rstrip(".")
     if not host:
@@ -204,6 +247,12 @@ def dial_ips(host: str) -> list[str]:
     canon = canonical_push2_host(host)
     static = list(_static_ips(canon) or _static_ips(host))
     ordered: list[str] = []
+    now = time.monotonic()
+    hit = _CACHE.get(host)
+    if hit and hit[0] > now and hit[1]:
+        for ip in hit[1]:
+            if ip not in ordered:
+                ordered.append(ip)
     for ip in static:
         if ip not in ordered:
             ordered.append(ip)
@@ -213,8 +262,24 @@ def dial_ips(host: str) -> list[str]:
     usable = _usable(ordered, host=host)
     if usable:
         return usable
-    # 临时黑名单把候选滤光：忽略 _BAD_UNTIL，只排除永久死节点
-    return [ip for ip in static if ip and ip not in _DEAD_IPS]
+    # 临时黑名单滤光：DNS 优先（可能已漂到新边缘），静态垫底；只排除永久死节点
+    recovery: list[str] = []
+    for ip in _fresh_dns(canon) + (_fresh_dns(host) if canon != host else []) + static:
+        if ip and not _is_dead(ip, host) and ip not in recovery:
+            recovery.append(ip)
+    return recovery
+
+
+def remember_ip(host: str, ip: str) -> None:
+    """请求成功后把可用 IP 置顶缓存，下次优先拨号。"""
+    host = (host or "").strip().lower().rstrip(".")
+    ip = (ip or "").strip()
+    if not host or not ip or _is_ipv4(host) or _is_dead(ip, host):
+        return
+    now = time.monotonic()
+    hit = _CACHE.get(host)
+    prev = [item for item in (hit[1] if hit and hit[0] > now else []) if item != ip]
+    _CACHE[host] = (now + _TTL, [ip, *prev][:8])
 
 
 def _usable(ips: list[str], host: str | None = None) -> list[str]:
@@ -222,7 +287,7 @@ def _usable(ips: list[str], host: str | None = None) -> list[str]:
     host = (host or "").strip().lower().rstrip(".") or None
     out: list[str] = []
     for ip in ips:
-        if not ip or ip in _DEAD_IPS or ip in out:
+        if not ip or _is_dead(ip, host) or ip in out:
             continue
         if _BAD_UNTIL.get(ip, 0.0) > now:
             continue
@@ -282,6 +347,7 @@ def _doh_once(host: str, doh_ip: str, doh_host: str) -> list[str]:
     sess.trust_env = False
     sess.verify = False
     try:
+        # Cloudflare 在部分网络上会卡满超时；短超时快速落到下一 provider
         resp = sess.get(
             f"https://{doh_ip}/resolve",
             params={"name": host, "type": "A"},
@@ -290,7 +356,7 @@ def _doh_once(host: str, doh_ip: str, doh_host: str) -> list[str]:
                 "Accept": "application/dns-json",
                 "User-Agent": "Mozilla/5.0",
             },
-            timeout=6,
+            timeout=2.5,
         )
         resp.raise_for_status()
         payload = resp.json()
@@ -310,6 +376,18 @@ def _doh_once(host: str, doh_ip: str, doh_host: str) -> list[str]:
     return out
 
 
+def _doh_uncached(host: str) -> list[str]:
+    """DoH 解析，不读写 ``_CACHE``（供 dial 恢复路径用）。"""
+    out: list[str] = []
+    for doh_ip, doh_host in _DOH_PROVIDERS:
+        for ip in _doh_once(host, doh_ip, doh_host):
+            if ip and not _is_dead(ip, host) and ip not in out:
+                out.append(ip)
+        if out:
+            return out
+    return out
+
+
 def _doh(host: str) -> list[str]:
     with _doh_lock:
         now = time.monotonic()
@@ -319,9 +397,8 @@ def _doh(host: str) -> list[str]:
             if kept:
                 return kept
             _CACHE.pop(host, None)
-        for doh_ip, doh_host in _DOH_PROVIDERS:
-            ips = _usable(_doh_once(host, doh_ip, doh_host), host=host)
-            if ips:
-                _CACHE[host] = (now + _TTL, ips)
-                return ips
+        ips = _usable(_doh_uncached(host), host=host)
+        if ips:
+            _CACHE[host] = (now + _TTL, ips)
+            return ips
     return []

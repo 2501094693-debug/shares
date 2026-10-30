@@ -24,8 +24,6 @@
         <div class="top-actions">
           <div id="viewSeg" class="market-seg judgment-view" role="tablist" aria-label="研判类型">
             <button type="button" data-view="industry" class="is-active" role="tab" aria-selected="true">行业分析</button>
-            <button type="button" data-view="shares" role="tab" aria-selected="false">个股分析</button>
-            <button type="button" data-view="select" role="tab" aria-selected="false">股票分析</button>
             <button type="button" data-view="limit" role="tab" aria-selected="false">涨跌停分析</button>
           </div>
           <button id="refreshBtn" class="btn ghost" type="button">重新分析</button>
@@ -37,10 +35,6 @@
         <div class="market-toolbar-tail">
           <span id="liveDot" class="market-live" data-state="idle">IDLE</span>
           <span id="marketMeta" class="muted market-meta"></span>
-          <label class="search-box analysis-code-box judgment-query">
-            <span class="sr-only">股票代码</span>
-            <input id="codeInput" type="search" placeholder="代码，留空全市场" maxlength="8" autocomplete="off" />
-          </label>
           <div id="limitDaysSeg" class="market-seg screen-range judgment-limit" role="group" aria-label="回看窗口">
             <button type="button" data-days="15" class="is-active">15日</button>
             <button type="button" data-days="30">30日</button>
@@ -50,12 +44,6 @@
             <button type="button" data-top="50">每日Top50</button>
             <button type="button" data-top="0">全部</button>
           </div>
-          <div id="sharesTopSeg" class="market-seg screen-range judgment-shares" role="group" aria-label="显示数量">
-            <button type="button" data-top="50" class="is-active">Top50</button>
-            <button type="button" data-top="100">Top100</button>
-            <button type="button" data-top="0">全部</button>
-          </div>
-          <button id="sharesClearBtn" class="btn ghost judgment-shares" type="button" title="清空已设条件">清空条件</button>
           <div id="industryDaysSeg" class="market-seg screen-range judgment-industry" role="group" aria-label="回看窗口">
             <button type="button" data-days="20" class="is-active">近一个月</button>
             <button type="button" data-days="60">近三个月</button>
@@ -69,66 +57,9 @@
       <div id="errorBox" class="error hidden"></div>
       <div id="loading" class="loading screen-progress hidden">正在分析…</div>
 
-      <section id="selectPanel" class="select-panel hidden" aria-label="股票分析">
-        <div class="select-cards">
-          <div class="select-card">
-            <div class="select-card-head">
-              <h3>输入筛选 · 时间窗</h3>
-              <div class="sel-presets" role="group" aria-label="常用区间">
-                <button type="button" data-range="30">近1月</button>
-                <button type="button" data-range="90">近3月</button>
-                <button type="button" data-range="180">近半年</button>
-                <button type="button" data-range="365" class="is-active">近1年</button>
-              </div>
-            </div>
-            <div class="select-field"><span>价格区间</span><span class="select-dates"><input id="selPxStart" type="date" /><i>–</i><input id="selPxEnd" type="date" /></span></div>
-            <div class="select-field"><span>目标日</span><input id="selPxTarget" type="date" /></div>
-            <div class="select-field"><span>排名方向</span><select id="selPxOrder">
-              <option value="desc" selected>从大到小（1 = 最高）</option>
-              <option value="asc">从小到大（1 = 最低）</option>
-            </select></div>
-          </div>
-          <div class="select-card">
-            <div class="select-card-head"><h3>输出筛选 · 分位过滤</h3><label class="sel-toggle"><input id="selOnlyPass" type="checkbox" checked />只看通过</label></div>
-            <div class="select-filters">
-            <div class="select-field"><span>开盘</span><span class="select-dates"><input id="selFOpenMin" type="number" step="1" min="0" max="100" placeholder="最小" /><i>–</i><input id="selFOpenMax" type="number" step="1" min="0" max="100" placeholder="最大" /></span></div>
-            <div class="select-field"><span>最高</span><span class="select-dates"><input id="selFHighMin" type="number" step="1" min="0" max="100" placeholder="最小" /><i>–</i><input id="selFHighMax" type="number" step="1" min="0" max="100" placeholder="最大" /></span></div>
-            <div class="select-field"><span>最低</span><span class="select-dates"><input id="selFLowMin" type="number" step="1" min="0" max="100" placeholder="最小" /><i>–</i><input id="selFLowMax" type="number" step="1" min="0" max="100" placeholder="最大" /></span></div>
-            <div class="select-field"><span>收盘</span><span class="select-dates"><input id="selFCloseMin" type="number" step="1" min="0" max="100" placeholder="最小" /><i>–</i><input id="selFCloseMax" type="number" step="1" min="0" max="100" placeholder="最大" /></span></div>
-            </div>
-            <div class="select-quick" role="group" aria-label="收盘快捷">
-              <span>收盘快捷：</span>
-              <button type="button" data-q="high">高位≥80</button>
-              <button type="button" data-q="mid">中位40–70</button>
-              <button type="button" data-q="low">低位≤20</button>
-              <button type="button" data-q="clear">清除</button>
-            </div>
-          </div>
-        </div>
-        <div class="select-actions">
-          <button id="selRunBtn" class="btn primary" type="button">开始全市场扫描</button>
-          <button id="selStopBtn" class="btn ghost hidden" type="button">停止</button>
-          <button id="selResetBtn" class="btn ghost" type="button">重置过滤</button>
-          <span id="selMeta" class="muted"></span>
-          <strong id="selPassCount" class="sel-pass-count"></strong>
-        </div>
-        <div id="selProgress" class="sel-progress hidden" aria-label="扫描进度">
-          <div class="sel-progress-bar"><i id="selProgressFill"></i></div>
-          <span id="selProgressText" class="muted">准备中…</span>
-        </div>
-        <div id="selError" class="error hidden"></div>
-        <div id="selResult" class="screen-result-list sel-cards"><p class="screen-empty muted">设置时间窗与分位后开始全市场扫描，符合的结果会实时出现</p></div>
-      </section>
 
       <div class="screen-layout">
-        <div id="sharesWorkbench" class="shares-workbench judgment-shares-panel hidden">
-          <div id="sharesExprBar" class="shares-expr-bar" aria-label="筛选式"></div>
-          <div id="sharesPresetBar" class="shares-preset-pop" aria-label="筛选方案" hidden></div>
-        </div>
         <nav id="dayRail" class="screen-day-rail" aria-label="交易日"></nav>
-        <div id="sharesBenchBody" class="shares-bench-body judgment-shares-panel hidden">
-          <div id="sharesCondPanel" class="shares-cond-panel" aria-label="本日条件"></div>
-        </div>
         <div class="screen-day-main">
           <div id="dayHead" class="screen-day-head"></div>
           <div id="resultList" class="screen-result-list">
@@ -215,7 +146,6 @@
   <script src="/js/shared/orbit-prefetch.js?v=futures-20260923"></script>
   <script src="/js/shared/nav.js?v=nav-industry-20261001"></script>
   <script src="/js/shared/kline-draw.js?v=20261030-no-extrema"></script>
-  <script src="/js/analysis.js?v=shares-lower-shadow-20260929"></script>
-  <script src="/js/analysis-select.js?v=select-20261014g"></script>
+  <script src="/js/analysis.js?v=20261030-remove-select"></script>
 </body>
 </html>

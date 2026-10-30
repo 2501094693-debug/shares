@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from company.analysis.line.local_extrema.score import score_extrema
 from company.analysis.line.local_extrema.service import (
     SERIES_LABELS,
     SERIES_OPTIONS,
@@ -47,4 +48,5 @@ __all__ = [
     "compute_layered_extrema",
     "compute_local_extrema",
     "compute_multilevel_extrema",
+    "score_extrema",
 ]
