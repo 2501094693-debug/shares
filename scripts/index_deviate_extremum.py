@@ -1,9 +1,9 @@
 """最近 N 个交易日：相对指数偏离选出 Top 股票（默认不考虑前低交易间隔）。
 
-偏离口径（复用 ``company.analysis.line.compare``）：
-  - 四项涨跌幅 → 选区样本标准差 σ → zdif = rs/σs − rb/σb
+偏离口径（脚本本地汇总，日线对齐复用 compare）：
+  - 四项涨跌幅差值 dif = rs − rb（裸百分点）
   - 同涨/同跌权重 1，反向涨跌权重 1.5
-  - 按因子权重汇总 |zdif|×权重（与 compare 的 deviation 一致）
+  - 按因子权重汇总 |dif|×100×权重
 
 默认只按偏离分百分位排名取 Top；``--w-gap > 0`` 时可再加权前低间隔。
 默认排除创业板（300/301）与 ST/*ST。
@@ -42,7 +42,11 @@ for path in (_BACKEND, _ROOT):
     if text not in sys.path:
         sys.path.insert(0, text)
 
-from company.analysis.line.compare.codes import normalize_index_code  # noqa: E402
+from company.analysis.line.compare.codes import FACTORS, normalize_index_code  # noqa: E402
+from company.analysis.line.compare.score import (  # noqa: E402
+    DIR_SAME_DOWN,
+    DIR_SAME_UP,
+)
 from company.analysis.line.compare.service import compare_one  # noqa: E402
 from company.analysis.line.compare.series import (  # noqa: E402
     factors_of,
@@ -50,7 +54,7 @@ from company.analysis.line.compare.series import (  # noqa: E402
     fetch_stock_day,
     slice_factors,
 )
-from company.analysis.line.extremum.service import (  # noqa: E402
+from company.analysis.line.prior_low import (  # noqa: E402
     analyze_extremum,
     compute_extremum,
 )
@@ -70,6 +74,70 @@ DEFAULT_W_DEV = 1.0
 DEFAULT_W_GAP = 0.0  # 默认不考虑前低交易间隔
 DEFAULT_GROUP = "指数偏离"
 MAX_STOCKS_PER_GROUP = 1000  # 与 mine.service 上限一致
+
+REVERSE_WEIGHT = 1.5
+FACTOR_WEIGHTS = {"open": 0.15, "high": 0.20, "low": 0.25, "close": 0.40}
+
+
+def _dir_weight(dir_label: str) -> float:
+    return 1.0 if dir_label in (DIR_SAME_UP, DIR_SAME_DOWN) else REVERSE_WEIGHT
+
+
+def _strength_level(total: float) -> str:
+    a, b, c = 2.0, 1.0, 0.5
+    if total >= a:
+        return "极端偏强"
+    if total >= b:
+        return "明显偏强"
+    if total >= c:
+        return "轻度偏强"
+    if total > -c:
+        return "持平"
+    if total > -b:
+        return "轻度偏弱"
+    if total > -a:
+        return "明显偏弱"
+    return "极端偏弱"
+
+
+def _deviation_level(mag: float) -> str:
+    cuts = (0.5, 1.0, 2.0)
+    if mag < cuts[0]:
+        return "紧贴"
+    if mag < cuts[1]:
+        return "轻度偏离"
+    if mag < cuts[2]:
+        return "明显偏离"
+    return "极端偏离"
+
+
+def _summarize_daily(daily: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """按因子加权汇总强弱分 / 偏离分（脚本本地，不依赖 compare 服务字段）。"""
+    scores: dict[str, float] = {}
+    deviations: dict[str, float] = {}
+    for f in FACTORS:
+        rows = daily.get(f) or []
+        if not rows:
+            scores[f] = 0.0
+            deviations[f] = 0.0
+            continue
+        tot = 0.0
+        abs_tot = 0.0
+        for row in rows:
+            w = _dir_weight(str(row.get("dir") or ""))
+            dif = float(row["dif"]) * 100.0
+            tot += dif * w
+            abs_tot += abs(dif) * w
+        n = len(rows)
+        scores[f] = round(tot / n, 4)
+        deviations[f] = round(abs_tot / n, 4)
+
+    total = round(sum(scores[f] * FACTOR_WEIGHTS[f] for f in FACTORS), 4)
+    dev_total = round(sum(deviations[f] * FACTOR_WEIGHTS[f] for f in FACTORS), 4)
+    return {
+        "total": {"value": total, "level": _strength_level(total)},
+        "deviation": {"value": dev_total, "level": _deviation_level(dev_total)},
+    }
 
 
 def _configure_stdio() -> None:
@@ -281,8 +349,9 @@ def _deviation_for_stock(
         }
 
     one = compare_one(stock_fac, idx_fac, dates=dates)
-    dev = one.get("deviation") or {}
-    total = one.get("total") or {}
+    summary = _summarize_daily(one.get("daily") or {})
+    dev = summary.get("deviation") or {}
+    total = summary.get("total") or {}
 
     sessions: int | None = None
     gap: int | None = None
@@ -314,7 +383,7 @@ def _deviation_for_stock(
         "deviation_level": safe_str(dev.get("level")),
         "strength": float(total.get("value") or 0.0),
         "strength_level": safe_str(total.get("level")),
-        "norm_mode": safe_str((one.get("norm") or {}).get("mode")),
+        "norm_mode": "raw",
         "n_days": len(dates),
         "min_low_date": min_date,
         "min_low": min_low,
@@ -913,7 +982,7 @@ def main(argv: list[str] | None = None) -> int:
             "exclude": ["创业板(300/301)", "ST"],
             "mine": mine_meta,
             "method": {
-                "deviation": "compare.zdif 同向×1 反向×1.5，因子加权 |zdif|",
+                "deviation": "dif×100 同向×1 反向×1.5，因子加权 |dif|",
                 "extremum": (
                     "区间最低 low → 前更低日 sessions"
                     if with_gap

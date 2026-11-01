@@ -808,7 +808,6 @@
       renderRotDays();
       renderIndustryHead(selectedIndustryDay());
       renderIndustry();
-      return;
     }
   }
 

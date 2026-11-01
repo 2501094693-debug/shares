@@ -1,4 +1,12 @@
-"""日线局部极值点纯函数单测（无网络）。"""
+"""日线局部极值点纯函数单测（无网络）。
+
+口径说明（与 ``service.py`` 一致）：
+
+- 相邻比较允许相等；
+- 端点只有一个邻居，按「只检测一侧」参与判定，因此序列首尾也可能成为极值；
+- ``compute_local_extrema`` 返回 raw 序列（不合并连续同类型）；
+- ``compute_alternating_extrema`` 会合并连续同类型极值，输出严格交替序列。
+"""
 
 from __future__ import annotations
 
@@ -28,12 +36,15 @@ def _bars(closes: list[float]) -> list[dict]:
 
 class ComputeLocalExtremaTests(unittest.TestCase):
     def test_basic_peaks_troughs(self) -> None:
-        # 1, 3, 2, 4, 1 -> 峰@1、谷@2、峰@3
+        # 1, 3, 2, 4, 1 -> 谷@0(端点)、峰@1、谷@2、峰@3、谷@4(端点)
         out = compute_local_extrema(_bars([1, 3, 2, 4, 1]))
-        self.assertEqual([e["index"] for e in out["extrema"]], [1, 2, 3])
-        self.assertEqual([e["type"] for e in out["extrema"]], ["peak", "trough", "peak"])
+        self.assertEqual([e["index"] for e in out["extrema"]], [0, 1, 2, 3, 4])
+        self.assertEqual(
+            [e["type"] for e in out["extrema"]],
+            ["trough", "peak", "trough", "peak", "trough"],
+        )
         self.assertEqual(out["peak_count"], 2)
-        self.assertEqual(out["trough_count"], 1)
+        self.assertEqual(out["trough_count"], 3)
 
     def test_output_two_sequences(self) -> None:
         out = compute_local_extrema(_bars([1, 3, 2, 4, 1]))
@@ -47,7 +58,7 @@ class ComputeLocalExtremaTests(unittest.TestCase):
     def test_left_right_span(self) -> None:
         # 1, 2, 5, 2, 1 -> 峰@2 值 5：左右各 2 天不更高
         out = compute_local_extrema(_bars([1, 2, 5, 2, 1]))
-        peak = out["extrema"][0]
+        peak = [e for e in out["extrema"] if e["type"] == "peak"][0]
         self.assertEqual(peak["index"], 2)
         self.assertEqual(peak["left_span"], 2)
         self.assertEqual(peak["right_span"], 2)
@@ -56,7 +67,7 @@ class ComputeLocalExtremaTests(unittest.TestCase):
     def test_trough_span(self) -> None:
         # 5, 4, 1, 4, 5 -> 谷@2 值 1：左右各 2 天不更低
         out = compute_local_extrema(_bars([5, 4, 1, 4, 5]))
-        trough = out["extrema"][0]
+        trough = [e for e in out["extrema"] if e["type"] == "trough"][0]
         self.assertEqual(trough["index"], 2)
         self.assertEqual(trough["left_span"], 2)
         self.assertEqual(trough["right_span"], 2)
@@ -71,29 +82,38 @@ class ComputeLocalExtremaTests(unittest.TestCase):
         self.assertEqual(peak3["left_span"], 3)
 
     def test_plateau_merged_single_peak(self) -> None:
-        # 平台 1,2,2,2,1：相同值合并后只取一个点 -> 单个波峰@1
-        out = compute_local_extrema(_bars([1, 2, 2, 2, 1]))
-        self.assertEqual([e["index"] for e in out["extrema"]], [1])
-        peak = out["extrema"][0]
+        # 1,2,2,2,1：raw 不合并，平台三点各自成峰；交替序列合并为单个峰@1
+        raw = compute_local_extrema(_bars([1, 2, 2, 2, 1]))
+        self.assertEqual(
+            [e["index"] for e in raw["extrema"] if e["type"] == "peak"],
+            [1, 2, 3],
+        )
+
+        out = compute_alternating_extrema(_bars([1, 2, 2, 2, 1]))
+        peaks = [e for e in out["extrema"] if e["type"] == "peak"]
+        self.assertEqual([e["index"] for e in peaks], [1])
+        peak = peaks[0]
         # 代表点取平台第一天；跨度覆盖整段平台
         self.assertEqual(peak["price"], 2.0)
         self.assertEqual(peak["left_span"], 1)
         self.assertEqual(peak["right_span"], 3)
         self.assertEqual(peak["span_days"], 5)
 
-    def test_monotonic_no_extrema(self) -> None:
+    def test_monotonic_only_endpoints(self) -> None:
+        # 1,2,3,4,5：单调递增，中段无任何极值；端点按「只检测一侧」各成一个
         out = compute_local_extrema(_bars([1, 2, 3, 4, 5]))
-        self.assertEqual(out["extrema"], [])
+        self.assertEqual(
+            [(e["index"], e["type"]) for e in out["extrema"]],
+            [(0, "trough"), (4, "peak")],
+        )
 
-    def test_endpoints_ignored(self) -> None:
-        # 端点只有一个邻居，不作为极值（即便它是全局最高/最低）
+    def test_endpoints_one_sided(self) -> None:
+        # 端点只有一个邻居，仍参与判定：9,1,2,1 -> 峰@0、谷@1、峰@2、谷@3
         out = compute_local_extrema(_bars([9, 1, 2, 1]))
-        peak_idx = [e["index"] for e in out["extrema"] if e["type"] == "peak"]
-        trough_idx = [e["index"] for e in out["extrema"] if e["type"] == "trough"]
-        self.assertNotIn(0, peak_idx + trough_idx)
-        self.assertNotIn(3, peak_idx + trough_idx)
-        self.assertEqual(peak_idx, [2])
-        self.assertEqual(trough_idx, [1])
+        self.assertEqual(
+            [(e["index"], e["type"]) for e in out["extrema"]],
+            [(0, "peak"), (1, "trough"), (2, "peak"), (3, "trough")],
+        )
 
     def test_empty_raises(self) -> None:
         with self.assertRaises(ValueError):
@@ -106,13 +126,24 @@ class ComputeLocalExtremaTests(unittest.TestCase):
     def test_smooth_runs(self) -> None:
         out = compute_local_extrema(_bars([1, 2, 1, 2, 1]), smooth_window=3)
         self.assertIsInstance(out["extrema"], list)
-        self.assertIsInstance(out["extrema"], list)
 
     def test_flat_valley_merged_single_trough(self) -> None:
-        # 3,5,3,3,5,3：平台谷 3,3 合并后只取一个点 -> 单个波谷@2
-        out = compute_local_extrema(_bars([3, 5, 3, 3, 5, 3]))
-        self.assertEqual([e["index"] for e in out["extrema"] if e["type"] == "peak"], [1, 4])
-        self.assertEqual([e["index"] for e in out["extrema"] if e["type"] == "trough"], [2])
+        # 3,5,3,3,5,3：raw 里平台谷 2、3 各自成谷；交替序列合并为单个谷@2
+        raw = compute_local_extrema(_bars([3, 5, 3, 3, 5, 3]))
+        self.assertEqual(
+            [e["index"] for e in raw["extrema"] if e["type"] == "trough"],
+            [0, 2, 3, 5],
+        )
+
+        out = compute_alternating_extrema(_bars([3, 5, 3, 3, 5, 3]))
+        self.assertEqual(
+            [e["index"] for e in out["extrema"] if e["type"] == "peak"],
+            [1, 4],
+        )
+        self.assertEqual(
+            [e["index"] for e in out["extrema"] if e["type"] == "trough"],
+            [0, 2, 5],
+        )
 
     def test_fields_present(self) -> None:
         out = compute_local_extrema(_bars([1, 3, 2]))
@@ -120,20 +151,24 @@ class ComputeLocalExtremaTests(unittest.TestCase):
         for key in ("date", "price", "index", "left_span", "right_span", "span_days"):
             self.assertIn(key, point)
 
-    def test_monotonic_with_plateau_no_extrema(self) -> None:
-        # 1,2,2,2,3：平台合并后为 1,2,3 单调递增 -> 无极值
-        out = compute_local_extrema(_bars([1, 2, 2, 2, 3]))
-        self.assertEqual(out["extrema"], [])
+    def test_monotonic_with_plateau_equal_points(self) -> None:
+        # 1,2,2,2,3：允许相等时平台点都满足峰/谷定义（相等时峰优先），
+        # 交替序列合并相邻峰后为 谷@0、峰@1、谷@3、峰@4。
+        out = compute_alternating_extrema(_bars([1, 2, 2, 2, 3]))
+        self.assertEqual(
+            [(e["index"], e["type"]) for e in out["extrema"]],
+            [(0, "trough"), (1, "peak"), (3, "trough"), (4, "peak")],
+        )
 
 
 class ComputeAlternatingExtremaTests(unittest.TestCase):
-    # P1 的极值：谷@4、峰@9、谷@14、峰@15
+    # P1 的极值（含端点）：峰@0、谷@4、峰@9、谷@14、峰@15、谷@16
     P1 = [5, 4, 3, 2, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1, 2, 1]
 
     def test_no_filtering_keeps_all(self) -> None:
-        # 不做过滤：所有极值保留
+        # 不做过滤：所有极值（含两端点）保留
         out = compute_alternating_extrema(_bars(self.P1))
-        self.assertEqual([e["index"] for e in out["extrema"]], [4, 9, 14, 15])
+        self.assertEqual([e["index"] for e in out["extrema"]], [0, 4, 9, 14, 15, 16])
 
     def test_default_no_min_fields(self) -> None:
         out = compute_alternating_extrema(_bars(self.P1))
@@ -148,12 +183,10 @@ class ComputeAlternatingExtremaTests(unittest.TestCase):
             self.assertNotEqual(a, b)
 
     def test_merge_consecutive_same_type(self) -> None:
-        # 连续出现的同类型极值合并：峰取最高、谷取最低
-        # 构造：1,3,2,3,1 -> 峰@1、峰@3（连续无谷）合并为峰@3（更高? 3 vs3 平手保留后者?）
+        # 1,3,2,3,1 -> 谷@0、峰@1、谷@2、峰@3、谷@4，本身已交替，无合并
         prices = [1, 3, 2, 3, 1]
         out = compute_alternating_extrema(_bars(prices))
-        # 基础 extrema: 峰@1, 谷@2, 峰@3 -> 已交替，无合并
-        self.assertEqual([e["index"] for e in out["extrema"]], [1, 2, 3])
+        self.assertEqual([e["index"] for e in out["extrema"]], [0, 1, 2, 3, 4])
 
     def test_fields_present(self) -> None:
         out = compute_alternating_extrema(_bars(self.P1))

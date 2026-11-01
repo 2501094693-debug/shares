@@ -1,17 +1,11 @@
-"""方向分类、波动标准化与指数码解析单测（无网络）。"""
+"""方向分类与指数码解析单测（无网络）。"""
 
 from __future__ import annotations
 
 import unittest
 
 from company.analysis.line.compare.codes import normalize_index_code, resolve_indices
-from company.analysis.line.compare.score import (
-    classify_dir,
-    pair_row,
-    range_sigma,
-    summarize_all,
-    summarize_factor,
-)
+from company.analysis.line.compare.score import classify_dir, pair_row
 from company.analysis.line.compare.series import factors_of
 
 
@@ -30,92 +24,12 @@ class ClassifyDirTests(unittest.TestCase):
         self.assertEqual(classify_dir(-0.01, 0.005), "股跌指涨")
         self.assertEqual(classify_dir(-0.01, 0.0), "股跌指涨")
 
-    def test_pair_row_raw(self) -> None:
+    def test_pair_row(self) -> None:
         row = pair_row(0.02, 0.01)
         self.assertEqual(row["dir"], "同涨")
         self.assertAlmostEqual(row["dif"], 0.01)
-        self.assertEqual(row["norm"], "raw")
-        self.assertIsNone(row["zdif"])
-
-    def test_pair_row_vol(self) -> None:
-        # 股 σ=3%，指 σ=0.8%；同跌 1% → zs≈-0.333, zb≈-1.25, zdif>0 股相对强
-        row = pair_row(-0.01, -0.01, sigma_s=0.03, sigma_b=0.008)
-        self.assertEqual(row["norm"], "vol")
-        self.assertEqual(row["dir"], "同跌")
-        self.assertAlmostEqual(row["dif"], 0.0)
-        self.assertGreater(row["zdif"], 0.5)
-
-
-class SummarizeScoreTests(unittest.TestCase):
-    def test_raw_signed_stronger(self) -> None:
-        pack = summarize_factor([{"dif": 0.01, "dir": "同涨"}])
-        self.assertEqual(pack["mode"], "raw")
-        self.assertAlmostEqual(pack["score"], 1.0)
-        self.assertAlmostEqual(pack["deviation"], 1.0)
-
-    def test_raw_signed_weaker(self) -> None:
-        pack = summarize_factor([{"dif": -0.01, "dir": "同跌"}])
-        self.assertEqual(pack["mode"], "raw")
-        self.assertAlmostEqual(pack["score"], -1.0)
-        self.assertAlmostEqual(pack["deviation"], 1.0)
-
-    def test_raw_reverse_weight(self) -> None:
-        pack = summarize_factor([{"dif": 0.01, "dir": "股涨指跌"}])
-        self.assertAlmostEqual(pack["score"], 1.5)
-
-    def test_vol_same_pct_stock_stronger(self) -> None:
-        # 10 日同跌 1%，zdif>0 → 偏强
-        rows = [
-            {
-                "dif": 0.0,
-                "zdif": 0.9,
-                "dir": "同跌",
-                "norm": "vol",
-            }
-            for _ in range(10)
-        ]
-        pack = summarize_factor(rows)
-        self.assertEqual(pack["mode"], "vol")
-        self.assertAlmostEqual(pack["score"], 0.9)
-        self.assertEqual(
-            summarize_all({"open": rows, "high": rows, "low": rows, "close": rows})[
-                "total"
-            ]["level"],
-            "明显偏强",
-        )
-
-    def test_raw_total_level(self) -> None:
-        daily = {
-            "open": [{"dif": -0.02, "dir": "同跌"}],
-            "high": [{"dif": -0.02, "dir": "同跌"}],
-            "low": [{"dif": -0.02, "dir": "同跌"}],
-            "close": [{"dif": -0.02, "dir": "同跌"}],
-        }
-        out = summarize_all(daily)
-        self.assertEqual(out["mode"], "raw")
-        self.assertEqual(out["total"]["level"], "极端偏弱")
-        self.assertEqual(out["deviation"]["level"], "极端偏离")
-
-
-class RangeSigmaTests(unittest.TestCase):
-    def test_closed_range(self) -> None:
-        fac = {
-            "2026-01-01": {"close": 0.01},
-            "2026-01-02": {"close": -0.01},
-            "2026-01-03": {"close": 0.02},
-            "2026-01-04": {"close": -0.02},
-        }
-        dates = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"]
-        sig = range_sigma(fac, "close", dates)
-        self.assertIsNotNone(sig)
-        self.assertGreater(sig, 0)
-        # 子集区间 σ 应不同（或至少可单独计算）
-        sig2 = range_sigma(fac, "close", dates[:2])
-        self.assertIsNotNone(sig2)
-
-    def test_too_short(self) -> None:
-        fac = {"2026-01-01": {"close": 0.01}}
-        self.assertIsNone(range_sigma(fac, "close", ["2026-01-01"]))
+        self.assertNotIn("zdif", row)
+        self.assertNotIn("sigma_s", row)
 
 
 class CodesTests(unittest.TestCase):

@@ -63,18 +63,33 @@ def _print_volatility(pack: dict) -> None:
             f"  标准差 {_fmt_pct(row.get('std'))}"
             f"  （样本 {row.get('count')}）"
         )
+    beg_date = next(
+        (row.get("beg_date") for row in stats.values() if row.get("beg_date")), None
+    )
     end_date = next(
         (row.get("end_date") for row in stats.values() if row.get("end_date")), None
     )
-    if end_date:
-        print(f"  结束日 {end_date} 位于「均值=0、σ=单位」坐标轴：")
+    if beg_date:
+        print(f"  开始日 {beg_date} 以标准差为单位（pct / σ）：")
         for f in FACTORS:
             row = stats.get(f) or {}
             label = row.get("label") or f
-            z = row.get("end_z")
-            z_txt = f"{z:+.2f}σ" if z is not None else "—"
+            sigma = row.get("beg_sigma")
+            sigma_txt = f"{sigma:+.2f}σ" if sigma is not None else "—"
             print(
-                f"    {label}: {_fmt_pct(row.get('end_pct'))}  →  {z_txt}"
+                f"    {label}: {_fmt_pct(row.get('beg_pct'))}  →  {sigma_txt}"
+            )
+    if end_date:
+        print(f"  结束日 {end_date} 以标准差为单位（pct / σ）：")
+        for f in FACTORS:
+            row = stats.get(f) or {}
+            label = row.get("label") or f
+            sigma = row.get("end_sigma")
+            if sigma is None:
+                sigma = row.get("end_z")
+            sigma_txt = f"{sigma:+.2f}σ" if sigma is not None else "—"
+            print(
+                f"    {label}: {_fmt_pct(row.get('end_pct'))}  →  {sigma_txt}"
             )
 
 

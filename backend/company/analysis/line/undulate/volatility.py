@@ -6,7 +6,8 @@
 - 区间：``[起始日, 结束日]`` 内的每个交易日
 - 序列：每日的开盘价 / 最高价 / 最低价 / 收盘价各自相对基准收盘的涨跌幅，
   四价即四条数字序列
-- 结论：四条序列各自的波动范围（最低 / 最高 / 极差）与涨跌幅均值、标准差
+- 结论：四条序列各自的波动范围（最低 / 最高 / 极差）与涨跌幅均值、标准差，
+  以及区间起止日涨跌幅换算为标准差单位（pct / σ）
 
 个股日线走 ``company.line.fetcher.fetch_kline``（默认 ``qfq``）；
 指数日线走 ``exponent.fetch_kline``（东财→同花顺回退）。
@@ -43,12 +44,39 @@ def _series_of(days: list[dict[str, Any]], factor: str) -> list[dict[str, Any]]:
     return out
 
 
+def _pct_at(series: list[dict[str, Any]], date: str) -> float | None:
+    """取序列中指定日期的涨跌幅；无则 ``None``。"""
+    if not date:
+        return None
+    for pt in series:
+        if pt["date"] == date:
+            return float(pt["pct"])
+    return None
+
+
+def _sigma_pair(
+    pct: float | None,
+    mean: float | None,
+    std: float | None,
+) -> tuple[float | None, float | None]:
+    """涨跌幅 → ``(z, sigma)``：``z=(pct-mean)/σ``，``sigma=pct/σ``。"""
+    z: float | None = None
+    sigma: float | None = None
+    if pct is None or std is None or std <= 0:
+        return z, sigma
+    if mean is not None:
+        z = round((pct - mean) / std, 6)
+    sigma = round(pct / std, 6)
+    return z, sigma
+
+
 def _stat_block(
     factor: str,
     days: list[dict[str, Any]],
+    beg_date: str = "",
     end_date: str = "",
 ) -> dict[str, Any]:
-    """单因子：统计量 + 极值出现的日期 + 结束日的 z 值（σ 坐标）。"""
+    """单因子：统计量 + 极值日期 + 起止日的 z / σ 坐标。"""
     series = _series_of(days, factor)
     stats = compute_stats([pt["pct"] for pt in series])
 
@@ -57,22 +85,14 @@ def _stat_block(
         min_date = min(series, key=lambda pt: pt["pct"])["date"]
         max_date = max(series, key=lambda pt: pt["pct"])["date"]
 
-    # 结束日（区间最后一个交易日）该因子的涨跌幅及其在「均值=0、标准差=单位」坐标轴上的位置
-    end_pct: float | None = None
-    end_z: float | None = None
-    if end_date:
-        for pt in series:
-            if pt["date"] == end_date:
-                end_pct = float(pt["pct"])
-                break
     mean = stats["mean"]
     std = stats["std"]
-    if end_pct is not None and mean is not None and std is not None and std > 0:
-        end_z = round((end_pct - mean) / std, 6)
-    # 结束日涨跌幅直接换算为以标准差为单位（pct / σ），与 K 线 σ 轴口径一致
-    end_sigma: float | None = None
-    if end_pct is not None and std is not None and std > 0:
-        end_sigma = round(end_pct / std, 6)
+
+    # 起止日（区间首 / 末交易日）该因子涨跌幅，及其 σ 坐标
+    beg_pct = _pct_at(series, beg_date)
+    end_pct = _pct_at(series, end_date)
+    beg_z, beg_sigma = _sigma_pair(beg_pct, mean, std)
+    end_z, end_sigma = _sigma_pair(end_pct, mean, std)
 
     return {
         "factor": factor,
@@ -85,6 +105,10 @@ def _stat_block(
         "std": stats["std"],
         "min_date": min_date,
         "max_date": max_date,
+        "beg_date": beg_date or None,
+        "beg_pct": beg_pct,
+        "beg_z": beg_z,
+        "beg_sigma": beg_sigma,
         "end_date": end_date or None,
         "end_pct": end_pct,
         "end_z": end_z,
@@ -105,10 +129,11 @@ def compute_volatility(
     """
     base = compute_undulate(bars, beg, end)
     days = list(base.get("days") or [])
+    used_beg = str(days[0].get("date") or "") if days else ""
     used_end = str(base.get("end") or "")
 
     stats: dict[str, dict[str, Any]] = {
-        factor: _stat_block(factor, days, used_end) for factor in FACTORS
+        factor: _stat_block(factor, days, used_beg, used_end) for factor in FACTORS
     }
 
     return {

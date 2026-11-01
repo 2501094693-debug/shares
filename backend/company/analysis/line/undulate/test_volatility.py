@@ -101,11 +101,27 @@ class ComputeVolatilityTests(unittest.TestCase):
         expected_z = (close["end_pct"] - close["mean"]) / close["std"]
         self.assertAlmostEqual(close["end_z"], round(expected_z, 6))
 
+    def test_beg_sigma_position(self) -> None:
+        # 区间 2026-01-06 ~ 2026-01-07，开始日 = 2026-01-06
+        out = compute_volatility(self.bars, "2026-01-06")
+        close = out["stats"]["close"]
+        self.assertEqual(close["beg_date"], "2026-01-06")
+        # 收盘：开始日 +5%
+        self.assertAlmostEqual(close["beg_pct"], 0.05)
+        expected_z = (close["beg_pct"] - close["mean"]) / close["std"]
+        self.assertAlmostEqual(close["beg_z"], round(expected_z, 6))
+        expected_sigma = close["beg_pct"] / close["std"]
+        self.assertAlmostEqual(close["beg_sigma"], round(expected_sigma, 6))
+
     def test_end_z_single_sample_is_none(self) -> None:
         out = compute_volatility(self.bars, "2026-01-06", "2026-01-06")
-        # 仅一个样本时 std=0，无法标准化，z 记为 None
+        # 仅一个样本时 std=0，无法标准化，z / sigma 记为 None
         self.assertIsNone(out["stats"]["close"]["end_z"])
+        self.assertIsNone(out["stats"]["close"]["beg_z"])
+        self.assertIsNone(out["stats"]["close"]["beg_sigma"])
+        self.assertIsNone(out["stats"]["close"]["end_sigma"])
         self.assertAlmostEqual(out["stats"]["close"]["end_pct"], 0.05)
+        self.assertAlmostEqual(out["stats"]["close"]["beg_pct"], 0.05)
 
     def test_missing_base_raises(self) -> None:
         with self.assertRaises(ValueError):

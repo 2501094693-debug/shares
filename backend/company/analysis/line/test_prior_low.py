@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from company.analysis.line.extremum.service import compute_extremum
+from company.analysis.line.prior_low import compute_extremum
 
 
 def _bar(date: str, o: float, c: float, h: float, low: float) -> dict:

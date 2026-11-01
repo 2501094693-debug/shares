@@ -1,8 +1,7 @@
 """股票 vs 指数日线四项对比服务。
 
 输入：起始日、股票、所选指数（可多选）。
-输出：每日四项（开盘/收盘涨跌幅、最大涨跌幅）的方向与差值；
-强弱/偏离默认按波动标准化（zdif = rs/σs − rb/σb）。
+输出：每日四项（开盘/收盘涨跌幅、最大涨跌幅）的方向与差值。
 """
 
 from __future__ import annotations
@@ -16,12 +15,7 @@ from company.analysis.line.compare.codes import (
     factor_meta,
     resolve_indices,
 )
-from company.analysis.line.compare.score import (
-    VOL_MIN_PERIODS,
-    pair_row,
-    range_sigma,
-    summarize_all,
-)
+from company.analysis.line.compare.score import pair_row
 from company.analysis.line.compare.series import (
     factors_of,
     fetch_index_day,
@@ -47,14 +41,9 @@ def compare_one(
     *,
     dates: list[str],
 ) -> dict[str, Any]:
-    """单只指数对齐对比；σ 用 dates 闭区间内样本标准差（每因子各一个）。"""
-    sigma_s = {f: range_sigma(stock_fac, f, dates) for f in FACTORS}
-    sigma_b = {f: range_sigma(index_fac, f, dates) for f in FACTORS}
-
+    """单只指数对齐对比。"""
     daily: dict[str, list[dict[str, Any]]] = {f: [] for f in FACTORS}
     days: list[dict[str, Any]] = []
-    vol_n = 0
-    raw_n = 0
 
     for date in dates:
         s_row = stock_fac.get(date) or {}
@@ -67,19 +56,10 @@ def compare_one(
             rs, rb = s_row.get(f), b_row.get(f)
             if rs is None or rb is None:
                 continue
-            paired = pair_row(
-                float(rs),
-                float(rb),
-                sigma_s=sigma_s[f],
-                sigma_b=sigma_b[f],
-            )
+            paired = pair_row(float(rs), float(rb))
             paired["date"] = date
             daily[f].append(paired)
             day_factors[f] = paired
-            if paired.get("norm") == "vol":
-                vol_n += 1
-            else:
-                raw_n += 1
             ok = True
         if not ok:
             continue
@@ -92,25 +72,10 @@ def compare_one(
             }
         )
 
-    summary = summarize_all(daily)
     return {
         "dates": [d["date"] for d in days],
         "days": days,
         "daily": daily,
-        "scores": summary["scores"],
-        "deviations": summary["deviations"],
-        "dirs": summary["dirs"],
-        "total": summary["total"],
-        "deviation": summary["deviation"],
-        "norm": {
-            **summary["norm"],
-            "sigma": {
-                "stock": {f: sigma_s[f] for f in FACTORS},
-                "index": {f: sigma_b[f] for f in FACTORS},
-            },
-            "vol_pairs": vol_n,
-            "raw_pairs": raw_n,
-        },
     }
 
 
@@ -141,7 +106,6 @@ def compare_stock_vs_indices(
         idx_fac_all = factors_of(list(idx_pack.get("items") or []))
         idx_fac = slice_factors(idx_fac_all, beg=beg, end=end or idx_pack["end"])
         dates = sorted(d for d in stock_fac if d in idx_fac)
-        # σ 仅用对齐后的选区闭区间 [beg, end]
         one = compare_one(stock_fac, idx_fac, dates=dates)
         comparisons.append(
             {
@@ -154,10 +118,6 @@ def compare_stock_vs_indices(
             }
         )
 
-    mode = "vol"
-    if comparisons:
-        mode = str((comparisons[0].get("norm") or {}).get("mode") or "vol")
-
     return {
         "meta": {
             "stock": str(stock_pack.get("code") or code),
@@ -166,13 +126,6 @@ def compare_stock_vs_indices(
             "end": stock_pack["end"],
             "factors": factor_meta(),
             "stock_source": str(stock_pack.get("source") or ""),
-            "norm": {
-                "mode": mode,
-                "scope": "range",
-                "min_periods": VOL_MIN_PERIODS,
-                "unit": "sigma" if mode == "vol" else "pct_point",
-                "label": "波动标准化(选区)" if mode == "vol" else "裸百分点",
-            },
         },
         "stock": {
             "code": str(stock_pack.get("code") or code),
@@ -209,12 +162,6 @@ def compare_stock_vs_index(
         "dates": one["dates"],
         "days": one["days"],
         "daily": one["daily"],
-        "scores": one["scores"],
-        "deviations": one["deviations"],
-        "dirs": one["dirs"],
-        "total": one["total"],
-        "deviation": one["deviation"],
-        "norm": one.get("norm") or pack["meta"].get("norm"),
     }
 
 
@@ -222,11 +169,4 @@ def available_indices() -> dict[str, Any]:
     return {
         "factors": factor_meta(),
         "indices": catalog(),
-        "norm": {
-            "mode": "vol",
-            "scope": "range",
-            "min_periods": VOL_MIN_PERIODS,
-            "unit": "sigma",
-            "label": "波动标准化(选区)",
-        },
     }

@@ -35,7 +35,7 @@ from typing import Any
 from core.codes import normalize_code
 from core.fmt import to_float
 
-from company.analysis.line.extremum.service import _bar_date, _iso
+from company.analysis.line.prior_low import _bar_date, _iso
 from company.analysis.line.local_extrema.score import score_extrema
 
 
@@ -526,7 +526,7 @@ analyze_multilevel_extrema = analyze_alternating_extrema
 analyze_extrema_layers = analyze_alternating_extrema
 analyze_hierarchical_extrema = analyze_alternating_extrema
 
-# analyze 通用别名
+# analyze 閫氱敤鍒悕
 analyze_extrema = analyze_alternating_extrema
 analyze_extremes = analyze_alternating_extrema
 analyze_waves = analyze_alternating_extrema

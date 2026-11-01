@@ -14755,6 +14755,8 @@ function lcUndStatRowHtml(label, series, row, loading = false) {
       <div class="lc-und-stat-empty">${loading ? "统计加载中…" : "暂无统计"}</div>
     </div>`;
   }
+  const begSigmaVal = row.beg_sigma ?? row.beg_z;
+  const begSigmaNum = begSigmaVal == null ? null : Number(begSigmaVal);
   const endSigmaVal = row.end_sigma ?? row.end_z;
   const endSigmaNum = endSigmaVal == null ? null : Number(endSigmaVal);
   const std = row.std == null ? null : Number(row.std);
@@ -14769,6 +14771,12 @@ function lcUndStatRowHtml(label, series, row, loading = false) {
     { k: "均值", v: lcUndPct(row.mean) },
     { k: "σ", v: lcUndPct(row.std) },
     { k: "极差", v: lcUndPct(row.range) },
+    {
+      k: "开始σ",
+      v: begSigmaNum == null || !Number.isFinite(begSigmaNum) ? "—" : lcUndSigma(begSigmaNum),
+      tone: Number.isFinite(begSigmaNum) && begSigmaNum !== 0 ? (begSigmaNum > 0 ? "change-up" : "change-down") : "",
+      title: row.beg_date ? `开始日 ${row.beg_date} 涨跌幅 ${row.beg_pct == null ? "—" : lcUndPct(row.beg_pct)}` : "",
+    },
     {
       k: "均值σ",
       v: meanSigmaNum == null ? "—" : lcUndSigma(meanSigmaNum),

@@ -8,7 +8,6 @@
     { prefix: "/api/market/steep", ttl: 90_000 },
     { prefix: "/api/stocks/profile", ttl: 60_000 },
     { prefix: "/api/stocks/line-chip", ttl: 120_000 },
-    { prefix: "/api/stocks/line-jetton", ttl: 120_000 },
     { prefix: "/api/stocks/line", ttl: 120_000 },
     { prefix: "/api/stocks/ticks", ttl: 8_000 },
     { prefix: "/api/stocks/deal-window", ttl: 30_000 },

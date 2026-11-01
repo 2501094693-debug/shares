@@ -52,7 +52,7 @@ def _iso(value: str) -> str:
 
 
 def _pad_beg(beg: str, *, days: int = 90) -> str:
-    """向前多取若干自然日：前收 + 波动标准化所需历史（约 20 个交易日）。"""
+    """向前多取若干自然日，确保有前收可算涨跌幅。"""
     ymd = _ymd(beg)
     dt = datetime.strptime(ymd, "%Y%m%d") - timedelta(days=days)
     return dt.strftime("%Y%m%d")

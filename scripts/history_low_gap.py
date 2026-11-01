@@ -38,7 +38,7 @@ for path in (_BACKEND, _ROOT):
     if text not in sys.path:
         sys.path.insert(0, text)
 
-from company.analysis.line.extremum.service import analyze_extremum  # noqa: E402
+from company.analysis.line.prior_low import analyze_extremum  # noqa: E402
 from core.codes import normalize_code, safe_str  # noqa: E402
 from core.fmt import to_float  # noqa: E402
 from core.paths import STOCK_INDEX_CACHE  # noqa: E402

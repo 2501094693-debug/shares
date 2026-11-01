@@ -8,12 +8,6 @@
     low: "最大跌幅",
     close: "收盘涨跌幅",
   };
-  const DIR_TONE = {
-    同涨: "same-up",
-    同跌: "same-down",
-    股涨指跌: "stock-up",
-    股跌指涨: "stock-down",
-  };
   /** 方向四色：深绿 / 浅绿 / 浅红 / 深红 */
   const DIR_BAR_COLORS = {
     股跌指涨: "#0f7a4a", // 深绿
@@ -54,27 +48,6 @@
     index: emptyUndulateSlot(),
     rangeBeg: "",
     rangeEnd: "",
-  };
-
-  /** 某交易日四价「前低」回溯 */
-  const extremum = {
-    key: "",
-    date: "",
-    loading: false,
-    error: "",
-    pack: null,
-    abort: null,
-  };
-
-  /** 区间四价极值位置百分比 */
-  const position = {
-    key: "",
-    beg: "",
-    end: "",
-    loading: false,
-    error: "",
-    pack: null,
-    abort: null,
   };
 
   /** 聪明投机者：首日低买，其后每日高卖低买 → 期末股数 / 均价 */
@@ -140,11 +113,6 @@
     const v = Number(n) * 100;
     const sign = v > 0 ? "+" : "";
     return `${sign}${v.toFixed(digits)}%`;
-  }
-
-  function fmtScore(n) {
-    if (n == null || !Number.isFinite(Number(n))) return "—";
-    return Number(n).toFixed(2);
   }
 
   function toDateInput(value) {
@@ -522,87 +490,6 @@
 
   function dirBarColorPublic(dir, active = true) {
     return dirBarColor(dir, { active });
-  }
-
-  function dirTone(dir) {
-    return DIR_TONE[String(dir || "")] || "neutral";
-  }
-
-  function dirCountsHtml(dirs, factorKey = "close") {
-    const pack = (dirs && dirs[factorKey]) || {};
-    const keys = ["同涨", "同跌", "股涨指跌", "股跌指涨"];
-    return keys
-      .map((k) => {
-        const n = Number(pack[k] || 0);
-        return `<span class="line-compare-dir" data-tone="${dirTone(k)}"><em>${esc(k)}</em>${n}</span>`;
-      })
-      .join("");
-  }
-
-  function comparisonCardsHtml(comparisons) {
-    return comparisons
-      .map((cmp, idx) => {
-        const index = cmp.index || {};
-        const code = String(index.code || "");
-        const total = cmp.total || {};
-        const deviation = cmp.deviation || {};
-        const active = (state.activeIndex || comparisons[0]?.index?.code) === code ? " is-active" : "";
-        const n = Array.isArray(cmp.dates) ? cmp.dates.length : 0;
-        return `<button type="button" class="line-compare-card${active}" data-lc-index="${esc(code)}" data-lc-i="${idx}">
-          <div class="line-compare-card-top">
-            <strong>${esc(index.name || code)}</strong>
-            <span class="muted">${esc(code)}</span>
-          </div>
-          <div class="line-compare-card-score">
-            <span class="line-compare-score">${esc(fmtScore(total.value))}</span>
-            <span class="line-compare-level" data-level="${esc(total.level || "")}">${esc(total.level || "—")}</span>
-            <span class="line-compare-level" data-level="${esc(deviation.level || "")}">${esc(fmtScore(deviation.value))} ${esc(deviation.level || "")}</span>
-          </div>
-          <div class="line-compare-card-meta muted">${n} 个交易日</div>
-        </button>`;
-      })
-      .join("");
-  }
-
-  function normMeta(cmp) {
-    return (cmp && cmp.norm) || (state.pack && state.pack.meta && state.pack.meta.norm) || {};
-  }
-
-  /** 四项强弱 + 偏离，与右侧下拉口径一致（默认波动标准化） */
-  function factorScoresHtml(cmp) {
-    const scores = cmp?.scores || {};
-    const deviations = cmp?.deviations || {};
-    const total = cmp?.total || {};
-    const deviation = cmp?.deviation || {};
-    const norm = normMeta(cmp);
-    const unit = norm.unit === "pct_point" ? "百分点" : "σ";
-    const rows = FACTOR_ORDER.map((f) => {
-      const active = f === state.activeFactor ? " is-active" : "";
-      return `<button type="button" class="line-compare-factor-score${active}" data-lc-factor="${esc(f)}">
-        <span class="line-compare-factor-score-label">${esc(factorLabel(f))}</span>
-        <span class="line-compare-factor-score-pair">
-          <span class="line-compare-score" title="强弱(${unit})">${esc(fmtScore(scores[f]))}</span>
-          <span class="line-compare-dev" title="偏离(${unit})">${esc(fmtScore(deviations[f]))}</span>
-        </span>
-      </button>`;
-    }).join("");
-    return `<div class="line-compare-factor-scores" aria-label="四项强弱与偏离">
-      <div class="line-compare-score-legend muted">
-        <span>强弱·${esc(unit)}</span><span>偏离·${esc(unit)}</span>
-      </div>
-      ${rows}
-      <div class="line-compare-factor-score line-compare-factor-score--total">
-        <span class="line-compare-factor-score-label">total</span>
-        <span class="line-compare-factor-score-pair">
-          <span class="line-compare-score" title="强弱">${esc(fmtScore(total.value))}</span>
-          <span class="line-compare-level" data-level="${esc(total.level || "")}">${esc(total.level || "—")}</span>
-        </span>
-        <span class="line-compare-factor-score-pair">
-          <span class="line-compare-dev" title="偏离">${esc(fmtScore(deviation.value))}</span>
-          <span class="line-compare-level" data-level="${esc(deviation.level || "")}">${esc(deviation.level || "—")}</span>
-        </span>
-      </div>
-    </div>`;
   }
 
   function chartIndexCode() {
@@ -1041,199 +928,6 @@
     };
   }
 
-  /* ---------- 四价前低回溯 ---------- */
-
-  function extremumKey(code, date) {
-    if (!code || !date) return "";
-    return `${code}|${date}|qfq`;
-  }
-
-  function abortExtremum() {
-    if (extremum.abort) {
-      extremum.abort.abort();
-      extremum.abort = null;
-    }
-  }
-
-  function clearExtremum() {
-    abortExtremum();
-    extremum.key = "";
-    extremum.date = "";
-    extremum.loading = false;
-    extremum.error = "";
-    extremum.pack = null;
-    syncExtremumDateInput("");
-    renderExtremum();
-  }
-
-  function syncExtremumDateInput(date) {
-    const el = $("lcExtremumDate");
-    if (!el) return;
-    const next = toDateInput(date) || "";
-    if (el.value !== next) el.value = next;
-  }
-
-  function renderExtremum() {
-    const meta = $("lcExtremumMeta");
-    const date = toDateInput(extremum.date) || toDateInput(extremum.pack?.date) || "";
-    if (meta) {
-      if (extremum.loading && !extremum.pack) {
-        meta.textContent = date ? `加载 ${date}…` : "加载中…";
-      } else if (extremum.error && !extremum.pack) {
-        meta.textContent = extremum.error;
-      } else if (date) {
-        const used = toDateInput(extremum.pack?.date) || date;
-        const snapped = extremum.pack?.snapped ? " · 已对齐交易日" : "";
-        const loadText = extremum.loading ? " · 更新中…" : "";
-        meta.textContent = `基准日 ${used}${snapped}${loadText}`;
-      } else {
-        meta.textContent = "点选日K终点（或单根）· 回溯开/收/高/低各自最近更低日";
-      }
-    }
-    window.CompanyLcKline?.renderExtremum?.();
-  }
-
-  async function loadExtremum({ code, date, force = false } = {}) {
-    const stock = String(code || state.code || "").trim();
-    const d = toDateInput(date);
-    if (!stock || !d) {
-      clearExtremum();
-      return null;
-    }
-    const key = extremumKey(stock, d);
-    if (extremum.loading && extremum.key === key) return extremum.pack || null;
-    if (!force && key === extremum.key && extremum.pack) {
-      extremum.date = d;
-      syncExtremumDateInput(d);
-      renderExtremum();
-      return extremum.pack;
-    }
-    abortExtremum();
-    const ac = new AbortController();
-    extremum.abort = ac;
-    extremum.key = key;
-    extremum.date = d;
-    extremum.loading = true;
-    extremum.error = "";
-    syncExtremumDateInput(d);
-    renderExtremum();
-    try {
-      const qs = new URLSearchParams({ code: stock, date: d, adjust: "qfq" });
-      const res = await fetch(`/api/stocks/line-extremum?${qs}`, { signal: ac.signal });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || "四价前低失败");
-      if (extremum.abort !== ac) return null;
-      extremum.pack = json.data || null;
-      extremum.key = key;
-      extremum.error = "";
-      if (extremum.pack?.date) syncExtremumDateInput(extremum.pack.date);
-      return extremum.pack;
-    } catch (err) {
-      if (err?.name === "AbortError") return null;
-      if (extremum.abort !== ac) return null;
-      extremum.pack = null;
-      extremum.key = "";
-      extremum.error = err.message || String(err);
-      return null;
-    } finally {
-      if (extremum.abort === ac) {
-        extremum.loading = false;
-        extremum.abort = null;
-        renderExtremum();
-      }
-    }
-  }
-
-  /** 按日K点选终点（或可见窗口末日）同步四价前低 */
-  async function syncExtremumWithKline({ code, date, force = false } = {}) {
-    let d = toDateInput(date);
-    if (!d) {
-      const range = visibleWindowRange();
-      d = range?.end || "";
-    }
-    if (!d) return null;
-    return loadExtremum({ code, date: d, force });
-  }
-
-  /* ---------- 四价极值位置（区间内开/收/高/低各自的最低—最高—现价位置） ---------- */
-
-  function positionKey(code, beg, end) {
-    if (!code || !beg) return "";
-    return `${code}|${beg}|${end || ""}|qfq`;
-  }
-
-  function abortPosition() {
-    if (position.abort) {
-      position.abort.abort();
-      position.abort = null;
-    }
-  }
-
-  function clearPosition() {
-    abortPosition();
-    position.key = "";
-    position.beg = "";
-    position.end = "";
-    position.loading = false;
-    position.error = "";
-    position.pack = null;
-    renderPosition();
-  }
-
-  function renderPosition() {
-    window.CompanyLcKline?.renderPosition?.();
-  }
-
-  async function loadPosition({ code, beg, end, force = false } = {}) {
-    const stock = String(code || state.code || "").trim();
-    const b = toDateInput(beg);
-    const e = toDateInput(end) || b;
-    if (!stock || !b) {
-      clearPosition();
-      return null;
-    }
-    const key = positionKey(stock, b, e);
-    if (position.loading && position.key === key) return position.pack || null;
-    if (!force && key === position.key && position.pack) {
-      renderPosition();
-      return position.pack;
-    }
-    abortPosition();
-    const ac = new AbortController();
-    position.abort = ac;
-    position.key = key;
-    position.beg = b;
-    position.end = e;
-    position.loading = true;
-    position.error = "";
-    renderPosition();
-    try {
-      const qs = new URLSearchParams({ code: stock, beg: b, end: e, adjust: "qfq" });
-      const res = await fetch(`/api/stocks/line-extremum/position?${qs}`, {
-        signal: ac.signal,
-      });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || "极值位置失败");
-      if (position.abort !== ac) return null;
-      position.pack = json.data || null;
-      position.error = "";
-      return position.pack;
-    } catch (err) {
-      if (err?.name === "AbortError") return null;
-      if (position.abort !== ac) return null;
-      position.pack = null;
-      position.key = "";
-      position.error = err.message || String(err);
-      return null;
-    } finally {
-      if (position.abort === ac) {
-        position.loading = false;
-        position.abort = null;
-        renderPosition();
-      }
-    }
-  }
-
   /* ---------- 聪明投机者（期末股数 / 均价） ---------- */
 
   function traderKey(code, beg, end) {
@@ -1465,7 +1159,6 @@
     else syncFactorSelect(chartFactorKey());
     setRangeValues(beg, end || beg);
     void loadUndulate({ code: state.code, beg, end: end || beg });
-    void loadExtremum({ code: state.code, date: end || beg });
     void loadTrader({ code: state.code, beg, end: end || beg });
 
     if (state.abort) state.abort.abort();
@@ -1611,8 +1304,6 @@
       pane.end = "";
       pane.error = "";
       clearUndulate();
-      clearExtremum();
-      clearPosition();
       clearTrader();
     }
     ensureTraderHeadObserver();
@@ -1636,8 +1327,6 @@
     }
     abortUndulateSlot(undulate.stock);
     abortUndulateSlot(undulate.index);
-    abortExtremum();
-    abortPosition();
     abortTrader();
     hideResultChart();
     window.CompanyLcKline?.hide?.();
@@ -1661,8 +1350,6 @@
       pane.beg = "";
       pane.end = "";
       clearUndulate();
-      clearExtremum();
-      clearPosition();
       clearTrader();
       renderResult();
       window.CompanyLcKline?.sync?.()?.catch?.(() => {});
@@ -1727,30 +1414,6 @@
         code: undulate.index.pack?.code || "",
         name: undulate.index.pack?.name || "",
       },
-    }),
-    syncExtremumWithKline,
-    loadExtremum,
-    clearExtremum,
-    extremumMeta: () => ({
-      key: extremum.key,
-      loading: extremum.loading,
-      error: extremum.error,
-      date: extremum.date || extremum.pack?.date || "",
-      pack: extremum.pack,
-      name: extremum.pack?.name || state.name || state.code || "",
-      code: extremum.pack?.code || state.code || "",
-    }),
-    loadPosition,
-    clearPosition,
-    positionMeta: () => ({
-      key: position.key,
-      loading: position.loading,
-      error: position.error,
-      beg: position.beg || position.pack?.beg || "",
-      end: position.end || position.pack?.end || "",
-      pack: position.pack,
-      name: position.pack?.name || state.name || state.code || "",
-      code: position.pack?.code || state.code || "",
     }),
     loadTrader,
     clearTrader,

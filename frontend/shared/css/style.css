@@ -9730,7 +9730,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .company-analysis-p
   height: 100%;
 }
 
-/* —— 研判（涨跌停分析 / 个股分析） —— */
+/* —— 研判（行业分析 / 涨跌停分析） —— */
 body.app-shell.screen-page-root .app-stage {
   display: flex;
   flex-direction: column;
@@ -15444,7 +15444,7 @@ html.company-charts-on .deal-analysis-left.quotes-layout {
 
 .lc-und-stat-metrics {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) repeat(5, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.4fr) repeat(6, minmax(0, 1fr));
   gap: 4px;
 }
 
@@ -16231,4 +16231,3 @@ html.company-charts-on .deal-analysis-left.quotes-layout {
     max-height: 360px;
   }
 }
-

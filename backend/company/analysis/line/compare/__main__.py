@@ -33,15 +33,9 @@ def _print_text(pack: dict) -> None:
     )
     for cmp_ in pack.get("comparisons") or []:
         idx = cmp_.get("index") or {}
-        total = cmp_.get("total") or {}
-        deviation = cmp_.get("deviation") or {}
-        norm = cmp_.get("norm") or (pack.get("meta") or {}).get("norm") or {}
         print(
             f"\n=== vs {idx.get('code')} {idx.get('name') or ''}  "
-            f"n={len(cmp_.get('dates') or [])}  "
-            f"口径={norm.get('label') or norm.get('mode') or 'vol'}  "
-            f"强弱={total.get('value')} ({total.get('level')})  "
-            f"偏离={deviation.get('value')} ({deviation.get('level')})"
+            f"n={len(cmp_.get('dates') or [])}"
         )
         days = cmp_.get("days") or []
         show = days[-5:] if len(days) > 5 else days
