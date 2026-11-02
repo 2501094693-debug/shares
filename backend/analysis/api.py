@@ -6,9 +6,23 @@ from fastapi import APIRouter, Query
 
 from analysis.decline.config import DEFAULT_LOOKBACK_DAYS
 from analysis.decline.service import service
+from analysis.evaluate.config import (
+    ALLOWED_BANDS,
+    ALLOWED_FACTORS,
+    ALLOWED_INDEXES,
+    DEFAULT_BAND,
+    DEFAULT_FACTOR,
+    DEFAULT_INDEX,
+    DEFAULT_LOOKBACK_DAYS as EVALUATE_LOOKBACK_DAYS,
+    DEFAULT_WORKERS,
+    MAX_WORKERS,
+    MIN_WORKERS,
+)
+from analysis.evaluate.service import service as evaluate_service
 from analysis.rotation.config import DEFAULT_LOOKBACK_DAYS as ROTATION_LOOKBACK_DAYS
 from analysis.rotation.config import MAX_LOOKBACK_DAYS, MIN_LOOKBACK_DAYS
 from analysis.rotation.service import service as rotation_service
+from company.analysis.line.evaluate.service import MAX_LOOKBACK_DAYS as EVALUATE_MAX_LOOKBACK
 from core.api import err, ok
 
 router = APIRouter()
@@ -56,4 +70,39 @@ def get_rotation_screen(
     except Exception as exc:  # noqa: BLE001
         return err(str(exc), 500)
 
+
+@router.get("/api/screen/evaluate")
+def get_evaluate_screen(
+    band: float = Query(DEFAULT_BAND, description="波动带（小数，0.09=±9%）"),
+    index: str = Query(DEFAULT_INDEX, description="对比指数公开码"),
+    factor: str = Query(DEFAULT_FACTOR, description="波动/最低价口径：open/high/low/close"),
+    lookback: int = Query(EVALUATE_LOOKBACK_DAYS, description="回溯自然日"),
+    refresh: str = Query("0", description="1=强制重算"),
+    workers: int = Query(DEFAULT_WORKERS, ge=MIN_WORKERS, le=MAX_WORKERS, description="并发线程数"),
+):
+    """全市场 ±band 区间评估：相对强弱 / 股指偏离 / 低点评分。首次或刷新会后台跑任务。"""
+    band_abs = abs(float(band))
+    if band_abs not in ALLOWED_BANDS:
+        return err(f"band 须为 {ALLOWED_BANDS} 之一", 400)
+    factor_key = str(factor or "").strip().lower()
+    if factor_key not in ALLOWED_FACTORS:
+        return err(f"factor 须为 {ALLOWED_FACTORS} 之一", 400)
+    index_code = str(index or "").strip() or DEFAULT_INDEX
+    if index_code not in ALLOWED_INDEXES:
+        return err(f"index 须为 {ALLOWED_INDEXES} 之一", 400)
+    if lookback < 60 or lookback > EVALUATE_MAX_LOOKBACK:
+        return err(f"lookback 须在 60–{EVALUATE_MAX_LOOKBACK} 之间", 400)
+
+    try:
+        payload = evaluate_service.run_or_poll(
+            band=band_abs,
+            index=index_code,
+            factor=factor_key,
+            lookback=lookback,
+            force=refresh == "1",
+            workers=workers,
+        )
+        return ok(payload)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
 

@@ -7,7 +7,8 @@
 - 序列：每日的开盘价 / 最高价 / 最低价 / 收盘价各自相对基准收盘的涨跌幅，
   四价即四条数字序列
 - 结论：四条序列各自的波动范围（最低 / 最高 / 极差）与涨跌幅均值、标准差，
-  以及区间起止日涨跌幅换算为标准差单位（pct / σ）
+  以及区间起止日涨跌幅换算为标准差单位（pct / σ），
+  并按 ``S0/U/S1`` 九格规则给出走势标签（容差 ``path_eps``）
 
 个股日线走 ``company.line.fetcher.fetch_kline``（默认 ``qfq``）；
 指数日线走 ``exponent.fetch_kline``（东财→同花顺回退）。
@@ -30,6 +31,7 @@ from company.analysis.line.undulate.service import (
     _today_iso,
     compute_undulate,
 )
+from company.analysis.line.undulate.path import DEFAULT_EPS, path_from_stats
 from company.analysis.line.undulate.stats import compute_stats
 
 
@@ -75,8 +77,10 @@ def _stat_block(
     days: list[dict[str, Any]],
     beg_date: str = "",
     end_date: str = "",
+    *,
+    path_eps: float = DEFAULT_EPS,
 ) -> dict[str, Any]:
-    """单因子：统计量 + 极值日期 + 起止日的 z / σ 坐标。"""
+    """单因子：统计量 + 极值日期 + 起止日的 z / σ 坐标 + 走势。"""
     series = _series_of(days, factor)
     stats = compute_stats([pt["pct"] for pt in series])
 
@@ -94,7 +98,7 @@ def _stat_block(
     beg_z, beg_sigma = _sigma_pair(beg_pct, mean, std)
     end_z, end_sigma = _sigma_pair(end_pct, mean, std)
 
-    return {
+    row = {
         "factor": factor,
         "label": FACTOR_LABELS[factor],
         "count": stats["count"],
@@ -115,17 +119,22 @@ def _stat_block(
         "end_sigma": end_sigma,
         "series": series,
     }
+    row["path"] = path_from_stats(row, eps=path_eps)
+    return row
 
 
 def compute_volatility(
     bars: list[dict[str, Any]],
     beg: str,
     end: str = "",
+    *,
+    path_eps: float = DEFAULT_EPS,
 ) -> dict[str, Any]:
     """在已排序日线序列上算四价涨跌幅的波动范围 / 均值 / 标准差（纯函数）。
 
     基准与区间口径完全复用 ``compute_undulate``，因此两者的基准日、
-    区间交易日数量、每日涨跌幅都一致，只是这里多了统计汇总。
+    区间交易日数量、每日涨跌幅都一致，只是这里多了统计汇总与走势标签。
+    ``path_eps`` 传给 ``S0/U/S1`` 相等判定容差。
     """
     base = compute_undulate(bars, beg, end)
     days = list(base.get("days") or [])
@@ -133,7 +142,10 @@ def compute_volatility(
     used_end = str(base.get("end") or "")
 
     stats: dict[str, dict[str, Any]] = {
-        factor: _stat_block(factor, days, used_beg, used_end) for factor in FACTORS
+        factor: _stat_block(
+            factor, days, used_beg, used_end, path_eps=path_eps
+        )
+        for factor in FACTORS
     }
 
     return {
@@ -208,10 +220,12 @@ def analyze_volatility(
     *,
     adjust: str = "qfq",
     kind: str = "stock",
+    path_eps: float = DEFAULT_EPS,
 ) -> dict[str, Any]:
     """主入口：区间内四价涨跌幅的波动范围、均值与标准差。
 
     ``kind=stock`` 用个股前复权日线；``kind=index`` 用指数日线（不复权）。
+    ``path_eps`` 为走势九格判定的 σ 容差（``|a-b|<=eps`` 视为相等）。
     """
     kind_key = (kind or "stock").strip().lower()
     if kind_key not in ("stock", "index"):
@@ -227,7 +241,12 @@ def analyze_volatility(
         if not norm:
             raise ValueError("无效指数代码")
         hist = _fetch_index_day_range(norm, beg_iso=beg_iso, end_iso=end_iso)
-        result = compute_volatility(list(hist.get("items") or []), beg_iso, end_iso)
+        result = compute_volatility(
+            list(hist.get("items") or []),
+            beg_iso,
+            end_iso,
+            path_eps=path_eps,
+        )
         return {
             "code": str(hist.get("code") or norm),
             "name": str(hist.get("name") or ""),
@@ -244,7 +263,12 @@ def analyze_volatility(
     hist = _fetch_day_range(
         norm, beg_iso=beg_iso, end_iso=end_iso, adjust=adjust
     )
-    result = compute_volatility(list(hist.get("items") or []), beg_iso, end_iso)
+    result = compute_volatility(
+        list(hist.get("items") or []),
+        beg_iso,
+        end_iso,
+        path_eps=path_eps,
+    )
 
     return {
         "code": norm,

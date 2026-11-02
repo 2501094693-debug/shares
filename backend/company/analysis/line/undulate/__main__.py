@@ -18,6 +18,7 @@ _BACKEND = Path(__file__).resolve().parents[4]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
+from company.analysis.line.undulate.path import DEFAULT_EPS
 from company.analysis.line.undulate.service import FACTORS, analyze_undulate
 from company.analysis.line.undulate.volatility import analyze_volatility
 
@@ -26,6 +27,12 @@ def _fmt_pct(v: float | None) -> str:
     if v is None:
         return "—"
     return f"{v * 100:+.2f}%"
+
+
+def _fmt_sigma(v: float | None) -> str:
+    if v is None:
+        return "—"
+    return f"{v:+.2f}σ"
 
 
 def _print_text(pack: dict) -> None:
@@ -91,6 +98,19 @@ def _print_volatility(pack: dict) -> None:
             print(
                 f"    {label}: {_fmt_pct(row.get('end_pct'))}  →  {sigma_txt}"
             )
+    print("  走势（S0 ∘ U ∘ S1，σ 容差判定）：")
+    for f in FACTORS:
+        row = stats.get(f) or {}
+        path = row.get("path") or {}
+        label = row.get("label") or f
+        print(
+            f"    {label}: {path.get('label') or '—'}  "
+            f"（{_fmt_sigma(path.get('S0'))} "
+            f"{path.get('left') or '?'} "
+            f"{_fmt_sigma(path.get('U'))} "
+            f"{path.get('right') or '?'} "
+            f"{_fmt_sigma(path.get('S1'))}）"
+        )
 
 
 def _bar_close(base: dict) -> str:
@@ -107,7 +127,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--vol",
         action="store_true",
-        help="额外输出涨跌幅的均值 / 标准差 / 波动范围",
+        help="额外输出涨跌幅的均值 / 标准差 / 波动范围 / 走势",
+    )
+    p.add_argument(
+        "--eps",
+        type=float,
+        default=DEFAULT_EPS,
+        help=f"走势 S0/U/S1 相等容差（σ），默认 {DEFAULT_EPS}",
     )
     p.add_argument("--json", action="store_true", help="输出完整 JSON")
     args = p.parse_args(argv)
@@ -118,7 +144,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.vol:
             pack = analyze_volatility(
-                args.code, args.beg, args.end, adjust=args.adjust
+                args.code,
+                args.beg,
+                args.end,
+                adjust=args.adjust,
+                path_eps=args.eps,
             )
         else:
             pack = analyze_undulate(

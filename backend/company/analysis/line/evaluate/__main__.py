@@ -1,4 +1,4 @@
-"""CLI：区间评估（最大 ±band 区间 + 最低价日评分 + 股 / 指 σ 坐标）。
+"""CLI：区间评估（最大 ±band 区间 + 最低价日评分 + 股指四价走势 + 股指偏离分）。
 
 示例::
 
@@ -18,39 +18,60 @@ _BACKEND = Path(__file__).resolve().parents[4]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-from company.analysis.line.undulate.service import FACTORS
 from company.analysis.line.evaluate.service import analyze_evaluate
 
-
-def _fmt_pct(v: float | None) -> str:
-    if v is None:
-        return "—"
-    return f"{v * 100:+.2f}%"
+_PATH_ORDER = ("open", "high", "low", "close")
+_PATH_LABEL = {"open": "开", "high": "高", "low": "低", "close": "收"}
 
 
-def _fmt_sigma(v: float | None) -> str:
-    if v is None:
-        return "—"
-    return f"{v:+.2f}σ"
+def _fmt_paths(paths: dict) -> str:
+    parts = []
+    for key in _PATH_ORDER:
+        parts.append(f"{_PATH_LABEL[key]}{paths.get(key) or '—'}")
+    return " ".join(parts)
 
 
-def _print_side(title: str, block: dict) -> None:
-    print(f"  {title} {block.get('code') or ''} {block.get('name') or ''}")
+def _print_paths(block: dict) -> None:
+    print("  四价波动走势（区间内，相对起始日前收）：")
     if block.get("error"):
         print(f"    获取失败: {block.get('error')}")
         return
-    print(f"    开始日 {block.get('beg')}  结束日 {block.get('end')}")
-    stats = block.get("stats") or {}
-    for f in FACTORS:
-        row = stats.get(f) or {}
-        print(
-            f"    {row.get('label') or f}: "
-            f"开始日 {_fmt_pct(row.get('beg_pct'))} → {_fmt_sigma(row.get('beg_sigma'))}"
-            f"（z={_fmt_sigma(row.get('beg_z'))}）  "
-            f"结束日 {_fmt_pct(row.get('end_pct'))} → {_fmt_sigma(row.get('end_sigma'))}"
-            f"（z={_fmt_sigma(row.get('end_z'))}）  "
-            f"均值 {_fmt_pct(row.get('mean'))} σ {_fmt_pct(row.get('std'))}"
-        )
+    stock = block.get("stock") or {}
+    index = block.get("index") or {}
+    print(
+        f"    个股 {stock.get('code') or ''} {stock.get('name') or ''}  "
+        f"{_fmt_paths(stock.get('paths') or {})}"
+    )
+    print(
+        f"    指数 {index.get('code') or ''} {index.get('name') or ''}  "
+        f"{_fmt_paths(index.get('paths') or {})}"
+    )
+
+
+def _print_divergence(block: dict) -> None:
+    print("  股指偏离分：")
+    if block.get("error"):
+        print(f"    获取失败: {block.get('error')}")
+        return
+    stock = block.get("stock") or {}
+    index = block.get("index") or {}
+    dirs = block.get("dirs") or {}
+    score = block.get("score")
+    score_txt = "—" if score is None else f"{score:.2f}"
+    print(
+        f"    {score_txt}  "
+        f"（反向 {block.get('reverse_count', 0)} / "
+        f"共 {block.get('count', 0)} 日，口径 {block.get('factor')}）"
+    )
+    print(
+        f"    个股 {stock.get('code') or ''} {stock.get('name') or ''}  "
+        f"指数 {index.get('code') or ''} {index.get('name') or ''}"
+    )
+    print(
+        f"    同涨 {dirs.get('same_up', 0)}  同跌 {dirs.get('same_down', 0)}  "
+        f"股涨指跌 {dirs.get('stock_up_index_down', 0)}  "
+        f"股跌指涨 {dirs.get('stock_down_index_up', 0)}"
+    )
 
 
 def _print_text(pack: dict) -> None:
@@ -85,13 +106,14 @@ def _print_text(pack: dict) -> None:
             f" / 差距分 {target.get('score_gap')}，{target.get('label')} "
             f"{target.get('date')}）"
         )
-    print("  标准差坐标：")
-    _print_side("个股", pack.get("stock") or {})
-    _print_side("指数", pack.get("index") or {})
+    _print_paths(pack.get("paths") or {})
+    _print_divergence(pack.get("divergence") or {})
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="区间评估：最大波动区间 / 最低价日评分 / σ 坐标")
+    p = argparse.ArgumentParser(
+        description="区间评估：最大波动区间 / 最低价日评分 / 股指四价走势 / 股指偏离分"
+    )
     p.add_argument("code", nargs="?", help="股票代码，如 600519")
     p.add_argument("--end", default="", help="结束日期，默认最新交易日")
     p.add_argument("--factor", default="close", help="波动口径 open/high/low/close/all")
@@ -100,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--index", default="000001", help="对比指数公开码，默认上证指数")
     p.add_argument("--lookback", type=int, default=900, help="回溯自然日，默认 900")
     p.add_argument("--adjust", default="qfq", help="qfq/hfq/none，默认前复权")
-    p.add_argument("--layers", type=int, default=1, help="local_extrema 层级数")
+    p.add_argument("--layers", type=int, default=3, help="local_extrema 层级数（谷序列默认 3）")
     p.add_argument("--smooth", type=int, default=1, help="local_extrema 平滑窗口")
     p.add_argument("--json", action="store_true", help="输出完整 JSON")
     args = p.parse_args(argv)

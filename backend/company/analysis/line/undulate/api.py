@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query
 
 from core.api import err, ok
 
+from company.analysis.line.undulate.path import DEFAULT_EPS
 from company.analysis.line.undulate.service import analyze_undulate
 from company.analysis.line.undulate.volatility import analyze_volatility
 
@@ -38,12 +39,18 @@ def stocks_line_undulate_volatility(
     end: str = Query("", description="结束日期，默认今天"),
     adjust: str = Query("qfq", description="复权方式（仅 kind=stock）：qfq / hfq / none"),
     kind: str = Query("stock", description="stock 个股 | index 指数"),
+    eps: float = Query(
+        DEFAULT_EPS,
+        description="走势 S0/U/S1 相等容差（σ 单位）",
+    ),
 ):
-    """四价涨跌幅的波动范围、均值与标准差（基准=起始日前一交易日收盘）。"""
+    """四价涨跌幅的波动范围、均值、标准差与 S0/U/S1 走势（基准=起始日前一交易日收盘）。"""
     if not code:
         return err("缺少参数 code", 400)
     try:
-        data = analyze_volatility(code, beg, end, adjust=adjust, kind=kind)
+        data = analyze_volatility(
+            code, beg, end, adjust=adjust, kind=kind, path_eps=eps
+        )
         return ok(data)
     except ValueError as exc:
         return err(str(exc), 400)

@@ -7660,6 +7660,15 @@ body.app-shell.shares-page-root .shares-page.market-page {
   min-width: 100%;
 }
 
+.shares-table thead th,
+.shares-table thead th.num,
+.shares-table thead th.mine-add-cell,
+.shares-table td,
+.shares-table td.num,
+.shares-table td.mine-add-cell {
+  text-align: left;
+}
+
 .shares-table thead th:nth-child(2),
 .shares-table .is-row td:nth-child(2) {
   position: sticky;
@@ -9834,25 +9843,147 @@ body.app-shell.screen-page-root .screen-page.market-page {
 }
 
 .screen-page-root[data-screen-mode="limit"] .judgment-industry,
+.screen-page-root[data-screen-mode="limit"] .judgment-stock,
+.screen-page-root[data-screen-mode="limit"] .judgment-stock-board,
 .screen-page-root[data-screen-mode="limit"] .judgment-shares,
 .screen-page-root[data-screen-mode="limit"] .judgment-shares-panel,
 .screen-page-root[data-screen-mode="limit"] .judgment-query,
 .screen-page-root[data-screen-mode="shares"] .judgment-limit,
 .screen-page-root[data-screen-mode="shares"] .judgment-industry,
+.screen-page-root[data-screen-mode="shares"] .judgment-stock,
+.screen-page-root[data-screen-mode="shares"] .judgment-stock-board,
 .screen-page-root[data-screen-mode="industry"] .judgment-limit,
+.screen-page-root[data-screen-mode="industry"] .judgment-stock,
+.screen-page-root[data-screen-mode="industry"] .judgment-stock-board,
 .screen-page-root[data-screen-mode="industry"] .judgment-shares,
 .screen-page-root[data-screen-mode="industry"] .judgment-shares-panel,
 .screen-page-root[data-screen-mode="industry"] .judgment-query,
 .screen-page-root[data-screen-mode="industry"] .screen-layout,
+.screen-page-root[data-screen-mode="stock"] .judgment-limit,
+.screen-page-root[data-screen-mode="stock"] .judgment-industry,
+.screen-page-root[data-screen-mode="stock"] .judgment-shares,
+.screen-page-root[data-screen-mode="stock"] .judgment-shares-panel,
+.screen-page-root[data-screen-mode="stock"] .judgment-query,
+.screen-page-root[data-screen-mode="stock"] .screen-layout,
+.screen-page-root[data-screen-mode="stock"] .rot-board,
 .screen-page-root[data-screen-mode="select"] .judgment-limit,
 .screen-page-root[data-screen-mode="select"] .judgment-shares,
 .screen-page-root[data-screen-mode="select"] .judgment-shares-panel,
 .screen-page-root[data-screen-mode="select"] .judgment-industry,
+.screen-page-root[data-screen-mode="select"] .judgment-stock,
+.screen-page-root[data-screen-mode="select"] .judgment-stock-board,
 .screen-page-root[data-screen-mode="select"] .judgment-query,
 .screen-page-root[data-screen-mode="select"] .screen-layout,
 .screen-page-root[data-screen-mode="select"] #refreshBtn,
-.screen-page-root:not([data-screen-mode="industry"]) .rot-board {
+.screen-page-root:not([data-screen-mode="industry"]) .rot-board,
+.screen-page-root:not([data-screen-mode="stock"]) .judgment-stock-board {
   display: none;
+}
+
+.screen-page-root[data-screen-mode="stock"] .judgment-stock {
+  display: inline-flex;
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-eval-board {
+  display: flex;
+  flex: 1 1 0%;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-eval-pane {
+  display: flex;
+  flex: 1 1 0%;
+  min-height: 0;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 2px);
+  background: color-mix(in srgb, var(--bg-elevated) 55%, transparent);
+  overflow: hidden;
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-eval-scroll {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table thead th,
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table thead th.num,
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table td,
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table td.num {
+  text-align: left;
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table th.is-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table th.is-sortable:hover {
+  color: var(--text);
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table th.is-sorted {
+  color: var(--accent, #3d7eff);
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table tr.is-row {
+  cursor: pointer;
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table tr.is-row:hover {
+  background: color-mix(in srgb, var(--accent, #3d7eff) 10%, transparent);
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table td[data-tone="up"] {
+  color: var(--up, #d64545);
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table td[data-tone="down"] {
+  color: var(--down, #1faa6e);
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table td.mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-path-cell {
+  min-width: 11.5rem;
+  white-space: normal;
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-path-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  margin: 1px 4px 1px 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-path-chip em {
+  font-style: normal;
+  opacity: 0.55;
+  margin-right: 1px;
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="上行"] {
+  color: var(--up, #d64545);
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="下行"] {
+  color: var(--down, #1faa6e);
+}
+
+.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="冲高回落"],
+.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="探底回升"] {
+  color: color-mix(in srgb, var(--accent, #3d7eff) 80%, var(--text));
 }
 
 .screen-page-root[data-screen-mode="shares"] .judgment-query {

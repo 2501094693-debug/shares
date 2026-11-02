@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.fmt import to_float
+
 from company.analysis.line.undulate.service import (
     FACTORS,
     FACTOR_LABELS,
@@ -73,6 +75,31 @@ def window_within(
     return mn >= lo and mx <= hi
 
 
+def _prices_within_band(
+    run_min: dict[str, float],
+    run_max: dict[str, float],
+    *,
+    base_close: float,
+    band_abs: float,
+    factors: tuple[str, ...] | list[str],
+) -> bool:
+    """用窗口内价格 min/max + 基准收盘，判断是否落在 ±band（与 ``_pct`` 六位小数一致）。"""
+    lo = -band_abs
+    hi = band_abs
+    any_present = False
+    for f in factors:
+        mn = run_min.get(f)
+        mx = run_max.get(f)
+        if mn is None or mx is None:
+            continue
+        any_present = True
+        pct_lo = round(float(mn) / base_close - 1.0, 6)
+        pct_hi = round(float(mx) / base_close - 1.0, 6)
+        if pct_lo < lo or pct_hi > hi:
+            return False
+    return any_present
+
+
 def find_max_range(
     bars: list[dict[str, Any]],
     *,
@@ -84,6 +111,9 @@ def find_max_range(
 
     起始日先取区间最后一个交易日；满足条件就把起始日前推一个交易日再测，
     直到首次不满足即停，返回最后一次满足的区间（即最大起始日期范围）。
+
+    实现：向后扩展时增量维护价格 min/max（O(n)），仅对最终窗口调用一次
+    ``compute_undulate`` 生成完整结果，避免原先每个候选起点整段重算。
 
     返回：
     - ``found``         是否找到（最新交易日单日窗口即不满足时为 ``False``）
@@ -99,42 +129,81 @@ def find_max_range(
             f"不支持的波动口径 {factor!r}，可选 {TEST_FACTOR_CHOICES}"
         )
 
-    ordered = sorted(bars, key=_bar_date)
-    dates = [d for d in (_bar_date(b) for b in ordered) if d]
-    if not dates:
+    ordered = [b for b in sorted(bars, key=_bar_date) if _bar_date(b)]
+    if not ordered:
         raise ValueError("无日线数据")
 
+    dates = [_bar_date(b) for b in ordered]
     end_iso = _iso(end) if end else dates[-1]
-    cand = [d for d in dates if d <= end_iso]
-    if not cand:
+    end_idx = -1
+    for i, d in enumerate(dates):
+        if d <= end_iso:
+            end_idx = i
+    if end_idx < 0:
         raise ValueError(f"{end_iso} 之前无交易日")
 
-    last_good: dict[str, Any] | None = None
-    first_fail: dict[str, Any] | None = None
+    track: tuple[str, ...] = FACTORS if factor == "all" else (factor,)
+    band_abs = abs(float(band))
+    run_min: dict[str, float] = {}
+    run_max: dict[str, float] = {}
+
+    last_good_i: int | None = None
+    first_fail_i: int | None = None
     reached_start = False
     tested = 0
 
-    for k in range(len(cand) - 1, -1, -1):
-        beg = cand[k]
-        try:
-            pack = compute_undulate(ordered, beg, end_iso)
-        except ValueError:
-            # 起始日之前没有基准交易日，无法再往前推
+    for i in range(end_idx, -1, -1):
+        if i == 0:
+            # 起始日是序列首根时没有基准前收，与 compute_undulate 行为一致
             reached_start = True
             break
-        pack["factor"] = factor
-        pack["band"] = abs(float(band))
-        tested += 1
-        if window_within(pack, factor=factor, band=band):
-            last_good = pack
-        else:
-            first_fail = pack
+
+        bar = ordered[i]
+        for f in track:
+            val = to_float(bar.get(f))
+            if val is None:
+                continue
+            prev_min = run_min.get(f)
+            prev_max = run_max.get(f)
+            run_min[f] = val if prev_min is None else min(prev_min, val)
+            run_max[f] = val if prev_max is None else max(prev_max, val)
+
+        base_close = to_float(ordered[i - 1].get("close"))
+        if base_close is None or base_close == 0:
+            reached_start = True
             break
+
+        tested += 1
+        if _prices_within_band(
+            run_min,
+            run_max,
+            base_close=float(base_close),
+            band_abs=band_abs,
+            factors=track,
+        ):
+            last_good_i = i
+        else:
+            first_fail_i = i
+            break
+
+    last_good: dict[str, Any] | None = None
+    first_fail: dict[str, Any] | None = None
+    if last_good_i is not None:
+        last_good = compute_undulate(ordered, dates[last_good_i], end_iso)
+        last_good["factor"] = factor
+        last_good["band"] = band_abs
+    if first_fail_i is not None:
+        try:
+            first_fail = compute_undulate(ordered, dates[first_fail_i], end_iso)
+            first_fail["factor"] = factor
+            first_fail["band"] = band_abs
+        except ValueError:
+            first_fail = None
 
     return {
         "found": last_good is not None,
         "factor": factor,
-        "band": abs(float(band)),
+        "band": band_abs,
         "end": last_good["end"] if last_good else (
             first_fail["end"] if first_fail else end_iso
         ),
@@ -176,17 +245,22 @@ def lowest_day(
 
 
 def score_low_point(
-    window_bars: list[dict[str, Any]],
+    bars: list[dict[str, Any]],
     low_date: str,
     *,
     series: str = "close",
-    layers: int = 1,
+    layers: int = 3,
     smooth_window: int = 1,
+    match_beg: str = "",
+    match_end: str = "",
 ) -> dict[str, Any]:
-    """在区间日线跑 local_extrema 评分，返回整体结果与最低价日对应评分行。
+    """在给定日线跑 local_extrema 评分，返回整体结果与最低价日对应评分行。
 
-    ``series`` 不在可选序列内时回退到 ``close``。若最低价日不是检测到的极值点，
-    退而取区间内价格最低的波谷评分行（仍无则 ``match=None``）。
+    调用方通常传入最近约 900 个交易日（层级默认 3），以便谷序列在更长语境下相对打分；
+    ``match_beg`` / ``match_end`` 用于在最低价日未命中极值时，仅在该窗口内回退
+    取价格最低波谷（避免误取回溯窗口外的全局最低谷）。
+
+    ``series`` 不在可选序列内时回退到 ``close``。
     """
     from company.analysis.line.local_extrema.service import (
         SERIES_OPTIONS,
@@ -195,7 +269,7 @@ def score_low_point(
 
     key = series if series in SERIES_OPTIONS else "close"
     analysis = compute_alternating_extrema(
-        window_bars,
+        bars,
         layers=layers,
         series=key,
         smooth_window=smooth_window,
@@ -207,7 +281,15 @@ def score_low_point(
 
     match = next((r for r in rows if r.get("date") == low_date), None)
     if match is None:
-        troughs = analysis.get("trough_scores") or []
+        troughs = list(analysis.get("trough_scores") or [])
+        beg = str(match_beg or "")[:10]
+        end = str(match_end or "")[:10]
+        if beg and end:
+            troughs = [
+                r
+                for r in troughs
+                if beg <= str(r.get("date") or "")[:10] <= end
+            ]
         if troughs:
             match = min(
                 troughs, key=lambda r: float(r.get("price") or float("inf"))

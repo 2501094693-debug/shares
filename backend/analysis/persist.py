@@ -15,6 +15,7 @@ CACHE_VERSION = 1
 KIND_DECLINE = "decline"
 KIND_ROTATION = "rotation"
 KIND_SHARES = "shares"
+KIND_EVALUATE = "evaluate"
 
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 

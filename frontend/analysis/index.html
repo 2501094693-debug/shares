@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=20261101-no-stock" />
+  <link rel="stylesheet" href="/css/style.css?v=20261102-index-seg" />
 </head>
 <body class="app-shell company-page-root market-page-root screen-page-root" data-nav="analysis" data-screen-mode="industry">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
@@ -25,6 +25,7 @@
           <div id="viewSeg" class="market-seg judgment-view" role="tablist" aria-label="研判类型">
             <button type="button" data-view="industry" class="is-active" role="tab" aria-selected="true">行业分析</button>
             <button type="button" data-view="limit" role="tab" aria-selected="false">涨跌停分析</button>
+            <button type="button" data-view="stock" role="tab" aria-selected="false">个股分析</button>
           </div>
           <button id="refreshBtn" class="btn ghost" type="button">重新分析</button>
         </div>
@@ -50,6 +51,16 @@
             <button type="button" data-days="120">近半年</button>
             <button type="button" data-days="245">一年</button>
             <button type="button" data-days="490">两年</button>
+          </div>
+          <div id="stockBandSeg" class="market-seg screen-range judgment-stock" role="group" aria-label="波动带">
+            <button type="button" data-band="0.05">±5%</button>
+            <button type="button" data-band="0.09" class="is-active">±9%</button>
+            <button type="button" data-band="0.12">±12%</button>
+          </div>
+          <div id="stockIndexSeg" class="market-seg screen-range judgment-stock" role="group" aria-label="对比指数">
+            <button type="button" data-index="000001" class="is-active">上证</button>
+            <button type="button" data-index="399001">成指</button>
+            <button type="button" data-index="000300">沪深300</button>
           </div>
         </div>
       </div>
@@ -140,12 +151,42 @@
           </div>
         </section>
       </div>
+
+      <div id="stockEvalBoard" class="stock-eval-board judgment-stock-board">
+        <section class="stock-eval-pane">
+          <header class="rot-pane-head">
+            <h2>区间评估</h2>
+            <span id="stockEvalHint" class="rot-pane-hint"></span>
+          </header>
+          <div class="rot-scroll stock-eval-scroll">
+            <table class="rot-table stock-eval-table" id="stockEvalTable">
+              <thead>
+                <tr>
+                  <th class="is-sortable" data-sort="code">代码</th>
+                  <th class="is-sortable" data-sort="name">名称</th>
+                  <th class="num is-sortable" data-sort="beg" title="区间起始">起始</th>
+                  <th class="num is-sortable" data-sort="end" title="区间结束">结束</th>
+                  <th class="num is-sortable" data-sort="count" title="区间交易日数">天数</th>
+                  <th class="is-sortable" data-sort="stock_path" title="区间内个股收盘走势">个股收盘</th>
+                  <th class="is-sortable" data-sort="index_path" title="区间内指数收盘走势">指数收盘</th>
+                  <th class="num is-sortable is-sorted" data-sort="divergence" title="股指反向偏离分">偏离</th>
+                  <th class="num is-sortable" data-sort="low_score" title="区间低点极值评分">低点分</th>
+                  <th class="num is-sortable" data-sort="low_date">低点日</th>
+                </tr>
+              </thead>
+              <tbody id="stockEvalBody">
+                <tr><td colspan="10" class="muted">切换到个股分析后开始扫描…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </div>
   </div>
   <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
   <script src="/js/shared/orbit-prefetch.js?v=futures-20260923"></script>
   <script src="/js/shared/nav.js?v=20261101-no-stock"></script>
   <script src="/js/shared/kline-draw.js?v=20261030-no-extrema"></script>
-  <script src="/js/analysis.js?v=20261101-no-stock"></script>
+  <script src="/js/analysis.js?v=20261102-index-seg"></script>
 </body>
 </html>

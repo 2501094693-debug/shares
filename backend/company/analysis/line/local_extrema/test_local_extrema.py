@@ -213,7 +213,7 @@ class ComputeAlternatingExtremaTests(unittest.TestCase):
 class ScoreExtremaTests(unittest.TestCase):
     def test_split_and_score(self) -> None:
         # 峰@1=3, 谷@2=1, 峰@3=5, 谷@4=2, 峰@5=4
-        # 谷：1 比 2 更低 → rank1 价格分 30 > rank2 价格分 15
+        # 谷价 1..2 线性：最低 30、最高 0；两谷 side_days 同为 2 → 天数均满分
         seq = [
             {"type": "peak", "label": "波峰", "date": "2026-01-06", "price": 3.0, "index": 1, "span_days": 3},
             {"type": "trough", "label": "波谷", "date": "2026-01-07", "price": 1.0, "index": 2, "span_days": 3},
@@ -231,11 +231,11 @@ class ScoreExtremaTests(unittest.TestCase):
         self.assertEqual(by_idx[2]["price_rank"], 1)
         self.assertEqual(by_idx[4]["price_rank"], 2)
         self.assertAlmostEqual(by_idx[2]["score_price"], 30.0)
-        self.assertAlmostEqual(by_idx[4]["score_price"], 15.0)
+        self.assertAlmostEqual(by_idx[4]["score_price"], 0.0)
+        self.assertAlmostEqual(by_idx[2]["score_days"], 30.0)
+        self.assertAlmostEqual(by_idx[4]["score_days"], 30.0)
 
     def test_trough_gap_uses_both_peaks(self) -> None:
-        import math
-
         seq = [
             {"type": "peak", "label": "波峰", "date": "2026-01-06", "price": 10.0, "index": 0, "span_days": 2},
             {"type": "trough", "label": "波谷", "date": "2026-01-08", "price": 5.0, "index": 2, "span_days": 3},
@@ -247,9 +247,11 @@ class ScoreExtremaTests(unittest.TestCase):
         self.assertAlmostEqual(t["left_gap"], 0.5)  # (10-5)/10
         self.assertAlmostEqual(t["right_gap"], 0.75)  # (20-5)/20
         self.assertAlmostEqual(t["gap_max"], 0.75)
-        # 单谷 rank1 → 30；天数 (1-e^-5)*30；差距 0.75*40=30
-        expect = 30.0 + (1.0 - math.exp(-5)) * 30.0 + 0.75 * 40.0
+        # 单谷：价格/天数组内归一均满分 30；差距 0.75*40=30
+        expect = 30.0 + 30.0 + 0.75 * 40.0
         self.assertAlmostEqual(t["score"], round(expect, 2))
+        self.assertAlmostEqual(t["score_days"], 30.0)
+        self.assertAlmostEqual(t["score_price"], 30.0)
 
 
 if __name__ == "__main__":

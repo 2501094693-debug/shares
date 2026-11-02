@@ -13,14 +13,20 @@
 
 from __future__ import annotations
 
+from company.analysis.line.compare.score import score_divergence
 from company.analysis.line.compare.service import (
     available_indices,
+    compare_divergence,
+    compare_from_bars,
     compare_stock_vs_index,
     compare_stock_vs_indices,
 )
 
 __all__ = [
     "available_indices",
+    "compare_divergence",
+    "compare_from_bars",
     "compare_stock_vs_index",
     "compare_stock_vs_indices",
+    "score_divergence",
 ]

@@ -13,7 +13,38 @@
       sub: "按交易日复盘申万三级行业轮动：上涨/待涨/领涨均按所选交易日切片；行情与主力净流入（当日/5日/10日）回溯至该日。点击行业进入行情树",
       from: "analysis",
     },
+    stock: {
+      title: "ORBIT · 行情研判",
+      sub: "非创业板、非科创板、非 ST · ±band 区间内个股/指数四价走势、股指偏离、低点评分；点列头切换排序，点击行进入个股",
+      from: "analysis",
+    },
   };
+
+  const STOCK_SORT_KEYS = [
+    "code",
+    "name",
+    "beg",
+    "end",
+    "count",
+    "stock_path",
+    "index_path",
+    "divergence",
+    "low_score",
+    "low_date",
+  ];
+  const STOCK_SORT_LABELS = {
+    code: "代码",
+    name: "名称",
+    beg: "起始",
+    end: "结束",
+    count: "天数",
+    stock_path: "个股收盘",
+    index_path: "指数收盘",
+    divergence: "偏离",
+    low_score: "低点分",
+    low_date: "低点日",
+  };
+  const STOCK_INDEX_CODES = ["000001", "399001", "000300"];
 
   const limit = {
     days: 15,
@@ -46,6 +77,27 @@
     note: "",
     updatedAt: "",
     errors: [],
+    pollTimer: 0,
+    fetching: false,
+    started: false,
+    error: "",
+    message: "",
+  };
+
+  const stock = {
+    band: 0.09,
+    index: "000001",
+    factor: "close",
+    status: "idle",
+    items: [],
+    candidateCount: 0,
+    analyzedCount: 0,
+    foundCount: 0,
+    errorCount: 0,
+    updatedAt: "",
+    params: null,
+    sortKey: "divergence",
+    sortDir: "desc",
     pollTimer: 0,
     fetching: false,
     started: false,
@@ -122,11 +174,36 @@
     const value = String(raw || "").toLowerCase();
     if (["limit", "screen", "decline", "zt"].includes(value)) return "limit";
     if (["industry", "rotation", "rot", "l3", "hy"].includes(value)) return "industry";
+    if (["stock", "evaluate", "eval", "gg"].includes(value)) return "stock";
     return "";
+  }
+
+  function parseSortKey(raw) {
+    const value = String(raw || "").toLowerCase();
+    if (value === "stock_path_close") return "stock_path";
+    if (value === "index_path_close") return "index_path";
+    return STOCK_SORT_KEYS.includes(value) ? value : "divergence";
+  }
+
+  function pathLabelOf(row, which) {
+    const pack = row && typeof row === "object" ? row[which] : null;
+    if (!pack || typeof pack !== "object") return "";
+    return String(pack.close || "");
+  }
+
+  function fmtPathCell(paths) {
+    const pack = paths && typeof paths === "object" ? paths : {};
+    const text = pack.close || "—";
+    return `<span class="stock-path-chip" data-path="${esc(text)}">${esc(text)}</span>`;
+  }
+
+  function parseSortDir(raw) {
+    return String(raw || "").toLowerCase() === "asc" ? "asc" : "desc";
   }
 
   function current() {
     if (view === "industry") return industry;
+    if (view === "stock") return stock;
     return limit;
   }
 
@@ -194,6 +271,19 @@
     const url = new URL(location.href);
     url.searchParams.set("view", view);
     url.searchParams.delete("code");
+    if (view === "stock") {
+      url.searchParams.set("sort", stock.sortKey);
+      url.searchParams.set("order", stock.sortDir);
+      url.searchParams.set("band", String(stock.band));
+      url.searchParams.set("index", stock.index);
+    } else {
+      url.searchParams.delete("sort");
+      url.searchParams.delete("order");
+      url.searchParams.delete("band");
+      url.searchParams.delete("index");
+      url.searchParams.delete("factor");
+      url.searchParams.delete("path");
+    }
     history.replaceState({}, "", url);
   }
 
@@ -226,6 +316,8 @@
     markSeg("limitDaysSeg", "days", limit.days);
     markSeg("limitTopSeg", "top", limit.top);
     markSeg("industryDaysSeg", "days", industry.days);
+    markSeg("stockBandSeg", "band", stock.band);
+    markSeg("stockIndexSeg", "index", stock.index);
   }
 
   function scoreChip(label, value) {
@@ -793,6 +885,113 @@
     );
   }
 
+  function sortedStockItems() {
+    const key = stock.sortKey;
+    const dir = stock.sortDir === "asc" ? 1 : -1;
+    const rows = [...(stock.items || [])];
+    rows.sort((a, b) => {
+      let av = a?.[key];
+      let bv = b?.[key];
+      if (key === "stock_path") {
+        av = pathLabelOf(a, "stock_path");
+        bv = pathLabelOf(b, "stock_path");
+      } else if (key === "index_path") {
+        av = pathLabelOf(a, "index_path");
+        bv = pathLabelOf(b, "index_path");
+      }
+      const aNil = av == null || av === "";
+      const bNil = bv == null || bv === "";
+      if (aNil && bNil) return String(a?.code || "").localeCompare(String(b?.code || ""));
+      if (aNil) return 1;
+      if (bNil) return -1;
+      if (typeof av === "number" || typeof bv === "number") {
+        const an = Number(av);
+        const bn = Number(bv);
+        if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return (an - bn) * dir;
+      }
+      const cmp = String(av).localeCompare(String(bv), "zh-CN");
+      if (cmp) return cmp * dir;
+      return String(a?.code || "").localeCompare(String(b?.code || ""));
+    });
+    return rows;
+  }
+
+  function renderStockSortHeaders() {
+    const table = $("stockEvalTable");
+    if (!table) return;
+    table.querySelectorAll("th[data-sort]").forEach((th) => {
+      const key = th.dataset.sort;
+      const active = key === stock.sortKey;
+      th.classList.toggle("is-sorted", active);
+      th.dataset.order = active ? stock.sortDir : "";
+      const base = STOCK_SORT_LABELS[key] || key;
+      th.textContent = active ? `${base}${stock.sortDir === "asc" ? " ↑" : " ↓"}` : base;
+    });
+  }
+
+  function renderStockSummary() {
+    const sortLabel = STOCK_SORT_LABELS[stock.sortKey] || stock.sortKey;
+    const orderLabel = stock.sortDir === "asc" ? "升序" : "降序";
+    const bandPct = `${Math.round(stock.band * 100)}%`;
+    $("summaryBar").innerHTML = `
+      <span>已分析 <b>${stock.analyzedCount || 0}</b> / ${stock.candidateCount || 0}</span>
+      <span>命中 <b>${stock.foundCount || 0}</b></span>
+      <span>失败 <b>${stock.errorCount || 0}</b></span>
+      <span>排序 <b>${esc(sortLabel)} · ${orderLabel}</b></span>
+      <span>带 <b>±${bandPct}</b></span>
+    `;
+    $("marketMeta").textContent = stock.message || stock.updatedAt || "";
+  }
+
+  function toneClass(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n === 0) return "flat";
+    return n > 0 ? "up" : "down";
+  }
+
+  function renderStockTable() {
+    const body = $("stockEvalBody");
+    const hint = $("stockEvalHint");
+    if (!body) return;
+    renderStockSortHeaders();
+    const rows = sortedStockItems();
+    if (hint) {
+      hint.textContent = rows.length
+        ? `${rows.length} 只 · ${STOCK_SORT_LABELS[stock.sortKey] || stock.sortKey}${stock.sortDir === "asc" ? "↑" : "↓"}`
+        : stock.started
+          ? "暂无命中"
+          : "";
+    }
+    if (!rows.length) {
+      const msg = stock.error
+        ? esc(stock.error)
+        : stock.status === "running"
+          ? esc(stock.message || "正在分析…")
+          : stock.started
+            ? "暂无命中区间的标的"
+            : "点击「重新分析」开始全市场扫描";
+      body.innerHTML = `<tr><td colspan="10" class="muted">${msg}</td></tr>`;
+      return;
+    }
+    body.innerHTML = rows
+      .map((row) => {
+        const code = esc(row.code || "");
+        return `<tr class="is-row" data-code="${code}" tabindex="0">
+          <td class="mono">${code}</td>
+          <td>${esc(row.name || "—")}</td>
+          <td class="num">${esc(fmtMd(row.beg))}</td>
+          <td class="num">${esc(fmtMd(row.end))}</td>
+          <td class="num">${esc(row.count ?? "—")}</td>
+          <td class="stock-path-cell">${fmtPathCell(row.stock_path)}</td>
+          <td class="stock-path-cell">${fmtPathCell(row.index_path)}</td>
+          <td class="num">${esc(fmtNum(row.divergence, 1))}</td>
+          <td class="num">${esc(fmtNum(row.low_score, 1))}</td>
+          <td class="num">${esc(fmtMd(row.low_date))}</td>
+        </tr>`;
+      })
+      .join("");
+  }
+
   function renderAll() {
     renderSeg();
     if (view === "limit") {
@@ -808,6 +1007,11 @@
       renderRotDays();
       renderIndustryHead(selectedIndustryDay());
       renderIndustry();
+      return;
+    }
+    if (view === "stock") {
+      renderStockSummary();
+      renderStockTable();
     }
   }
 
@@ -879,9 +1083,12 @@
       if (st === current()) {
         const partialIndustry =
           view === "industry" && (industry.dayRows || []).length > 0;
-        showLoading(!partialIndustry, st.message);
-        setLive(partialIndustry ? "live" : "busy");
-        if (partialIndustry) {
+        const partialStock =
+          view === "stock" && (stock.items || []).length > 0;
+        const partial = partialIndustry || partialStock;
+        showLoading(!partial, st.message);
+        setLive(partial ? "live" : "busy");
+        if (partial) {
           $("marketMeta").textContent = st.message;
         }
       }
@@ -998,9 +1205,70 @@
     }
   }
 
+  function applyStockData(data) {
+    stock.items = Array.isArray(data.items) ? data.items : [];
+    stock.candidateCount = data.candidate_count || 0;
+    stock.analyzedCount = data.analyzed_count || 0;
+    stock.foundCount = data.found_count || stock.items.length;
+    stock.errorCount = data.error_count || 0;
+    stock.updatedAt = data.updated_at || "";
+    stock.params = data.params || null;
+    if (view === "stock") renderAll();
+  }
+
+  async function loadStock(force) {
+    if (stock.fetching && !force) return;
+    stock.fetching = true;
+    stock.started = true;
+    stock.error = "";
+    if (view === "stock") showError("");
+    if (force) {
+      stock.items = [];
+      stock.analyzedCount = 0;
+      stock.foundCount = 0;
+      stock.errorCount = 0;
+      if (view === "stock") renderAll();
+      stock.message = "正在加载股票索引…";
+      if (view === "stock") {
+        showLoading(true, stock.message);
+        setLive("busy");
+      }
+    }
+
+    const qs = new URLSearchParams({
+      band: String(stock.band),
+      index: stock.index,
+      factor: stock.factor,
+      refresh: force ? "1" : "0",
+    });
+
+    try {
+      const res = await fetch(`/api/screen/evaluate?${qs}`, { cache: "no-store" });
+      const json = await res.json();
+      if (!json.ok) {
+        throw new Error(json.error || "请求失败");
+      }
+      applyPayload(stock, json.data || {}, applyStockData);
+      if (stock.status === "running") schedulePoll(stock, loadStock);
+      else stopPoll(stock);
+    } catch (err) {
+      stock.error = err.message || String(err);
+      stock.status = "error";
+      if (view === "stock") {
+        showLoading(false);
+        showError(stock.error);
+        setLive("idle");
+      }
+      stopPoll(stock);
+    } finally {
+      stock.fetching = false;
+    }
+  }
+
   function load(force) {
     if (view === "limit") return loadLimit(force);
     if (view === "industry") return loadIndustry(force);
+    if (view === "stock") return loadStock(force);
   }
 
   function openCompany(code) {
@@ -1015,7 +1283,7 @@
   }
 
   function switchView(next) {
-    if (next !== "limit" && next !== "industry") {
+    if (next !== "limit" && next !== "industry" && next !== "stock") {
       return;
     }
     if (next === view) return;
@@ -1158,6 +1426,64 @@
       if (view === "industry") loadIndustry(true);
     });
 
+    $("stockBandSeg")?.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-band]");
+      if (!btn) return;
+      const band = Number(btn.dataset.band);
+      if (!Number.isFinite(band) || band === stock.band) return;
+      stock.band = band;
+      renderSeg();
+      syncUrl();
+      if (view === "stock") renderStockSummary();
+    });
+
+    $("stockIndexSeg")?.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-index]");
+      if (!btn) return;
+      const index = String(btn.dataset.index || "");
+      if (!index || index === stock.index) return;
+      stock.index = index;
+      renderSeg();
+      syncUrl();
+      if (view === "stock") renderStockSummary();
+    });
+
+    $("stockEvalTable")?.addEventListener("click", (ev) => {
+      const th = ev.target.closest("th[data-sort]");
+      if (th && $("stockEvalTable").contains(th)) {
+        const key = parseSortKey(th.dataset.sort);
+        if (key === stock.sortKey) {
+          stock.sortDir = stock.sortDir === "asc" ? "desc" : "asc";
+        } else {
+          stock.sortKey = key;
+          stock.sortDir =
+            key === "code" ||
+            key === "name" ||
+            key === "beg" ||
+            key === "end" ||
+            key === "low_date" ||
+            key === "stock_path" ||
+            key === "index_path"
+              ? "asc"
+              : "desc";
+        }
+        syncUrl();
+        if (view === "stock") renderStockTable();
+        renderStockSummary();
+        return;
+      }
+      const row = ev.target.closest("tr.is-row[data-code]");
+      if (row) openCompany(row.dataset.code);
+    });
+
+    $("stockEvalBody")?.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      const row = ev.target.closest("tr.is-row[data-code]");
+      if (!row) return;
+      ev.preventDefault();
+      openCompany(row.dataset.code);
+    });
+
     function openIndustry(row) {
       const l1 = row.dataset.l1 || "";
       const l2 = row.dataset.l2 || "";
@@ -1214,7 +1540,19 @@
     return "industry";
   }
 
+  function hydrateStockParams() {
+    const params = new URLSearchParams(location.search);
+    const band = Number(params.get("band"));
+    if ([0.05, 0.09, 0.12].includes(band)) stock.band = band;
+    const index = String(params.get("index") || "");
+    if (STOCK_INDEX_CODES.includes(index)) stock.index = index;
+    stock.factor = "close";
+    stock.sortKey = parseSortKey(params.get("sort"));
+    stock.sortDir = parseSortDir(params.get("order"));
+  }
+
   view = initialView();
+  hydrateStockParams();
   applyChrome();
   bindEvents();
   window.OrbitPrefetch?.bindHover($("resultList"), "article.is-stock[data-code]");

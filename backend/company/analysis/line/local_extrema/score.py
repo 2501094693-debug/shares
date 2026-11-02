@@ -2,16 +2,16 @@
 
 对峰谷序列先拆成峰值序列与谷值序列，再各自打分，输出两条评分序列。
 
-三维直接加总（不再做组内 min-max）：
+三维直接加总：
 
-- **价格**（满分约 30）
-  - 谷：价格升序排名（最低=1），``(1 / rank) × 30``
-  - 峰：价格降序排名（最高=1），``(1 / rank) × 30``
-- **天数**（满分逼近 30）
+- **价格**（满分 ``W_PRICE``）
+  - 组内相对线性：谷越低越高分，峰越高越高分
+  - ``t ∈ [0, 1]`` 后 × ``W_PRICE``（组内全相同则满分）
+- **天数**（满分 ``W_DAYS``）
   - ``x = side_days``（两侧异类极值跨度；缺侧回退规则同前）
-  - ``(1 − e^(−x)) × 30``
-- **两侧差距**（可超过 40）
-  - 取左右相对涨跌幅中绝对值较大者 × 40
+  - 组内相对线性：跨度越大越高分，``t ∈ [0, 1]`` 后 × ``W_DAYS``
+- **两侧差距**（可超过 ``W_GAP``）
+  - 取左右相对涨跌幅中绝对值较大者 × ``W_GAP``
   - 谷：``(峰 − 谷) / 峰``；峰：``(峰 − 谷) / 谷``
 
 ``score = score_price + score_days + score_gap``。
@@ -19,10 +19,9 @@
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
-# 三维系数（展示用；实际按公式直接算）
+# 三维权重（价格 / 天数先组内归一到 [0,1] 再乘权重）
 W_PRICE = 30.0
 W_DAYS = 30.0
 W_GAP = 40.0
@@ -110,26 +109,30 @@ def _gap_vs_flanks(
     return left_gap, right_gap, gap_mean, gap_max
 
 
-def _competition_ranks(prices: list[float], *, higher_better: bool) -> list[int]:
-    """竞争名次：严格更优的个数 + 1。峰 higher_better；谷 lower_better。"""
+def _competition_ranks(values: list[float], *, higher_better: bool) -> list[int]:
+    """竞争名次：严格更优的个数 + 1。"""
     ranks: list[int] = []
-    for i, p in enumerate(prices):
+    for i, p in enumerate(values):
         if higher_better:
-            better = sum(1 for j, q in enumerate(prices) if j != i and q > p)
+            better = sum(1 for j, q in enumerate(values) if j != i and q > p)
         else:
-            better = sum(1 for j, q in enumerate(prices) if j != i and q < p)
+            better = sum(1 for j, q in enumerate(values) if j != i and q < p)
         ranks.append(better + 1)
     return ranks
 
 
-def _score_price_from_rank(rank: int) -> float:
-    r = max(1, int(rank))
-    return (1.0 / r) * W_PRICE
-
-
-def _score_days_from_x(x: float) -> float:
-    xx = max(0.0, float(x))
-    return (1.0 - math.exp(-xx)) * W_DAYS
+def _linear_norm(values: list[float], *, higher_better: bool) -> list[float]:
+    """组内线性归一到 [0, 1]。全相同则全为 1。"""
+    if not values:
+        return []
+    lo = min(values)
+    hi = max(values)
+    if hi <= lo:
+        return [1.0] * len(values)
+    span = hi - lo
+    if higher_better:
+        return [(v - lo) / span for v in values]
+    return [(hi - v) / span for v in values]
 
 
 def _score_gap_from_max(gap_max: float) -> float:
@@ -170,6 +173,9 @@ def _score_group(
             }
         )
 
+    days = [float(m["side_days"]) for m in meta]
+    price_t = _linear_norm(prices, higher_better=(kind == "peak"))
+    days_t = _linear_norm(days, higher_better=True)
     ranks = _competition_ranks(prices, higher_better=(kind == "peak"))
 
     out: list[dict[str, Any]] = []
@@ -177,8 +183,8 @@ def _score_group(
         pt = seq[i]
         m = meta[k]
         rank = ranks[k]
-        sp = _score_price_from_rank(rank)
-        sd = _score_days_from_x(m["side_days"])
+        sp = price_t[k] * W_PRICE
+        sd = days_t[k] * W_DAYS
         sg = _score_gap_from_max(m["gap_max"])
         total = sp + sd + sg
         row = {

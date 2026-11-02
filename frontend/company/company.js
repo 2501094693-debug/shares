@@ -14747,7 +14747,14 @@ function lcUndSigma(v) {
   return `${n > 0 ? "+" : ""}${n.toFixed(2)}σ`;
 }
 
-/** 单张卡的统计块：名称 + 区间/均值/σ/极差指标格 */
+/** 走势标签着色：上行偏红、下行偏绿，其余中性 */
+function lcUndPathTone(label) {
+  if (label === "上行" || label === "探底回升") return "change-up";
+  if (label === "下行" || label === "冲高回落") return "change-down";
+  return "";
+}
+
+/** 单张卡的统计块：名称 + 区间/均值/σ/走势指标格 */
 function lcUndStatRowHtml(label, series, row, loading = false) {
   if (!row || row.min == null) {
     return `<div class="lc-und-stat" data-series="${series}">
@@ -14766,11 +14773,25 @@ function lcUndStatRowHtml(label, series, row, loading = false) {
     std != null && Number.isFinite(std) && std > 0 && meanNum != null && Number.isFinite(meanNum)
       ? meanNum / std
       : null;
+  const path = row.path || {};
+  const pathLabel =
+    path.label && path.label !== "unknown" ? String(path.label) : "—";
+  const pathTitleBits = [
+    path.reason || "",
+    path.S0 != null ? `S0=${lcUndSigma(path.S0)}` : "",
+    path.U != null ? `U=${lcUndSigma(path.U)}` : "",
+    path.S1 != null ? `S1=${lcUndSigma(path.S1)}` : "",
+  ].filter(Boolean);
   const metrics = [
     { k: "区间", v: `${lcUndPct(row.min)} ~ ${lcUndPct(row.max)}`, primary: true },
     { k: "均值", v: lcUndPct(row.mean) },
     { k: "σ", v: lcUndPct(row.std) },
-    { k: "极差", v: lcUndPct(row.range) },
+    {
+      k: "走势",
+      v: pathLabel,
+      tone: lcUndPathTone(pathLabel),
+      title: pathTitleBits.join(" · "),
+    },
     {
       k: "开始σ",
       v: begSigmaNum == null || !Number.isFinite(begSigmaNum) ? "—" : lcUndSigma(begSigmaNum),
