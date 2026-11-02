@@ -11,9 +11,9 @@
 - ``low_factor``  找最低价日口径：open/high/low/close（默认 close）
 - ``band``        波动带（小数，0.09 = ±9%）
 - ``index``       对比指数公开码（默认 000001 上证指数）
-- ``lookback``    波动带搜索回溯自然日（默认 900；谷序列另取最近 900 个交易日）
+- ``lookback``    波动带搜索回溯自然日（默认 900；谷序列另取最近 600 个交易日）
 - ``adjust``      复权方式（qfq/hfq/none）
-- ``layers`` / ``smooth``  local_extrema 层级与平滑（默认 3 / 1；谷序列用最近 900 交易日）
+- ``layers`` / ``smooth``  local_extrema 层级与平滑（默认 3 / 1；谷序列用最近 600 交易日）
 """
 
 from __future__ import annotations

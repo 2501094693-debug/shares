@@ -57,13 +57,12 @@ class ExtremaBarsTests(unittest.TestCase):
             _bar((end_dt - timedelta(days=1099 - i)).strftime("%Y-%m-%d"), 10.0 + i * 0.01)
             for i in range(1100)
         ]
-        out = _extrema_bars(bars, end=end, lookback_bars=900)
-        self.assertEqual(len(out), 900)
+        out = _extrema_bars(bars, end=end, lookback_bars=600)
+        self.assertEqual(len(out), 600)
         self.assertEqual(out[-1]["time"], end)
-        # 默认常量亦为 900 交易日
-        self.assertEqual(EXTREMA_LOOKBACK_BARS, 900)
+        self.assertEqual(EXTREMA_LOOKBACK_BARS, 600)
         out_default = _extrema_bars(bars, end=end)
-        self.assertEqual(len(out_default), 900)
+        self.assertEqual(len(out_default), 600)
 
 
 class FindMaxRangeTests(unittest.TestCase):

@@ -17,8 +17,8 @@ MAX_WORKERS = 32
 # 进度回调节流：每完成 N 只推一次，避免锁竞争
 PROGRESS_EVERY = 20
 
-# 落盘键版本，算法变更后与旧缓存隔离（e7：谷序列改为最近 900 交易日）
-CACHE_TAG = "e7"
+# 落盘键版本，算法变更后与旧缓存隔离（e8：谷序列改为最近 600 交易日）
+CACHE_TAG = "e8"
 
 ALLOWED_BANDS = (0.05, 0.09, 0.12)
 ALLOWED_FACTORS = ("open", "high", "low", "close")

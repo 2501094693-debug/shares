@@ -64,8 +64,8 @@ MAX_LOOKBACK_DAYS = 3650
 # 未命中快筛：先只拉近端日线；命中后再一次拉长
 PROBE_LOOKBACK_DAYS = 120
 # 低点谷序列：最近 N 个交易日 + 层级 3
-EXTREMA_LOOKBACK_BARS = 900
-# 拉数自然日上界（按约 252 交易日/年换算并留余量，保证能盖住 900 根）
+EXTREMA_LOOKBACK_BARS = 600
+# 拉数自然日上界（按约 252 交易日/年换算并留余量，保证能盖住 600 根）
 EXTREMA_LOOKBACK_DAYS = int(EXTREMA_LOOKBACK_BARS * 365 / 252) + 60
 DEFAULT_LAYERS = 3
 DEFAULT_SMOOTH_WINDOW = 1
@@ -270,7 +270,7 @@ def _ensure_extrema_history(
     end_iso: str,
     adjust: str,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """命中后补齐最近 900 个交易日所需日线，供谷序列评分；已覆盖则原样返回。"""
+    """命中后补齐最近 600 个交易日所需日线，供谷序列评分；已覆盖则原样返回。"""
     if _bars_cover_extrema(bars, end_iso):
         return bars, hist
     extrema_beg = (
@@ -404,7 +404,7 @@ def analyze_evaluate(
     beg_iso = window["beg"]
     used_end = window["end"]
 
-    # 3) 补齐最近 900 交易日供谷序列评分（短窗已定界时只多这一次长拉）
+    # 3) 补齐最近 600 交易日供谷序列评分（短窗已定界时只多这一次长拉）
     bars, hist = _ensure_extrema_history(
         norm, bars, hist, end_iso=used_end, adjust=adjust
     )

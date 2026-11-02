@@ -131,7 +131,7 @@ def profile_one(
     used_end = window["end"]
     row["window_days"] = window.get("count")
 
-    # 补最近 900 交易日
+    # 补最近 600 交易日
     t0 = time.perf_counter()
     if source == "disk":
         bars_ext = _slice_last_bars(full, end=used_end, n=EXTREMA_LOOKBACK_BARS)
