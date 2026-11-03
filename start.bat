@@ -1,8 +1,14 @@
 @echo off
 cd /d "%~dp0"
+
+set "VENV_PY=%USERPROFILE%\.virtualenvs\Desktop-test\Scripts\python.exe"
+if not exist "%VENV_PY%" set "VENV_PY=%~dp0.venv\Scripts\python.exe"
+if not exist "%VENV_PY%" set "VENV_PY=python"
+
+echo Using: %VENV_PY%
 echo Installing dependencies...
-pip install -r requirements.txt
+"%VENV_PY%" -m pip install -r requirements.txt
 echo.
 echo Starting FastAPI server at http://127.0.0.1:5000
 cd backend
-python app.py
+"%VENV_PY%" app.py
