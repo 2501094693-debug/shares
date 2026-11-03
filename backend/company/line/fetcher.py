@@ -37,6 +37,7 @@ from company.line.session import (
     is_cn_market_live,
     is_cn_session_open,
     last_session_close,
+    market_phase,
     parse_session_day,
     session_day,
 )
@@ -907,11 +908,14 @@ def fetch_kline(
                     except Exception:
                         expect_day = ""
                     # 尾部未到当前交易日时不能当 sealed（午休/开盘空隙会一直停在昨日）
+                    # 收盘后若 verified_at 仍早于本轮收盘（午前落盘），也不能 sealed
                     tail_current = (not expect_day) or last_d >= expect_day
+                    close_at = last_session_close()
                     sealed = (
                         (not live)
                         and tail_current
-                        and verified_at >= last_session_close().timestamp()
+                        and verified_at >= close_at.timestamp()
+                        and cn_now() >= close_at
                     )
                     base = stored
                     if not sealed:
@@ -1043,7 +1047,12 @@ def fetch_kline(
                 tail_stale = False
         if (not need_full and stored) and not tail_stale:
             verified_at = float(stored.get("verified_at") or 0)
-            if (not live) and verified_at >= last_session_close().timestamp():
+            close_at = last_session_close()
+            if (
+                (not live)
+                and verified_at >= close_at.timestamp()
+                and cn_now() >= close_at
+            ):
                 result = _kline_payload(stored)
                 _kline_live_cache.put(mem_key, result, cached_at=now)
                 rr = dict(result)
@@ -1172,18 +1181,21 @@ def fetch_kline(
             if result.get("items"):
                 _kline_live_cache.put(mem_key, result, cached_at=now)
                 return _slice_payload(result, cap)
-        if tail_ok and not live:
+        verified_at = float(stored.get("verified_at") or 0)
+        close_at = last_session_close()
+        phase = market_phase()
+        # 非 live 时段如何对待磁盘：
+        # - lunch / 盘中空窗：当日 bar 可暂用（下午 live 会再刷）
+        # - 收盘后：必须 verified_at ≥ 本轮收盘，否则午前落盘会缺下午成交
+        # 切勿再写「tail_ok and not live → 直返」——那会把午前 OHLC 封死到收盘后。
+        stale_after_close = (
+            phase == "closed"
+            and cn_now() >= close_at
+            and verified_at < close_at.timestamp()
+        )
+        if not live and tail_ok and not stale_after_close:
             result = _kline_payload(stored)
             result["full_history"] = bool(stored.get("full_history"))
-            _kline_live_cache.put(mem_key, result, cached_at=now)
-            return _slice_payload(result, cap)
-        verified_at = float(stored.get("verified_at") or 0)
-        # 非交易时段：仅当尾部已到当前交易日、且收盘后已校验过，才直用磁盘。
-        # 缺最新交易日时必须补尾——午休/集合竞价空隙 live=False，
-        # 但 last_session_close 仍是昨收，否则会永久停在昨日。
-        sealed_after_close = verified_at >= last_session_close().timestamp()
-        if not live and sealed_after_close and tail_ok:
-            result = _kline_payload(stored)
         else:
             result = _refresh_with_tail(
                 stored,

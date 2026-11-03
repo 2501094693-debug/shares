@@ -1249,11 +1249,15 @@
         index: chartIndexCode(),
         force: true,
       });
+      const forceEval =
+        window.CompanyLcKline?.refreshEvaluate ||
+        window.CompanyLcKline?.refreshExtremum ||
+        window.CompanyLcKline?.refreshPvAxes;
+      if (typeof forceEval === "function") forceEval({ force: true });
     });
     $("lcExtremumRefresh")?.addEventListener("click", () => {
-      const forceExt = window.CompanyLcKline?.refreshExtremum;
-      if (typeof forceExt === "function") forceExt({ force: true });
-      else window.CompanyLcKline?.renderExtremum?.();
+      const forceEval = window.CompanyLcKline?.refreshEvaluate || window.CompanyLcKline?.refreshExtremum;
+      if (typeof forceEval === "function") forceEval({ force: true });
     });
   }
 

@@ -30,7 +30,7 @@ cache/*.cab
 
 # Logs / diagnostics
 *.log
-backend/_diag_out.txt
+
 
 # IDE / OS
 .idea/

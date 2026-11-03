@@ -65,29 +65,22 @@
         <div id="lineComparePage" class="line-compare-page">
           <div class="line-compare-board">
             <div class="line-compare-panels">
-              <section id="lcUndulateBox" class="line-compare-undulate" aria-label="四价波动">
-                <header class="line-compare-pane-head">
-                  <h2>四价波动</h2>
+              <section id="lcExtremumBox" class="line-compare-undulate" aria-label="四价前低">
+                <header class="line-compare-pane-head lc-pv-head">
+                  <div class="lc-pv-title">
+                    <span class="lc-pv-mark-dot" aria-hidden="true"></span>
+                    <h2>四价前低</h2>
+                  </div>
+                  <p id="lcExtremumMeta" class="muted lc-pv-meta">现价得分 · 全部谷值细则</p>
                   <div class="line-compare-pane-tools">
-                    <div id="lcUndulateFactor" class="lc-sigma-mode" role="tablist" aria-label="价格因子">
-                      <button type="button" data-factor="close" class="is-active" role="tab" aria-selected="true">收盘价</button>
-                      <button type="button" data-factor="open" role="tab" aria-selected="false">开盘价</button>
-                      <button type="button" data-factor="high" role="tab" aria-selected="false">最高价</button>
-                      <button type="button" data-factor="low" role="tab" aria-selected="false">最低价</button>
-                    </div>
-                    <div id="lcUndulateMode" class="lc-sigma-mode" role="tablist" aria-label="纵轴口径">
-                      <button type="button" data-mode="z" class="is-active" role="tab" aria-selected="true">σ单位</button>
-                      <button type="button" data-mode="std" role="tab" aria-selected="false">涨跌幅</button>
-                    </div>
-                    <button id="lcUndulateRefresh" type="button" class="line-compare-undulate-refresh">刷新</button>
+                    <button id="lcExtremumRefresh" type="button" class="line-compare-undulate-refresh">刷新</button>
                   </div>
                 </header>
                 <input id="lcBeg" type="hidden" />
                 <input id="lcEnd" type="hidden" />
-                <p id="lcUndulateMeta" class="muted line-compare-undulate-meta">右侧点选两根日K · 滚轮缩放 / 拖动平移 · 相对基准收盘</p>
                 <p id="lcFormMeta" class="muted line-compare-form-meta"></p>
                 <p id="lcFormError" class="error line-compare-form-error hidden"></p>
-                <div id="lcUndulateStats" class="lc-undulate-stats">
+                <div id="lcExtremumBody" class="lc-extremum-body" aria-label="现价得分与谷值细则">
                   <p class="muted lc-undulate-note">等待日K窗口…</p>
                 </div>
               </section>
@@ -125,7 +118,7 @@
                 </footer>
               </article>
             </section>
-            <div class="line-compare-side" aria-label="T王 · 筹码分布 · 峰谷价轴">
+            <div class="line-compare-side" aria-label="T王 · 筹码分布 · 四价波动">
               <section id="lcTraderBox" class="line-compare-trader" aria-label="T王" data-tone="">
                 <header class="line-compare-trader-head">
                   <div class="line-compare-trader-title">
@@ -148,26 +141,25 @@
                   <p id="lcJettonEmpty" class="muted chart-empty hidden">暂无筹码</p>
                 </div>
               </section>
-              <section id="lcExtremumBox" class="line-compare-extremum" aria-label="峰谷价轴">
+              <section id="lcUndulateBox" class="line-compare-extremum" aria-label="四价波动">
                 <header class="line-compare-pane-head lc-extremum-head">
                   <div class="lc-extremum-title">
                     <span class="lc-extremum-mark" aria-hidden="true"></span>
-                    <h2>峰谷价轴</h2>
+                    <h2>四价波动</h2>
                   </div>
+                  <p id="lcUndulateMeta" class="muted lc-extremum-meta">基准 · 起止 · 天数 · 偏离</p>
                   <div class="line-compare-pane-tools">
-                    <button id="lcExtremumRefresh" type="button" class="line-compare-undulate-refresh">刷新</button>
+                    <div id="lcUndulateFactor" class="lc-sigma-mode" role="tablist" aria-label="价格因子">
+                      <button type="button" data-factor="close" class="is-active" role="tab" aria-selected="true" title="收盘价">收</button>
+                      <button type="button" data-factor="open" role="tab" aria-selected="false" title="开盘价">开</button>
+                      <button type="button" data-factor="high" role="tab" aria-selected="false" title="最高价">高</button>
+                      <button type="button" data-factor="low" role="tab" aria-selected="false" title="最低价">低</button>
+                    </div>
+                    <button id="lcUndulateRefresh" type="button" class="line-compare-undulate-refresh">刷新</button>
                   </div>
                 </header>
-                <div class="lc-extremum-scroll">
-                  <section class="lc-extremum-section">
-                    <div class="lc-extremum-section-head">
-                      <span class="lc-extremum-kicker">峰 / 谷</span>
-                      <p id="lcExtremumMeta" class="muted lc-extremum-section-meta">一维价轴 · 标注峰谷与现价</p>
-                    </div>
-                    <div id="lcExtremumBody" class="lc-extremum-body">
-                      <p class="muted lc-undulate-note">等待日K窗口…</p>
-                    </div>
-                  </section>
+                <div id="lcUndulateStats" class="lc-extremum-body lc-undulate-stats" aria-label="稳定区间与四价统计">
+                  <p class="muted lc-undulate-note">等待日K窗口…</p>
                 </div>
               </section>
             </div>
@@ -214,8 +206,8 @@
                       <label id="lcExtremaLayerWrap" class="chart-select-wrap" aria-label="极值层级">
                         <select id="lcExtremaLayerSelect" class="chart-select">
                           <option value="1">1层</option>
-                          <option value="2" selected>2层</option>
-                          <option value="3">3层</option>
+                          <option value="2">2层</option>
+                          <option value="3" selected>3层</option>
                           <option value="4">4层</option>
                           <option value="5">5层</option>
                         </select>
