@@ -198,9 +198,32 @@ class ScoreLowPointTests(unittest.TestCase):
         out = score_low_point(bars, "2026-01-08", series="close", layers=1)
         self.assertEqual(out["series"], "close")
         self.assertIsNotNone(out["match"])
+        # 最低价日本身是谷：相对价距 0 → 低点分 = 谷分
         self.assertEqual(out["match"]["date"], "2026-01-08")
-        for key in ("score", "score_price", "score_days", "score_gap"):
+        self.assertEqual(out["match"]["dist_rel"], 0.0)
+        self.assertEqual(out["match"]["score_factor"], 1.0)
+        self.assertEqual(out["match"]["score"], out["match"]["score_valley"])
+        for key in ("score", "score_price", "score_days", "score_gap", "score_valley"):
             self.assertIn(key, out["match"])
+
+    def test_nearest_trough_composite(self) -> None:
+        # 谷@2=9.5；最低价日取偏高的 9.9 → 近谷仍是 9.5，因子=1-|0.4/9.5|
+        bars = [
+            _bar("2026-01-06", 10.2),
+            _bar("2026-01-07", 9.8),
+            _bar("2026-01-08", 9.5),
+            _bar("2026-01-09", 9.9),
+            _bar("2026-01-10", 10.1),
+        ]
+        out = score_low_point(
+            bars, "2026-01-09", series="close", layers=1, low_price=9.9
+        )
+        m = out["match"]
+        self.assertIsNotNone(m)
+        self.assertEqual(m["date"], "2026-01-08")
+        self.assertAlmostEqual(m["dist_rel"], abs(9.9 - 9.5) / 9.5, places=6)
+        expect = round(float(m["score_valley"]) * float(m["score_factor"]), 2)
+        self.assertAlmostEqual(m["score"], expect)
 
     def test_invalid_series_falls_back_close(self) -> None:
         bars = [

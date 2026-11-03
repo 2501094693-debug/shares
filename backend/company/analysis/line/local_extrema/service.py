@@ -267,6 +267,38 @@ def _to_extrema_points(
     return extrema
 
 
+def _attach_daily_spans(
+    seq: list[dict[str, Any]], values: list[float]
+) -> list[dict[str, Any]]:
+    """按日线序列重算左右跨度（分层后必须回写，避免沿用层内下标跨度）。
+
+    谷：向左/右一直数，直到遇到严格更低价；峰：直到遇到严格更高价。
+    ``left_span`` / ``right_span`` 不含对端那个更极端交易日；
+    ``span_days = left_span + 1 + right_span``。
+    """
+    if not seq or not values:
+        return seq
+    prev_gt, next_gt, prev_lt, next_lt = _strict_neighbor_bounds(values)
+    n = len(values)
+    for pt in seq:
+        try:
+            i = int(pt.get("index", -1))
+        except (TypeError, ValueError):
+            continue
+        if i < 0 or i >= n:
+            continue
+        if pt.get("type") == "peak":
+            left = i - prev_gt[i] - 1
+            right = next_gt[i] - i - 1
+        else:
+            left = i - prev_lt[i] - 1
+            right = next_lt[i] - i - 1
+        pt["left_span"] = left
+        pt["right_span"] = right
+        pt["span_days"] = left + 1 + right
+    return seq
+
+
 def _layer_once(seq: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """对上一层序列做一次分层：按峰值/谷值拆分，分别找极值，合并。"""
     peaks_seq = [p for p in seq if p["type"] == "peak"]
@@ -275,6 +307,7 @@ def _layer_once(seq: list[dict[str, Any]]) -> list[dict[str, Any]]:
     new_points: list[dict[str, Any]] = []
     # 峰序列中只保留「峰」（峰中的极大值），谷序列中只保留「谷」（谷中的极小值）。
     # 类型由所属子序列决定，层间不允许峰/谷翻转。
+    # 左右跨度不在此写入：最终由 ``_attach_daily_spans`` 按日线回写。
     for subseq, forced_type in ((peaks_seq, "peak"), (valleys_seq, "trough")):
         if not subseq:
             continue
@@ -286,9 +319,6 @@ def _layer_once(seq: list[dict[str, Any]]) -> list[dict[str, Any]]:
             orig = dict(subseq[pt["idx"]])
             orig["type"] = forced_type
             orig["label"] = "波峰" if forced_type == "peak" else "波谷"
-            orig["left_span"] = pt["left_span"]
-            orig["right_span"] = pt["right_span"]
-            orig["span_days"] = pt["span_days"]
             orig["price"] = subseq[pt["idx"]]["price"]
             new_points.append(orig)
 
@@ -329,6 +359,7 @@ def compute_local_extrema(
         for _ in range(layers - 1):
             seq = _layer_once(seq)
 
+    _attach_daily_spans(seq, detect_series)
     peak_count = sum(1 for e in seq if e["type"] == "peak")
     trough_count = sum(1 for e in seq if e["type"] == "trough")
     scored = score_extrema(seq)
@@ -372,6 +403,7 @@ def compute_alternating_extrema(
     for _ in range(layers - 1):
         seq = _layer_once(seq)
 
+    _attach_daily_spans(seq, detect_series)
     peaks = [x for x in seq if x["type"] == "peak"]
     troughs = [x for x in seq if x["type"] == "trough"]
     scored = score_extrema(seq)

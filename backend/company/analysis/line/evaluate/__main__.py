@@ -102,9 +102,11 @@ def _print_text(pack: dict) -> None:
     if target:
         print(
             f"  最低价日评分: {target.get('score')} "
-            f"（价格分 {target.get('score_price')} / 天数分 {target.get('score_days')}"
-            f" / 差距分 {target.get('score_gap')}，{target.get('label')} "
-            f"{target.get('date')}）"
+            f"（近谷 {target.get('date')} 谷分 {target.get('score_valley')} "
+            f"× 因子 {target.get('score_factor')}，"
+            f"|相对价距| {target.get('dist_rel')}；"
+            f"价格分 {target.get('score_price')} / 天数分 {target.get('score_days')}"
+            f" / 差距分 {target.get('score_gap')}）"
         )
     _print_paths(pack.get("paths") or {})
     _print_divergence(pack.get("divergence") or {})

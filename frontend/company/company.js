@@ -14146,14 +14146,12 @@ function lcEvalFmtScore(v, digits = 1) {
   return digits === 0 ? String(Math.round(n)) : n.toFixed(digits);
 }
 
-/** 谷序列：优先 evaluate 返回；否则回退 chartState.troughScores */
+/** 谷序列：与走势图同源（chartState）；图尚未就绪时才回退 evaluate */
 function lcEvalTroughScores(pack) {
-  const fromPack = pack?.score?.trough_scores;
-  if (Array.isArray(fromPack) && fromPack.length) return fromPack;
   const fromChart = chartState.troughScores;
   if (Array.isArray(fromChart) && fromChart.length) return fromChart;
   const extrema = Array.isArray(chartState.extrema) ? chartState.extrema : [];
-  return extrema
+  const fromMarks = extrema
     .filter((e) => e?.type === "trough")
     .map((e) => ({
       date: e.date,
@@ -14167,6 +14165,10 @@ function lcEvalTroughScores(pack) {
       gap_max: e.gap_max,
       label: e.label || "波谷",
     }));
+  if (fromMarks.length) return fromMarks;
+  const fromPack = pack?.score?.trough_scores;
+  if (Array.isArray(fromPack) && fromPack.length) return fromPack;
+  return [];
 }
 
 /** 与四价统计同款的 metric 格子；`html` 为真时 value 不当纯文本转义（用于日期跳转按钮） */

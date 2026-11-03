@@ -9,7 +9,8 @@
    继续判断，直到首次不满足，取最后一次满足的区间为「最大起始日期范围」；
 3. 在该区间内找出收盘价（``low_factor`` 可切换四价）最低的交易日；
 4. 用最近 ``EXTREMA_LOOKBACK_BARS`` 个交易日跑 ``local_extrema``
-   （默认层级 3）得到谷序列并打分，再匹配步骤 3 的最低价日；
+   （默认层级 3）得到谷序列并打分；取相对价距最小的谷，
+   低点分 = 谷分 × (1 − |(最低价 − 谷价) / 谷价|)；
 5. 在同一区间对个股与指数做四价波动统计，给出 S0/U/S1 走势标签
    （上行 / 下行 / 冲高回落 / 探底回升 / 横盘）；
 6. 用 ``compare`` 在该区间统计股指方向相反日占比，得到偏离分
@@ -307,7 +308,7 @@ def analyze_evaluate(
     """主入口：最大 ±band 区间 + 最低价日评分 + 股指四价走势 + 股指偏离分。
 
     低点谷序列在最近 ``EXTREMA_LOOKBACK_BARS`` 个交易日上以 ``layers``（默认 3）打分，
-    再匹配 ±band 区间内的最低价日。
+    再对 ±band 区间最低价日取相对价距最近的谷做综合分。
     ``index_hist`` 为预取指数日线包（含 ``items``），批量任务可全市场复用。
     """
     norm = normalize_code(code)
@@ -422,8 +423,7 @@ def analyze_evaluate(
             series=low_factor,
             layers=layers,
             smooth_window=smooth_window,
-            match_beg=beg_iso,
-            match_end=used_end,
+            low_price=low.get("price"),
         )
         analysis = scored.get("analysis") or {}
         score_block = {

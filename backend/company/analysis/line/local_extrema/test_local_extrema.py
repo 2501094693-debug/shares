@@ -213,13 +213,58 @@ class ComputeAlternatingExtremaTests(unittest.TestCase):
 class ScoreExtremaTests(unittest.TestCase):
     def test_split_and_score(self) -> None:
         # 峰@1=3, 谷@2=1, 峰@3=5, 谷@4=2, 峰@5=4
-        # 谷价 1..2 线性：最低 30、最高 0；两谷 side_days 同为 2 → 天数均满分
+        # 谷价 1..2 线性：最低 30、最高 0；两谷 side_days=left+right 同为 4 → 天数均满分
         seq = [
-            {"type": "peak", "label": "波峰", "date": "2026-01-06", "price": 3.0, "index": 1, "span_days": 3},
-            {"type": "trough", "label": "波谷", "date": "2026-01-07", "price": 1.0, "index": 2, "span_days": 3},
-            {"type": "peak", "label": "波峰", "date": "2026-01-08", "price": 5.0, "index": 3, "span_days": 3},
-            {"type": "trough", "label": "波谷", "date": "2026-01-09", "price": 2.0, "index": 4, "span_days": 3},
-            {"type": "peak", "label": "波峰", "date": "2026-01-10", "price": 4.0, "index": 5, "span_days": 3},
+            {
+                "type": "peak",
+                "label": "波峰",
+                "date": "2026-01-06",
+                "price": 3.0,
+                "index": 1,
+                "left_span": 1,
+                "right_span": 1,
+                "span_days": 3,
+            },
+            {
+                "type": "trough",
+                "label": "波谷",
+                "date": "2026-01-07",
+                "price": 1.0,
+                "index": 2,
+                "left_span": 2,
+                "right_span": 2,
+                "span_days": 5,
+            },
+            {
+                "type": "peak",
+                "label": "波峰",
+                "date": "2026-01-08",
+                "price": 5.0,
+                "index": 3,
+                "left_span": 3,
+                "right_span": 2,
+                "span_days": 6,
+            },
+            {
+                "type": "trough",
+                "label": "波谷",
+                "date": "2026-01-09",
+                "price": 2.0,
+                "index": 4,
+                "left_span": 2,
+                "right_span": 2,
+                "span_days": 5,
+            },
+            {
+                "type": "peak",
+                "label": "波峰",
+                "date": "2026-01-10",
+                "price": 4.0,
+                "index": 5,
+                "left_span": 1,
+                "right_span": 0,
+                "span_days": 2,
+            },
         ]
         out = score_extrema(seq)
         self.assertEqual(len(out["peak_scores"]), 3)
@@ -232,18 +277,48 @@ class ScoreExtremaTests(unittest.TestCase):
         self.assertEqual(by_idx[4]["price_rank"], 2)
         self.assertAlmostEqual(by_idx[2]["score_price"], 30.0)
         self.assertAlmostEqual(by_idx[4]["score_price"], 0.0)
+        self.assertEqual(by_idx[2]["side_days"], 4)
+        self.assertEqual(by_idx[4]["side_days"], 4)
         self.assertAlmostEqual(by_idx[2]["score_days"], 30.0)
         self.assertAlmostEqual(by_idx[4]["score_days"], 30.0)
 
     def test_trough_gap_uses_both_peaks(self) -> None:
+        # 天数 = left_span + right_span（日线扫到更低价），不再用左右峰下标差
         seq = [
-            {"type": "peak", "label": "波峰", "date": "2026-01-06", "price": 10.0, "index": 0, "span_days": 2},
-            {"type": "trough", "label": "波谷", "date": "2026-01-08", "price": 5.0, "index": 2, "span_days": 3},
-            {"type": "peak", "label": "波峰", "date": "2026-01-11", "price": 20.0, "index": 5, "span_days": 2},
+            {
+                "type": "peak",
+                "label": "波峰",
+                "date": "2026-01-06",
+                "price": 10.0,
+                "index": 0,
+                "left_span": 0,
+                "right_span": 1,
+                "span_days": 2,
+            },
+            {
+                "type": "trough",
+                "label": "波谷",
+                "date": "2026-01-08",
+                "price": 5.0,
+                "index": 2,
+                "left_span": 2,
+                "right_span": 3,
+                "span_days": 6,
+            },
+            {
+                "type": "peak",
+                "label": "波峰",
+                "date": "2026-01-11",
+                "price": 20.0,
+                "index": 5,
+                "left_span": 1,
+                "right_span": 0,
+                "span_days": 2,
+            },
         ]
         out = score_extrema(seq)
         t = out["trough_scores"][0]
-        self.assertEqual(t["side_days"], 5)  # 5 - 0
+        self.assertEqual(t["side_days"], 5)  # 2 + 3
         self.assertAlmostEqual(t["left_gap"], 0.5)  # (10-5)/10
         self.assertAlmostEqual(t["right_gap"], 0.75)  # (20-5)/20
         self.assertAlmostEqual(t["gap_max"], 0.75)
@@ -252,6 +327,14 @@ class ScoreExtremaTests(unittest.TestCase):
         self.assertAlmostEqual(t["score"], round(expect, 2))
         self.assertAlmostEqual(t["score_days"], 30.0)
         self.assertAlmostEqual(t["score_price"], 30.0)
+
+    def test_side_days_from_daily_spans(self) -> None:
+        # 5,4,1,4,5 → 谷@2：左右各 2 天不更低 → side_days=4
+        out = compute_alternating_extrema(_bars([5, 4, 1, 4, 5]))
+        troughs = out["trough_scores"]
+        self.assertEqual(len(troughs), 1)
+        self.assertEqual(troughs[0]["side_days"], 4)
+        self.assertEqual(troughs[0]["span_days"], 5)
 
 
 if __name__ == "__main__":

@@ -154,8 +154,7 @@ def profile_one(
             series=factor,
             layers=3,
             smooth_window=1,
-            match_beg=beg,
-            match_end=used_end,
+            low_price=low.get("price"),
         )
 
     paths, paths_s = _timed(

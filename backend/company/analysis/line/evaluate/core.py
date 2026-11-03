@@ -244,6 +244,71 @@ def lowest_day(
     return best
 
 
+def _lookup_bar_price(
+    bars: list[dict[str, Any]], day: str, series: str
+) -> float | None:
+    """按交易日取指定序列价格；找不到或无效则 ``None``。"""
+    key = str(day or "")[:10]
+    if not key:
+        return None
+    for bar in bars:
+        if _bar_date(bar) != key:
+            continue
+        v = to_float(bar.get(series))
+        if v is None:
+            return None
+        fv = float(v)
+        return fv if fv > 0 else None
+    return None
+
+
+def _composite_near_trough(
+    troughs: list[dict[str, Any]],
+    low_price: float,
+    *,
+    low_date: str = "",
+) -> dict[str, Any] | None:
+    """相对价距最小的谷 × (1 − |相对价距|)；|距|≥1 时综合分为 0。
+
+    相对价距 ``dist_rel = (最低价 − 谷价) / 谷价``。
+    """
+    if not troughs or not (low_price > 0):
+        return None
+    best: dict[str, Any] | None = None
+    best_abs = float("inf")
+    best_dist = 0.0
+    for row in troughs:
+        try:
+            tp = float(row.get("price"))
+        except (TypeError, ValueError):
+            continue
+        if not (tp > 0):
+            continue
+        dist_rel = (float(low_price) - tp) / tp
+        abs_d = abs(dist_rel)
+        if abs_d < best_abs:
+            best = row
+            best_abs = abs_d
+            best_dist = dist_rel
+    if best is None:
+        return None
+    try:
+        valley_score = max(0.0, float(best.get("score") or 0.0))
+    except (TypeError, ValueError):
+        valley_score = 0.0
+    factor = max(0.0, 1.0 - best_abs)
+    composite = round(valley_score * factor, 2)
+    out = dict(best)
+    out["score_valley"] = round(valley_score, 2)
+    out["score"] = composite
+    out["dist_rel"] = round(best_abs, 6)
+    out["dist_signed"] = round(best_dist, 6)
+    out["score_factor"] = round(factor, 4)
+    out["low_date"] = str(low_date or "")[:10]
+    out["low_price"] = float(low_price)
+    return out
+
+
 def score_low_point(
     bars: list[dict[str, Any]],
     low_date: str,
@@ -251,17 +316,21 @@ def score_low_point(
     series: str = "close",
     layers: int = 3,
     smooth_window: int = 1,
+    low_price: float | None = None,
     match_beg: str = "",
     match_end: str = "",
 ) -> dict[str, Any]:
-    """在给定日线跑 local_extrema 评分，返回整体结果与最低价日对应评分行。
+    """在最近约 600 交易日（层级默认 3）跑谷序列，对稳定区间最低价日综合打分。
 
-    调用方通常传入最近约 600 个交易日（层级默认 3），以便谷序列在更长语境下相对打分；
-    ``match_beg`` / ``match_end`` 用于在最低价日未命中极值时，仅在该窗口内回退
-    取价格最低波谷（避免误取回溯窗口外的全局最低谷）。
+    流程：算峰谷评分 → 在谷序列中取相对价距最小的谷 →
+    ``低点分 = 谷分 × (1 − |相对价距|)``，其中
+    ``相对价距 = (最低价 − 谷价) / 谷价``；``|距|≥1`` 时低点分为 0。
 
+    ``low_price`` 缺省时按 ``low_date`` + ``series`` 从 ``bars`` 回查。
+    ``match_beg`` / ``match_end`` 保留兼容，不再参与匹配。
     ``series`` 不在可选序列内时回退到 ``close``。
     """
+    del match_beg, match_end
     from company.analysis.line.local_extrema.service import (
         SERIES_OPTIONS,
         compute_alternating_extrema,
@@ -275,25 +344,22 @@ def score_low_point(
         smooth_window=smooth_window,
     )
 
-    rows: list[dict[str, Any]] = []
-    rows.extend(analysis.get("trough_scores") or [])
-    rows.extend(analysis.get("peak_scores") or [])
+    day = str(low_date or "")[:10]
+    price = None
+    try:
+        if low_price is not None and float(low_price) > 0:
+            price = float(low_price)
+    except (TypeError, ValueError):
+        price = None
+    if price is None:
+        price = _lookup_bar_price(bars, day, key)
 
-    match = next((r for r in rows if r.get("date") == low_date), None)
-    if match is None:
-        troughs = list(analysis.get("trough_scores") or [])
-        beg = str(match_beg or "")[:10]
-        end = str(match_end or "")[:10]
-        if beg and end:
-            troughs = [
-                r
-                for r in troughs
-                if beg <= str(r.get("date") or "")[:10] <= end
-            ]
-        if troughs:
-            match = min(
-                troughs, key=lambda r: float(r.get("price") or float("inf"))
-            )
+    troughs = list(analysis.get("trough_scores") or [])
+    match = (
+        _composite_near_trough(troughs, price, low_date=day)
+        if price is not None
+        else None
+    )
 
     return {"series": key, "match": match, "analysis": analysis}
 

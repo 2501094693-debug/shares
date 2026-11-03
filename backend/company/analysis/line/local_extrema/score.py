@@ -8,7 +8,8 @@
   - 组内相对线性：谷越低越高分，峰越高越高分
   - ``t ∈ [0, 1]`` 后 × ``W_PRICE``（组内全相同则满分）
 - **天数**（满分 ``W_DAYS``）
-  - ``x = side_days``（两侧异类极值跨度；缺侧回退规则同前）
+  - ``x = side_days = left_span + right_span``：沿日线向左/右一直数，
+    谷数到严格更低价、峰数到严格更高价（不含对端那根）；缺跨度时回退 ``span_days``
   - 组内相对线性：跨度越大越高分，``t ∈ [0, 1]`` 后 × ``W_DAYS``
 - **两侧差距**（可超过 ``W_GAP``）
   - 取左右相对涨跌幅中绝对值较大者 × ``W_GAP``
@@ -47,17 +48,26 @@ def _flanking(
 
 def _side_days(
     point: dict[str, Any],
-    left: dict[str, Any] | None,
-    right: dict[str, Any] | None,
+    left: dict[str, Any] | None = None,
+    right: dict[str, Any] | None = None,
 ) -> int:
-    idx = int(point.get("index", 0))
-    if left is not None and right is not None:
-        return max(0, int(right["index"]) - int(left["index"]))
-    if left is not None:
-        return max(0, idx - int(left["index"]))
-    if right is not None:
-        return max(0, int(right["index"]) - idx)
-    return int(point.get("span_days") or 0)
+    """两侧沿日线扫到更极端价的交易日数合计。
+
+    优先 ``left_span + right_span``（不含对端更极端日、也不含自身）；
+    缺省时回退 ``span_days``。``left`` / ``right`` 仅保留调用签名兼容，不再参与计数。
+    """
+    del left, right
+    try:
+        ls = point.get("left_span")
+        rs = point.get("right_span")
+        if ls is not None and rs is not None:
+            return max(0, int(ls) + int(rs))
+    except (TypeError, ValueError):
+        pass
+    try:
+        return max(0, int(point.get("span_days") or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _rel_gap(high: float, low: float, *, denom: float) -> float:
