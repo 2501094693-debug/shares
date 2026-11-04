@@ -2854,6 +2854,8 @@ function renderFundamentals(stock = metricsStock) {
       ["市净率", stock.pb],
       ["市销率(TTM)", stock.ps_ttm],
       ["每股净资产", stock.bvps],
+      ["股息(TTM)", stock.dividend_ttm],
+      ["股息率", stock.dividend_yield],
     ],
   ]);
   const capital = flattenMetricRows([
