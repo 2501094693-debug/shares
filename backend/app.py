@@ -514,7 +514,7 @@ _INSTANCE_LOCK_HANDLE = None
 
 
 def _acquire_single_instance() -> None:
-    """单实例锁：已有服务在跑时直接退出，避免多进程抢 5000 端口导致新旧代码混跑。
+    """单实例锁：在 ``_stop_old_servers`` 清场后抢锁，挡住几乎同时启动的第二个实例。
 
     用系统级文件锁（进程退出自动释放，不怕残留）；reload 模式下由父进程持有，
     子进程只 import 模块不走这里，不受影响。
@@ -543,13 +543,16 @@ def _acquire_single_instance() -> None:
     _INSTANCE_LOCK_HANDLE = fh  # 保持句柄打开，锁随进程持有
 
 
-def _kill_port_listeners(port: int) -> None:
-    """干掉占用端口的旧服务，新启动的实例接管。只杀 LISTENING 态且不是自己的进程。
+def _stop_old_servers(port: int) -> None:
+    """启动前先停掉所有旧实例，再绑定端口。
 
-    ``uvicorn --reload`` 的监听 socket 可能被 reloader 派生的子进程继承：
-    杀掉父进程后，子进程仍持有端口，新实例无法绑定，前端就会一直命中旧代码。
-    因此这里循环「扫描监听者 -> 杀进程树 -> 等待释放」，直到端口真正空闲。
+    覆盖三类残留：
+    1. 仍在跑的 ``backend/app.py`` / ``uvicorn`` 进程；
+    2. netstat 显示占用端口的 LISTENING PID；
+    3. Windows 上父进程已死后，``multiprocessing`` 子进程仍继承监听 socket
+       （netstat 仍显示已死父 PID，真正占端口的是 ``spawn_main(parent_pid=...)`` 子进程）。
     """
+    import re
     import socket
     import subprocess
     import time
@@ -566,6 +569,23 @@ def _kill_port_listeners(port: int) -> None:
         finally:
             s.close()
 
+    def _terminate(pid: int) -> None:
+        if pid in (0, 4, me):
+            return
+        print(f"Killing stale server PID {pid} ...")
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/F", "/PID", str(pid)],
+                capture_output=True,
+                timeout=30,
+            )
+        else:
+            import signal
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+
     def _listener_pids() -> set[int]:
         pids: set[int] = set()
         if os.name == "nt":
@@ -573,7 +593,8 @@ def _kill_port_listeners(port: int) -> None:
                 out = subprocess.run(
                     ["netstat", "-ano", "-p", "TCP"],
                     capture_output=True, text=True, timeout=15,
-                ).stdout
+                    encoding="utf-8", errors="replace",
+                ).stdout or ""
             except Exception as exc:  # noqa: BLE001
                 print(f"netstat failed: {exc}")
                 return pids
@@ -592,7 +613,7 @@ def _kill_port_listeners(port: int) -> None:
                     out = subprocess.run(
                         ["lsof", "-ti", f"tcp:{port}"],
                         capture_output=True, text=True, timeout=15,
-                    ).stdout
+                    ).stdout or ""
                     for token in out.split():
                         if token.isdigit() and int(token) != me:
                             pids.add(int(token))
@@ -600,21 +621,76 @@ def _kill_port_listeners(port: int) -> None:
                     pass
         return pids
 
+    def _python_procs() -> list[tuple[int, str]]:
+        rows: list[tuple[int, str]] = []
+        if os.name != "nt":
+            return rows
+        try:
+            out = subprocess.run(
+                [
+                    "wmic", "process", "where", "name='python.exe'",
+                    "get", "ProcessId,CommandLine", "/FORMAT:LIST",
+                ],
+                capture_output=True, text=True, timeout=60,
+                encoding="utf-8", errors="replace",
+            ).stdout or ""
+        except Exception:  # noqa: BLE001
+            return rows
+        cmd = ""
+        for raw in out.splitlines():
+            line = raw.strip()
+            if line.startswith("CommandLine="):
+                cmd = line[len("CommandLine="):]
+            elif line.startswith("ProcessId=") and line[len("ProcessId="):].isdigit():
+                rows.append((int(line[len("ProcessId="):]), cmd))
+                cmd = ""
+        return rows
+
+    def _is_server_cmd(cmd: str) -> bool:
+        low = cmd.lower().replace("/", "\\")
+        if "backend\\app.py" in low or low.rstrip().endswith("\\app.py") or low.rstrip().endswith(" app.py"):
+            return True
+        if "uvicorn" in low and ("app:app" in low or "app.py" in low):
+            return True
+        return False
+
+    def _orphan_of(cmd: str, parents: set[int]) -> bool:
+        if "spawn_main" not in cmd and "multiprocessing" not in cmd:
+            return False
+        for pid in parents:
+            if f"parent_pid={pid}" in cmd:
+                return True
+        # 宽松兜底：命令行里写了 parent_pid=监听者
+        m = re.search(r"parent_pid=(\d+)", cmd)
+        return bool(m and int(m.group(1)) in parents)
+
+    parents: set[int] = set()
+    for pid, cmd in _python_procs():
+        if pid != me and _is_server_cmd(cmd):
+            print(f"Found old server {pid}: {cmd[:160]}")
+            parents.add(pid)
+            _terminate(pid)
+
+    parents |= _listener_pids()
+    for pid in sorted(_listener_pids()):
+        _terminate(pid)
+
+    if parents:
+        for pid, cmd in _python_procs():
+            if pid != me and _orphan_of(cmd, parents):
+                print(f"Found orphan child {pid}: {cmd[:160]}")
+                _terminate(pid)
+
     if not _port_busy():
+        print(f"Port {port} is free now.")
         return
 
-    for _round in range(8):
+    for _round in range(10):
         for pid in sorted(_listener_pids()):
-            print(f"Killing stale server PID {pid} on port {port} ...")
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
-                               capture_output=True, timeout=30)
-            else:
-                import signal
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except OSError:
-                    pass
+            _terminate(pid)
+            for cpid, cmd in _python_procs():
+                if cpid != me and _orphan_of(cmd, {pid}):
+                    _terminate(cpid)
         for _ in range(10):
             if not _port_busy():
                 print(f"Port {port} is free now.")
@@ -625,7 +701,7 @@ def _kill_port_listeners(port: int) -> None:
 
 
 if __name__ == "__main__":
-    _kill_port_listeners(5000)
+    _stop_old_servers(5000)
     _acquire_single_instance()
     # 调试器下关闭 reload，避免 Program Files 路径空格导致二次启动失败
     use_reload = not _running_under_debugger()
