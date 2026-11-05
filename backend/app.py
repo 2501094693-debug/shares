@@ -45,6 +45,7 @@ from company.analysis.businessoverview.bizprofile.api import router as bizprofil
 from company.analysis.line.compare.api import router as line_compare_router
 from company.analysis.line.local_extrema.api import router as line_local_extrema_router
 from company.analysis.line.undulate.api import router as line_undulate_router
+from company.analysis.line.section.api import router as line_section_router
 from company.analysis.line.T.api import router as line_trader_router
 from company.analysis.line.chip.api import router as line_chip_router
 from company.analysis.line.evaluate.api import router as line_evaluate_router
@@ -221,6 +222,7 @@ app.include_router(bizprofile_router)
 app.include_router(line_compare_router)
 app.include_router(line_local_extrema_router)
 app.include_router(line_undulate_router)
+app.include_router(line_section_router)
 app.include_router(line_trader_router)
 app.include_router(line_chip_router)
 app.include_router(line_evaluate_router)
