@@ -11389,25 +11389,26 @@ function drawMaLines(ctx, maVisible, yAt, xAt, n) {
   }
 }
 
-/** 日线段方向配色：涨红 / 跌绿 / 横盘琥珀 */
-function sectionDirStyle(direction, colors) {
+/** 日线段方向配色：涨红 / 跌绿 / 缓涨缓跌虚线同色 / 横盘琥珀（再标偏涨偏跌） */
+function sectionDirStyle(direction, colors, bias) {
   const dir = String(direction || "");
   if (dir === "up") {
-    return {
-      stroke: colors.up || "#ff5d6c",
-      label: "涨",
-    };
+    return { stroke: colors.up || "#ff5d6c", label: "涨", dashed: false };
   }
   if (dir === "down") {
-    return {
-      stroke: colors.down || "#3dd68c",
-      label: "跌",
-    };
+    return { stroke: colors.down || "#3dd68c", label: "跌", dashed: false };
   }
-  return {
-    stroke: "#c9a227",
-    label: "横",
-  };
+  if (dir === "slow_up") {
+    return { stroke: colors.up || "#ff5d6c", label: "缓涨", dashed: true };
+  }
+  if (dir === "slow_down") {
+    return { stroke: colors.down || "#3dd68c", label: "缓跌", dashed: true };
+  }
+  const b = String(bias || "");
+  let label = "横";
+  if (b === "up") label = "横偏涨";
+  else if (b === "down") label = "横偏跌";
+  return { stroke: "#c9a227", label, dashed: true };
 }
 
 /** 把线段起止日映射到当前可见 K 线窗口下标；无交集返回 null */
@@ -11450,17 +11451,24 @@ function drawSectionMarks(ctx, items, sections, xAt, yAt, priceRect, colors) {
     if (!span) continue;
     const { i0, i1, p0, p1 } = span;
     if (![p0, p1].every(Number.isFinite)) continue;
-    const style = sectionDirStyle(seg.direction, colors);
+    const flat = String(seg.direction) === "flat";
+    let bias = String(seg.bias || "");
+    if (flat && !bias) {
+      const net = Number(seg.change_pct);
+      if (Number.isFinite(net) && net > 0) bias = "up";
+      else if (Number.isFinite(net) && net < 0) bias = "down";
+    }
+    const style = sectionDirStyle(seg.direction, colors, bias);
+    const dashed = Boolean(style.dashed);
     const x0 = xAt(i0);
     const x1 = xAt(i1);
     const y0 = yAt(p0);
     const y1 = yAt(p1);
-    const flat = String(seg.direction) === "flat";
 
     ctx.strokeStyle = style.stroke;
-    ctx.lineWidth = flat ? 1.8 : 1.55;
+    ctx.lineWidth = dashed ? 1.8 : 1.55;
     ctx.globalAlpha = 0.92;
-    ctx.setLineDash(flat ? [5, 3] : []);
+    ctx.setLineDash(dashed ? [5, 3] : []);
     ctx.beginPath();
     ctx.moveTo(x0, y0);
     ctx.lineTo(x1, y1);
@@ -11474,7 +11482,7 @@ function drawSectionMarks(ctx, items, sections, xAt, yAt, priceRect, colors) {
     ]) {
       ctx.fillStyle = style.stroke;
       ctx.beginPath();
-      ctx.arc(x, y, flat ? 2.8 : 2.3, 0, Math.PI * 2);
+      ctx.arc(x, y, dashed ? 2.8 : 2.3, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -12062,13 +12070,20 @@ function lcSectionSummaryText(segments) {
   let up = 0;
   let down = 0;
   let flat = 0;
+  let slowUp = 0;
+  let slowDown = 0;
   for (const s of segs) {
     const d = String(s?.direction || "");
     if (d === "up") up += 1;
     else if (d === "down") down += 1;
+    else if (d === "slow_up") slowUp += 1;
+    else if (d === "slow_down") slowDown += 1;
     else flat += 1;
   }
-  return `线段 ${segs.length}（涨${up} · 跌${down} · 横${flat}）`;
+  const parts = [`涨${up}`, `跌${down}`, `横${flat}`];
+  if (slowUp) parts.push(`缓涨${slowUp}`);
+  if (slowDown) parts.push(`缓跌${slowDown}`);
+  return `线段 ${segs.length}（${parts.join(" · ")}）`;
 }
 
 async function loadLcSections(beg, end) {

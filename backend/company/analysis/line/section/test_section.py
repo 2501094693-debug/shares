@@ -8,6 +8,8 @@ import unittest
 from company.analysis.line.section.core import (
     DIR_DOWN,
     DIR_FLAT,
+    DIR_SLOW_DOWN,
+    DIR_SLOW_UP,
     DIR_UP,
     build_minimal_segments,
     compute_sections,
@@ -58,20 +60,43 @@ class ComputeSectionsTests(unittest.TestCase):
         # 最终段 children 为 level 1 同向段
         self.assertEqual(up["children"][0]["level"], 1)
 
-    def test_alternating_becomes_sideways(self) -> None:
+    def test_single_sideways_bias_up(self) -> None:
+        # 仅一段横盘（2 个交替 run），不足以合成缓涨
+        out = compute_sections(_bars([10.0, 10.2, 10.1]), band_pct=0.05)
+        self.assertEqual(out["segment_count"], 1)
+        seg = out["segments"][0]
+        self.assertEqual(seg["direction"], DIR_FLAT)
+        self.assertEqual(seg["bias"], DIR_UP)
+        self.assertEqual(seg["flag"], "横盘偏涨")
+
+    def test_consecutive_sideways_become_slow_up(self) -> None:
+        # 5 个交替 run：非贪心切成两段横盘偏涨 → 合并缓涨
         out = compute_sections(
             _bars([10.0, 10.2, 10.05, 10.15, 10.0, 10.3]), band_pct=0.05
         )
         self.assertEqual(out["segment_count"], 1)
         seg = out["segments"][0]
-        self.assertEqual(seg["direction"], DIR_FLAT)
-        self.assertEqual(seg["flag"], "横盘")
-        self.assertAlmostEqual(seg["amplitude_pct"], 3.0)
-        self.assertEqual(len(seg["children"]), 5)  # 5 个交替段作为子段
+        self.assertEqual(seg["direction"], DIR_SLOW_UP)
+        self.assertEqual(seg["flag"], "缓涨")
+        self.assertEqual(seg["bias"], DIR_UP)
+        self.assertEqual(len(seg["children"]), 2)  # 两段横盘
+        self.assertTrue(all(c["direction"] == DIR_FLAT for c in seg["children"]))
+
+    def test_consecutive_sideways_become_slow_down(self) -> None:
+        out = compute_sections(
+            _bars([10.0, 10.2, 9.9, 10.1, 9.8]), band_pct=0.05
+        )
+        self.assertEqual(out["segment_count"], 1)
+        seg = out["segments"][0]
+        self.assertEqual(seg["direction"], DIR_SLOW_DOWN)
+        self.assertEqual(seg["flag"], "缓跌")
+        self.assertEqual(seg["bias"], DIR_DOWN)
 
     def test_breakout_not_sideways(self) -> None:
-        # 交替后向上突破带宽，应保留为趋势段而非横盘
-        out = compute_sections(_bars([10.0, 10.2, 10.1, 11.0]), band_pct=0.05)
+        # 交替后向上突破带宽：整段不得合成横盘（min_runs=3 时前两段也不够）
+        out = compute_sections(
+            _bars([10.0, 10.2, 10.1, 11.0]), band_pct=0.05, min_runs=3
+        )
         self.assertTrue(all(s["direction"] != DIR_FLAT for s in out["segments"]))
 
     def test_empty(self) -> None:

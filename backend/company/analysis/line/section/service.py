@@ -51,8 +51,8 @@ def analyze_sections(
     end: str = "",
     *,
     series: str = "close",
-    band_pct: float = 0.05,
-    min_runs: int = 3,
+    band_pct: float = 0.09,
+    min_runs: int = 2,
     adjust: str = "qfq",
 ) -> dict[str, Any]:
     """主入口：把某只股票区间日线划分为涨 / 跌 / 横盘段（含子段）。"""

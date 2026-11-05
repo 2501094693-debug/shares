@@ -22,9 +22,9 @@ def stocks_line_section(
     end: str = Query("", description="结束日期，默认今天"),
     series: str = Query("close", description="分析序列：open/close/high/low/ohlc4"),
     band_pct: float = Query(
-        0.05, description="横盘带宽阈值（占起始价比例，0.05=5%）"
+        0.09, description="横盘带宽阈值（占起始价比例，0.09=9%）"
     ),
-    min_runs: int = Query(3, ge=2, le=100, description="横盘至少包含的交替段数"),
+    min_runs: int = Query(2, ge=2, le=100, description="横盘至少包含的交替段数"),
     adjust: str = Query(
         "qfq", description="复权方式：qfq 前复权 / hfq 后复权 / none 不复权"
     ),

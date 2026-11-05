@@ -1,14 +1,16 @@
-"""日线段划分：日线 → 最小段 → 同向合并 → 涨跌交替归并为横盘。
+"""日线段划分：日线 → 最小段 → 同向合并 → 涨跌交替归横盘 → 同向横盘归缓涨/缓跌。
 
 - 最小段：相邻两根 K 线 ``[i, i+1]``，两边闭区间；前段终点 == 后段起点。
 - 同向合并：连续同方向（涨/跌）的最小段并为一段；flat 视为不改变方向的噪声。
-- 横盘：涨跌交替的若干段若整体落在 ``band_pct`` 带宽内，合并为横盘段。
+- 横盘：涨跌交替的若干段若整体落在 ``band_pct`` 带宽内，按 ``min_runs`` 非贪心切段；
+  再按起止净变标注 ``bias``（偏涨 / 偏跌）。
+- 缓涨/缓跌：连续 ≥2 段同向偏置的横盘合并为缓涨（偏涨）或缓跌（偏跌）。
 
 每段带 ``children`` 子段，形成 level 0/1/2 三级树::
 
     level 0  最小段（相邻交易日）
     level 1  同向合并段（连续涨 / 连续跌）
-    level 2  最终段（涨 / 跌 / 横盘），children 为 level 1 段
+    level 2  最终段（涨 / 跌 / 横盘 / 缓涨 / 缓跌）
 
 纯函数，无网络依赖，便于单测。
 """
@@ -22,7 +24,16 @@ from core.fmt import to_float
 DIR_UP = "up"
 DIR_DOWN = "down"
 DIR_FLAT = "flat"
-DIR_LABEL = {DIR_UP: "涨", DIR_DOWN: "跌", DIR_FLAT: "横盘"}
+DIR_SLOW_UP = "slow_up"
+DIR_SLOW_DOWN = "slow_down"
+DIR_LABEL = {
+    DIR_UP: "涨",
+    DIR_DOWN: "跌",
+    DIR_FLAT: "横盘",
+    DIR_SLOW_UP: "缓涨",
+    DIR_SLOW_DOWN: "缓跌",
+}
+BIAS_LABEL = {DIR_UP: "偏涨", DIR_DOWN: "偏跌", DIR_FLAT: ""}
 
 SERIES_OPTIONS: tuple[str, ...] = ("open", "close", "high", "low", "ohlc4")
 SERIES_LABELS: dict[str, str] = {
@@ -133,6 +144,39 @@ def _wrap(
     )
 
 
+def _price_range(segs: list[dict[str, Any]]) -> tuple[float, float]:
+    """子段起止价的高低点。"""
+    lo = hi = float(segs[0]["begin_price"])
+    for s in segs:
+        for p in (s["begin_price"], s["end_price"]):
+            if p < lo:
+                lo = p
+            if p > hi:
+                hi = p
+        for c in s.get("children") or []:
+            for p in (c["begin_price"], c["end_price"]):
+                if p < lo:
+                    lo = p
+                if p > hi:
+                    hi = p
+    return lo, hi
+
+
+def _as_sideways(block: list[dict[str, Any]]) -> dict[str, Any]:
+    """把一段交替 run 标成横盘（含 bias / amplitude）。"""
+    seg = _wrap(block, 2, direction=DIR_FLAT)
+    begin_price = seg["begin_price"]
+    lo, hi = _price_range(block)
+    seg["amplitude_pct"] = (
+        round((hi - lo) / begin_price * 100.0, 4) if begin_price else 0.0
+    )
+    bias = _sign(seg["change_price"])
+    seg["bias"] = bias
+    bias_txt = BIAS_LABEL.get(bias, "")
+    seg["flag"] = f"横盘{bias_txt}" if bias_txt else "横盘"
+    return seg
+
+
 def build_minimal_segments(
     bars: list[dict[str, Any]], *, series: str = "close"
 ) -> list[dict[str, Any]]:
@@ -178,7 +222,11 @@ def _merge_sideways(
     band_pct: float,
     min_runs: int,
 ) -> list[dict[str, Any]]:
-    """阶段 2：涨跌交替且整体落在带宽内 → 横盘。"""
+    """阶段 2：涨跌交替且落在带宽内 → 按 min_runs 非贪心切成横盘。
+
+    不一次吞掉整段带宽内交替，以便后续把连续同向偏置横盘收成缓涨/缓跌。
+    若剩余不足两段横盘（``< 2 * min_runs``），整段一次收下，避免孤儿段。
+    """
     out: list[dict[str, Any]] = []
     i, n = 0, len(runs)
     while i < n:
@@ -190,28 +238,63 @@ def _merge_sideways(
 
         begin_price = cur["begin_price"]
         lo = hi = begin_price
-        best_end: int | None = None
         j = i
         while j < n and runs[j]["direction"] != DIR_FLAT:
             p = runs[j]["end_price"]
             lo2 = lo if lo <= p else p
             hi2 = hi if hi >= p else p
             if begin_price and (hi2 - lo2) / begin_price > band_pct:
-                # range 单调不减，超出带宽后继续加段也不会再是横盘
                 break
             lo, hi = lo2, hi2
-            if j - i + 1 >= min_runs:
-                best_end = j
             j += 1
 
-        if best_end is not None:
-            block = runs[i : best_end + 1]
-            seg = _wrap(block, 2, direction=DIR_FLAT)
-            seg["amplitude_pct"] = round((hi - lo) / begin_price * 100.0, 4)
-            out.append(seg)
-            i = best_end + 1
+        available = j - i
+        if available >= min_runs:
+            # 够两段及以上横盘时只切 min_runs；否则整段收下
+            take = available if available < 2 * min_runs else min_runs
+            block = runs[i : i + take]
+            out.append(_as_sideways(block))
+            i += take
         else:
             out.append(_wrap([cur], 2))
+            i += 1
+    return out
+
+
+def _merge_slow_trends(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """阶段 3：连续 ≥2 段同向偏置横盘 → 缓涨 / 缓跌。"""
+    out: list[dict[str, Any]] = []
+    i, n = 0, len(segments)
+    while i < n:
+        cur = segments[i]
+        bias = cur.get("bias")
+        if cur["direction"] != DIR_FLAT or bias not in (DIR_UP, DIR_DOWN):
+            out.append(cur)
+            i += 1
+            continue
+
+        j = i + 1
+        while (
+            j < n
+            and segments[j]["direction"] == DIR_FLAT
+            and segments[j].get("bias") == bias
+        ):
+            j += 1
+
+        if j - i >= 2:
+            block = segments[i:j]
+            direction = DIR_SLOW_UP if bias == DIR_UP else DIR_SLOW_DOWN
+            seg = _wrap(block, 2, direction=direction)
+            seg["bias"] = bias
+            begin_price = seg["begin_price"]
+            lo, hi = _price_range(block)
+            seg["amplitude_pct"] = (
+                round((hi - lo) / begin_price * 100.0, 4) if begin_price else 0.0
+            )
+            out.append(seg)
+            i = j
+        else:
+            out.append(cur)
             i += 1
     return out
 
@@ -220,8 +303,8 @@ def compute_sections(
     bars: list[dict[str, Any]],
     *,
     series: str = "close",
-    band_pct: float = 0.05,
-    min_runs: int = 3,
+    band_pct: float = 0.09,
+    min_runs: int = 2,
 ) -> dict[str, Any]:
     """纯函数主入口：日线 → 三级段树。"""
     if not bars:
@@ -234,7 +317,8 @@ def compute_sections(
 
     minimal = build_minimal_segments(bars, series=series)
     runs = _merge_same_direction(minimal)
-    segments = _merge_sideways(runs, band_pct=band_pct, min_runs=min_runs)
+    sideways = _merge_sideways(runs, band_pct=band_pct, min_runs=min_runs)
+    segments = _merge_slow_trends(sideways)
 
     return {
         "series": series,
