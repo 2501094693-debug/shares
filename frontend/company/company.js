@@ -11389,7 +11389,139 @@ function drawMaLines(ctx, maVisible, yAt, xAt, n) {
   }
 }
 
-function drawKlineChart(ctx, layout, items, mode, colors, hoverIndex, maBundle = null, extrema = null) {
+/** 日线段方向配色：涨红 / 跌绿 / 横盘琥珀 */
+function sectionDirStyle(direction, colors) {
+  const dir = String(direction || "");
+  if (dir === "up") {
+    return {
+      stroke: colors.up || "#ff5d6c",
+      label: "涨",
+    };
+  }
+  if (dir === "down") {
+    return {
+      stroke: colors.down || "#3dd68c",
+      label: "跌",
+    };
+  }
+  return {
+    stroke: "#c9a227",
+    label: "横",
+  };
+}
+
+/** 把线段起止日映射到当前可见 K 线窗口下标；无交集返回 null */
+function sectionVisibleSpan(items, seg) {
+  const n = items.length;
+  if (!n || !seg) return null;
+  const beg = String(seg.begin || "").slice(0, 10);
+  const end = String(seg.end || "").slice(0, 10);
+  if (!beg || !end) return null;
+  const first = String(items[0]?.time || items[0]?.date || "").slice(0, 10);
+  const last = String(items[n - 1]?.time || items[n - 1]?.date || "").slice(0, 10);
+  if (!first || !last || end < first || beg > last) return null;
+
+  let i0 = -1;
+  let i1 = -1;
+  for (let i = 0; i < n; i += 1) {
+    const d = String(items[i]?.time || items[i]?.date || "").slice(0, 10);
+    if (i0 < 0 && d >= beg) i0 = i;
+    if (d <= end) i1 = i;
+  }
+  if (i0 < 0 || i1 < 0 || i1 < i0) return null;
+  const exactBeg = String(items[i0]?.time || items[i0]?.date || "").slice(0, 10) === beg;
+  const exactEnd = String(items[i1]?.time || items[i1]?.date || "").slice(0, 10) === end;
+  const p0 = exactBeg && Number.isFinite(Number(seg.begin_price))
+    ? Number(seg.begin_price)
+    : Number(items[i0]?.close);
+  const p1 = exactEnd && Number.isFinite(Number(seg.end_price))
+    ? Number(seg.end_price)
+    : Number(items[i1]?.close);
+  return { i0, i1, p0, p1, exactBeg, exactEnd };
+}
+
+function drawSectionMarks(ctx, items, sections, xAt, yAt, priceRect, colors) {
+  const segs = Array.isArray(sections) ? sections : [];
+  if (!segs.length || !items.length) return;
+  let labelIdx = 0;
+  ctx.save();
+  for (const seg of segs) {
+    const span = sectionVisibleSpan(items, seg);
+    if (!span) continue;
+    const { i0, i1, p0, p1 } = span;
+    if (![p0, p1].every(Number.isFinite)) continue;
+    const style = sectionDirStyle(seg.direction, colors);
+    const x0 = xAt(i0);
+    const x1 = xAt(i1);
+    const y0 = yAt(p0);
+    const y1 = yAt(p1);
+    const flat = String(seg.direction) === "flat";
+
+    ctx.strokeStyle = style.stroke;
+    ctx.lineWidth = flat ? 1.8 : 1.55;
+    ctx.globalAlpha = 0.92;
+    ctx.setLineDash(flat ? [5, 3] : []);
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+
+    for (const [x, y] of [
+      [x0, y0],
+      [x1, y1],
+    ]) {
+      ctx.fillStyle = style.stroke;
+      ctx.beginPath();
+      ctx.arc(x, y, flat ? 2.8 : 2.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const spanPx = Math.abs(x1 - x0);
+    const days = Math.max(1, i1 - i0);
+    // 过窄只画连线；稍宽标方向；够宽再带涨跌幅/振幅
+    if (spanPx < 16 && days < 2) continue;
+    const pct =
+      flat && Number.isFinite(Number(seg.amplitude_pct))
+        ? Number(seg.amplitude_pct)
+        : Number(seg.change_pct);
+    let text = style.label;
+    if (spanPx >= 30 && Number.isFinite(pct)) {
+      const sign = flat ? "" : pct > 0 ? "+" : "";
+      text = `${style.label}${sign}${pct.toFixed(1)}%`;
+    }
+    const mx = (x0 + x1) / 2;
+    const my = (y0 + y1) / 2;
+    const lift = labelIdx % 2 === 0 ? -11 : 12;
+    labelIdx += 1;
+    const ty = Math.min(
+      Math.max(my + lift, priceRect.y + 10),
+      priceRect.y + priceRect.h - 10
+    );
+    ctx.font = 'bold 10px "IBM Plex Sans", "Noto Sans SC", sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const tw = ctx.measureText(text).width;
+    ctx.fillStyle = "rgba(10, 16, 24, 0.72)";
+    ctx.fillRect(mx - tw / 2 - 4, ty - 7, tw + 8, 14);
+    ctx.fillStyle = style.stroke;
+    ctx.fillText(text, mx, ty);
+  }
+  ctx.restore();
+}
+
+function drawKlineChart(
+  ctx,
+  layout,
+  items,
+  mode,
+  colors,
+  hoverIndex,
+  maBundle = null,
+  extrema = null,
+  sections = null
+) {
   const n = items.length;
   if (!n) return;
 
@@ -11466,6 +11598,9 @@ function drawKlineChart(ctx, layout, items, mode, colors, hoverIndex, maBundle =
   }
 
   drawMaLines(ctx, maVisible, yAt, xAt, n);
+
+  // 日线段连线 + 标签（不改背景，避免色带马赛克）
+  drawSectionMarks(ctx, items, sections, xAt, yAt, price, colors);
 
   // 局部极值点标记（波峰 / 波谷）：只由调用方显式传入才画——
   // 目前仅 K线分析主图（renderLcChart）传入；行情页日K与指数走势图不标注
@@ -11889,6 +12024,139 @@ function scheduleExtremaForVisible() {
         renderLcEvaluate();
       }
     });
+}
+
+/** 研判 K线分析：日线段划分状态（涨/跌/横盘） */
+const lcSectionState = {
+  segments: [],
+  rangeBeg: "",
+  rangeEnd: "",
+  fetching: false,
+  ready: false,
+  gen: 0,
+};
+let lcSectionTimer = 0;
+
+function lcSectionQueryRange() {
+  const pick = lcChartState.rangePick || {};
+  // 起止都点齐 → 按选区分段；否则用当前可见日K窗口（与图所见一致）
+  if (pick.a && pick.b) {
+    const lo = pick.a <= pick.b ? pick.a : pick.b;
+    const hi = pick.a <= pick.b ? pick.b : pick.a;
+    return { beg: lo, end: hi };
+  }
+  const items = lcChartState.items || [];
+  if (!items.length) return null;
+  const beg = String(items[0]?.time || items[0]?.date || "").slice(0, 10);
+  const end = String(items[items.length - 1]?.time || items[items.length - 1]?.date || "").slice(
+    0,
+    10
+  );
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(beg) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return null;
+  return { beg, end };
+}
+
+function lcSectionSummaryText(segments) {
+  const segs = Array.isArray(segments) ? segments : [];
+  if (!segs.length) return "";
+  let up = 0;
+  let down = 0;
+  let flat = 0;
+  for (const s of segs) {
+    const d = String(s?.direction || "");
+    if (d === "up") up += 1;
+    else if (d === "down") down += 1;
+    else flat += 1;
+  }
+  return `线段 ${segs.length}（涨${up} · 跌${down} · 横${flat}）`;
+}
+
+async function loadLcSections(beg, end) {
+  if (!code || !beg || !end) return [];
+  const qs = new URLSearchParams({
+    code,
+    beg: String(beg).replace(/-/g, ""),
+    end: String(end).replace(/-/g, ""),
+    series: "close",
+    adjust: "qfq",
+  });
+  const json = await api(`/api/stocks/line-section?${qs.toString()}`);
+  const segs = json?.data?.segments;
+  return Array.isArray(segs) ? segs : [];
+}
+
+function fetchLcSectionsNow() {
+  if (!lcChartState.visible) return;
+  const range = lcSectionQueryRange();
+  if (!range) return;
+  const beg = range.beg.replace(/-/g, "");
+  const end = range.end.replace(/-/g, "");
+  if (!beg || !end) return;
+  if (
+    lcSectionState.ready &&
+    lcSectionState.rangeBeg === beg &&
+    lcSectionState.rangeEnd === end
+  ) {
+    return;
+  }
+  if (
+    lcSectionState.fetching &&
+    lcSectionState.rangeBeg === beg &&
+    lcSectionState.rangeEnd === end
+  ) {
+    return;
+  }
+  const gen = ++lcSectionState.gen;
+  const rangeChanged =
+    lcSectionState.rangeBeg !== beg || lcSectionState.rangeEnd !== end;
+  lcSectionState.fetching = true;
+  lcSectionState.ready = false;
+  lcSectionState.rangeBeg = beg;
+  lcSectionState.rangeEnd = end;
+  if (rangeChanged) lcSectionState.segments = [];
+  loadLcSections(beg, end)
+    .then((segments) => {
+      if (gen !== lcSectionState.gen) return;
+      lcSectionState.segments = Array.isArray(segments) ? segments : [];
+      lcSectionState.ready = true;
+      if (lcChartState.visible) {
+        refreshLcChartWindowStatus();
+        renderLcChart();
+      }
+    })
+    .catch(() => {
+      if (gen !== lcSectionState.gen) return;
+      lcSectionState.segments = [];
+      lcSectionState.ready = true;
+      if (lcChartState.visible) refreshLcChartWindowStatus();
+    })
+    .finally(() => {
+      if (gen === lcSectionState.gen) lcSectionState.fetching = false;
+    });
+}
+
+function scheduleLcSections() {
+  if (!lcChartState.visible) return;
+  window.clearTimeout(lcSectionTimer);
+  lcSectionTimer = window.setTimeout(() => {
+    fetchLcSectionsNow();
+  }, 120);
+}
+
+function invalidateLcSectionCache() {
+  lcSectionState.rangeBeg = "";
+  lcSectionState.rangeEnd = "";
+  lcSectionState.ready = false;
+  lcSectionState.segments = [];
+}
+
+function clearLcSections() {
+  window.clearTimeout(lcSectionTimer);
+  lcSectionTimer = 0;
+  lcSectionState.gen += 1;
+  lcSectionState.segments = [];
+  lcSectionState.fetching = false;
+  invalidateLcSectionCache();
 }
 
 function renderChart(hoverIndex = null) {
@@ -15450,7 +15718,12 @@ function refreshLcChartWindowStatus() {
   const tail =
     lcChartState.historyExhausted && first ? ` · 自 ${first}上市起` : "";
   const loading = lcChartState.historyLoading ? " · 正在加载更早日线…" : "";
-  setLcChartSource((lcChartState.source || "") + tail + loading);
+  const sectioning = lcSectionState.fetching ? " · 分段中…" : "";
+  const sectionText = lcSectionSummaryText(lcSectionState.segments);
+  const sectionTail = sectionText ? ` · ${sectionText}` : "";
+  setLcChartSource(
+    (lcChartState.source || "") + tail + loading + sectioning + sectionTail
+  );
 }
 
 function syncLcChartScrollBar() {
@@ -15616,7 +15889,10 @@ async function loadOlderLcKline() {
 function clearLcRangePick({ silent = false } = {}) {
   lcChartState.rangePick = { a: null, b: null };
   if (!silent) window.LineCompare?.setFormMeta?.("");
+  // 选区清空后改回可见窗口分段
+  invalidateLcSectionCache();
   scheduleLcUndulate(0);
+  if (!silent) scheduleLcSections();
 }
 
 function lcRangePickHint() {
@@ -15694,12 +15970,15 @@ function handleLcRangeTap(viewIndex) {
     pick.a = day;
     pick.b = null;
     window.LineCompare?.setFormMeta?.(lcRangePickHint());
+    // 仅选起点：仍按可见窗口分段，等终点齐了再按选区重算
+    invalidateLcSectionCache();
     renderLcChart(viewIndex);
     void refreshLcUndulate();
     void refreshLcEvaluate();
     void refreshLcTrader();
     void refreshLcJetton();
     scheduleExtremaForVisible();
+    scheduleLcSections();
     return;
   }
 
@@ -15707,11 +15986,13 @@ function handleLcRangeTap(viewIndex) {
   const lo = pick.a <= pick.b ? pick.a : pick.b;
   const hi = pick.a <= pick.b ? pick.b : pick.a;
   window.LineCompare?.setFormMeta?.(lcRangePickHint());
+  invalidateLcSectionCache();
   renderLcChart(viewIndex);
   void refreshLcUndulate();
   void refreshLcEvaluate();
   void refreshLcTrader();
   scheduleExtremaForVisible();
+  scheduleLcSections();
   void refreshLcJetton({ force: true });
   const run = window.LineCompare?.applyRangeAndRun;
   if (typeof run === "function") {
@@ -16089,9 +16370,20 @@ function renderLcChart(hoverIndex = null) {
     lcChartState.viewStart,
     Number(lcChartState.viewSize) || items.length
   );
-  drawKlineChart(ctx, layout, items, "day", colors, hoverIndex, maBundle, chartState.extrema);
+  drawKlineChart(
+    ctx,
+    layout,
+    items,
+    "day",
+    colors,
+    hoverIndex,
+    maBundle,
+    chartState.extrema,
+    lcSectionState.segments
+  );
   drawLcRangePick(ctx, layout, items);
   scheduleExtremaForVisible();
+  scheduleLcSections();
   if (!layout.pe) {
     paintLcJetton();
     return;
@@ -16554,6 +16846,7 @@ window.CompanyLcKline = {
     if (identity.code) {
       /* code is page-global */
     }
+    clearLcSections();
     clearLcRangePick({ silent: true });
     syncLcComboLegend();
     return loadLcChart().then(() => {
@@ -16563,6 +16856,7 @@ window.CompanyLcKline = {
         void refreshLcPvAxes();
         void refreshLcEvaluate();
         scheduleExtremaForVisible();
+        scheduleLcSections();
       });
     });
   },
@@ -16576,10 +16870,12 @@ window.CompanyLcKline = {
     lcJettonState.loading = false;
     lcJettonState.loadingSince = 0;
     lcJettonState.pendingKey = "";
+    clearLcSections();
     clearLcRangePick({ silent: true });
   },
   sync() {
     if (!lcChartState.visible) return Promise.resolve();
+    clearLcSections();
     clearLcRangePick({ silent: true });
     return loadLcChart({ force: true });
   },

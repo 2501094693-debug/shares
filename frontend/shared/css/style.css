@@ -3355,6 +3355,80 @@ html.company-charts-on .company-page.app {
   color: var(--ink);
 }
 
+.lc-section-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 2px;
+  font-style: normal;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  opacity: 0.92;
+}
+
+.lc-section-legend i {
+  font-style: normal;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  line-height: 1.35;
+}
+
+.lc-section-legend__up {
+  color: var(--up, #ff5d6c);
+  background: rgba(255, 93, 108, 0.12);
+  border-color: rgba(255, 93, 108, 0.28);
+}
+
+.lc-section-legend__down {
+  color: var(--down, #3dd68c);
+  background: rgba(61, 214, 140, 0.12);
+  border-color: rgba(61, 214, 140, 0.28);
+}
+
+.lc-section-legend__flat {
+  color: #c9a227;
+  background: rgba(201, 162, 39, 0.14);
+  border-color: rgba(201, 162, 39, 0.32);
+}
+
+.lc-section-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 2px;
+  font-style: normal;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  opacity: 0.92;
+}
+
+.lc-section-legend i {
+  font-style: normal;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  line-height: 1.35;
+}
+
+.lc-section-legend__up {
+  color: var(--up, #ff5d6c);
+  background: rgba(255, 93, 108, 0.12);
+  border-color: rgba(255, 93, 108, 0.28);
+}
+
+.lc-section-legend__down {
+  color: var(--down, #3dd68c);
+  background: rgba(61, 214, 140, 0.12);
+  border-color: rgba(61, 214, 140, 0.28);
+}
+
+.lc-section-legend__flat {
+  color: #c9a227;
+  background: rgba(201, 162, 39, 0.14);
+  border-color: rgba(201, 162, 39, 0.32);
+}
+
 .chart-legend {
   display: none;
   align-items: center;
