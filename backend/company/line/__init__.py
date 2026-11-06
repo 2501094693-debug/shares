@@ -7,6 +7,7 @@
 - ``eastmoney``：东财 K 线（``kline``）+ 实时逐笔（``ticks``）。
 - ``tencent``：腾讯 K 线（``kline``）+ 实时逐笔（``ticks``）。
 - ``tonghuashun``：同花顺 HQ 分时（``hq_ticks``）+ 落盘（``store``），统一由 ``fetcher`` 调度。
+- ``entrust``：委托盘口（五档 / 分价表 / Level-2 队列），``fetch_entrust``。
 
 顶层 ``eastmoney_kline`` 等四个文件是兼容垫片，旧引用仍可用，
 新代码请从子包导入。
