@@ -2,6 +2,9 @@
 
 不依赖扫码登录；字段号来自抓包（买 1–3 = 24/25…28/29，卖 1–3 = 30/31…34/35，
 买/卖 4–5 = 150–157）。仅有各档总量，无委托单细则。
+
+注意：``depth`` 返回的字段 ``6`` 是昨收，不是现价（跌停日最明显：6=昨收，
+成交价在卖一）。现价由 ``fill_book_last_price`` 用腾讯行情 / 单边盘口补齐。
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ from typing import Any
 from core.codes import normalize_code
 from core.fmt import to_float
 
-from company.line.entrust.models import empty_pack, normalize_level
+from company.line.entrust.models import empty_pack, fill_book_last_price, normalize_level
 
 logger = logging.getLogger(__name__)
 
@@ -79,11 +82,15 @@ def fetch_order_book(code: str) -> dict[str, Any]:
             continue
         (bids if side == "bid" else asks).append(parsed)
 
+    # 字段 6 = 昨收（不是现价）；现价见 fill_book_last_price
+    pre_close = to_float(_cell(row, "6"))
     pack["book"] = {
         "depth": max(len(bids), len(asks)),
-        "last": to_float(_cell(row, "6")),
+        "last": None,
+        "pre_close": pre_close,
         "bids": bids,
         "asks": asks,
     }
+    fill_book_last_price(norm, pack["book"])
     pack["notes"].append("HQ 游客 depth 仅五档总量，无 Level-2 委托单细则")
     return pack

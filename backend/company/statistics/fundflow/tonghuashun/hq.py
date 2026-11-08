@@ -28,6 +28,7 @@ _RATE_SEC = 0.025
 _CONNECT_BUFFER = 32 * 1024
 _QUERY_BUFFER = 8 * 1024 * 1024
 _CONNECT_ATTEMPTS = 8
+_QUERY_ATTEMPTS = 3
 _FIELD_TIME = "1"
 _FIELD_DIR = "12"
 _FIELD_VOLUME = "13"
@@ -38,6 +39,24 @@ _DIR_MAP = {
     2: ("passive", "buy", "被", "特大被动买"),
     -2: ("passive", "sell", "被", "特大被动卖"),
 }
+# 连接被对端 RST / 关闭（WinError 10054 等）时也应重连，不能只认「请先连接」。
+_RESET_MARKERS = (
+    "请先连接",
+    "forcibly closed",
+    "wsasend",
+    "write tcp",
+    "connection reset",
+    "connection aborted",
+    "reset by peer",
+    "broken pipe",
+    "10054",
+    "远程主机强迫关闭",
+)
+
+
+def _is_conn_reset(err: str) -> bool:
+    text = str(err or "").lower()
+    return any(marker.lower() in text for marker in _RESET_MARKERS)
 def hq_security(code: str) -> str:
     """HQ 证券代码，如 ``USZA001309`` / ``USHA603259``。"""
     norm = normalize_code(code)
@@ -173,24 +192,40 @@ class HexinHqClient:
         if not self._connected:
             self.connect()
 
+    def _reset(self) -> None:
+        """连接被对端 RST/关闭后丢弃旧连接，下次 ``_ensure`` 用新会话重连。"""
+        try:
+            self._invoke("disconnect", {}, 4096)
+        except Exception:  # noqa: BLE001
+            logger.info("ths hq reset disconnect skip", exc_info=True)
+        self._connected = False
+        # 稍等再用新账号重连，避免复用刚被 RST 的会话
+        time.sleep(0.3)
+
     def big_order_flow(self, code: str) -> list[dict[str, Any]]:
         security = hq_security(code)
         if not security:
             return []
         with self._lock:
-            self._ensure()
-            body = self._invoke("big_order_flow", {"code": security}, _QUERY_BUFFER)
-            err = str(body.get("err_info") or "")
-            if "请先连接" in err:
-                self._connected = False
+            last_err = ""
+            for attempt in range(_QUERY_ATTEMPTS):
                 self._ensure()
                 body = self._invoke("big_order_flow", {"code": security}, _QUERY_BUFFER)
                 err = str(body.get("err_info") or "")
-            if err:
+                if not err:
+                    payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
+                    rows = payload.get("result") if isinstance(payload, dict) else None
+                    return [row for row in rows or [] if isinstance(row, dict)]
+                last_err = err
+                if attempt < _QUERY_ATTEMPTS - 1 and _is_conn_reset(err):
+                    logger.info(
+                        "ths hq big_order_flow reset %s (attempt %s): %s",
+                        security, attempt + 1, err,
+                    )
+                    self._reset()
+                    continue
                 raise RuntimeError(err)
-            payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
-            rows = payload.get("result") if isinstance(payload, dict) else None
-            return [row for row in rows or [] if isinstance(row, dict)]
+            raise RuntimeError(last_err)
 
 
 _client = HexinHqClient()

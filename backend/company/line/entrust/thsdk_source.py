@@ -128,6 +128,7 @@ def fetch_order_book(
     pack["book"] = {
         "depth": depth_n,
         "last": None,
+        "pre_close": None,
         "bids": bids,
         "asks": asks,
     }

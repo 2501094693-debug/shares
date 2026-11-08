@@ -14079,10 +14079,10 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   flex: 1 1 0%;
   min-height: 0;
   display: grid;
-  /* 分时成交 | 实时走势 | 逐笔明细：两侧同宽 */
+  /* 分时成交 | 实时+盘口+五日 | 逐笔明细：两侧同宽 */
   grid-template-columns: var(--deal-side-col) minmax(0, 1fr) var(--deal-side-col);
   grid-template-rows: minmax(0, 1fr);
-  grid-template-areas: "hero charts deal";
+  grid-template-areas: "hero center deal";
   gap: 10px;
   height: 100%;
   overflow: hidden;
@@ -14090,29 +14090,241 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
 
 .deal-analysis-left,
 html.company-charts-on .deal-analysis-left.quotes-layout {
-  /* 子节点直接参与 board 三列，保证与分时成交同宽 */
-  display: contents;
+  grid-area: hero;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
   padding: 0;
+  overflow: hidden;
 }
 
 .deal-analysis-left .company-hero {
-  grid-area: hero;
+  flex: 1 1 0%;
+  min-height: 0;
+  height: 100%;
   /* 只挂 metricsPanels，去掉身份区后的留白 */
   padding-top: 12px;
 }
 
-.deal-analysis-left .deal-charts-deck,
-.deal-analysis-left .charts-deck {
-  grid-area: charts;
+.deal-analysis-center {
+  grid-area: center;
   min-width: 0;
   min-height: 0;
   height: 100%;
-  grid-template-columns: minmax(0, 1fr);
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(168px, 0.55fr);
+  grid-template-rows: minmax(0, 1.05fr) minmax(168px, 0.5fr);
+  grid-template-areas:
+    "ticks entrust"
+    "fiveday fiveday";
+  gap: 10px;
+  overflow: hidden;
 }
 
-.deal-analysis-left .chart-card--ticks {
-  grid-column: 1;
-  grid-row: 1;
+.deal-analysis-center .deal-charts-deck,
+.deal-analysis-center .charts-deck {
+  grid-area: ticks;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  grid-template-columns: none;
+  padding: 0;
+  overflow: hidden;
+  /* 供子项按槽位剩余宽高等比撑满 */
+  container-type: size;
+}
+
+.deal-analysis-center .chart-card--ticks {
+  /* 在 ticks 槽位内取「宽满或高满」中更小的一边，保持 8:5 */
+  aspect-ratio: 8 / 5;
+  width: min(100cqw, calc(100cqh * 8 / 5));
+  height: min(100cqh, calc(100cqw * 5 / 8));
+  max-width: 100%;
+  max-height: 100%;
+  flex: none;
+}
+
+.deal-analysis-center .chart-card--ticks .chart-card__stage,
+.deal-analysis-center .chart-card--ticks .chart-canvas-wrap {
+  min-height: 0;
+  flex: 1 1 0%;
+}
+
+.deal-entrust-panel,
+.deal-fiveday-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(42, 212, 184, 0.1);
+  border-radius: calc(var(--radius) + 2px);
+  background: rgba(4, 8, 14, 0.35);
+  padding: 8px 10px 6px;
+  gap: 6px;
+}
+
+.deal-entrust-panel {
+  grid-area: entrust;
+}
+
+.deal-fiveday-panel {
+  grid-area: fiveday;
+}
+
+.deal-side-panel-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(42, 212, 184, 0.1);
+}
+
+.deal-side-panel-head .metrics-section-title {
+  margin: 0;
+}
+
+.deal-side-panel-title {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.deal-side-panel-meta {
+  margin: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deal-entrust-body,
+.deal-fiveday-body {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.deal-fiveday-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.deal-entrust-body > p,
+.deal-fiveday-body > p {
+  margin: 8px 0 0;
+}
+
+.deal-fiveday-chart-wrap {
+  position: relative;
+  flex: 1 1 0%;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.deal-fiveday-chart-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.deal-fiveday-hover {
+  position: absolute;
+  z-index: 2;
+  display: none;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  max-width: min(360px, calc(100% - 16px));
+  padding: 6px 8px;
+  border: 1px solid rgba(42, 212, 184, 0.18);
+  border-radius: 6px;
+  background: rgba(4, 8, 14, 0.92);
+  color: var(--text, #e8eef7);
+  font-size: 11px;
+  line-height: 1.35;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.deal-fiveday-hover.is-on {
+  display: flex;
+}
+
+.deal-fiveday-hover.hidden,
+.deal-fiveday-hover[hidden] {
+  display: none !important;
+}
+
+.deal-fiveday-hover b {
+  font-weight: 600;
+}
+
+.deal-fiveday-empty {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.deal-fiveday-empty.hidden {
+  display: none;
+}
+
+.deal-entrust-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.deal-entrust-table th,
+.deal-entrust-table td {
+  padding: 3px 4px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(42, 212, 184, 0.06);
+}
+
+.deal-entrust-table th:first-child,
+.deal-entrust-table td:first-child {
+  text-align: left;
+}
+
+.deal-entrust-table th {
+  color: var(--muted, #8b9bb4);
+  font-weight: 500;
+  position: sticky;
+  top: 0;
+  background: rgba(4, 8, 14, 0.92);
+  z-index: 1;
+}
+
+.deal-entrust-table .deal-entrust-last td {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-weight: 600;
+  border-top: 1px solid rgba(42, 212, 184, 0.14);
+  border-bottom: 1px solid rgba(42, 212, 184, 0.14);
+}
+
+.deal-entrust-ask td:nth-child(2) {
+  color: var(--down);
+}
+
+.deal-entrust-bid td:nth-child(2) {
+  color: var(--up);
 }
 
 .deal-analysis-right {
@@ -14131,10 +14343,10 @@ html.company-charts-on .deal-analysis-left.quotes-layout {
 @media (max-width: 960px) {
   .deal-analysis-board {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(280px, 0.5fr) minmax(360px, 1fr);
+    grid-template-rows: auto minmax(420px, 0.8fr) minmax(360px, 1fr);
     grid-template-areas:
       "hero"
-      "charts"
+      "center"
       "deal";
     overflow: auto;
   }
@@ -14142,6 +14354,11 @@ html.company-charts-on .deal-analysis-left.quotes-layout {
   .deal-analysis-left .company-hero {
     height: auto;
     max-height: none;
+  }
+
+  .deal-analysis-center {
+    grid-template-columns: minmax(0, 1.2fr) minmax(140px, 0.8fr);
+    min-height: 420px;
   }
 
   .deal-analysis-right {

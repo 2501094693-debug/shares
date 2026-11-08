@@ -26,9 +26,9 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Mapping
 
-from company.analysis.deal.window import (
+from company.analysis.deal.util import (
     _align_window_vwap,
-    _deadline_index,
+    _deadline_indices,
     _f,
     _lots_int,
     _stamp_key,
@@ -306,11 +306,15 @@ def validate_tape(
         if fill is None:
             fill = row.get("lots") or 0
         fill_f = float(fill)
-        for key in (row.get("order_id"), row.get("order_id_peer")):
+        for key, time_key in (
+            (row.get("order_id"), "order_time"),
+            (row.get("order_id_peer"), "order_time_peer"),
+        ):
             kid = str(key or "")
             if not kid:
                 continue
-            attr_time[kid].append(str(row.get("order_time") or ""))
+            # 交叉行只有一笔成交，但买卖两侧的完成时刻各自独立：优先取本侧字段
+            attr_time[kid].append(str(row.get(time_key) or row.get("order_time") or ""))
             attr_win[kid].add(str(row.get("window_time") or row.get("time") or ""))
             attr_lots[kid] += fill_f
 
@@ -328,13 +332,16 @@ def validate_tape(
         if ot and ot not in attr_time.get(oid, []):
             missing_ot.append({"order_id": oid, "need": ot})
         if stamps and ot:
-            idx = _deadline_index(stamps, ot)
-            if idx >= 0:
-                deadline = stamps[idx]
-                if deadline not in attr_win.get(oid, set()):
-                    missing_deadline.append(
-                        {"order_id": oid, "deadline": deadline, "windows": sorted(attr_win.get(oid, []))}
-                    )
+            idxs = _deadline_indices(stamps, ot)
+            deadlines = {stamps[i] for i in idxs if 0 <= i < len(stamps)}
+            if deadlines and deadlines.isdisjoint(attr_win.get(oid, set())):
+                missing_deadline.append(
+                    {
+                        "order_id": oid,
+                        "deadline": sorted(deadlines),
+                        "windows": sorted(attr_win.get(oid, [])),
+                    }
+                )
     if missing_ot:
         hard.append(
             {

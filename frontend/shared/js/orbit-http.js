@@ -11,6 +11,7 @@
     { prefix: "/api/stocks/line", ttl: 120_000 },
     { prefix: "/api/stocks/ticks", ttl: 8_000 },
     { prefix: "/api/stocks/deal-window", ttl: 30_000 },
+    { prefix: "/api/stocks/entrust", ttl: 3_000 },
     { prefix: "/api/stocks/fund-flow", ttl: 60_000 },
     { prefix: "/api/stocks/margin-trading", ttl: 60_000 },
     { prefix: "/api/stocks/financial-report", ttl: 600_000 },

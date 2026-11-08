@@ -13,7 +13,7 @@ from typing import Any
 
 from core.codes import normalize_code
 
-from company.line.entrust.models import empty_pack
+from company.line.entrust.models import empty_pack, fill_book_last_price
 from company.line.entrust import hq_source, thsdk_source
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,7 @@ def fetch_entrust(
     if need_book:
         book_pack = _load_book(norm, depth=depth, channel=channel)
         pack["book"] = book_pack.get("book") or pack["book"]
+        fill_book_last_price(norm, pack["book"])
         pack["queues"] = book_pack.get("queues") or pack["queues"]
         pack["permissions"] = book_pack.get("permissions") or pack["permissions"]
         if book_pack.get("source"):

@@ -22,7 +22,7 @@ from company.analysis.deal.service import (
     format_window_lines,
     run_deal_window_reconstruct,
 )
-from company.analysis.deal.window import DEFAULT_TRADE_THRESHOLD
+from company.analysis.deal.constants import DEFAULT_TRADE_THRESHOLD
 
 
 def _print_window_rows(rows: list[dict]) -> None:

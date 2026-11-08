@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=20261030-chip-hidden" />
+  <link rel="stylesheet" href="/css/style.css?v=20261108-deal-ticks-fill" />
   <link rel="stylesheet" href="/css/ai-page.css?v=20261022-risk-q4" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
@@ -310,9 +310,32 @@
         </div>
         <div id="dealAnalysisPage" class="deal-analysis-page" hidden aria-hidden="true">
           <div class="deal-analysis-board">
-            <div class="deal-analysis-left quotes-layout" aria-label="分时成交 · 资金动向 · 实时走势">
+            <div class="deal-analysis-left quotes-layout" aria-label="分时成交 · 资金动向">
               <section id="dealHeroSlot" class="company-hero" aria-label="分时成交与资金动向"></section>
+            </div>
+            <div class="deal-analysis-center" aria-label="实时走势 · 盘口委托 · 五日成交">
               <div id="dealChartsSlot" class="charts-deck deal-charts-deck" aria-label="实时走势"></div>
+              <section id="dealEntrustPanel" class="deal-entrust-panel" aria-label="盘口委托">
+                <header class="deal-side-panel-head">
+                  <h4 class="metrics-section-title">盘口委托</h4>
+                  <p id="dealEntrustMeta" class="deal-side-panel-meta muted"></p>
+                </header>
+                <div id="dealEntrustBody" class="deal-entrust-body">
+                  <p class="muted">进入成交分析后加载盘口</p>
+                </div>
+              </section>
+              <section id="dealFiveDayPanel" class="deal-fiveday-panel" aria-label="五日分时">
+                <header class="deal-side-panel-head">
+                  <div class="deal-side-panel-title">
+                    <h4 class="metrics-section-title">五日</h4>
+                    <p id="dealFiveDayMeta" class="deal-side-panel-meta muted"></p>
+                  </div>
+                  <button id="dealFiveDayRefreshBtn" class="btn ghost sm" type="button">刷新</button>
+                </header>
+                <div id="dealFiveDayBody" class="deal-fiveday-body">
+                  <p class="muted">进入成交分析后加载五日分时</p>
+                </div>
+              </section>
             </div>
             <div class="deal-analysis-right" aria-label="逐笔成交明细">
               <section class="deal-window-panel" aria-label="逐笔成交明细">
@@ -1464,6 +1487,6 @@
   <script src="/js/shared/ai-modes.js?v=20261022-risk-meta"></script>
   <script src="/js/shared/company-analysis.js?v=20261027-deal-analysis"></script>
   <script src="/js/shared/line-compare.js?v=20261026-lc-trader-fix"></script>
-  <script src="/js/company.js?v=20261105-lc-sections"></script>
+  <script src="/js/company.js?v=20261108-deal-switch-perf"></script>
 </body>
 </html>

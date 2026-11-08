@@ -130,6 +130,7 @@ class RealCacheValidateTests(unittest.TestCase):
             code=self.CODE,
             day=self.DAY,
             view="all",
+            algorithm="window",
         )
         self.assertTrue(
             pack["reconcile"]["constraints_ok"],

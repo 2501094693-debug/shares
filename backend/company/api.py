@@ -151,6 +151,30 @@ def stocks_ticks(
         return err(str(exc), 500)
 
 
+@router.get("/api/stocks/intraday")
+def stocks_intraday(
+    code: str = Query("", description="股票代码，如 000338"),
+    days: int = Query(5, ge=1, le=20, description="最近交易日数，默认 5"),
+    day: str = Query("", description="单日 YYYY-MM-DD；有值则只拉该日"),
+):
+    """同花顺分时成交（分钟级）。与 App「分时 / 五日」图同源。"""
+    code = code.strip()
+    if not code:
+        return err("缺少参数 code", 400)
+    try:
+        from company.line.tonghuashun import fetch_day_trend, fetch_intraday
+
+        if day.strip():
+            data = fetch_day_trend(code, day.strip())
+        else:
+            data = fetch_intraday(code, days=days)
+        return ok(data)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
 @router.get("/api/stocks/exchange")
 def stocks_exchange(
     code: str = Query(""),

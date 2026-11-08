@@ -15,12 +15,12 @@ from typing import Any, Mapping
 from core.codes import normalize_code
 
 from company.analysis.deal.sources import load_big_deals, load_ticks
-from company.analysis.deal.window import (
+from company.analysis.deal.constants import (
     DEFAULT_AVG_LOTS_PER_TICK,
     DEFAULT_MIN_LOTS,
     DEFAULT_TRADE_THRESHOLD,
-    reconstruct_windows,
 )
+from company.analysis.deal.pipeline import reconstruct_windows
 
 
 def run_deal_window_reconstruct(

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query
 from core.api import err, ok
 
 from company.analysis.deal.service import run_deal_window_reconstruct
-from company.analysis.deal.window import DEFAULT_TRADE_THRESHOLD
+from company.analysis.deal.constants import DEFAULT_TRADE_THRESHOLD
 
 router = APIRouter()
 
