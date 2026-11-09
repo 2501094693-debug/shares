@@ -3,7 +3,7 @@
 - 同价交叉原子 → 1 行（双方编号）
 - 异价重叠 → 只留一侧（优先被动）
 - 单侧大单的匿名对手 + 纯小单 → **共用剩余笔数预算，整窗均分**（≤30 万）
-- R8：跨窗同一对买卖只出一笔，余量 virtual_pair
+- R8：同一对买卖大单可跨多个分时档连续出多笔（各窗各自出行）
 """
 
 from __future__ import annotations
@@ -81,8 +81,8 @@ def emit_window(
     - **单侧原子 + 纯小单** → 共享剩余笔数，按手数比例分摊行数后整窗均分，
       每行 ≤ 30 万门槛；避免「大单对手 ~12 手、纯小单 ~2 手」两极分化。
 
-    跨窗同一对买卖只允许一笔成交（R8）：后续窗里同一对的交叉段不再出行，
-    手数改由本窗小单补足，保持每窗手数守恒。
+    同一对买卖大单可跨窗连续成交（R8）：每个分时档里的交叉段各自出行，
+    编号复用，前端按同号合并成跨档主笔。
     """
     left = int(window.get("L") or 0)
     right = int(window.get("R") or 0)
@@ -100,7 +100,6 @@ def emit_window(
     atoms = window_atoms(left, right, buy_clips, sell_clips)
 
     rows: list[dict[str, Any]] = []
-    pair_skipped = 0
     singles: list[dict[str, Any]] = []
     residual_small = 0
 
@@ -186,12 +185,6 @@ def emit_window(
                     lots_i,
                 )
                 continue
-            if ids.pair_done(b_oid, s_oid):
-                # 跨窗同一对只允许一笔（R8）：量进匿名池
-                ids.virtual_pair(b_oid, s_oid, float(lots_i))
-                pair_skipped += 1
-                residual_small += lots_i
-                continue
             order_time = min(
                 [
                     t
@@ -226,7 +219,6 @@ def emit_window(
                 "real": True,
             }
             rows.append(row)
-            ids.mark_pair(b_oid, s_oid, row)
             continue
         if b_oid or s_oid:
             _queue_single(b_oid or s_oid, "buy" if b_oid else "sell", lots_i)
@@ -361,8 +353,6 @@ def emit_window(
     _align_small_prices(
         rows, price, threshold=threshold, min_lots=min_lots, stats=stats
     )
-    if pair_skipped and stats is not None:
-        stats["pair_virtual"] = int(stats.get("pair_virtual") or 0) + pair_skipped
     return rows
 
 

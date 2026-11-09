@@ -1,4 +1,4 @@
-"""约束口径回归：截止窗 / 守恒 / R8 / R12（默认联合落位管线）。"""
+"""约束口径回归：截止窗 / 守恒 / R8（跨窗连续） / R12（默认联合落位管线）。"""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ class ConservationTests(unittest.TestCase):
 
 
 class PairAndCapTests(unittest.TestCase):
-    def test_pair_one_print(self) -> None:
+    def test_pair_may_print_across_windows(self) -> None:
         pack = reconstruct_windows(
             [
                 _tick("09:30:03", 200, 4),
@@ -87,12 +87,15 @@ class PairAndCapTests(unittest.TestCase):
             ],
             view="all",
         )
-        pairs = [
-            (r.get("buy_id"), r.get("sell_id"))
+        crossed = [
+            r
             for r in pack["rows"]
             if r.get("order_id") and r.get("order_id_peer")
         ]
-        self.assertEqual(len(pairs), len(set(pairs)))
+        self.assertGreaterEqual(len(crossed), 1)
+        checks = (pack["reconcile"].get("constraints") or {}).get("checks") or {}
+        self.assertTrue(checks.get("R8_pair_contiguous_in_window", True))
+        self.assertEqual(pack["reconcile"]["lot_mismatch_windows"], 0)
 
     def test_anonymous_rows_respect_cap(self) -> None:
         pack = reconstruct_windows(

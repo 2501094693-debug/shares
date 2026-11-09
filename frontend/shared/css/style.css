@@ -14116,11 +14116,11 @@ html.company-charts-on .deal-analysis-left.quotes-layout {
   min-height: 0;
   height: 100%;
   display: grid;
-  /* 实时按高收成 8:5；盘口吃掉右侧剩余宽度 */
-  grid-template-columns: auto minmax(var(--deal-entrust-min), 1fr);
+  /* 盘口在左吃剩余宽；实时在右按高收成 8:5 */
+  grid-template-columns: minmax(var(--deal-entrust-min), 1fr) auto;
   grid-template-rows: minmax(0, 1fr) auto;
   grid-template-areas:
-    "ticks entrust"
+    "entrust ticks"
     "fiveday fiveday";
   gap: 10px;
   overflow: hidden;
@@ -14131,7 +14131,7 @@ html.company-charts-on .deal-analysis-left.quotes-layout {
 .deal-analysis-center .deal-charts-deck,
 .deal-analysis-center .charts-deck {
   grid-area: ticks;
-  justify-self: start;
+  justify-self: end;
   align-self: stretch;
   min-width: 0;
   min-height: 0;
@@ -14383,10 +14383,10 @@ html.company-charts-on .deal-analysis-left.quotes-layout {
   }
 
   .deal-analysis-center {
-    grid-template-columns: auto minmax(96px, 1fr);
+    grid-template-columns: minmax(96px, 1fr) auto;
     grid-template-rows: minmax(0, 1fr) auto;
     grid-template-areas:
-      "ticks entrust"
+      "entrust ticks"
       "fiveday fiveday";
     min-height: 420px;
   }

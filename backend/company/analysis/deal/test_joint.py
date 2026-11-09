@@ -465,8 +465,8 @@ class EmitTests(unittest.TestCase):
         self.assertEqual(pack["reconcile"]["count_mismatch_windows"], 0)
         self.assertEqual(check_rows_cap(rows, threshold=300_000.0), [])
 
-    def test_pair_prints_once_across_windows(self) -> None:
-        """跨窗同一对买卖只出 1 笔（R8），余量并入小单保手数。"""
+    def test_pair_can_print_across_windows(self) -> None:
+        """同一对买卖大单可跨窗连续多笔（R8），各窗手数仍守恒。"""
         pack = _run(
             [
                 _tick("09:30:03", 50, 3),
@@ -480,11 +480,12 @@ class EmitTests(unittest.TestCase):
         rec = pack["reconcile"]
         self.assertEqual(rec["lot_mismatch_windows"], 0)
         crossed = _crossed_rows(pack)
-        self.assertLessEqual(len(crossed), 1)
-        pairs = [
-            (row["buy_id"], row["sell_id"]) for row in crossed
-        ]
-        self.assertEqual(len(pairs), len(set(pairs)))
+        self.assertGreaterEqual(len(crossed), 1)
+        # 同一对可出现在多个分时档
+        by_pair_wins: dict[tuple[str, str], set[str]] = {}
+        for row in crossed:
+            key = (str(row["buy_id"]), str(row["sell_id"]))
+            by_pair_wins.setdefault(key, set()).add(str(row["window_time"]))
         # 每窗手数与分时档一致
         by_win: dict[str, float] = {}
         for row in pack["rows"]:
@@ -492,6 +493,8 @@ class EmitTests(unittest.TestCase):
             by_win[key] = by_win.get(key, 0.0) + float(row["lots"])
         self.assertAlmostEqual(by_win["09:30:03"], 50.0, places=2)
         self.assertAlmostEqual(by_win["09:30:06"], 100.0, places=2)
+        checks = (rec.get("constraints") or {}).get("checks") or {}
+        self.assertTrue(checks.get("R8_pair_contiguous_in_window", True))
 
     def test_mixed_price_atom_keeps_passive_side(self) -> None:
         """异价重叠：成交价等于被动方挂单价 → 保留被动侧编号与价格。"""

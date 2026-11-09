@@ -15,7 +15,7 @@ R4  大单完成时刻：order_time = 资金动向最后成交时间；截止窗
 R5  填小单后笔数、总手数正确；有小单可调时均价也正确
 R6  输出字段：time / lots / sell_id / buy_id
 R7  手数整手，允许 0，禁止小数
-R8  任意一对 (buy_id, sell_id) 只成交一笔
+R8  同一对买卖大单可跨多个分时档连续多笔；同窗内同对多笔须相邻成块
 R9  大单同侧编号在同一分时档内连续（跨档因容量拆开允许）
 R10 大单价格全程等于资金动向价（不被窗均价改写）
 R11 按 window_time（分时档）汇总手数/笔数 = 分时；time 为窗内真实时刻 ∈ [prev, stamp)
@@ -198,24 +198,47 @@ def validate_tape(
         )
     checks["R5_vwap"] = not vwap_bad
 
-    # ---- R8 一对买卖只一笔 ----
-    pair_count: dict[tuple[str, str], int] = defaultdict(int)
+    # ---- R8 同对可跨窗连续多笔；同窗内须相邻成块 ----
+    pair_breaks: list[dict[str, Any]] = []
+    by_win_for_pair: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for row in rows:
-        bid = str(row.get("buy_id") or "")
-        sid = str(row.get("sell_id") or "")
-        if bid and sid:
-            pair_count[(bid, sid)] += 1
-    pair_dups = [{"buy_id": a, "sell_id": b, "n": n} for (a, b), n in pair_count.items() if n > 1]
-    if pair_dups:
+        by_win_for_pair[str(row.get("window_time") or row.get("time") or "")].append(row)
+    for stamp, win_rows in by_win_for_pair.items():
+        positions: dict[tuple[str, str], list[int]] = defaultdict(list)
+        for i, row in enumerate(win_rows):
+            # 只约束真实交叉大单对（两侧都有 order_id）
+            if not (row.get("order_id") and row.get("order_id_peer")):
+                continue
+            bid = str(row.get("buy_id") or "")
+            sid = str(row.get("sell_id") or "")
+            if bid and sid:
+                positions[(bid, sid)].append(i)
+        for (bid, sid), idxs in positions.items():
+            if len(idxs) <= 1:
+                continue
+            # 同窗多笔必须下标连续，中间不得插入其它行
+            if idxs[-1] - idxs[0] + 1 != len(idxs):
+                pair_breaks.append(
+                    {
+                        "time": stamp,
+                        "buy_id": bid,
+                        "sell_id": sid,
+                        "n": len(idxs),
+                        "span": idxs[-1] - idxs[0] + 1,
+                    }
+                )
+    if pair_breaks:
         hard.append(
             {
-                "code": "R8_one_pair_one_print",
-                "count": len(pair_dups),
-                "samples": pair_dups[:10],
-                "msg": "同一买卖编号对出现多笔成交",
+                "code": "R8_pair_contiguous_in_window",
+                "count": len(pair_breaks),
+                "samples": pair_breaks[:10],
+                "msg": "同窗内同一买卖大单对被拆开（跨窗连续多笔允许）",
             }
         )
-    checks["R8_one_pair_one_print"] = not pair_dups
+    checks["R8_pair_contiguous_in_window"] = not pair_breaks
+    # 旧名保留为 True，避免前端/旧日志误判「一对多笔」为失败
+    checks["R8_one_pair_one_print"] = True
 
     # ---- R9 同窗内大单同侧编号连续 ----
     split_ids: list[dict[str, Any]] = []
@@ -352,14 +375,14 @@ def validate_tape(
             }
         )
     if missing_deadline:
-        # 一对买卖若已在回溯窗配对，截止窗余量走 virtual_pair 并入首笔，
-        # 胶带不再出第二笔（R8）；完成时刻仍以 order_time 为准 → 记 soft。
+        # 大单手数已在截止窗之前的档位成交完：胶带无截止窗行，但 order_time
+        # 仍应对齐资金动向完成时刻 → 记 soft。
         soft.append(
             {
                 "code": "R4_deadline_window_virtual",
                 "count": len(missing_deadline),
                 "samples": missing_deadline[:10],
-                "msg": "截止窗余量已虚拟并入首笔配对（保一对一笔）；order_time 仍应对齐资金动向",
+                "msg": "成交落在截止窗之前（跨窗连续成交允许）；order_time 仍应对齐资金动向",
             }
         )
     if lot_bad:
@@ -429,7 +452,7 @@ def repair_tape(
     """针对硬约束失败做确定性修补，返回执行过的修复动作标签。
 
     不重新随机生成：只修能安全改的字段（时间对齐、大单价、小单均价回校）。
-    结构性问题（一对多笔、容量超限）留给生成器本身保证，这里只标记无法自动修。
+    结构性问题（同窗配对被拆开、容量超限）留给生成器本身保证，这里只标记无法自动修。
     """
     actions: list[str] = []
     if not rows:

@@ -311,39 +311,6 @@ class _OrderIds:
         self._buy = 0
         self._sell = 0
         self._bound: dict[str, str] = {}
-        # 已成交过的「买大单, 卖大单」配对：一对真实买卖大单只能有一笔成交。
-        # 跨窗残留通过 virtual_pair 并入原配对行的 attributed_lots，不再出第二笔。
-        self._paired: set[tuple[str, str]] = set()
-        self._pair_row: dict[tuple[str, str], dict[str, Any]] = {}
-
-    def pair_done(self, buy_oid: str, sell_oid: str) -> bool:
-        return bool(buy_oid) and bool(sell_oid) and (buy_oid, sell_oid) in self._paired
-
-    def mark_pair(
-        self,
-        buy_oid: str,
-        sell_oid: str,
-        row: dict[str, Any] | None = None,
-    ) -> None:
-        if not buy_oid or not sell_oid:
-            return
-        key = (buy_oid, sell_oid)
-        self._paired.add(key)
-        if row is not None:
-            self._pair_row[key] = row
-
-    def virtual_pair(self, buy_oid: str, sell_oid: str, lots: float) -> float:
-        """跨窗已配对过的买卖：本窗不再出第二笔，只把量并入原配对行归因。"""
-        take = _lots_int(lots)
-        if take <= 0 or not buy_oid or not sell_oid:
-            return 0.0
-        row = self._pair_row.get((buy_oid, sell_oid))
-        if row is None:
-            return 0.0
-        if row.get("attributed_lots") is None:
-            row["attributed_lots"] = float(_lots_int(row.get("lots")))
-        row["attributed_lots"] = float(row["attributed_lots"]) + float(take)
-        return float(take)
 
     def bind(self, order: Mapping[str, Any]) -> str:
         key = str(order.get("order_id") or "")
