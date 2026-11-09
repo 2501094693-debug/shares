@@ -765,7 +765,8 @@ const dealWindowState = {
 };
 const DEAL_WINDOW_ROW_H = 26;
 const DEAL_WINDOW_OVERSCAN = 16;
-const DEAL_ENTRUST_POLL_MS = 4000;
+/** 与分时成交盘中轮询同频（onTicksMarketClock = 1s） */
+const DEAL_ENTRUST_POLL_MS = 1000;
 /** 成交分析 · 盘口委托 */
 const dealEntrustState = {
   loading: false,
@@ -775,6 +776,8 @@ const dealEntrustState = {
   notes: [],
   loadGen: 0,
   timer: 0,
+  fetching: false,
+  pending: false,
 };
 /** 成交分析 · 五日分时图（同花顺式价/均/量） */
 const dealFiveDayState = {
@@ -1081,6 +1084,8 @@ function stopDealEntrustPolling() {
     window.clearInterval(dealEntrustState.timer);
     dealEntrustState.timer = 0;
   }
+  dealEntrustState.pending = false;
+  dealEntrustState.loadGen += 1;
 }
 
 function startDealEntrustPolling() {
@@ -1166,6 +1171,12 @@ function renderDealEntrustPanel() {
 async function loadDealEntrust(options = {}) {
   const silent = Boolean(options.silent);
   if (!code || !dealWindowVisible()) return;
+  // 与分时成交 live 轮询一致：在途则合并为一次 pending，避免 1s 叠请求把 loading 卡死
+  if (dealEntrustState.fetching) {
+    dealEntrustState.pending = true;
+    return;
+  }
+  dealEntrustState.fetching = true;
   const gen = ++dealEntrustState.loadGen;
   if (!silent || !dealEntrustState.book) {
     dealEntrustState.loading = true;
@@ -1173,9 +1184,15 @@ async function loadDealEntrust(options = {}) {
     if (!silent) renderDealEntrustPanel();
   }
   try {
-    const json = await api(
-      `/api/stocks/entrust?code=${encodeURIComponent(code)}&scope=book&depth=5&source=auto`
-    );
+    const qs = new URLSearchParams({
+      code,
+      scope: "book",
+      depth: "5",
+      source: "auto",
+    });
+    // 静默轮询与分时成交一致：带 refresh=1，绕过前端缓存
+    if (silent) qs.set("refresh", "1");
+    const json = await api(`/api/stocks/entrust?${qs.toString()}`);
     if (gen !== dealEntrustState.loadGen) return;
     const data = json.data || {};
     dealEntrustState.book = data.book || null;
@@ -1189,6 +1206,12 @@ async function loadDealEntrust(options = {}) {
     dealEntrustState.loading = false;
     dealEntrustState.error = String(err?.message || err || "盘口加载失败");
     renderDealEntrustPanel();
+  } finally {
+    dealEntrustState.fetching = false;
+    if (dealEntrustState.pending && dealWindowVisible()) {
+      dealEntrustState.pending = false;
+      void loadDealEntrust({ silent: true });
+    }
   }
 }
 
@@ -1265,34 +1288,30 @@ function ensureDealFiveDayChartDom(body) {
     return {
       wrap: body.querySelector(".deal-fiveday-chart-wrap"),
       canvas: body.querySelector("#dealFiveDayChart"),
-      hover: body.querySelector("#dealFiveDayHover"),
       empty: body.querySelector("#dealFiveDayEmpty"),
     };
   }
   body.dataset.chartReady = "1";
   body.innerHTML = `<div class="deal-fiveday-chart-wrap">
     <canvas id="dealFiveDayChart" aria-label="五日分时图"></canvas>
-    <div id="dealFiveDayHover" class="deal-fiveday-hover hidden" hidden aria-hidden="true"></div>
     <p id="dealFiveDayEmpty" class="muted deal-fiveday-empty hidden"></p>
   </div>`;
   return {
     wrap: body.querySelector(".deal-fiveday-chart-wrap"),
     canvas: body.querySelector("#dealFiveDayChart"),
-    hover: body.querySelector("#dealFiveDayHover"),
     empty: body.querySelector("#dealFiveDayEmpty"),
   };
 }
 
-function setDealFiveDayHover(hoverEl, point, basePrice, cssX, cssY, wrapW) {
-  if (!hoverEl) return;
+/** 五日悬浮数据写到框头；离开时恢复来源 meta */
+function setDealFiveDayHover(point, basePrice) {
+  const statsEl = document.getElementById("dealFiveDayHoverStats");
+  const metaEl = document.getElementById("dealFiveDayMeta");
+  if (!statsEl) return;
   if (!point) {
-    hoverEl.classList.add("hidden");
-    hoverEl.classList.remove("is-on");
-    hoverEl.hidden = true;
-    hoverEl.setAttribute("aria-hidden", "true");
-    hoverEl.innerHTML = "";
-    hoverEl.style.left = "";
-    hoverEl.style.top = "";
+    statsEl.hidden = true;
+    statsEl.innerHTML = "";
+    if (metaEl) metaEl.hidden = false;
     return;
   }
   const price = Number(point.price);
@@ -1314,32 +1333,127 @@ function setDealFiveDayHover(hoverEl, point, basePrice, cssX, cssY, wrapW) {
   const barAmt =
     Number.isFinite(price) && Number.isFinite(vol) ? price * vol * 100 : null;
   const stamp = String(point.time || "").slice(0, 16).replace("T", " ");
-  hoverEl.innerHTML = `<span>${escapeHtml(stamp)}</span>
-    <span>均价 <b>${escapeHtml(fmtNum(avg))}</b></span>
-    <span>现价 <b class="${pctCls}">${escapeHtml(fmtNum(price))}</b></span>
-    <span class="${pctCls}">涨幅 ${escapeHtml(pctText)}</span>
+  statsEl.innerHTML = `<span>${escapeHtml(stamp)}</span>
+    <span>均 <b>${escapeHtml(fmtNum(avg))}</b></span>
+    <span>现 <b class="${pctCls}">${escapeHtml(fmtNum(price))}</b></span>
+    <span class="${pctCls}">${escapeHtml(pctText)}</span>
     <span>量 ${escapeHtml(fmtVol(vol))}</span>
     <span>额 ${escapeHtml(fmtVol(barAmt))}</span>`;
-  hoverEl.hidden = false;
-  hoverEl.classList.remove("hidden");
-  hoverEl.classList.add("is-on");
-  hoverEl.setAttribute("aria-hidden", "false");
-  const cardW = Math.min(320, hoverEl.offsetWidth || 220);
-  const left = Math.max(8, Math.min(wrapW - cardW - 8, cssX + 12));
-  const top = Math.max(4, cssY - 28);
-  hoverEl.style.left = `${left}px`;
-  hoverEl.style.top = `${top}px`;
+  statsEl.hidden = false;
+  if (metaEl) metaEl.hidden = true;
+}
+
+/** 五日布局：放宽下限，便于按目标比例反推高度 */
+function fiveDayLayoutOptions(pctAxis) {
+  return { pctAxis, compact: true, minPriceH: 28, minVolH: 14 };
+}
+
+/** 实时「价格实际绘图区」宽高比 */
+function realtimeTicksPriceAspect() {
+  const wrap = els.ticksChartWrap;
+  const w = Math.max(240, wrap?.clientWidth || 320);
+  const h = Math.max(240, wrap?.clientHeight || Math.round((w * 5) / 8));
+  const showPct = Number.isFinite(ticksState.preClose) && ticksState.preClose;
+  const layout = chartLayout(w, h, ticksLayoutOptions({ pctAxis: showPct }));
+  return layout.price.w / Math.max(1, layout.price.h);
+}
+
+/** 五日画布下，单个日图价格绘图区宽高比 */
+function fiveDayDayPriceAspect(cssW, cssH, pctAxis, dayCount = 5) {
+  const n = Math.max(1, dayCount);
+  const layout = chartLayout(cssW, cssH, fiveDayLayoutOptions(pctAxis));
+  return layout.price.w / n / Math.max(1, layout.price.h);
+}
+
+/**
+ * 优先用满可用高度，再加宽画布使单日价格区比例 = 实时；超出部分横滑。
+ * 画布高度铺满 body，无竖直留白。
+ */
+function fitFiveDaySizeToRealtimeAspect({
+  availW,
+  maxH,
+  targetAspect,
+  pctAxis,
+  dayCount = 5,
+}) {
+  const viewportW = Math.max(200, Math.floor(availW));
+  const cssH = Math.max(120, Math.floor(maxH));
+  const target = Math.max(0.5, Number(targetAspect) || 2.34);
+  const n = Math.max(1, dayCount);
+  const aspectAt = (w, h) => fiveDayDayPriceAspect(w, h, pctAxis, n);
+
+  // 固定高度：加宽 → 单日 aspect 变大，二分求匹配宽度
+  let lo = viewportW;
+  let hi = Math.max(viewportW, Math.floor(viewportW * 6));
+  // 先估一个足够大的上界，保证能达到 target
+  while (aspectAt(hi, cssH) < target && hi < viewportW * 12) {
+    hi = Math.floor(hi * 1.5);
+  }
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (aspectAt(mid, cssH) < target) lo = mid;
+    else hi = mid - 1;
+  }
+  const cssW = Math.max(viewportW, lo);
+  return { cssW, cssH, scrollX: cssW > viewportW + 1 };
+}
+
+/** 预留五日 body 高度，避免加载中框先塌再撑开 */
+function reserveDealFiveDayBodySize({ dayCount = 5, pctAxis = true } = {}) {
+  const panel = document.getElementById("dealFiveDayPanel");
+  const body = document.getElementById("dealFiveDayBody");
+  if (!body) return null;
+  const center = document.querySelector(".deal-analysis-center");
+  const centerH = Math.max(320, center?.clientHeight || 640);
+  const headH = panel?.querySelector(".deal-side-panel-head")?.offsetHeight || 36;
+  const maxBodyH = Math.max(120, Math.floor(centerH * 0.42) - headH);
+  const availW = Math.max(
+    200,
+    body.clientWidth || panel?.clientWidth || center?.clientWidth || 320,
+  );
+  const fitted = fitFiveDaySizeToRealtimeAspect({
+    availW,
+    maxH: maxBodyH,
+    targetAspect: realtimeTicksPriceAspect(),
+    pctAxis,
+    dayCount,
+  });
+  const nextH = `${fitted.cssH}px`;
+  if (body.style.height !== nextH) body.style.height = nextH;
+  if (body.style.maxHeight !== nextH) body.style.maxHeight = nextH;
+  return fitted;
 }
 
 function paintDealFiveDayChart() {
+  const panel = document.getElementById("dealFiveDayPanel");
   const body = document.getElementById("dealFiveDayBody");
   const dom = ensureDealFiveDayChartDom(body);
-  if (!dom?.canvas || !dom.wrap) return;
+  if (!dom?.canvas || !dom.wrap || !body) return;
   const model = fiveDayPlotModel(dealFiveDayState.items, dealFiveDayState.days);
   const { points, dayList, totalSlots, basePrice } = model;
   const dpr = window.devicePixelRatio || 1;
-  const cssW = Math.max(200, dom.wrap.clientWidth || 320);
-  const cssH = Math.max(120, dom.wrap.clientHeight || 160);
+  const showPct = Number.isFinite(basePrice) && basePrice > 0;
+  const dayCount = Math.max(1, dayList.length || 5);
+
+  const wasScrollX = body.scrollWidth > body.clientWidth + 1;
+  const prevScrollRatio =
+    wasScrollX && body.scrollWidth > body.clientWidth
+      ? body.scrollLeft / Math.max(1, body.scrollWidth - body.clientWidth)
+      : 1; // 默认贴右侧看最新一日
+
+  const fitted =
+    reserveDealFiveDayBodySize({ dayCount, pctAxis: showPct }) ||
+    fitFiveDaySizeToRealtimeAspect({
+      availW: 320,
+      maxH: 200,
+      targetAspect: realtimeTicksPriceAspect(),
+      pctAxis: showPct,
+      dayCount,
+    });
+  const cssW = fitted.cssW;
+  const cssH = fitted.cssH;
+  if (dom.wrap.style.width !== `${cssW}px`) dom.wrap.style.width = `${cssW}px`;
+  if (dom.wrap.style.height !== `${cssH}px`) dom.wrap.style.height = `${cssH}px`;
   dom.canvas.width = Math.floor(cssW * dpr);
   dom.canvas.height = Math.floor(cssH * dpr);
   const ctx = dom.canvas.getContext("2d");
@@ -1347,8 +1461,7 @@ function paintDealFiveDayChart() {
 
   const colors = chartColors();
   paintChartFrame(ctx, cssW, cssH, colors);
-  const showPct = Number.isFinite(basePrice) && basePrice > 0;
-  const layout = chartLayout(cssW, cssH, { pctAxis: showPct, compact: true });
+  const layout = chartLayout(cssW, cssH, fiveDayLayoutOptions(showPct));
   const { price, volume } = layout;
 
   if (!points.length) {
@@ -1356,34 +1469,84 @@ function paintDealFiveDayChart() {
       dom.empty.textContent = "暂无五日成交";
       dom.empty.classList.remove("hidden");
     }
-    setDealFiveDayHover(dom.hover, null);
+    setDealFiveDayHover(null);
     return;
   }
   if (dom.empty) dom.empty.classList.add("hidden");
 
-  const prices = points.map((d) => Number(d.price)).filter(Number.isFinite);
-  const avgs = points.map((d) => Number(d.avg_price)).filter((v) => Number.isFinite(v) && v > 0);
-  let minP = Math.min(...prices, ...(avgs.length ? avgs : prices));
-  let maxP = Math.max(...prices, ...(avgs.length ? avgs : prices));
-  if (showPct) {
-    minP = Math.min(minP, basePrice);
-    maxP = Math.max(maxP, basePrice);
-  }
-  const priceScale = buildPriceScale(minP, maxP, {
-    tickCount: priceScaleTickCount(price.h),
-    padRatio: 0.02,
-    center: showPct ? basePrice : null,
+  // 按日独立纵轴（对齐实时：单日振幅撑满该日绘图区），避免五日共用一把尺导致偏平
+  const tickCount = priceScaleTickCount(price.h);
+  const dayScales = dayList.map((day, dayIdx) => {
+    const dayPts = points.filter((p) => p.dayIdx === dayIdx);
+    const dayPrices = dayPts.map((d) => Number(d.price)).filter(Number.isFinite);
+    const dayAvgs = dayPts
+      .map((d) => Number(d.avg_price))
+      .filter((v) => Number.isFinite(v) && v > 0);
+    let dayBase = null;
+    for (const row of dayPts) {
+      const b = Number(row?.base_price);
+      if (Number.isFinite(b) && b > 0) {
+        dayBase = b;
+        break;
+      }
+    }
+    if (dayBase == null && Number.isFinite(basePrice) && basePrice > 0) dayBase = basePrice;
+    let minP = dayPrices.length
+      ? Math.min(...dayPrices, ...(dayAvgs.length ? dayAvgs : dayPrices))
+      : dayBase;
+    let maxP = dayPrices.length
+      ? Math.max(...dayPrices, ...(dayAvgs.length ? dayAvgs : dayPrices))
+      : dayBase;
+    if (Number.isFinite(dayBase)) {
+      minP = Math.min(minP, dayBase);
+      maxP = Math.max(maxP, dayBase);
+    }
+    const scale = buildPriceScale(minP, maxP, {
+      tickCount,
+      padRatio: 0.015,
+      center: Number.isFinite(dayBase) ? dayBase : null,
+    });
+    const yAt = (p) =>
+      price.y + ((scale.max - p) / (scale.max - scale.min || 1)) * price.h;
+    return { day, dayBase, scale, yAt };
   });
-  const yAt = (p) =>
-    price.y + ((priceScale.max - p) / (priceScale.max - priceScale.min || 1)) * price.h;
+
   const xAtSlot = (slot) => price.x + ((slot + 0.5) / totalSlots) * price.w;
   const xAtIndex = (i) => xAtSlot(points[i].slot);
-
   const dayXs = dayList.map((_, dayIdx) => price.x + (dayIdx / dayList.length) * price.w);
   dayXs.push(price.x + price.w);
-  const yTicks = (priceScale.ticks || []).map(yAt);
-  drawGrid(ctx, price, yTicks, dayXs, colors);
+
+  // 竖向日界 + 成交量横线；价格横线按日各自刻度画在日列内
   drawGrid(ctx, volume, [volume.y, volume.y + volume.h], dayXs, colors);
+  ctx.save();
+  ctx.strokeStyle = colors.grid;
+  ctx.lineWidth = 1;
+  for (const x of dayXs) {
+    ctx.beginPath();
+    ctx.moveTo(x, price.y);
+    ctx.lineTo(x, price.y + price.h);
+    ctx.stroke();
+  }
+  ctx.restore();
+  for (let dayIdx = 0; dayIdx < dayList.length; dayIdx += 1) {
+    const ds = dayScales[dayIdx];
+    const x0 = dayXs[dayIdx];
+    const x1 = dayXs[dayIdx + 1];
+    const yTicks = (ds.scale.ticks || []).map(ds.yAt);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, price.y, Math.max(0, x1 - x0), price.h);
+    ctx.clip();
+    ctx.strokeStyle = colors.grid;
+    ctx.lineWidth = 1;
+    for (const y of yTicks) {
+      ctx.beginPath();
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x1, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   const activeDay = ticksViewDay();
   for (let dayIdx = 0; dayIdx < dayList.length; dayIdx += 1) {
@@ -1396,100 +1559,122 @@ function paintDealFiveDayChart() {
     ctx.restore();
   }
 
-  if (showPct) {
-    const y = yAt(basePrice);
+  // 各日昨收参考线（落在该日纵轴中位附近）
+  for (let dayIdx = 0; dayIdx < dayList.length; dayIdx += 1) {
+    const ds = dayScales[dayIdx];
+    if (!Number.isFinite(ds.dayBase)) continue;
+    const y = ds.yAt(ds.dayBase);
+    const x0 = dayXs[dayIdx];
+    const x1 = dayXs[dayIdx + 1];
     ctx.save();
     ctx.strokeStyle = colors.ref;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
-    ctx.moveTo(price.x, y);
-    ctx.lineTo(price.x + price.w, y);
+    ctx.moveTo(x0, y);
+    ctx.lineTo(x1, y);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
   }
 
-  const vols = points.map((d) => Number(d.volume ?? d.volume_lots) || 0);
-  const maxVol = Math.max(...vols, 1);
+  // 成交量按日归一，避免某日巨量压扁其它日
   const barW = Math.max(1, Math.min(3.5, (price.w / totalSlots) * 0.85));
-  for (let i = 0; i < points.length; i += 1) {
-    const v = vols[i];
-    if (!(v > 0)) continue;
-    const h = (v / maxVol) * volume.h;
-    const x = xAtIndex(i) - barW / 2;
-    const cur = Number(points[i].price);
-    const prev = Number(points[i].prevPrice);
-    const up = Number.isFinite(prev) ? cur >= prev : true;
-    ctx.fillStyle = up ? colors.upSoft : colors.downSoft;
-    ctx.fillRect(x, volume.y + volume.h - h, barW, h);
+  for (let dayIdx = 0; dayIdx < dayList.length; dayIdx += 1) {
+    const dayPts = points.filter((p) => p.dayIdx === dayIdx);
+    const maxVol = Math.max(...dayPts.map((d) => Number(d.volume ?? d.volume_lots) || 0), 1);
+    for (const row of dayPts) {
+      const v = Number(row.volume ?? row.volume_lots) || 0;
+      if (!(v > 0)) continue;
+      const h = (v / maxVol) * volume.h;
+      const x = xAtSlot(row.slot) - barW / 2;
+      const cur = Number(row.price);
+      const prev = Number(row.prevPrice);
+      const up = Number.isFinite(prev) ? cur >= prev : true;
+      ctx.fillStyle = up ? colors.upSoft : colors.downSoft;
+      ctx.fillRect(x, volume.y + volume.h - h, barW, h);
+    }
   }
 
-  // 均价：按日断开（每日 VWAP 从开盘重计）
+  // 均价 / 现价：按日断开，并用该日纵轴
   for (let dayIdx = 0; dayIdx < dayList.length; dayIdx += 1) {
+    const ds = dayScales[dayIdx];
+    const x0 = dayXs[dayIdx];
+    const x1 = dayXs[dayIdx + 1];
+    ctx.save();
     ctx.beginPath();
-    let started = false;
+    ctx.rect(x0, price.y, Math.max(0, x1 - x0), price.h);
+    ctx.clip();
+
+    ctx.beginPath();
+    let startedAvg = false;
     for (let i = 0; i < points.length; i += 1) {
       if (points[i].dayIdx !== dayIdx) continue;
       const avg = Number(points[i].avg_price);
       if (!Number.isFinite(avg) || avg <= 0) continue;
       const x = xAtIndex(i);
-      const y = yAt(avg);
-      if (!started) {
+      const y = ds.yAt(avg);
+      if (!startedAvg) {
         ctx.moveTo(x, y);
-        started = true;
+        startedAvg = true;
       } else ctx.lineTo(x, y);
     }
-    if (started) {
+    if (startedAvg) {
       ctx.strokeStyle = colors.avg;
       ctx.lineWidth = 1.2;
       ctx.stroke();
     }
-  }
 
-  ctx.beginPath();
-  let startedPrice = false;
-  let firstX = null;
-  let lastX = null;
-  for (let i = 0; i < points.length; i += 1) {
-    const p = Number(points[i].price);
-    if (!Number.isFinite(p)) continue;
-    const x = xAtIndex(i);
-    const y = yAt(p);
-    if (!startedPrice) {
-      ctx.moveTo(x, y);
-      startedPrice = true;
-      firstX = x;
-    } else ctx.lineTo(x, y);
-    lastX = x;
-  }
-  if (startedPrice) {
-    ctx.strokeStyle = colors.accent;
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
     ctx.beginPath();
-    startedPrice = false;
+    let startedPrice = false;
+    let firstX = null;
+    let lastX = null;
     for (let i = 0; i < points.length; i += 1) {
+      if (points[i].dayIdx !== dayIdx) continue;
       const p = Number(points[i].price);
       if (!Number.isFinite(p)) continue;
       const x = xAtIndex(i);
-      const y = yAt(p);
+      const y = ds.yAt(p);
       if (!startedPrice) {
         ctx.moveTo(x, y);
         startedPrice = true;
+        firstX = x;
       } else ctx.lineTo(x, y);
+      lastX = x;
     }
-    ctx.lineTo(lastX, price.y + price.h);
-    ctx.lineTo(firstX, price.y + price.h);
-    ctx.closePath();
-    const gradient = ctx.createLinearGradient(0, price.y, 0, price.y + price.h);
-    gradient.addColorStop(0, "rgba(42, 212, 184, 0.14)");
-    gradient.addColorStop(1, "rgba(42, 212, 184, 0)");
-    ctx.fillStyle = gradient;
-    ctx.fill();
+    if (startedPrice) {
+      ctx.strokeStyle = colors.accent;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.beginPath();
+      startedPrice = false;
+      for (let i = 0; i < points.length; i += 1) {
+        if (points[i].dayIdx !== dayIdx) continue;
+        const p = Number(points[i].price);
+        if (!Number.isFinite(p)) continue;
+        const x = xAtIndex(i);
+        const y = ds.yAt(p);
+        if (!startedPrice) {
+          ctx.moveTo(x, y);
+          startedPrice = true;
+        } else ctx.lineTo(x, y);
+      }
+      ctx.lineTo(lastX, price.y + price.h);
+      ctx.lineTo(firstX, price.y + price.h);
+      ctx.closePath();
+      const gradient = ctx.createLinearGradient(0, price.y, 0, price.y + price.h);
+      gradient.addColorStop(0, "rgba(42, 212, 184, 0.14)");
+      gradient.addColorStop(1, "rgba(42, 212, 184, 0)");
+      ctx.fillStyle = gradient;
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
-  drawAxesLabels(ctx, layout, priceScale, [], "ticks", colors, {
-    preClose: showPct ? basePrice : null,
+  // 轴标签用「当前可见/最新一日」的尺度，避免五日混轴
+  const axisDayIdx = Math.max(0, dayList.length - 1);
+  const axisScale = dayScales[axisDayIdx];
+  drawAxesLabels(ctx, layout, axisScale.scale, [], "ticks", colors, {
+    preClose: Number.isFinite(axisScale.dayBase) ? axisScale.dayBase : null,
     skipTimeLabels: true,
   });
 
@@ -1507,8 +1692,11 @@ function paintDealFiveDayChart() {
   const hoverIdx = dealFiveDayState.hoverIndex;
   if (hoverIdx != null && points[hoverIdx]) {
     const pt = points[hoverIdx];
+    const ds = dayScales[pt.dayIdx] || axisScale;
     const x = xAtIndex(hoverIdx);
-    const y = yAt(Number(pt.price));
+    const y = ds.yAt(Number(pt.price));
+    const x0 = dayXs[pt.dayIdx] ?? price.x;
+    const x1 = dayXs[pt.dayIdx + 1] ?? price.x + price.w;
     ctx.save();
     ctx.strokeStyle = colors.cross;
     ctx.setLineDash([3, 3]);
@@ -1517,8 +1705,8 @@ function paintDealFiveDayChart() {
     ctx.lineTo(x, volume.y + volume.h);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(price.x, y);
-    ctx.lineTo(price.x + price.w, y);
+    ctx.moveTo(x0, y);
+    ctx.lineTo(x1, y);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = colors.accent;
@@ -1526,12 +1714,20 @@ function paintDealFiveDayChart() {
     ctx.arc(x, y, 3, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
-    setDealFiveDayHover(dom.hover, pt, basePrice, x, Math.min(y, price.y + 24), cssW);
+    setDealFiveDayHover(pt, ds.dayBase ?? basePrice);
   } else {
-    setDealFiveDayHover(dom.hover, null);
+    setDealFiveDayHover(null);
   }
 
-  dealFiveDayState._plot = { model, layout, cssW, cssH, xAtSlot, totalSlots };
+  dealFiveDayState._plot = { model, layout, cssW, cssH, xAtSlot, totalSlots, dayScales };
+
+  // 加宽横滑：保持原相对位置；首次/无滚动时默认贴右看最新一日
+  window.requestAnimationFrame(() => {
+    const maxScroll = Math.max(0, body.scrollWidth - body.clientWidth);
+    if (!maxScroll) return;
+    const ratio = Number.isFinite(prevScrollRatio) ? prevScrollRatio : 1;
+    body.scrollLeft = Math.round(maxScroll * Math.min(1, Math.max(0, ratio)));
+  });
 }
 
 function dealFiveDayIndexAtClientX(clientX) {
@@ -1575,17 +1771,20 @@ function renderDealFiveDayPanel() {
   }
   if (dealFiveDayState.loading && !items.length) {
     body.dataset.chartReady = "";
-    body.innerHTML = `<p class="muted">正在加载五日成交…</p>`;
+    reserveDealFiveDayBodySize({ dayCount: Math.max(1, days.length || 5) });
+    body.innerHTML = `<p class="muted deal-fiveday-placeholder">正在加载五日成交…</p>`;
     return;
   }
   if (dealFiveDayState.error && !items.length) {
     body.dataset.chartReady = "";
-    body.innerHTML = `<p class="muted">${escapeHtml(dealFiveDayState.error)}</p>`;
+    reserveDealFiveDayBodySize({ dayCount: Math.max(1, days.length || 5) });
+    body.innerHTML = `<p class="muted deal-fiveday-placeholder">${escapeHtml(dealFiveDayState.error)}</p>`;
     return;
   }
   if (!items.length) {
     body.dataset.chartReady = "";
-    body.innerHTML = `<p class="muted">暂无五日成交</p>`;
+    reserveDealFiveDayBodySize({ dayCount: Math.max(1, days.length || 5) });
+    body.innerHTML = `<p class="muted deal-fiveday-placeholder">暂无五日成交</p>`;
     return;
   }
   ensureDealFiveDayChartDom(body);
@@ -1627,11 +1826,19 @@ function bindDealFiveDayPanel() {
     }
   });
   if (typeof ResizeObserver !== "undefined") {
+    let roTimer = 0;
     dealFiveDayState.ro = new ResizeObserver(() => {
       if (!dealWindowVisible() || !dealFiveDayState.items.length) return;
-      paintDealFiveDayChart();
+      if (roTimer) window.clearTimeout(roTimer);
+      roTimer = window.setTimeout(() => {
+        roTimer = 0;
+        paintDealFiveDayChart();
+      }, 50);
     });
-    dealFiveDayState.ro.observe(body);
+    // 不观察 body 自身，避免写 height 触发回环
+    const center = document.querySelector(".deal-analysis-center");
+    if (center) dealFiveDayState.ro.observe(center);
+    if (els.ticksChartWrap) dealFiveDayState.ro.observe(els.ticksChartWrap);
   }
 }
 
@@ -10723,7 +10930,15 @@ function propagateLinkedAxis(source) {
 function chartLayout(
   w,
   h,
-  { pctAxis = false, compact = false, combo = false, fundflow = false, ticksCombo = false } = {},
+  {
+    pctAxis = false,
+    compact = false,
+    combo = false,
+    fundflow = false,
+    ticksCombo = false,
+    minPriceH,
+    minVolH,
+  } = {},
 ) {
   const pad = {
     top: 8,
@@ -10747,9 +10962,11 @@ function chartLayout(
     return { pad, price, volume, bigDeal };
   }
   if (!combo) {
-    const volH = Math.max(36, Math.floor(innerH * 0.16));
+    const volFloor = Number.isFinite(minVolH) ? minVolH : 36;
+    const priceFloor = Number.isFinite(minPriceH) ? minPriceH : 100;
+    const volH = Math.max(volFloor, Math.floor(innerH * 0.16));
     const gap = 10;
-    const priceH = Math.max(100, innerH - volH - gap);
+    const priceH = Math.max(priceFloor, innerH - volH - gap);
     return {
       pad,
       price: { x: pad.left, y: pad.top, w: innerW, h: priceH },
