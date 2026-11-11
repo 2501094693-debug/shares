@@ -49,7 +49,6 @@ from company.analysis.line.section.api import router as line_section_router
 from company.analysis.line.T.api import router as line_trader_router
 from company.analysis.line.chip.api import router as line_chip_router
 from company.analysis.line.evaluate.api import router as line_evaluate_router
-from company.analysis.deal.api import router as deal_window_router
 from company.line.entrust.api import router as entrust_router
 from company.news.periodicreport.api import router as periodicreport_router
 from market.funds.fund.api import router as fund_router
@@ -227,7 +226,6 @@ app.include_router(line_section_router)
 app.include_router(line_trader_router)
 app.include_router(line_chip_router)
 app.include_router(line_evaluate_router)
-app.include_router(deal_window_router)
 app.include_router(entrust_router)
 app.include_router(periodicreport_router)
 app.include_router(market_router)

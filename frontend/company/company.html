@@ -310,20 +310,7 @@
         </div>
         <div id="dealAnalysisPage" class="deal-analysis-page" hidden aria-hidden="true">
           <div class="deal-analysis-board">
-            <div class="deal-analysis-left quotes-layout" aria-label="分时成交 · 资金动向">
-              <section id="dealHeroSlot" class="company-hero" aria-label="分时成交与资金动向"></section>
-            </div>
-            <div class="deal-analysis-center" aria-label="实时走势 · 盘口委托 · 五日成交">
-              <div id="dealChartsSlot" class="charts-deck deal-charts-deck" aria-label="实时走势"></div>
-              <section id="dealEntrustPanel" class="deal-entrust-panel" aria-label="盘口委托">
-                <header class="deal-side-panel-head">
-                  <h4 class="metrics-section-title">盘口委托</h4>
-                  <p id="dealEntrustMeta" class="deal-side-panel-meta muted"></p>
-                </header>
-                <div id="dealEntrustBody" class="deal-entrust-body">
-                  <p class="muted">进入成交分析后加载盘口</p>
-                </div>
-              </section>
+            <div class="deal-analysis-center" aria-label="五日成交 · 实时走势 · 分时成交 · 资金动向 · 盘口委托">
               <section id="dealFiveDayPanel" class="deal-fiveday-panel" aria-label="五日分时">
                 <header class="deal-side-panel-head">
                   <div class="deal-side-panel-title">
@@ -331,27 +318,31 @@
                     <p id="dealFiveDayMeta" class="deal-side-panel-meta muted"></p>
                   </div>
                   <div id="dealFiveDayHoverStats" class="deal-fiveday-head-stats" hidden aria-live="polite"></div>
-                  <button id="dealFiveDayRefreshBtn" class="btn ghost sm" type="button">刷新</button>
+                  <div class="deal-fiveday-tools">
+                    <button id="dealFiveDayZoomOutBtn" class="btn ghost sm" type="button" title="显示更多交易日 (Ctrl+滚轮)">−</button>
+                    <button id="dealFiveDayZoomInBtn" class="btn ghost sm" type="button" title="显示更少交易日 (Ctrl+滚轮)">+</button>
+                    <button id="dealFiveDayRefreshBtn" class="btn ghost sm" type="button">刷新</button>
+                  </div>
                 </header>
                 <div id="dealFiveDayBody" class="deal-fiveday-body">
                   <p class="muted">进入成交分析后加载五日分时</p>
                 </div>
               </section>
-            </div>
-            <div class="deal-analysis-right" aria-label="逐笔成交明细">
-              <section class="deal-window-panel" aria-label="逐笔成交明细">
-                <header class="deal-window-head">
-                  <div class="deal-window-title-block">
-                    <h4 class="metrics-section-title">逐笔成交明细</h4>
-                    <p id="dealWindowMeta" class="deal-window-meta muted"></p>
-                  </div>
-                  <button id="dealWindowRefreshBtn" class="btn ghost sm" type="button">刷新</button>
-                </header>
-                <div id="dealWindowSummary" class="deal-window-summary" hidden></div>
-                <div id="dealWindowBody" class="deal-window-body">
-                  <p class="muted">进入成交分析后加载还原明细</p>
+              <div class="deal-analysis-main" aria-label="实时走势与成交明细">
+                <div id="dealChartsSlot" class="charts-deck deal-charts-deck" aria-label="实时走势"></div>
+                <div class="deal-analysis-bottom" aria-label="分时成交 · 资金动向 · 盘口委托">
+                  <div id="dealHeroSlot" class="deal-metrics-slot" aria-label="分时成交与资金动向"></div>
+                  <section id="dealEntrustPanel" class="deal-entrust-panel" aria-label="盘口委托">
+                    <header class="deal-side-panel-head">
+                      <h4 class="metrics-section-title">盘口委托</h4>
+                      <p id="dealEntrustMeta" class="deal-side-panel-meta muted"></p>
+                    </header>
+                    <div id="dealEntrustBody" class="deal-entrust-body">
+                      <p class="muted">进入成交分析后加载盘口</p>
+                    </div>
+                  </section>
                 </div>
-              </section>
+              </div>
             </div>
           </div>
         </div>
@@ -1481,7 +1472,7 @@
   </div>
   </div>
 
-  <script src="/js/shared/orbit-http.js?v=20261027-deal-window"></script>
+  <script src="/js/shared/orbit-http.js?v=20261111"></script>
   <script src="/js/shared/orbit-prefetch.js?v=holders-date-20260919"></script>
   <script src="/js/shared/nav.js?v=nav-industry-20261001"></script>
   <script src="/js/shared/mine-add-group.js?v=mine-add-fix-20261023"></script>

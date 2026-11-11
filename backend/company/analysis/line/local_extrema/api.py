@@ -2,6 +2,7 @@
 
 - ``/api/stocks/line-local-extrema``             自起始日起的波峰 / 波谷检测
 - ``/api/stocks/line-local-extrema-alternating`` 峰谷交替序列（过滤小峰小谷）
+- ``/api/stocks/line-recent-low``                最新收盘/最低价的最近最低回溯
 
 输入：一只股票（code）+ 起始日期（beg）。
 
@@ -10,7 +11,8 @@
 - 极值接口：按交易日从远到近排列的单一峰谷序列（extrema）；
 - 交替接口：单一序列（extrema），峰谷严格交替；
 - 两者均附带 ``peak_scores`` / ``trough_scores`` 两条评分序列
-  （价格/天数组内线性归一×30 + 最大侧差距×40）。
+  （价格/天数组内线性归一×30 + 最大侧差距×40）；
+- 最近最低：最新交易日收盘价 / 最低价各自是最近多少个交易日的最低。
 
 规则：相邻比较——大于等于左右即波峰，小于等于左右即波谷；相同值运行前合并；
 并输出每个极值点左右各延续多少个交易日（left_span / right_span）。
@@ -22,12 +24,32 @@ from fastapi import APIRouter, Query
 
 from core.api import err, ok
 
+from company.analysis.line.local_extrema.recent_low import analyze_recent_low
 from company.analysis.line.local_extrema.service import (
     analyze_alternating_extrema,
     analyze_local_extrema,
 )
 
 router = APIRouter()
+
+
+@router.get("/api/stocks/line-recent-low")
+def stocks_line_recent_low(
+    code: str = Query("", description="股票代码，如 600519"),
+    end: str = Query("", description="截止日 YYYY-MM-DD / YYYYMMDD，默认最新交易日"),
+    adjust: str = Query("qfq", description="复权方式：qfq 前复权 / hfq 后复权 / none 不复权"),
+):
+    """最新收盘价 / 最低价：各自是最近多少个交易日的最低价。"""
+    if not code:
+        return err("缺少参数 code", 400)
+    try:
+        data = analyze_recent_low(code, adjust=adjust, end=end)
+        return ok(data)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
 
 
 @router.get("/api/stocks/line-local-extrema")

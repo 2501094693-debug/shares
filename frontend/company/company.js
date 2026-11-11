@@ -742,29 +742,6 @@ const dealQuotesHome = {
   ticksNext: null,
   mounted: false,
 };
-/** 成交分析右侧：逐笔还原明细（买盘/卖盘跨行合并） */
-const dealWindowState = {
-  loading: false,
-  error: "",
-  rows: [],
-  spans: [],
-  /** window_time → prev_time（与后端轴档两端闭区间一致） */
-  prevByWindow: new Map(),
-  summary: null,
-  reconcile: null,
-  notes: [],
-  day: "",
-  name: "",
-  loadGen: 0,
-  bound: false,
-  rowByClock: new Map(),
-  rowByEvent: new Map(),
-  rowByOrderTime: new Map(),
-  hoverTargets: [],
-  hoverPrimary: -1,
-};
-const DEAL_WINDOW_ROW_H = 26;
-const DEAL_WINDOW_OVERSCAN = 16;
 /** 与分时成交盘中轮询同频（onTicksMarketClock = 1s） */
 const DEAL_ENTRUST_POLL_MS = 1000;
 /** 成交分析 · 盘口委托 */
@@ -779,7 +756,7 @@ const dealEntrustState = {
   fetching: false,
   pending: false,
 };
-/** 成交分析 · 五日分时图（同花顺式价/均/量） */
+/** 成交分析 · 五日分时图（同花顺式价/均/量；可缩放可见日 + 左右平移） */
 const dealFiveDayState = {
   loading: false,
   error: "",
@@ -790,8 +767,19 @@ const dealFiveDayState = {
   hoverIndex: null,
   bound: false,
   ro: null,
+  /** 视口首日在 days 中的下标 */
+  viewStart: 0,
+  /** 视口可见交易日数 */
+  viewSize: 5,
+  /** 拖拽平移 */
+  drag: null,
+  _plot: null,
 };
 const DEAL_FIVEDAY_SLOTS = 241;
+/** 预拉交易日上限（与后端 /api/stocks/intraday le=20 对齐） */
+const DEAL_FIVEDAY_LOAD_DAYS = 20;
+/** 默认一屏可见日数 */
+const DEAL_FIVEDAY_DEFAULT_VIEW = 5;
 const tabParamRaw = (params.get("tab") || "").trim().toLowerCase();
 let emotionSource = normalizeEmotionSource(params.get("emotion") || "");
 if (["ths-emotion", "ths", "circle"].includes(tabParamRaw)) {
@@ -1021,7 +1009,7 @@ function cancelDealAnalysisBoot() {
 
 function scheduleDealAnalysisPaint() {
   window.requestAnimationFrame(() => {
-    if (!dealWindowVisible()) return;
+    if (!dealAnalysisVisible()) return;
     syncTicksChartScrollBar();
     renderTicksChart();
   });
@@ -1033,7 +1021,7 @@ function scheduleDealAnalysisBoot() {
   dealAnalysisBootRaf = window.requestAnimationFrame(() => {
     dealAnalysisBootRaf = window.requestAnimationFrame(() => {
       dealAnalysisBootRaf = 0;
-      if (!dealWindowVisible() || !dealQuotesHome.mounted) return;
+      if (!dealAnalysisVisible() || !dealQuotesHome.mounted) return;
       if (!document.getElementById("ticksTapeBody") || !document.getElementById("bigDealBody")) {
         renderMetrics(metricsStock);
       } else {
@@ -1045,7 +1033,6 @@ function scheduleDealAnalysisBoot() {
         refreshBigDealList();
       }
       startDealEntrustPolling();
-      void loadDealWindow();
       void loadDealFiveDay();
       syncTicksChartScrollBar();
       renderTicksChart();
@@ -1054,15 +1041,15 @@ function scheduleDealAnalysisBoot() {
 }
 
 function mountDealAnalysisQuotes() {
-  const heroSlot = document.getElementById("dealHeroSlot");
+  const metricsSlot = document.getElementById("dealHeroSlot");
   const chartsSlot = document.getElementById("dealChartsSlot");
   const metrics = els.metricsPanels;
   const ticksCard = ticksChartCardEl();
-  if (!heroSlot || !chartsSlot || !metrics || !ticksCard) return;
+  if (!metricsSlot || !chartsSlot || !metrics || !ticksCard) return;
 
   const alreadyMounted =
     dealQuotesHome.mounted &&
-    metrics.parentElement === heroSlot &&
+    metrics.parentElement === metricsSlot &&
     ticksCard.parentElement === chartsSlot;
   if (alreadyMounted) {
     if (!dealEntrustState.timer) startDealEntrustPolling();
@@ -1071,10 +1058,9 @@ function mountDealAnalysisQuotes() {
   }
 
   rememberDealQuotesHome();
-  if (metrics.parentElement !== heroSlot) heroSlot.appendChild(metrics);
+  if (metrics.parentElement !== metricsSlot) metricsSlot.appendChild(metrics);
   if (ticksCard.parentElement !== chartsSlot) chartsSlot.appendChild(ticksCard);
   dealQuotesHome.mounted = true;
-  bindDealWindowPanel();
   bindDealFiveDayPanel();
   scheduleDealAnalysisBoot();
 }
@@ -1092,7 +1078,7 @@ function startDealEntrustPolling() {
   stopDealEntrustPolling();
   void loadDealEntrust();
   dealEntrustState.timer = window.setInterval(() => {
-    if (!dealWindowVisible()) {
+    if (!dealAnalysisVisible()) {
       stopDealEntrustPolling();
       return;
     }
@@ -1170,7 +1156,7 @@ function renderDealEntrustPanel() {
 
 async function loadDealEntrust(options = {}) {
   const silent = Boolean(options.silent);
-  if (!code || !dealWindowVisible()) return;
+  if (!code || !dealAnalysisVisible()) return;
   // 与分时成交 live 轮询一致：在途则合并为一次 pending，避免 1s 叠请求把 loading 卡死
   if (dealEntrustState.fetching) {
     dealEntrustState.pending = true;
@@ -1208,7 +1194,7 @@ async function loadDealEntrust(options = {}) {
     renderDealEntrustPanel();
   } finally {
     dealEntrustState.fetching = false;
-    if (dealEntrustState.pending && dealWindowVisible()) {
+    if (dealEntrustState.pending && dealAnalysisVisible()) {
       dealEntrustState.pending = false;
       void loadDealEntrust({ silent: true });
     }
@@ -1343,113 +1329,173 @@ function setDealFiveDayHover(point, basePrice) {
   if (metaEl) metaEl.hidden = true;
 }
 
-/** 五日布局：放宽下限，便于按目标比例反推高度 */
+/** 五日布局：放宽下限，便于矮面板也能画出价/量 */
 function fiveDayLayoutOptions(pctAxis) {
   return { pctAxis, compact: true, minPriceH: 28, minVolH: 14 };
 }
 
-/** 实时「价格实际绘图区」宽高比 */
-function realtimeTicksPriceAspect() {
-  const wrap = els.ticksChartWrap;
-  const w = Math.max(240, wrap?.clientWidth || 320);
-  const h = Math.max(240, wrap?.clientHeight || Math.round((w * 5) / 8));
-  const showPct = Number.isFinite(ticksState.preClose) && ticksState.preClose;
-  const layout = chartLayout(w, h, ticksLayoutOptions({ pctAxis: showPct }));
-  return layout.price.w / Math.max(1, layout.price.h);
-}
-
-/** 五日画布下，单个日图价格绘图区宽高比 */
-function fiveDayDayPriceAspect(cssW, cssH, pctAxis, dayCount = 5) {
-  const n = Math.max(1, dayCount);
-  const layout = chartLayout(cssW, cssH, fiveDayLayoutOptions(pctAxis));
-  return layout.price.w / n / Math.max(1, layout.price.h);
-}
-
-/**
- * 优先用满可用高度，再加宽画布使单日价格区比例 = 实时；超出部分横滑。
- * 画布高度铺满 body，无竖直留白。
- */
-function fitFiveDaySizeToRealtimeAspect({
-  availW,
-  maxH,
-  targetAspect,
-  pctAxis,
-  dayCount = 5,
-}) {
-  const viewportW = Math.max(200, Math.floor(availW));
-  const cssH = Math.max(120, Math.floor(maxH));
-  const target = Math.max(0.5, Number(targetAspect) || 2.34);
-  const n = Math.max(1, dayCount);
-  const aspectAt = (w, h) => fiveDayDayPriceAspect(w, h, pctAxis, n);
-
-  // 固定高度：加宽 → 单日 aspect 变大，二分求匹配宽度
-  let lo = viewportW;
-  let hi = Math.max(viewportW, Math.floor(viewportW * 6));
-  // 先估一个足够大的上界，保证能达到 target
-  while (aspectAt(hi, cssH) < target && hi < viewportW * 12) {
-    hi = Math.floor(hi * 1.5);
-  }
-  while (lo < hi) {
-    const mid = Math.ceil((lo + hi) / 2);
-    if (aspectAt(mid, cssH) < target) lo = mid;
-    else hi = mid - 1;
-  }
-  const cssW = Math.max(viewportW, lo);
-  return { cssW, cssH, scrollX: cssW > viewportW + 1 };
-}
-
-/** 预留五日 body 高度，避免加载中框先塌再撑开 */
-function reserveDealFiveDayBodySize({ dayCount = 5, pctAxis = true } = {}) {
+/** 五日画布贴合 body 视口（不再加宽横滑） */
+function reserveDealFiveDayBodySize() {
   const panel = document.getElementById("dealFiveDayPanel");
   const body = document.getElementById("dealFiveDayBody");
   if (!body) return null;
   const center = document.querySelector(".deal-analysis-center");
-  const centerH = Math.max(320, center?.clientHeight || 640);
+  if (body.style.height) body.style.height = "";
+  if (body.style.maxHeight) body.style.maxHeight = "";
   const headH = panel?.querySelector(".deal-side-panel-head")?.offsetHeight || 36;
-  const maxBodyH = Math.max(120, Math.floor(centerH * 0.42) - headH);
-  const availW = Math.max(
-    200,
-    body.clientWidth || panel?.clientWidth || center?.clientWidth || 320,
+  const panelH = Math.max(
+    160,
+    panel?.clientHeight || center?.clientHeight || 640,
   );
-  const fitted = fitFiveDaySizeToRealtimeAspect({
-    availW,
-    maxH: maxBodyH,
-    targetAspect: realtimeTicksPriceAspect(),
-    pctAxis,
-    dayCount,
-  });
-  const nextH = `${fitted.cssH}px`;
-  if (body.style.height !== nextH) body.style.height = nextH;
-  if (body.style.maxHeight !== nextH) body.style.maxHeight = nextH;
-  return fitted;
+  const cssH = Math.max(
+    120,
+    Math.floor(body.clientHeight || panelH - headH - 14),
+  );
+  const cssW = Math.max(
+    200,
+    Math.floor(body.clientWidth || panel?.clientWidth || center?.clientWidth || 320),
+  );
+  return { cssW, cssH };
+}
+
+function dealFiveDayTotalDays() {
+  const days = Array.isArray(dealFiveDayState.days) ? dealFiveDayState.days : [];
+  return days.length;
+}
+
+/** clamp viewStart/viewSize；可选择是否贴右（首次加载） */
+function clampDealFiveDayViewport({ stickRight = false } = {}) {
+  const total = dealFiveDayTotalDays();
+  if (total <= 0) {
+    dealFiveDayState.viewStart = 0;
+    dealFiveDayState.viewSize = DEAL_FIVEDAY_DEFAULT_VIEW;
+    return;
+  }
+  let size = Math.round(Number(dealFiveDayState.viewSize) || DEAL_FIVEDAY_DEFAULT_VIEW);
+  size = Math.max(1, Math.min(total, size));
+  let start = Math.round(Number(dealFiveDayState.viewStart) || 0);
+  if (stickRight) start = Math.max(0, total - size);
+  start = Math.max(0, Math.min(start, Math.max(0, total - size)));
+  dealFiveDayState.viewSize = size;
+  dealFiveDayState.viewStart = start;
+}
+
+function dealFiveDayVisibleDayList() {
+  const days = Array.isArray(dealFiveDayState.days) ? dealFiveDayState.days : [];
+  clampDealFiveDayViewport();
+  const start = dealFiveDayState.viewStart;
+  const size = dealFiveDayState.viewSize;
+  return days.slice(start, start + size);
+}
+
+function setDealFiveDayViewStart(nextStart, { render = true } = {}) {
+  const total = dealFiveDayTotalDays();
+  const size = Math.max(1, Math.min(total || 1, Number(dealFiveDayState.viewSize) || 1));
+  const maxStart = Math.max(0, total - size);
+  const start = Math.max(0, Math.min(Math.round(nextStart), maxStart));
+  if (start === dealFiveDayState.viewStart && dealFiveDayState._plot) {
+    syncDealFiveDayZoomButtons();
+    return start;
+  }
+  dealFiveDayState.viewStart = start;
+  dealFiveDayState.hoverIndex = null;
+  syncDealFiveDayZoomButtons();
+  if (render) {
+    renderDealFiveDayMeta();
+    paintDealFiveDayChart();
+  }
+  return start;
+}
+
+/**
+ * 以可见窗内比例 anchorRatio(0~1) 为锚点缩放可见日数。
+ * deltaDays>0 显示更多日，<0 放大（更少日）。
+ */
+function zoomDealFiveDayViewport(anchorRatio, deltaDays, { render = true } = {}) {
+  const total = dealFiveDayTotalDays();
+  if (total <= 1) return false;
+  clampDealFiveDayViewport();
+  const size = dealFiveDayState.viewSize;
+  const start = dealFiveDayState.viewStart;
+  const nextSize = Math.max(1, Math.min(total, size + Math.round(deltaDays || 0)));
+  if (nextSize === size) {
+    syncDealFiveDayZoomButtons();
+    return false;
+  }
+  const ratio = Math.min(1, Math.max(0, Number(anchorRatio) || 0.5));
+  const anchorIndex = start + ratio * size;
+  let nextStart = Math.round(anchorIndex - ratio * nextSize);
+  nextStart = Math.max(0, Math.min(nextStart, total - nextSize));
+  dealFiveDayState.viewSize = nextSize;
+  dealFiveDayState.viewStart = nextStart;
+  dealFiveDayState.hoverIndex = null;
+  syncDealFiveDayZoomButtons();
+  if (render) {
+    renderDealFiveDayMeta();
+    paintDealFiveDayChart();
+  }
+  return true;
+}
+
+function syncDealFiveDayZoomButtons() {
+  const total = dealFiveDayTotalDays();
+  const size = Number(dealFiveDayState.viewSize) || 1;
+  const outBtn = document.getElementById("dealFiveDayZoomOutBtn");
+  const inBtn = document.getElementById("dealFiveDayZoomInBtn");
+  // out = 显示更多日；in = 显示更少日（放大单日）
+  if (outBtn) outBtn.disabled = !total || size >= total;
+  if (inBtn) inBtn.disabled = !total || size <= 1;
+}
+
+function renderDealFiveDayMeta() {
+  const meta = document.getElementById("dealFiveDayMeta");
+  if (!meta) return;
+  const items = Array.isArray(dealFiveDayState.items) ? dealFiveDayState.items : [];
+  const days = Array.isArray(dealFiveDayState.days) ? dealFiveDayState.days : [];
+  const visible = Math.min(
+    Number(dealFiveDayState.viewSize) || 0,
+    days.length || 0,
+  );
+  meta.textContent = [
+    dealFiveDayState.loading && !items.length ? "加载中" : "",
+    dealFiveDayState.source || "",
+    days.length
+      ? `${days.length}日·可见${Math.max(1, visible || DEAL_FIVEDAY_DEFAULT_VIEW)}`
+      : items.length
+        ? "分时"
+        : "",
+    items.length ? `${items.length}点` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function paintDealFiveDayChart() {
-  const panel = document.getElementById("dealFiveDayPanel");
   const body = document.getElementById("dealFiveDayBody");
   const dom = ensureDealFiveDayChartDom(body);
   if (!dom?.canvas || !dom.wrap || !body) return;
-  const model = fiveDayPlotModel(dealFiveDayState.items, dealFiveDayState.days);
+
+  clampDealFiveDayViewport();
+  const visibleDays = dealFiveDayVisibleDayList();
+  const model = fiveDayPlotModel(dealFiveDayState.items, visibleDays);
   const { points, dayList, totalSlots, basePrice } = model;
   const dpr = window.devicePixelRatio || 1;
-  const showPct = Number.isFinite(basePrice) && basePrice > 0;
-  const dayCount = Math.max(1, dayList.length || 5);
 
-  const wasScrollX = body.scrollWidth > body.clientWidth + 1;
-  const prevScrollRatio =
-    wasScrollX && body.scrollWidth > body.clientWidth
-      ? body.scrollLeft / Math.max(1, body.scrollWidth - body.clientWidth)
-      : 1; // 默认贴右侧看最新一日
+  // 锚日 = 可见窗最右一日的前收，用于共用对称纵轴 0%
+  let anchorBase = null;
+  for (let i = points.length - 1; i >= 0; i -= 1) {
+    const b = Number(points[i]?.base_price);
+    if (Number.isFinite(b) && b > 0) {
+      anchorBase = b;
+      break;
+    }
+  }
+  if (anchorBase == null && Number.isFinite(basePrice) && basePrice > 0) {
+    anchorBase = basePrice;
+  }
+  const showPct = Number.isFinite(anchorBase) && anchorBase > 0;
 
-  const fitted =
-    reserveDealFiveDayBodySize({ dayCount, pctAxis: showPct }) ||
-    fitFiveDaySizeToRealtimeAspect({
-      availW: 320,
-      maxH: 200,
-      targetAspect: realtimeTicksPriceAspect(),
-      pctAxis: showPct,
-      dayCount,
-    });
+  const fitted = reserveDealFiveDayBodySize() || { cssW: 320, cssH: 200 };
   const cssW = fitted.cssW;
   const cssH = fitted.cssH;
   if (dom.wrap.style.width !== `${cssW}px`) dom.wrap.style.width = `${cssW}px`;
@@ -1464,89 +1510,50 @@ function paintDealFiveDayChart() {
   const layout = chartLayout(cssW, cssH, fiveDayLayoutOptions(showPct));
   const { price, volume } = layout;
 
-  if (!points.length) {
+  if (!points.length || !dayList.length) {
     if (dom.empty) {
       dom.empty.textContent = "暂无五日成交";
       dom.empty.classList.remove("hidden");
     }
     setDealFiveDayHover(null);
+    dealFiveDayState._plot = null;
+    syncDealFiveDayZoomButtons();
     return;
   }
   if (dom.empty) dom.empty.classList.add("hidden");
 
-  // 按日独立纵轴（对齐实时：单日振幅撑满该日绘图区），避免五日共用一把尺导致偏平
+  // 可见窗共用一把尺：相对锚日前收对称
   const tickCount = priceScaleTickCount(price.h);
-  const dayScales = dayList.map((day, dayIdx) => {
-    const dayPts = points.filter((p) => p.dayIdx === dayIdx);
-    const dayPrices = dayPts.map((d) => Number(d.price)).filter(Number.isFinite);
-    const dayAvgs = dayPts
-      .map((d) => Number(d.avg_price))
-      .filter((v) => Number.isFinite(v) && v > 0);
-    let dayBase = null;
-    for (const row of dayPts) {
-      const b = Number(row?.base_price);
-      if (Number.isFinite(b) && b > 0) {
-        dayBase = b;
-        break;
-      }
-    }
-    if (dayBase == null && Number.isFinite(basePrice) && basePrice > 0) dayBase = basePrice;
-    let minP = dayPrices.length
-      ? Math.min(...dayPrices, ...(dayAvgs.length ? dayAvgs : dayPrices))
-      : dayBase;
-    let maxP = dayPrices.length
-      ? Math.max(...dayPrices, ...(dayAvgs.length ? dayAvgs : dayPrices))
-      : dayBase;
-    if (Number.isFinite(dayBase)) {
-      minP = Math.min(minP, dayBase);
-      maxP = Math.max(maxP, dayBase);
-    }
-    const scale = buildPriceScale(minP, maxP, {
-      tickCount,
-      padRatio: 0.015,
-      center: Number.isFinite(dayBase) ? dayBase : null,
-    });
-    const yAt = (p) =>
-      price.y + ((scale.max - p) / (scale.max - scale.min || 1)) * price.h;
-    return { day, dayBase, scale, yAt };
+  const allPrices = points.map((d) => Number(d.price)).filter(Number.isFinite);
+  const allAvgs = points
+    .map((d) => Number(d.avg_price))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  let minP = allPrices.length
+    ? Math.min(...allPrices, ...(allAvgs.length ? allAvgs : allPrices))
+    : anchorBase;
+  let maxP = allPrices.length
+    ? Math.max(...allPrices, ...(allAvgs.length ? allAvgs : allPrices))
+    : anchorBase;
+  if (Number.isFinite(anchorBase)) {
+    minP = Math.min(minP, anchorBase);
+    maxP = Math.max(maxP, anchorBase);
+  }
+  const scale = buildPriceScale(minP, maxP, {
+    tickCount,
+    padRatio: 0.015,
+    center: Number.isFinite(anchorBase) ? anchorBase : null,
   });
+  const yAt = (p) =>
+    price.y + ((scale.max - p) / (scale.max - scale.min || 1)) * price.h;
 
   const xAtSlot = (slot) => price.x + ((slot + 0.5) / totalSlots) * price.w;
   const xAtIndex = (i) => xAtSlot(points[i].slot);
   const dayXs = dayList.map((_, dayIdx) => price.x + (dayIdx / dayList.length) * price.w);
   dayXs.push(price.x + price.w);
 
-  // 竖向日界 + 成交量横线；价格横线按日各自刻度画在日列内
+  const yTicks = (scale.ticks || []).map(yAt);
+  drawGrid(ctx, price, yTicks, dayXs, colors);
   drawGrid(ctx, volume, [volume.y, volume.y + volume.h], dayXs, colors);
-  ctx.save();
-  ctx.strokeStyle = colors.grid;
-  ctx.lineWidth = 1;
-  for (const x of dayXs) {
-    ctx.beginPath();
-    ctx.moveTo(x, price.y);
-    ctx.lineTo(x, price.y + price.h);
-    ctx.stroke();
-  }
-  ctx.restore();
-  for (let dayIdx = 0; dayIdx < dayList.length; dayIdx += 1) {
-    const ds = dayScales[dayIdx];
-    const x0 = dayXs[dayIdx];
-    const x1 = dayXs[dayIdx + 1];
-    const yTicks = (ds.scale.ticks || []).map(ds.yAt);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(x0, price.y, Math.max(0, x1 - x0), price.h);
-    ctx.clip();
-    ctx.strokeStyle = colors.grid;
-    ctx.lineWidth = 1;
-    for (const y of yTicks) {
-      ctx.beginPath();
-      ctx.moveTo(x0, y);
-      ctx.lineTo(x1, y);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
 
   const activeDay = ticksViewDay();
   for (let dayIdx = 0; dayIdx < dayList.length; dayIdx += 1) {
@@ -1559,45 +1566,40 @@ function paintDealFiveDayChart() {
     ctx.restore();
   }
 
-  // 各日昨收参考线（落在该日纵轴中位附近）
-  for (let dayIdx = 0; dayIdx < dayList.length; dayIdx += 1) {
-    const ds = dayScales[dayIdx];
-    if (!Number.isFinite(ds.dayBase)) continue;
-    const y = ds.yAt(ds.dayBase);
-    const x0 = dayXs[dayIdx];
-    const x1 = dayXs[dayIdx + 1];
+  // 锚日前收 0% 参考线（横贯可见窗）
+  if (Number.isFinite(anchorBase)) {
+    const y = yAt(anchorBase);
     ctx.save();
     ctx.strokeStyle = colors.ref;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
-    ctx.moveTo(x0, y);
-    ctx.lineTo(x1, y);
+    ctx.moveTo(price.x, y);
+    ctx.lineTo(price.x + price.w, y);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
   }
 
-  // 成交量按日归一，避免某日巨量压扁其它日
+  // 成交量：可见窗共用 maxVol
+  const maxVol = Math.max(
+    ...points.map((d) => Number(d.volume ?? d.volume_lots) || 0),
+    1,
+  );
   const barW = Math.max(1, Math.min(3.5, (price.w / totalSlots) * 0.85));
-  for (let dayIdx = 0; dayIdx < dayList.length; dayIdx += 1) {
-    const dayPts = points.filter((p) => p.dayIdx === dayIdx);
-    const maxVol = Math.max(...dayPts.map((d) => Number(d.volume ?? d.volume_lots) || 0), 1);
-    for (const row of dayPts) {
-      const v = Number(row.volume ?? row.volume_lots) || 0;
-      if (!(v > 0)) continue;
-      const h = (v / maxVol) * volume.h;
-      const x = xAtSlot(row.slot) - barW / 2;
-      const cur = Number(row.price);
-      const prev = Number(row.prevPrice);
-      const up = Number.isFinite(prev) ? cur >= prev : true;
-      ctx.fillStyle = up ? colors.upSoft : colors.downSoft;
-      ctx.fillRect(x, volume.y + volume.h - h, barW, h);
-    }
+  for (const row of points) {
+    const v = Number(row.volume ?? row.volume_lots) || 0;
+    if (!(v > 0)) continue;
+    const h = (v / maxVol) * volume.h;
+    const x = xAtSlot(row.slot) - barW / 2;
+    const cur = Number(row.price);
+    const prev = Number(row.prevPrice);
+    const up = Number.isFinite(prev) ? cur >= prev : true;
+    ctx.fillStyle = up ? colors.upSoft : colors.downSoft;
+    ctx.fillRect(x, volume.y + volume.h - h, barW, h);
   }
 
-  // 均价 / 现价：按日断开，并用该日纵轴
+  // 均价 / 现价：按日断开，共用纵轴
   for (let dayIdx = 0; dayIdx < dayList.length; dayIdx += 1) {
-    const ds = dayScales[dayIdx];
     const x0 = dayXs[dayIdx];
     const x1 = dayXs[dayIdx + 1];
     ctx.save();
@@ -1612,7 +1614,7 @@ function paintDealFiveDayChart() {
       const avg = Number(points[i].avg_price);
       if (!Number.isFinite(avg) || avg <= 0) continue;
       const x = xAtIndex(i);
-      const y = ds.yAt(avg);
+      const y = yAt(avg);
       if (!startedAvg) {
         ctx.moveTo(x, y);
         startedAvg = true;
@@ -1633,7 +1635,7 @@ function paintDealFiveDayChart() {
       const p = Number(points[i].price);
       if (!Number.isFinite(p)) continue;
       const x = xAtIndex(i);
-      const y = ds.yAt(p);
+      const y = yAt(p);
       if (!startedPrice) {
         ctx.moveTo(x, y);
         startedPrice = true;
@@ -1652,7 +1654,7 @@ function paintDealFiveDayChart() {
         const p = Number(points[i].price);
         if (!Number.isFinite(p)) continue;
         const x = xAtIndex(i);
-        const y = ds.yAt(p);
+        const y = yAt(p);
         if (!startedPrice) {
           ctx.moveTo(x, y);
           startedPrice = true;
@@ -1670,11 +1672,8 @@ function paintDealFiveDayChart() {
     ctx.restore();
   }
 
-  // 轴标签用「当前可见/最新一日」的尺度，避免五日混轴
-  const axisDayIdx = Math.max(0, dayList.length - 1);
-  const axisScale = dayScales[axisDayIdx];
-  drawAxesLabels(ctx, layout, axisScale.scale, [], "ticks", colors, {
-    preClose: Number.isFinite(axisScale.dayBase) ? axisScale.dayBase : null,
+  drawAxesLabels(ctx, layout, scale, [], "ticks", colors, {
+    preClose: Number.isFinite(anchorBase) ? anchorBase : null,
     skipTimeLabels: true,
   });
 
@@ -1692,9 +1691,8 @@ function paintDealFiveDayChart() {
   const hoverIdx = dealFiveDayState.hoverIndex;
   if (hoverIdx != null && points[hoverIdx]) {
     const pt = points[hoverIdx];
-    const ds = dayScales[pt.dayIdx] || axisScale;
     const x = xAtIndex(hoverIdx);
-    const y = ds.yAt(Number(pt.price));
+    const y = yAt(Number(pt.price));
     const x0 = dayXs[pt.dayIdx] ?? price.x;
     const x1 = dayXs[pt.dayIdx + 1] ?? price.x + price.w;
     ctx.save();
@@ -1714,20 +1712,36 @@ function paintDealFiveDayChart() {
     ctx.arc(x, y, 3, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
-    setDealFiveDayHover(pt, ds.dayBase ?? basePrice);
+    setDealFiveDayHover(pt, Number(pt.base_price) || anchorBase);
   } else {
     setDealFiveDayHover(null);
   }
 
-  dealFiveDayState._plot = { model, layout, cssW, cssH, xAtSlot, totalSlots, dayScales };
+  dealFiveDayState._plot = {
+    model,
+    layout,
+    cssW,
+    cssH,
+    xAtSlot,
+    totalSlots,
+    scale,
+    yAt,
+    anchorBase,
+    dayXs,
+  };
+  syncDealFiveDayZoomButtons();
+}
 
-  // 加宽横滑：保持原相对位置；首次/无滚动时默认贴右看最新一日
-  window.requestAnimationFrame(() => {
-    const maxScroll = Math.max(0, body.scrollWidth - body.clientWidth);
-    if (!maxScroll) return;
-    const ratio = Number.isFinite(prevScrollRatio) ? prevScrollRatio : 1;
-    body.scrollLeft = Math.round(maxScroll * Math.min(1, Math.max(0, ratio)));
-  });
+function dealFiveDayAnchorRatioAtClientX(clientX) {
+  const body = document.getElementById("dealFiveDayBody");
+  const canvas = body?.querySelector?.("#dealFiveDayChart");
+  const plot = dealFiveDayState._plot;
+  if (!canvas || !plot?.layout) return 0.5;
+  const rect = canvas.getBoundingClientRect();
+  const x = clientX - rect.left;
+  const { price } = plot.layout;
+  if (!(price.w > 0)) return 0.5;
+  return Math.min(1, Math.max(0, (x - price.x) / price.w));
 }
 
 function dealFiveDayIndexAtClientX(clientX) {
@@ -1755,35 +1769,25 @@ function dealFiveDayIndexAtClientX(clientX) {
 
 function renderDealFiveDayPanel() {
   const body = document.getElementById("dealFiveDayBody");
-  const meta = document.getElementById("dealFiveDayMeta");
   if (!body) return;
   const items = Array.isArray(dealFiveDayState.items) ? dealFiveDayState.items : [];
-  const days = Array.isArray(dealFiveDayState.days) ? dealFiveDayState.days : [];
-  if (meta) {
-    meta.textContent = [
-      dealFiveDayState.loading && !items.length ? "加载中" : "",
-      dealFiveDayState.source || "",
-      days.length ? `${days.length}日` : items.length ? "分时" : "",
-      items.length ? `${items.length}点` : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  }
+  renderDealFiveDayMeta();
+  syncDealFiveDayZoomButtons();
   if (dealFiveDayState.loading && !items.length) {
     body.dataset.chartReady = "";
-    reserveDealFiveDayBodySize({ dayCount: Math.max(1, days.length || 5) });
+    reserveDealFiveDayBodySize();
     body.innerHTML = `<p class="muted deal-fiveday-placeholder">正在加载五日成交…</p>`;
     return;
   }
   if (dealFiveDayState.error && !items.length) {
     body.dataset.chartReady = "";
-    reserveDealFiveDayBodySize({ dayCount: Math.max(1, days.length || 5) });
+    reserveDealFiveDayBodySize();
     body.innerHTML = `<p class="muted deal-fiveday-placeholder">${escapeHtml(dealFiveDayState.error)}</p>`;
     return;
   }
   if (!items.length) {
     body.dataset.chartReady = "";
-    reserveDealFiveDayBodySize({ dayCount: Math.max(1, days.length || 5) });
+    reserveDealFiveDayBodySize();
     body.innerHTML = `<p class="muted deal-fiveday-placeholder">暂无五日成交</p>`;
     return;
   }
@@ -1799,22 +1803,126 @@ function bindDealFiveDayPanel() {
       void loadDealFiveDay({ force: true });
     });
   }
+  const zoomOutBtn = document.getElementById("dealFiveDayZoomOutBtn");
+  if (zoomOutBtn && zoomOutBtn.dataset.bound !== "1") {
+    zoomOutBtn.dataset.bound = "1";
+    zoomOutBtn.addEventListener("click", () => {
+      // 显示更多日
+      zoomDealFiveDayViewport(0.5, 1);
+    });
+  }
+  const zoomInBtn = document.getElementById("dealFiveDayZoomInBtn");
+  if (zoomInBtn && zoomInBtn.dataset.bound !== "1") {
+    zoomInBtn.dataset.bound = "1";
+    zoomInBtn.addEventListener("click", () => {
+      // 显示更少日（放大）
+      zoomDealFiveDayViewport(0.5, -1);
+    });
+  }
+
   const body = document.getElementById("dealFiveDayBody");
   if (!body || dealFiveDayState.bound) return;
   dealFiveDayState.bound = true;
-  body.addEventListener("mousemove", (ev) => {
+
+  body.addEventListener(
+    "wheel",
+    (ev) => {
+      if (!dealFiveDayState.items.length) return;
+      const absX = Math.abs(ev.deltaX || 0);
+      const absY = Math.abs(ev.deltaY || 0);
+      // 触控板横滑 / Shift+滚轮：平移
+      if (absX > absY || ev.shiftKey) {
+        ev.preventDefault();
+        const delta = absX > absY ? ev.deltaX : ev.deltaY;
+        const step = delta > 0 ? 1 : delta < 0 ? -1 : 0;
+        if (!step) return;
+        setDealFiveDayViewStart(dealFiveDayState.viewStart + step);
+        return;
+      }
+      // Ctrl/Meta+滚轮：缩放可见日数
+      if (ev.ctrlKey || ev.metaKey) {
+        ev.preventDefault();
+        const deltaDays = ev.deltaY > 0 ? 1 : ev.deltaY < 0 ? -1 : 0;
+        if (!deltaDays) return;
+        zoomDealFiveDayViewport(dealFiveDayAnchorRatioAtClientX(ev.clientX), deltaDays);
+      }
+    },
+    { passive: false },
+  );
+
+  body.addEventListener("pointerdown", (ev) => {
     if (!dealFiveDayState.items.length) return;
+    if (ev.button != null && ev.button !== 0) return;
+    const plot = dealFiveDayState._plot;
+    const cellW =
+      plot?.layout?.price?.w && dealFiveDayState.viewSize
+        ? plot.layout.price.w / Math.max(1, dealFiveDayState.viewSize)
+        : 80;
+    dealFiveDayState.drag = {
+      pointerId: ev.pointerId,
+      startX: ev.clientX,
+      originStart: dealFiveDayState.viewStart,
+      cellW: Math.max(24, cellW),
+      moved: false,
+    };
+    try {
+      body.setPointerCapture(ev.pointerId);
+    } catch {
+      /* ignore */
+    }
+  });
+  body.addEventListener("pointermove", (ev) => {
+    const drag = dealFiveDayState.drag;
+    if (drag && drag.pointerId === ev.pointerId) {
+      const dx = ev.clientX - drag.startX;
+      if (Math.abs(dx) > 4) {
+        drag.moved = true;
+        body.classList.add("is-panning");
+      }
+      if (drag.moved) {
+        // 向右拖 = 看更早的日子
+        const dayDelta = Math.round(-dx / drag.cellW);
+        setDealFiveDayViewStart(drag.originStart + dayDelta);
+        return;
+      }
+    }
+    if (!dealFiveDayState.items.length) return;
+    if (dealFiveDayState.drag?.moved) return;
     const idx = dealFiveDayIndexAtClientX(ev.clientX);
     if (idx === dealFiveDayState.hoverIndex) return;
     dealFiveDayState.hoverIndex = idx;
     paintDealFiveDayChart();
   });
+  const endDrag = (ev) => {
+    const drag = dealFiveDayState.drag;
+    if (!drag || (ev.pointerId != null && drag.pointerId !== ev.pointerId)) return;
+    const moved = drag.moved;
+    dealFiveDayState.drag = null;
+    body.classList.remove("is-panning");
+    try {
+      body.releasePointerCapture(drag.pointerId);
+    } catch {
+      /* ignore */
+    }
+    if (moved) {
+      // 拖拽结束不触发 click 切日
+      dealFiveDayState._suppressClick = true;
+      window.setTimeout(() => {
+        dealFiveDayState._suppressClick = false;
+      }, 0);
+    }
+  };
+  body.addEventListener("pointerup", endDrag);
+  body.addEventListener("pointercancel", endDrag);
+
   body.addEventListener("mouseleave", () => {
+    if (dealFiveDayState.drag) return;
     if (dealFiveDayState.hoverIndex == null) return;
     dealFiveDayState.hoverIndex = null;
     paintDealFiveDayChart();
   });
   body.addEventListener("click", (ev) => {
+    if (dealFiveDayState._suppressClick) return;
     const idx = dealFiveDayIndexAtClientX(ev.clientX);
     const point = idx != null ? dealFiveDayState._plot?.model?.points?.[idx] : null;
     const day = String(point?.day || "").slice(0, 10);
@@ -1828,22 +1936,23 @@ function bindDealFiveDayPanel() {
   if (typeof ResizeObserver !== "undefined") {
     let roTimer = 0;
     dealFiveDayState.ro = new ResizeObserver(() => {
-      if (!dealWindowVisible() || !dealFiveDayState.items.length) return;
+      if (!dealAnalysisVisible() || !dealFiveDayState.items.length) return;
       if (roTimer) window.clearTimeout(roTimer);
       roTimer = window.setTimeout(() => {
         roTimer = 0;
+        clampDealFiveDayViewport();
         paintDealFiveDayChart();
       }, 50);
     });
-    // 不观察 body 自身，避免写 height 触发回环
     const center = document.querySelector(".deal-analysis-center");
+    const fivePanel = document.getElementById("dealFiveDayPanel");
     if (center) dealFiveDayState.ro.observe(center);
-    if (els.ticksChartWrap) dealFiveDayState.ro.observe(els.ticksChartWrap);
+    if (fivePanel) dealFiveDayState.ro.observe(fivePanel);
   }
 }
 
 async function loadDealFiveDay({ force = false } = {}) {
-  if (!code || !dealWindowVisible()) return;
+  if (!code || !dealAnalysisVisible()) return;
   const gen = ++dealFiveDayState.loadGen;
   dealFiveDayState.loading = true;
   dealFiveDayState.error = "";
@@ -1852,7 +1961,7 @@ async function loadDealFiveDay({ force = false } = {}) {
   try {
     const qs = new URLSearchParams({
       code,
-      days: "5",
+      days: String(DEAL_FIVEDAY_LOAD_DAYS),
     });
     if (force) qs.set("refresh", "1");
     const json = await api(`/api/stocks/intraday?${qs.toString()}`);
@@ -1861,6 +1970,14 @@ async function loadDealFiveDay({ force = false } = {}) {
     dealFiveDayState.items = Array.isArray(data.trends) ? data.trends : [];
     dealFiveDayState.days = Array.isArray(data.days) ? data.days : [];
     dealFiveDayState.source = String(data.source || "");
+    // 刷新后保持默认可见日数并贴右看最新
+    if (
+      !Number.isFinite(dealFiveDayState.viewSize) ||
+      dealFiveDayState.viewSize < 1
+    ) {
+      dealFiveDayState.viewSize = DEAL_FIVEDAY_DEFAULT_VIEW;
+    }
+    clampDealFiveDayViewport({ stickRight: true });
     dealFiveDayState.loading = false;
     dealFiveDayState.error = "";
     renderDealFiveDayPanel();
@@ -1872,544 +1989,8 @@ async function loadDealFiveDay({ force = false } = {}) {
   }
 }
 
-function bindDealWindowPanel() {
-  if (dealWindowState.bound) return;
-  const btn = document.getElementById("dealWindowRefreshBtn");
-  const body = document.getElementById("dealWindowBody");
-  if (btn) {
-    btn.addEventListener("click", () => {
-      void loadDealWindow({ force: true });
-    });
-  }
-  if (body) {
-    body.addEventListener(
-      "scroll",
-      (ev) => {
-        const scroller = ev.target;
-        if (!(scroller instanceof HTMLElement) || !scroller.classList.contains("deal-tape-scroll")) return;
-        paintDealWindowRows(scroller);
-      },
-      true
-    );
-  }
-  dealWindowState.bound = true;
-}
-
-function dealWindowVisible() {
+function dealAnalysisVisible() {
   return activeMainPanel === "judgment" && judgmentSubTab === "deal";
-}
-
-function fmtDealLots(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return "-";
-  if (Math.abs(n - Math.round(n)) < 1e-6) return String(Math.round(n));
-  return n.toFixed(2).replace(/\.?0+$/, "");
-}
-
-function buildDealTapeSpans(rows) {
-  const n = rows.length;
-  const spans = Array.from({ length: n }, () => ({
-    buySpan: 1,
-    sellSpan: 1,
-    buyCovered: false,
-    sellCovered: false,
-    buyTotal: 0,
-    sellTotal: 0,
-    buyMulti: false,
-    sellMulti: false,
-  }));
-
-  const markSide = (key, spanKey, coveredKey, totalKey, multiKey) => {
-    let i = 0;
-    while (i < n) {
-      const id = String(rows[i]?.[key] || "");
-      let j = i + 1;
-      if (id) {
-        while (j < n && String(rows[j]?.[key] || "") === id) j += 1;
-      }
-      const span = j - i;
-      let total = 0;
-      for (let t = i; t < j; t += 1) total += Number(rows[t]?.lots) || 0;
-      const multi = span > 1 && !!id;
-      for (let t = i; t < j; t += 1) {
-        if (t === i) {
-          spans[t][spanKey] = span;
-          spans[t][totalKey] = total;
-          spans[t][multiKey] = multi;
-          spans[t][coveredKey] = false;
-        } else {
-          spans[t][spanKey] = 0;
-          spans[t][totalKey] = total;
-          spans[t][multiKey] = multi;
-          spans[t][coveredKey] = true;
-        }
-      }
-      i = j;
-    }
-  };
-
-  markSide("buy_id", "buySpan", "buyCovered", "buyTotal", "buyMulti");
-  markSide("sell_id", "sellSpan", "sellCovered", "sellTotal", "sellMulti");
-  return spans;
-}
-
-function dealCheckLabel(ok, failCount) {
-  if (ok) return "满足";
-  const n = Number(failCount) || 0;
-  return n > 0 ? `不满足（${n}）` : "不满足";
-}
-
-function renderDealWindowSummary() {
-  const el = document.getElementById("dealWindowSummary");
-  if (!el) return;
-  const summary = dealWindowState.summary;
-  if (!summary) {
-    el.hidden = true;
-    el.innerHTML = "";
-    return;
-  }
-  const reconcile = dealWindowState.reconcile || {};
-  const lotMis = Number(reconcile.lot_mismatch_windows) || 0;
-  const countMis = Number(reconcile.count_mismatch_windows) || 0;
-  const windowsOk =
-    reconcile.windows_ok != null
-      ? Boolean(reconcile.windows_ok)
-      : lotMis === 0 && countMis === 0;
-  const activeOk =
-    reconcile.active_orders_ok != null
-      ? Boolean(reconcile.active_orders_ok)
-      : (Number(reconcile.active_lot_mismatch_count) || 0) === 0;
-  const passiveOk =
-    reconcile.passive_orders_ok != null
-      ? Boolean(reconcile.passive_orders_ok)
-      : (Number(reconcile.passive_lot_mismatch_count) || 0) === 0;
-  const windowFail = lotMis + countMis;
-  const bits = [
-    ["当日", `${fmtDealLots(summary.lots)}手 / ${summary.count || 0}笔`],
-    ["区间", dealCheckLabel(windowsOk, windowFail)],
-    ["主动大单", dealCheckLabel(activeOk, reconcile.active_lot_mismatch_count)],
-    ["被动大单", dealCheckLabel(passiveOk, reconcile.passive_lot_mismatch_count)],
-  ];
-  el.hidden = false;
-  el.innerHTML = bits
-    .map(([k, v]) => `<div>${escapeHtml(k)} <strong>${escapeHtml(String(v))}</strong></div>`)
-    .join("");
-}
-
-function renderDealWindowMeta() {
-  const meta = document.getElementById("dealWindowMeta");
-  if (!meta) return;
-  if (dealWindowState.loading && !dealWindowState.rows.length) {
-    meta.textContent = "还原中…";
-    return;
-  }
-  if (dealWindowState.error && !dealWindowState.rows.length) {
-    meta.textContent = dealWindowState.error;
-    return;
-  }
-  const notes = (dealWindowState.notes || []).slice(0, 1).join("；");
-  meta.textContent = [
-    dealWindowState.day || ticksViewDay(),
-    "区间为两端闭 3 秒窗（档点可归相邻两档）",
-    notes,
-  ].filter(Boolean).join(" · ");
-}
-
-function dealTapePriceClass(price, prevPrice) {
-  const cur = Number(price);
-  const prev = Number(prevPrice);
-  if (!Number.isFinite(cur) || !Number.isFinite(prev) || prev <= 0) return "is-flat";
-  if (cur > prev) return "is-up";
-  if (cur < prev) return "is-down";
-  return "is-flat";
-}
-
-function dealTapeMultiBlock(kind, index, visStart, spanMeta, rows, rowH) {
-  /** 只画「同一委托跨多行」的大色块；单笔用单元格着色，不叠绝对定位块。 */
-  const coveredKey = kind === "buy" ? "buyCovered" : "sellCovered";
-  const spanKey = kind === "buy" ? "buySpan" : "sellSpan";
-  const totalKey = kind === "buy" ? "buyTotal" : "sellTotal";
-  const multiKey = kind === "buy" ? "buyMulti" : "sellMulti";
-  const meta = spanMeta[index];
-  if (!meta || !meta[multiKey]) return "";
-
-  let start = index;
-  if (meta[coveredKey]) {
-    if (index !== visStart) return "";
-    while (start > 0 && spanMeta[start][coveredKey]) start -= 1;
-  } else if (!(meta[spanKey] > 0)) {
-    return "";
-  }
-
-  const head = spanMeta[start];
-  if (!head?.[multiKey]) return "";
-  const span = Number(head[spanKey]) || 1;
-  const total = Number(head[totalKey]) || 0;
-  const top = (start - index) * rowH + 1;
-  const height = Math.max(rowH - 2, span * rowH - 2);
-  const headRow = rows[start] || {};
-  const isAggressor = String(headRow.side || "") === kind;
-  const cls = [
-    "deal-span",
-    kind === "buy" ? "deal-span--buy" : "deal-span--sell",
-    "is-multi",
-    isAggressor ? "is-aggressor" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const flag = isAggressor ? `<i class="deal-span-flag" aria-hidden="true"></i>` : "";
-  return `<div class="${cls}" style="top:${top}px;height:${height}px">${flag}<span>${escapeHtml(fmtDealLots(total))}手</span></div>`;
-}
-
-function dealTapeSideCell(kind, row, span) {
-  const covered = kind === "buy" ? span.buyCovered : span.sellCovered;
-  const multi = kind === "buy" ? span.buyMulti : span.sellMulti;
-  if (covered || multi) return "";
-  const hand = fmtDealLots(row?.lots);
-  const aggressor = String(row?.side || "") === kind;
-  const cls = [
-    "deal-tape-chip",
-    kind === "buy" ? "deal-tape-chip--buy" : "deal-tape-chip--sell",
-    aggressor ? "is-aggressor" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const flag = aggressor ? `<i class="deal-span-flag" aria-hidden="true"></i>` : "";
-  return `<span class="${cls}">${flag}<span>${escapeHtml(hand)}手</span></span>`;
-}
-
-function dealTapeCounterCell(kind, row, span) {
-  /** 被大单吃掉的一侧：逐行显示本笔手数。 */
-  const otherMulti = kind === "buy" ? span.sellMulti : span.buyMulti;
-  const selfMulti = kind === "buy" ? span.buyMulti : span.sellMulti;
-  const covered = kind === "buy" ? span.buyCovered : span.sellCovered;
-  if (!otherMulti || selfMulti || covered) return "";
-  const cls = kind === "buy" ? "deal-tape-chip deal-tape-chip--buy is-counter" : "deal-tape-chip deal-tape-chip--sell is-counter";
-  return `<span class="${cls}"><span>${escapeHtml(fmtDealLots(row?.lots))}手</span></span>`;
-}
-
-function dealTapeIsAuctionStamp(stamp) {
-  const key = tickClockSecond(stamp);
-  if (!key) return false;
-  return (key >= "09:25:00" && key < "09:26:00") || (key >= "15:00:00" && key < "15:01:00");
-}
-
-/** 压缩 ``HH:MM:SS–HH:MM:SS``：同分省略时分，同小时省略小时。 */
-function dealTapeFormatClosedRange(start, end) {
-  if (!start || !end) return end || start || "";
-  if (start === end) return end;
-  if (start.slice(0, 6) === end.slice(0, 6)) {
-    return `${start}–${end.slice(6)}`;
-  }
-  if (start.slice(0, 3) === end.slice(0, 3)) {
-    return `${start}–${end.slice(3)}`;
-  }
-  return `${start}–${end}`;
-}
-
-function dealTapePrevForStamp(stamp, row) {
-  const end = tickClockSecond(stamp);
-  if (!end) return "";
-  const fromRow = tickClockSecond(row?.prev_time);
-  if (fromRow) return fromRow;
-  return tickClockSecond(dealWindowState.prevByWindow.get(end) || "") || "";
-}
-
-/** 分时档 → 两端闭区间文案，与后端 ``[prev_time, window_time]`` 对齐。 */
-function dealTapeIntervalLabel(stamp, row) {
-  const end = tickClockSecond(stamp);
-  if (!end) return displayValue(stamp);
-  // 集合竞价撮合点本身就是成交时刻，不套回溯窗
-  if (dealTapeIsAuctionStamp(end)) return end;
-  const start = dealTapePrevForStamp(end, row);
-  if (!start || start >= end) return end;
-  return dealTapeFormatClosedRange(start, end);
-}
-
-function dealTapeTimeTitle(row) {
-  const end = tickClockSecond(row?.window_time || row?.time);
-  const bits = [];
-  if (end && dealTapeIsAuctionStamp(end)) {
-    bits.push(`集合竞价撮合 ${end}`);
-  } else if (end) {
-    const start = dealTapePrevForStamp(end, row);
-    if (start && start < end) {
-      bits.push(`两端闭 [${start}, ${end}]`);
-    } else {
-      bits.push(`分时档 ${end}`);
-    }
-  }
-  const ot = tickClockSecond(row?.order_time);
-  if (ot && row?.kind === "order") {
-    bits.push(`大单完成 ${ot}`);
-  }
-  return bits.join(" · ");
-}
-
-function dealTapeRowHtml(row, index, visStart, spans, rows, prevPrice) {
-  const span = spans[index] || {};
-  const stamp = row?.window_time || row?.time;
-  const timeLabel = dealTapeIntervalLabel(stamp, row);
-  const timeTitle = dealTapeTimeTitle(row);
-  const price = fmtNum(row?.price);
-  const priceCls = dealTapePriceClass(row?.price, prevPrice);
-  const hand = fmtDealLots(row?.lots);
-  const next = spans[index + 1];
-  const groupEnd =
-    next &&
-    ((next.buyMulti && !next.buyCovered) || (next.sellMulti && !next.sellCovered))
-      ? " is-group-end"
-      : "";
-
-  const buyBlock = dealTapeMultiBlock("buy", index, visStart, spans, rows, DEAL_WINDOW_ROW_H);
-  const sellBlock = dealTapeMultiBlock("sell", index, visStart, spans, rows, DEAL_WINDOW_ROW_H);
-  const buyCell =
-    buyBlock || dealTapeCounterCell("buy", row, span) || dealTapeSideCell("buy", row, span);
-  const sellCell =
-    sellBlock || dealTapeCounterCell("sell", row, span) || dealTapeSideCell("sell", row, span);
-
-  return `<div class="deal-tape-row${groupEnd}" data-clock="${escapeHtml(tickClockSecond(stamp) || timeLabel)}" data-window-clock="${escapeHtml(tickClockSecond(stamp) || "")}" data-row-index="${index}" data-order-time="${escapeHtml(tickClockSecond(row?.order_time) || "")}" data-order-id="${escapeHtml(String(row?.order_id || ""))}" data-order-peer-id="${escapeHtml(String(row?.order_id_peer || ""))}" data-order-event-id="${escapeHtml(String(row?.order_event_id || ""))}" data-order-peer-event-id="${escapeHtml(String(row?.order_peer_event_id || ""))}" data-kind="${escapeHtml(String(row?.kind || ""))}" style="height:${DEAL_WINDOW_ROW_H}px">
-    <div class="deal-tape-time" title="${escapeHtml(timeTitle)}">${escapeHtml(timeLabel)}</div>
-    <div class="deal-tape-price ${priceCls}">${escapeHtml(price)}</div>
-    <div class="deal-tape-hand">${escapeHtml(hand)}</div>
-    <div class="deal-tape-side deal-tape-buy">${buyCell}</div>
-    <div class="deal-tape-side deal-tape-sell">${sellCell}</div>
-  </div>`;
-}
-
-/** 逐笔明细联动索引：分时档 / 大单事件 / 完成时刻 → 行号。 */
-function buildDealWindowLinkIndex(rows) {
-  const byClock = new Map();
-  const byEvent = new Map();
-  const byOrderTime = new Map();
-  const push = (map, key, index) => {
-    if (!key) return;
-    const list = map.get(key);
-    if (list) list.push(index);
-    else map.set(key, [index]);
-  };
-  (rows || []).forEach((row, index) => {
-    push(byClock, tickClockSecond(row?.window_time || row?.time), index);
-    push(byEvent, String(row?.order_event_id || ""), index);
-    push(byEvent, String(row?.order_peer_event_id || ""), index);
-    push(byOrderTime, tickClockSecond(row?.order_time), index);
-  });
-  return { byClock, byEvent, byOrderTime };
-}
-
-/** 当前悬浮对应的逐笔行：资金动向优先按事件 id，分时成交按窗口时刻。 */
-function resolveDealWindowHoverTargets() {
-  const rows = dealWindowState.rows || [];
-  if (!rows.length) return { indexes: [], primary: -1 };
-  const clock = tickClockSecond(ticksState.hoverSecond || "");
-  const prefId = String(ticksState.hoverDealPreferred?.event_id || "");
-  if (!clock && !prefId) return { indexes: [], primary: -1 };
-  if (prefId) {
-    const hit = dealWindowState.rowByEvent.get(prefId);
-    if (hit?.length) {
-      const primary = hit.find((i) => tickClockSecond(rows[i]?.order_time) === clock);
-      return { indexes: hit.slice(), primary: primary ?? hit[0] };
-    }
-  }
-  if (clock) {
-    const hit = dealWindowState.rowByClock.get(clock);
-    if (hit?.length) return { indexes: hit.slice(), primary: hit[0] };
-    // 分时成交行严格按窗口时刻；资金动向 / 图表悬浮才允许退化到「完成时刻」匹配
-    if (ticksState.hoverOrigin !== "ticks") {
-      const byOrder = dealWindowState.rowByOrderTime.get(clock);
-      if (byOrder?.length) {
-        // 旧缓存可能没有 event_id：用完成行反查 order_id，再展开该订单的全部切片
-        const orderIds = new Set();
-        for (const i of byOrder) {
-          const oid = String(rows[i]?.order_id || "");
-          const pid = String(rows[i]?.order_id_peer || "");
-          if (oid) orderIds.add(oid);
-          if (pid) orderIds.add(pid);
-        }
-        if (orderIds.size) {
-          const indexes = [];
-          rows.forEach((row, i) => {
-            if (orderIds.has(String(row?.order_id || "")) || orderIds.has(String(row?.order_id_peer || ""))) {
-              indexes.push(i);
-            }
-          });
-          if (indexes.length) return { indexes, primary: byOrder[0] };
-        }
-        return { indexes: byOrder.slice(), primary: byOrder[0] };
-      }
-    }
-  }
-  return { indexes: [], primary: -1 };
-}
-
-function applyDealWindowHoverClasses() {
-  const windowEl = document.querySelector("#dealWindowBody .deal-tape-window");
-  if (!windowEl) return;
-  const targets = new Set(dealWindowState.hoverTargets || []);
-  const primary = Number(dealWindowState.hoverPrimary);
-  windowEl.querySelectorAll(".deal-tape-row[data-row-index]").forEach((el) => {
-    const index = Number(el.dataset.rowIndex);
-    const on = targets.has(index);
-    el.classList.toggle("is-linked", on);
-    el.classList.toggle("is-linked-primary", on && index === primary);
-  });
-}
-
-function scrollDealWindowToRow(index) {
-  if (!dealWindowVisible() || !Number.isFinite(Number(index)) || Number(index) < 0) return;
-  const scroller = document.querySelector("#dealWindowBody .deal-tape-scroll");
-  if (!scroller) return;
-  const target = Math.max(
-    0,
-    Number(index) * DEAL_WINDOW_ROW_H - (scroller.clientHeight - DEAL_WINDOW_ROW_H) / 2
-  );
-  const maxTop = Math.max(0, (scroller.scrollHeight || 0) - (scroller.clientHeight || 0));
-  const next = Math.min(maxTop, target);
-  if (Math.abs((scroller.scrollTop || 0) - next) > 1) scroller.scrollTop = next;
-  paintDealWindowRows(scroller);
-  applyDealWindowHoverClasses();
-}
-
-function syncDealWindowLinkHighlight({ scroll = false } = {}) {
-  const { indexes, primary } = resolveDealWindowHoverTargets();
-  dealWindowState.hoverTargets = indexes;
-  dealWindowState.hoverPrimary = primary;
-  if (scroll && indexes.length) {
-    scrollDealWindowToRow(primary >= 0 ? primary : indexes[0]);
-  }
-  applyDealWindowHoverClasses();
-}
-
-function paintDealWindowRows(scroller) {
-  const body = document.getElementById("dealWindowBody");
-  if (!body) return;
-  const rows = dealWindowState.rows;
-  const spans = dealWindowState.spans;
-  if (!rows.length || spans.length !== rows.length) return;
-  let root = scroller;
-  if (!(root instanceof HTMLElement) || !root.classList.contains("deal-tape-scroll")) {
-    root = body.querySelector(".deal-tape-scroll");
-  }
-  if (!root) return;
-  const canvas = root.querySelector(".deal-tape-canvas");
-  const windowEl = root.querySelector(".deal-tape-window");
-  if (!canvas || !windowEl) return;
-
-  const total = rows.length;
-  const viewH = Math.max(root.clientHeight || 0, DEAL_WINDOW_ROW_H);
-  const scrollTop = root.scrollTop || 0;
-  const start = Math.max(0, Math.floor(scrollTop / DEAL_WINDOW_ROW_H) - DEAL_WINDOW_OVERSCAN);
-  const visible = Math.ceil(viewH / DEAL_WINDOW_ROW_H) + DEAL_WINDOW_OVERSCAN * 2;
-  const end = Math.min(total, start + visible);
-  canvas.style.height = `${total * DEAL_WINDOW_ROW_H}px`;
-  windowEl.style.transform = `translateY(${start * DEAL_WINDOW_ROW_H}px)`;
-
-  let html = "";
-  for (let i = start; i < end; i += 1) {
-    const prevPrice = i > 0 ? rows[i - 1]?.price : rows[i]?.price;
-    html += dealTapeRowHtml(rows[i], i, start, spans, rows, prevPrice);
-  }
-  windowEl.innerHTML = html;
-  applyDealWindowHoverClasses();
-}
-
-function refreshDealWindowPanel() {
-  const body = document.getElementById("dealWindowBody");
-  if (!body) return;
-  renderDealWindowMeta();
-  renderDealWindowSummary();
-
-  if (dealWindowState.loading && !dealWindowState.rows.length) {
-    body.innerHTML = `<p class="muted metrics-loading">正在还原逐笔成交…</p>`;
-    return;
-  }
-  if (dealWindowState.error && !dealWindowState.rows.length) {
-    body.innerHTML = `<p class="muted">${escapeHtml(dealWindowState.error)}</p>`;
-    return;
-  }
-  if (!dealWindowState.rows.length) {
-    body.innerHTML = `<p class="muted">暂无逐笔还原结果</p>`;
-    return;
-  }
-
-  const keepScroll = body.querySelector(".deal-tape-scroll")?.scrollTop || 0;
-  body.innerHTML = `
-    <div class="deal-tape">
-      <div class="deal-tape-head" aria-hidden="true">
-        <span title="两端闭分时窗，如 09:30:35–38 表示 [09:30:35, 09:30:38]；左端取后端上一档 prev_time">成交区间</span>
-        <span>成交价</span>
-        <span>成交量</span>
-        <span>买方</span>
-        <span>卖方</span>
-      </div>
-      <div class="deal-tape-scroll">
-        <div class="deal-tape-canvas">
-          <div class="deal-tape-window"></div>
-        </div>
-      </div>
-    </div>`;
-  const scroller = body.querySelector(".deal-tape-scroll");
-  if (scroller) scroller.scrollTop = keepScroll;
-  paintDealWindowRows(scroller);
-  syncDealWindowLinkHighlight({ scroll: Boolean(ticksState.listHover) });
-}
-
-async function loadDealWindow({ force = false } = {}) {
-  if (!code || !dealWindowVisible()) return;
-  const day = ticksViewDay();
-  const gen = ++dealWindowState.loadGen;
-  dealWindowState.loading = true;
-  dealWindowState.error = "";
-  refreshDealWindowPanel();
-  try {
-    const qs = new URLSearchParams({
-      code,
-      day,
-      rows: "1",
-      windows: "0",
-    });
-    if (force) qs.set("refresh", "1");
-    const json = await api(`/api/stocks/deal-window?${qs.toString()}`);
-    if (gen !== dealWindowState.loadGen) return;
-    const data = json.data || {};
-    const rows = Array.isArray(data.rows) ? data.rows : [];
-    // 等一帧再算 span/索引，避免接口一回来就卡住刚切过去的界面
-    await new Promise((resolve) => {
-      window.requestAnimationFrame(() => resolve());
-    });
-    if (gen !== dealWindowState.loadGen) return;
-    dealWindowState.rows = rows;
-    dealWindowState.spans = buildDealTapeSpans(rows);
-    const prevByWindow = new Map();
-    for (const row of rows) {
-      const end = tickClockSecond(row?.window_time || row?.time);
-      const prev = tickClockSecond(row?.prev_time);
-      if (end && prev && !prevByWindow.has(end)) prevByWindow.set(end, prev);
-    }
-    for (const bar of Array.isArray(data.window_bars) ? data.window_bars : []) {
-      const end = tickClockSecond(bar?.time);
-      const prev = tickClockSecond(bar?.prev_time);
-      if (end && prev) prevByWindow.set(end, prev);
-    }
-    dealWindowState.prevByWindow = prevByWindow;
-    const linkIndex = buildDealWindowLinkIndex(rows);
-    dealWindowState.rowByClock = linkIndex.byClock;
-    dealWindowState.rowByEvent = linkIndex.byEvent;
-    dealWindowState.rowByOrderTime = linkIndex.byOrderTime;
-    dealWindowState.summary = data.summary || null;
-    dealWindowState.reconcile = data.reconcile || null;
-    dealWindowState.notes = Array.isArray(data.notes) ? data.notes : [];
-    dealWindowState.day = String(data.day || day || "");
-    dealWindowState.name = String(data.name || "");
-    dealWindowState.loading = false;
-    dealWindowState.error = "";
-    refreshDealWindowPanel();
-  } catch (err) {
-    if (gen !== dealWindowState.loadGen) return;
-    dealWindowState.loading = false;
-    dealWindowState.error = String(err?.message || err || "还原失败");
-    refreshDealWindowPanel();
-  }
 }
 
 function unmountDealAnalysisQuotes() {
@@ -2417,7 +1998,6 @@ function unmountDealAnalysisQuotes() {
   stopDealEntrustPolling();
   dealEntrustState.loadGen += 1;
   dealFiveDayState.loadGen += 1;
-  dealWindowState.loadGen += 1;
   if (!dealQuotesHome.mounted && !document.getElementById("dealHeroSlot")?.contains(els.metricsPanels)) {
     return;
   }
@@ -3121,19 +2701,6 @@ async function applyTicksViewDay(iso) {
   ticksState.sessionView = null;
   hideTicksHoverCard();
   applyTicksItems([], { resetViewport: true });
-  // 切日时旧日的逐笔/摘要必须立刻清空，避免请求失败时把前一天的数据挂在新日期下。
-  dealWindowState.loadGen += 1;
-  dealWindowState.rows = [];
-  dealWindowState.spans = [];
-  dealWindowState.summary = null;
-  dealWindowState.reconcile = null;
-  dealWindowState.notes = [];
-  dealWindowState.error = "";
-  dealWindowState.prevByWindow = new Map();
-  dealWindowState.rowByClock = new Map();
-  dealWindowState.rowByEvent = new Map();
-  dealWindowState.rowByOrderTime = new Map();
-  dealWindowState.day = ticksViewDay();
   bigDealState.rawItems = [];
   bigDealState.items = [];
   bigDealState.total = 0;
@@ -3144,10 +2711,8 @@ async function applyTicksViewDay(iso) {
   syncTicksDayInput();
   refreshBigDealList();
   refreshTicksTapeList();
-  if (dealWindowVisible()) {
+  if (dealAnalysisVisible()) {
     renderDealFiveDayPanel();
-    dealWindowState.day = ticksViewDay();
-    void loadDealWindow();
   }
   const history = isTicksHistoryView();
   if (history) {
@@ -3224,7 +2789,7 @@ function tickLinkInterval(items, index) {
   if (index < 0 || index >= items.length) return null;
   const to = timeToSec(items[index]?.time);
   if (to == null) return null;
-  // 与还原后端一致：两端闭 [上一档, 本档]；档点可归相邻两档
+  // 两端闭 [上一档, 本档]；档点可归相邻两档
   if (index === 0) return { from: -Infinity, to, indexes: [index], closed: true };
   const from = timeToSec(items[index - 1]?.time);
   return { from: from == null ? -Infinity : from, to, indexes: [index], closed: true };
@@ -3340,7 +2905,6 @@ function syncTapeLinkHighlight({ scroll = false, origin = "" } = {}) {
       window.requestAnimationFrame(() => scrollTapeRowsToCenter(root, focusRows));
     }
   }
-  syncDealWindowLinkHighlight({ scroll });
 }
 
 function ensureTicksSecondVisible(clock) {
