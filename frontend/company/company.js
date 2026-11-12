@@ -1329,12 +1329,70 @@ function setDealFiveDayHover(point, basePrice) {
   if (metaEl) metaEl.hidden = true;
 }
 
-/** 五日布局：放宽下限，便于矮面板也能画出价/量 */
-function fiveDayLayoutOptions(pctAxis) {
-  return { pctAxis, compact: true, minPriceH: 28, minVolH: 14 };
+/** 单日价格区目标宽高比（宽/高）；优先对齐右侧实时分时，避免缩放时形变 */
+const DEAL_FIVEDAY_DAY_ASPECT = 2.2;
+/** 成交量区高度相对价格区 */
+const DEAL_FIVEDAY_VOL_RATIO = 0.22;
+
+function fiveDayTargetDayAspect() {
+  const wrap = els.ticksChartWrap;
+  const w = Math.max(0, wrap?.clientWidth || 0);
+  const h = Math.max(0, wrap?.clientHeight || 0);
+  if (w > 80 && h > 80) {
+    const showPct = Number.isFinite(ticksState.preClose) && ticksState.preClose;
+    const layout = chartLayout(w, h, ticksLayoutOptions({ pctAxis: !!showPct }));
+    const aspect = layout.price.w / Math.max(1, layout.price.h);
+    if (aspect > 0.5 && aspect < 8) return aspect;
+  }
+  return DEAL_FIVEDAY_DAY_ASPECT;
 }
 
-/** 五日画布贴合 body 视口（不再加宽横滑） */
+/**
+ * 按「单日价格区固定宽高比」排布：缩放只改格子大小，走势不横向/纵向拉伸。
+ * 优先铺满宽度；若高度不够则整体等比缩小并居中。
+ */
+function fiveDayChartLayout(availW, availH, dayCount, pctAxis) {
+  const n = Math.max(1, dayCount);
+  const aspect = Math.max(0.5, fiveDayTargetDayAspect());
+  const pad = {
+    top: 8,
+    right: pctAxis ? 52 : 8,
+    bottom: 20,
+    left: 52,
+  };
+  const gap = 10;
+  const innerAvailW = Math.max(10, availW - pad.left - pad.right);
+  const innerAvailH = Math.max(10, availH - pad.top - pad.bottom);
+
+  let dayW = innerAvailW / n;
+  let priceH = dayW / aspect;
+  let volH = Math.max(14, priceH * DEAL_FIVEDAY_VOL_RATIO);
+  let usedH = priceH + gap + volH;
+
+  if (usedH > innerAvailH) {
+    const scale = innerAvailH / usedH;
+    dayW *= scale;
+    priceH *= scale;
+    volH = Math.max(12, volH * scale);
+    usedH = priceH + gap + volH;
+  }
+
+  const innerW = dayW * n;
+  const offsetX = pad.left + Math.max(0, (innerAvailW - innerW) / 2);
+  const offsetY = pad.top + Math.max(0, (innerAvailH - usedH) / 2);
+  return {
+    pad,
+    price: { x: offsetX, y: offsetY, w: innerW, h: Math.max(20, priceH) },
+    volume: {
+      x: offsetX,
+      y: offsetY + Math.max(20, priceH) + gap,
+      w: innerW,
+      h: Math.max(12, volH),
+    },
+  };
+}
+
+/** 五日画布贴合 body 视口（逻辑视口，不再加宽横滑） */
 function reserveDealFiveDayBodySize() {
   const panel = document.getElementById("dealFiveDayPanel");
   const body = document.getElementById("dealFiveDayBody");
@@ -1507,8 +1565,6 @@ function paintDealFiveDayChart() {
 
   const colors = chartColors();
   paintChartFrame(ctx, cssW, cssH, colors);
-  const layout = chartLayout(cssW, cssH, fiveDayLayoutOptions(showPct));
-  const { price, volume } = layout;
 
   if (!points.length || !dayList.length) {
     if (dom.empty) {
@@ -1521,6 +1577,10 @@ function paintDealFiveDayChart() {
     return;
   }
   if (dom.empty) dom.empty.classList.add("hidden");
+
+  // 固定单日宽高比：viewSize 变化只等比缩放格子，不拉伸走势
+  const layout = fiveDayChartLayout(cssW, cssH, dayList.length, showPct);
+  const { price, volume } = layout;
 
   // 可见窗共用一把尺：相对锚日前收对称
   const tickCount = priceScaleTickCount(price.h);
