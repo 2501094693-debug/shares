@@ -196,6 +196,52 @@ window.AI_MODES = {
     },
   },
 
+  valuation: {
+    id: "valuation",
+    kind: "engine",
+    label: "估值分析",
+    pageTitle: "ORBIT · 智能分析",
+    heading: "估值分析",
+    subtitle: "DCF 绝对估值内在价值 + 相对估值（历史分位与同业对比）+ 安全边际 · 不经过大模型",
+    startBtn: "重新计算",
+    historyHead: "规则结果",
+    reportTitle: "估值分析",
+    reportMetaDefault: "估值分析报告",
+    historyMeta: "规则结果",
+    emptyReports: "暂无结果",
+    resumeFail: "估值分析计算失败",
+    apiRoot: "/api/stocks/valuation",
+    jobStoreKey: "orbit.valuation.pack",
+    reportNameRe: /$^/,
+    agentDefs: [],
+    emptyStateHtml: `
+      <div class="ai-empty-state">
+        <div class="ai-empty-icon" aria-hidden="true">💰</div>
+        <h3>估值分析：内在价值与安全边际</h3>
+        <p>以东财 F10 财报为基础，运行 DCF 现金流折现得出每股内在价值；再对照历史 PE/PB/PS 分位与同业倍数，给出估值定性；最后以（内在价值 − 当前价）/ 内在价值计算安全边际。</p>
+        <ul class="ai-empty-tips">
+          <li>绝对估值：DCF 现金流折现，可自定义折现率、永续增长率、预测期与安全发令</li>
+          <li>相对估值：当前 PE/PB/PS 与自身历史（近 3~5 年）及同业中位数对比</li>
+          <li>安全边际：内在价值与当前股价的折价幅度，作为买入缓冲</li>
+        </ul>
+      </div>`,
+    resultTitle(result) {
+      const name = result.name || result.code || "";
+      return `${name} 估值分析`.trim();
+    },
+    resultMeta(result) {
+      const dcf = result.dcf || {};
+      const rel = result.relative || {};
+      const parts = [];
+      if (Number.isFinite(Number(dcf.margin_of_safety_pct))) parts.push(`安全边际 ${dcf.margin_of_safety_pct.toFixed(0)}%`);
+      if (rel.overall) parts.push(`相对估值 ${rel.overall}`);
+      return parts.length ? parts.join(" · ") : "";
+    },
+    runningTitle(company) {
+      return `${company} · 估值分析`;
+    },
+  },
+
   "zhang-views": {
     id: "zhang-views",
     kind: "engine",
@@ -313,7 +359,7 @@ window.AI_MODES = {
 
 };
 
-window.AI_MODE_ORDER = ["business", "bizprofile", "zhang-views", "peers", "risk", "sentiment"];
+window.AI_MODE_ORDER = ["business", "bizprofile", "zhang-views", "peers", "risk", "valuation", "sentiment"];
 
 window.AI_MODE_ALIASES = {
   business: "business",
@@ -339,6 +385,9 @@ window.AI_MODE_ALIASES = {
   "风险评估": "risk",
   "风险排查": "risk",
   "风险": "risk",
+  valuation: "valuation",
+  "估值分析": "valuation",
+  "估值": "valuation",
   "张新民视角": "zhang-views",
   "zhang-views": "zhang-views",
   sentiment: "sentiment",

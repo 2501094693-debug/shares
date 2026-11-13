@@ -186,6 +186,9 @@ def _need_slow(stored: dict[str, Any] | None) -> bool:
     data = stored.get("data") or {}
     if not data.get("high_all") or not data.get("low_all"):
         return True
+    # 市销率等额外估值：键缺失说明还没拉过，按慢字段补拉
+    if "ps_ttm" not in data:
+        return True
     age = time.time() - float(stored.get("slow_at") or stored.get("cached_at") or 0)
     return age > SLOW_TTL
 
@@ -314,18 +317,20 @@ def fetch_stock_quote(code: str, *, force: bool = False) -> dict[str, Any]:
     now = time.time()
     if not force:
         hit = _cache.get(code)
-        if hit is not None:
+        # 内存命中但缺市销率时继续往下补慢字段，避免基本信息长期空白
+        if hit is not None and "ps_ttm" in hit:
             return hit
 
     stored = None if force else _load_quote_disk(code)
     plan = _quote_plan(stored, force)
+    include_slow = plan == "full" or _need_slow(stored)
 
-    if plan == "hit" and stored:
+    # 休市快照可直接用，但慢字段缺失或过期时仍要补拉
+    if plan == "hit" and stored and not include_slow:
         result = dict(stored["data"])
         _publish_quote(code, result, cached_at=now)
         return result
 
-    include_slow = plan == "full" or _need_slow(stored)
     seed = dict(stored["data"]) if stored and stored.get("data") else None
     meta = dict(stored["meta"]) if stored and stored.get("meta") else {}
 
@@ -342,7 +347,7 @@ def fetch_stock_quote(code: str, *, force: bool = False) -> dict[str, Any]:
 
     if result:
         public = dict(result)
-        if plan == "full" or fresh:
+        if plan == "full" or fresh or include_slow:
             prev_slow = float((stored or {}).get("slow_at") or 0)
             slow_at = now if include_slow else prev_slow or now
             _save_quote_disk(code, public, meta, cached_at=now, slow_at=slow_at)

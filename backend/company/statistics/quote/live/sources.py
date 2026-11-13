@@ -691,8 +691,8 @@ def fetch_valuation_extra(code: str) -> dict[str, Any]:
         if rows:
             row = rows[0]
             ps = to_float(row.get("PS_TTM"))
-            if ps is not None:
-                out["ps_ttm"] = fmt_signed(ps)
+            # 有返回行就写入键（无值也写 ""），避免缓存长期判定「未拉过」反复请求
+            out["ps_ttm"] = fmt_signed(ps) if ps is not None else ""
             price = to_float(row.get("CLOSE_PRICE"))
             if price is not None:
                 out["_close_for_div"] = price

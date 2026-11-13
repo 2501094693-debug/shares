@@ -39,6 +39,7 @@ from company.statistics.margintrading.api import router as margintrading_router
 from company.news.financialreport.api import router as financialreport_router
 from company.analysis.financialreport.api import router as financial_views_router
 from company.analysis.competition.api import router as competition_router
+from company.analysis.valuation.api import router as valuation_router
 from company.analysis.riskassessment.api import router as riskassessment_router
 from company.analysis.businessoverview.interfaces.api import router as businessoverview_router
 from company.analysis.businessoverview.bizprofile.api import router as bizprofile_router
@@ -216,6 +217,7 @@ app.include_router(dividend_router)
 app.include_router(financialreport_router)
 app.include_router(financial_views_router)
 app.include_router(competition_router)
+app.include_router(valuation_router)
 app.include_router(riskassessment_router)
 app.include_router(businessoverview_router)
 app.include_router(bizprofile_router)

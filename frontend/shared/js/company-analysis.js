@@ -1603,7 +1603,184 @@
     `;
   }
 
+  function valFmtPrice(v) {
+    if (v == null || v === "" || !Number.isFinite(Number(v))) return "—";
+    return `${Number(v).toFixed(2)}`;
+  }
+  function valFmtYi(v) {
+    if (v == null || v === "" || !Number.isFinite(Number(v))) return "—";
+    const n = Number(v);
+    const sign = n < 0 ? "-" : "";
+    const abs = Math.abs(n);
+    if (abs >= 1e8) return `${sign}${(abs / 1e8).toFixed(2)}亿`;
+    if (abs >= 1e4) return `${sign}${(abs / 1e4).toFixed(2)}万`;
+    return `${sign}${abs.toFixed(2)}`;
+  }
+  function valFmtPct(v) {
+    if (v == null || v === "" || !Number.isFinite(Number(v))) return "—";
+    return `${Number(v).toFixed(1)}%`;
+  }
+  function valToneCls(percentile) {
+    if (percentile == null || !Number.isFinite(Number(percentile))) return "";
+    if (percentile <= 20) return "is-good";
+    if (percentile >= 80) return "is-bad";
+    return "is-mid";
+  }
+  function valTonePre(pct) {
+    if (pct == null || !Number.isFinite(Number(pct))) return "";
+    if (pct <= -10) return "is-good";
+    if (pct >= 10) return "is-bad";
+    return "is-mid";
+  }
+  const VAL_MULT_LABELS = {
+    pe_ttm: "市盈率TTM",
+    pe_static: "市盈率(静)",
+    pe_dyn: "市盈率(动)",
+    pb: "市净率",
+    ps_ttm: "市销率TTM",
+  };
+  const VAL_REPORT_TYPE_LABELS = { annual: "年报", semi: "半年报", q1: "一季报", q3: "三季报" };
+
+  function valuationHtml(pack) {
+    if (!pack) return `<div class="engine-hero"><p class="engine-type">估值分析</p><p class="muted">未取到估值结果</p></div>`;
+    const dcf = pack.dcf || {};
+    const rel = pack.relative || {};
+    const profile = pack.profile || {};
+    const industry = pack.industry || {};
+    const curPrice = dcf.current_price;
+    const intrinsic = dcf.intrinsic_value_per_share;
+    const mos = pack.margin_of_safety_pct;
+
+    const profileRows = [
+      ["公司", pack.name || pack.code || ""],
+      ["代码", pack.code || ""],
+      ["报告口径", VAL_REPORT_TYPE_LABELS[pack.report_type] || pack.report_type || ""],
+      ["行业", industry.l3_name || industry.l3_code || "—"],
+      ["当前价", valFmtPrice(curPrice)],
+      ["总股本", esc(profile.total_shares || profile.share_capital || "—")],
+      ["总市值", esc(profile.total_market_cap || profile.market_cap || "—")],
+      ["每股内在价值", valFmtPrice(intrinsic)],
+      ["安全边际", mos == null ? "—" : valFmtPct(mos)],
+      ["综合结论", pack.verdict || "数据不足"],
+    ];
+
+    // ---- DCF 板块 ----
+    const assum = dcf.assumptions_used || {};
+    const projection = Array.isArray(dcf.fcf_projection) ? dcf.fcf_projection : [];
+    const projRows = projection.map((p) => `
+      <tr><td class="num">${p.year}</td><td class="num">${valFmtYi(p.fcf)}</td><td class="num">${valFmtYi(p.pv)}</td><td class="num">${p.discount_factor}</td></tr>
+    `).join("");
+    const sens = Array.isArray(dcf.sensitivity) ? dcf.sensitivity : [];
+    const sensHeader = sens.length ? `<tr><th>折现率 WACC</th><th>永续增长 g</th><th class="num">每股内在价值</th></tr>` : "";
+    const sensRows = sens.map((s) => `
+      <tr><td>${valFmtPct(s.wacc / 100)}</td><td>${valFmtPct(s.terminal_growth / 100)}</td><td class="num">${valFmtPrice(s.intrinsic_per_share)}</td></tr>
+    `).join("");
+
+    const dcfHtml = `
+      <section class="engine-section valuation-dcf">
+        <header class="engine-section-head"><h3>绝对估值 · DCF 现金流折现</h3></header>
+        <div class="valuation-kpis">
+          <div class="valuation-card"><span>基期自由现金流</span><strong>${valFmtYi(dcf.fcf_base)}</strong><span class="muted valuation-caption">（元）</span></div>
+          <div class="valuation-card"><span>显性期增长率</span><strong>${assum.first_stage_growth == null ? "—" : valFmtPct(assum.first_stage_growth / 100)}</strong></div>
+          <div class="valuation-card"><span>折现率 WACC</span><strong>${valFmtPct(assum.wacc / 100)}</strong></div>
+          <div class="valuation-card"><span>永续增长率 g</span><strong>${valFmtPct(assum.terminal_growth / 100)}</strong></div>
+          <div class="valuation-card"><span>预测期</span><strong>${assum.projection_years || "—"} 年</strong></div>
+          <div class="valuation-card"><span>企业价值 EV</span><strong>${valFmtYi(dcf.enterprise_value)}</strong></div>
+          <div class="valuation-card"><span>净债务</span><strong>${valFmtYi(dcf.net_debt)}</strong></div>
+          <div class="valuation-card"><span>股权价值</span><strong>${valFmtYi(dcf.equity_value)}</strong></div>
+          <div class="valuation-card"><span>每股内在价值</span><strong class="${intrinsic == null ? "" : "is-accent"}">${valFmtPrice(intrinsic)}</strong></div>
+        </div>
+        ${projection.length ? `
+          <div class="valuation-table-wrap"><table class="peers-table valuation-table">
+            <thead><tr><th>预测年份</th><th class="num">自由现金流 FCF</th><th class="num">现值 PV</th><th class="num">折现因子</th></tr></thead>
+            <tbody>${projRows}</tbody>
+          </table></div>
+        ` : ""}
+        ${sens.length ? `
+          <div class="valuation-table-wrap"><table class="peers-table valuation-table">
+            <thead>${sensHeader}</thead>
+            <tbody>${sensRows}</tbody>
+          </table><p class="muted valuation-note">敏感性：WACC ±1%、永续增长 ±0.5% 下的每股内在价值。</p></div>
+        ` : ""}
+        ${(Array.isArray(dcf.notes) && dcf.notes.length) ? `<div class="engine-flags"><h4>DCF 说明</h4><ul>${dcf.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>` : ""}
+      </section>`;
+
+    // ---- 相对估值板块 ----
+    const history = rel.history || {};
+    const peers = rel.peers || {};
+    const coreMul = ["pe_ttm", "pb", "ps_ttm"];
+    const histRows = coreMul.map((k) => {
+      const h = history[k] || {};
+      return `
+        <tr>
+          <td>${VAL_MULT_LABELS[k]}</td>
+          <td class="num">${valFmtPrice(h.current)}</td>
+          <td class="num">${valFmtPrice(h.median)}</td>
+          <td class="num ${valToneCls(h.percentile)}">${h.percentile == null ? "—" : h.percentile.toFixed(0)} 分位</td>
+          <td class="num">${h.samples}</td>
+        </tr>
+      `;
+    }).join("");
+
+    const peerRows = coreMul.map((k) => {
+      const m = (peers.multiples || {})[k] || {};
+      return `
+        <tr>
+          <td>${VAL_MULT_LABELS[k]}</td>
+          <td class="num">${valFmtPrice(m.target)}</td>
+          <td class="num">${valFmtPrice(m.peer_median)}</td>
+          <td class="num ${valTonePre(m.premium_pct)}">${m.premium_pct == null ? "—" : m.premium_pct.toFixed(0)}%</td>
+          <td class="num">${m.peer_samples}</td>
+          <td class="num">${m.verdict || "—"}</td>
+        </tr>
+      `;
+    }).join("");
+
+    const relHtml = `
+      <section class="engine-section valuation-relative">
+        <header class="engine-section-head"><h3>相对估值 · 历史分位与同业对比</h3></header>
+        <div class="valuation-kpis">
+          <div class="valuation-card"><span>历史判定</span><strong>${rel.history_verdict || "—"}</strong></div>
+          <div class="valuation-card"><span>同业判定</span><strong>${rel.peer_verdict || "—"}</strong></div>
+          <div class="valuation-card"><span>总体结论</span><strong class="${rel.overall === "相对低估" ? "is-good" : rel.overall === "相对高估" ? "is-bad" : "is-mid"}">${rel.overall || "—"}</strong></div>
+        </div>
+        <div class="valuation-table-wrap"><table class="peers-table valuation-table">
+          <thead><tr><th>倍数</th><th class="num">当前</th><th class="num">历史中位数</th><th class="num">历史分位</th><th class="num">样本</th></tr></thead>
+          <tbody>${histRows}</tbody>
+        </table></div>
+        ${peerRows ? `<div class="valuation-table-wrap"><table class="peers-table valuation-table">
+          <thead><tr><th>倍数</th><th class="num">本司</th><th class="num">同业中位数</th><th class="num">溢价/折价</th><th class="num">样本</th><th class="num">判定</th></tr></thead>
+          <tbody>${peerRows}</tbody>
+        </table><p class="muted valuation-note">同业为申万三级行业可比公司的最新倍数中位数；溢价为正表示高于同业中位数。</p></div>` : ""}
+        ${(Array.isArray(rel.notes) && rel.notes.length) ? `<div class="engine-flags"><h4>说明</h4><ul>${rel.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>` : ""}
+      </section>`;
+
+    const errorsHtml = (Array.isArray(pack.errors) && pack.errors.length)
+      ? `<div class="engine-flags"><h3>数据缺口</h3><ul>${pack.errors.map((e) => `<li>${esc(e)}</li>`).join("")}</ul></div>` : "";
+
+    const verdictCls = pack.verdict && pack.verdict.includes("回避") ? "is-bad" : (pack.verdict && (pack.verdict.includes("可考虑") || pack.verdict.includes("安全边际充足")) ? "is-good" : "is-mid");
+
+    return `
+      <div class="engine-hero">
+        <p class="engine-type">估值分析</p>
+        <p class="muted">${[profileRows[2], profileRows[3]].map((r) => esc(r[1])).filter(Boolean).join(" · ")} · ${pack.data_available ? "数据可用" : "数据缺失"}</p>
+        ${pack.name ? `<p class="muted">${esc(pack.name)}（${esc(pack.code)})</p>` : ""}
+      </div>
+      <div class="valuation-verdict ${verdictCls}">
+        <strong>安全边际：${mos == null ? "—" : valFmtPct(mos)}</strong>
+        <span class="valuation-verdict-label">${esc(pack.verdict || "数据不足，无法定论")}</span>
+      </div>
+      <div class="engine-kpis">${profileRows.slice(0, 9).map(([label, value]) => `
+        <div class="engine-kpi"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>
+      `).join("")}</div>
+      ${dcfHtml}
+      ${relHtml}
+      ${errorsHtml}
+    `;
+  }
+
   function engineHtml(pack, mode = state.mode) {
+    if (mode === "valuation") return valuationHtml(pack);
     if (mode === "risk" || pack?.module === "riskassessment") return riskHtml(pack);
     if (mode === "bizprofile" || Array.isArray(pack?.dimensions)) return bizProfileHtml(pack);
     if (mode === "zhang-views" || (Array.isArray(pack?.views) && pack?.summary)) return zhangViewsHtml(pack);
