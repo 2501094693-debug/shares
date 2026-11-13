@@ -14141,6 +14141,16 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   overflow: hidden;
 }
 
+/* 折叠右侧实时 + 三列明细，五日独占整块 */
+.deal-analysis-center.is-main-folded {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "fiveday";
+}
+
+.deal-analysis-center.is-main-folded .deal-analysis-main {
+  display: none;
+}
+
 .deal-analysis-center .deal-charts-deck,
 .deal-analysis-center .charts-deck {
   /* 覆盖全局 .charts-deck { height:100%; flex:1; 双列 } */
@@ -14470,6 +14480,14 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
       "fiveday"
       "main";
     min-height: 720px;
+  }
+
+  /* 窄屏折叠后只用一行；旧 min-height 是为上下堆叠留的，这里要放开 */
+  .deal-analysis-center.is-main-folded {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "fiveday";
+    min-height: 0;
   }
 
   .deal-analysis-bottom {

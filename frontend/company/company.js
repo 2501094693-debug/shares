@@ -771,17 +771,34 @@ const dealFiveDayState = {
   viewStart: 0,
   /** 可见交易日数（单行横向） */
   viewSize: 5,
+  /** 当前请求的交易日窗口（0 = 尚未加载） */
+  loadDays: 0,
+  /** 已加载窗口对应的股票代码 */
+  code: "",
+  /** 是否正在补拉更早的交易日 */
+  extending: false,
   /** 拖拽平移 */
   drag: null,
   _plot: null,
 };
 const DEAL_FIVEDAY_SLOTS = 241;
-/** 预拉交易日上限（与后端 /api/stocks/intraday le=20 对齐） */
+/** 首屏预拉交易日数；缩小视图顶到已加载窗口时再增量补拉 */
 const DEAL_FIVEDAY_LOAD_DAYS = 20;
+/** 每次补拉的交易日数 */
+const DEAL_FIVEDAY_LOAD_STEP = 40;
+/** 预拉交易日上限（与后端 /api/stocks/intraday le=120 对齐） */
+const DEAL_FIVEDAY_LOAD_MAX = 120;
 /** 默认可见交易日数 */
 const DEAL_FIVEDAY_DEFAULT_VIEW = 5;
-/** 可见日数上限（不超过已加载） */
-const DEAL_FIVEDAY_MAX_VIEW = 20;
+/** 单日最小像素宽度：窗口不够时压缩单元格，不把交易日裁出画布 */
+const DEAL_FIVEDAY_MIN_CELL_W = 6;
+/** 日期标签最小间距（像素），比它更密时隔几日标一次 */
+const DEAL_FIVEDAY_LABEL_GAP = 36;
+/** 除权除息识别阈值：前收相对上一日收盘偏离超过该比例就标注（日涨跌停 ±10%，不会误伤） */
+const DEAL_FIVEDAY_EXRIGHT_GAP = 0.03;
+/** 折叠右侧实时 + 三列明细，把空间让给五日 */
+const DEAL_MAIN_FOLD_KEY = "orbit-deal-main-folded";
+const dealMainFoldState = { folded: false };
 const tabParamRaw = (params.get("tab") || "").trim().toLowerCase();
 let emotionSource = normalizeEmotionSource(params.get("emotion") || "");
 if (["ths-emotion", "ths", "circle"].includes(tabParamRaw)) {
@@ -1331,11 +1348,14 @@ function dealFiveDayTotalDays() {
   return days.length;
 }
 
-/** 可见交易日数上限（不超过已加载） */
+/** 可见交易日数上限：不超过已加载，且受画布宽度约束 */
 function dealFiveDayMaxViewSize() {
   const total = dealFiveDayTotalDays();
   if (total <= 0) return DEAL_FIVEDAY_DEFAULT_VIEW;
-  return Math.max(1, Math.min(total, DEAL_FIVEDAY_MAX_VIEW));
+  const body = document.getElementById("dealFiveDayBody");
+  const width = Math.max(0, (body?.clientWidth || 0) - 16);
+  const fit = width ? Math.floor(width / DEAL_FIVEDAY_MIN_CELL_W) : DEAL_FIVEDAY_LOAD_MAX;
+  return Math.max(1, Math.min(total, Math.max(DEAL_FIVEDAY_DEFAULT_VIEW, fit)));
 }
 
 /** 当前可见交易日数 */
@@ -1348,6 +1368,47 @@ function dealFiveDayViewSize() {
   return size;
 }
 
+function readDealMainFolded() {
+  try {
+    return localStorage.getItem(DEAL_MAIN_FOLD_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function persistDealMainFolded(folded) {
+  try {
+    localStorage.setItem(DEAL_MAIN_FOLD_KEY, folded ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 折叠/展开右侧整块（实时走势 + 分时成交/资金动向/盘口委托） */
+function applyDealMainFold(folded, { persist = false } = {}) {
+  dealMainFoldState.folded = Boolean(folded);
+  const center = document.querySelector(".deal-analysis-center");
+  if (center) center.classList.toggle("is-main-folded", dealMainFoldState.folded);
+  const btn = document.getElementById("dealMainFoldBtn");
+  if (btn) {
+    btn.setAttribute("aria-expanded", dealMainFoldState.folded ? "false" : "true");
+    btn.setAttribute("aria-label", dealMainFoldState.folded ? "展开实时与明细" : "折叠实时与明细");
+    btn.title = dealMainFoldState.folded ? "展开实时与明细" : "折叠实时与明细，把空间让给五日";
+    btn.textContent = dealMainFoldState.folded ? "展开实时" : "折叠实时";
+  }
+  if (persist) persistDealMainFolded(dealMainFoldState.folded);
+  if (!dealAnalysisVisible()) return;
+  // 等 grid 尺寸落地后再重算两侧画布；折叠时实时图不绘制
+  window.requestAnimationFrame(() => {
+    if (!dealAnalysisVisible()) return;
+    if (dealFiveDayState.items.length) {
+      clampDealFiveDayViewport();
+      paintDealFiveDayChart();
+    }
+    if (!dealMainFoldState.folded) scheduleDealAnalysisPaint();
+  });
+}
+
 /**
  * 单行横向日列：整窗共用 price / volume 矩形；cells 只存每列 x/w 供 clip。
  */
@@ -1357,7 +1418,7 @@ function fiveDayChartLayout(availW, availH, dayCount) {
   const labelH = 14;
   const innerAvailW = Math.max(40, availW - pad.left - pad.right);
   const innerAvailH = Math.max(40, availH - pad.top - pad.bottom - labelH);
-  const cellW = Math.max(20, innerAvailW / count);
+  const cellW = Math.max(DEAL_FIVEDAY_MIN_CELL_W, innerAvailW / count);
   const plotY = pad.top;
   const volH = Math.max(12, Math.min(innerAvailH * 0.28, innerAvailH * DEAL_FIVEDAY_VOL_RATIO + 10));
   const priceH = Math.max(20, innerAvailH - volH - 4);
@@ -1462,6 +1523,10 @@ function zoomDealFiveDayViewport(anchorRatio, deltaSize, { render = true } = {})
   const nextSize = Math.max(1, Math.min(maxSize, size + Math.round(deltaSize || 0)));
   if (nextSize === size) {
     syncDealFiveDayZoomButtons();
+    if (deltaSize > 0 && size >= total) {
+      // 已展示全部已加载交易日：继续拉更早的数据
+      return extendDealFiveDay(size + Math.max(1, Math.round(deltaSize || 0)));
+    }
     return false;
   }
   dealFiveDayState.viewSize = nextSize;
@@ -1479,14 +1544,27 @@ function zoomDealFiveDayViewport(anchorRatio, deltaSize, { render = true } = {})
   return true;
 }
 
+/** 已加载窗口顶到头时补拉更早的交易日；``revealSize`` 为补拉后希望展开的可见日数 */
+function extendDealFiveDay(revealSize = 0) {
+  const total = dealFiveDayTotalDays();
+  if (!total || total >= DEAL_FIVEDAY_LOAD_MAX || dealFiveDayState.loading) return false;
+  const target = Math.min(DEAL_FIVEDAY_LOAD_MAX, total + DEAL_FIVEDAY_LOAD_STEP);
+  if (target <= total) return false;
+  void loadDealFiveDay({ extend: true, days: target, revealSize });
+  return true;
+}
+
 function syncDealFiveDayZoomButtons() {
   const total = dealFiveDayTotalDays();
   const size = dealFiveDayViewSize();
   const maxSize = dealFiveDayMaxViewSize();
+  const canShowMore = size < maxSize;
+  const canLoadMore =
+    size >= total && total > 0 && total < DEAL_FIVEDAY_LOAD_MAX && !dealFiveDayState.loading;
   const outBtn = document.getElementById("dealFiveDayZoomOutBtn");
   const inBtn = document.getElementById("dealFiveDayZoomInBtn");
   // out = 更多日；in = 更少日（放大单日）
-  if (outBtn) outBtn.disabled = !total || size >= maxSize;
+  if (outBtn) outBtn.disabled = !total || (!canShowMore && !canLoadMore);
   if (inBtn) inBtn.disabled = !total || size <= 1;
 }
 
@@ -1496,8 +1574,13 @@ function renderDealFiveDayMeta() {
   const items = Array.isArray(dealFiveDayState.items) ? dealFiveDayState.items : [];
   const days = Array.isArray(dealFiveDayState.days) ? dealFiveDayState.days : [];
   const visible = Math.min(dealFiveDayViewSize(), days.length || 0);
+  const busy = dealFiveDayState.loading
+    ? dealFiveDayState.extending && items.length
+      ? "载入更多…"
+      : "加载中"
+    : "";
   meta.textContent = [
-    dealFiveDayState.loading && !items.length ? "加载中" : "",
+    busy,
     dealFiveDayState.source || "",
     days.length
       ? `${days.length}日·可见${Math.max(1, visible)}`
@@ -1606,11 +1689,21 @@ function paintDealFiveDayChart() {
   ctx.restore();
 
   const dayScales = [];
+  const dayPoints = dayList.map(() => []);
+  for (const point of points) {
+    const bucket = dayPoints[point.dayIdx];
+    if (bucket) bucket.push(point);
+  }
+  const labelStep = Math.max(
+    1,
+    Math.ceil(DEAL_FIVEDAY_LABEL_GAP / Math.max(1, layout.cellW)),
+  );
+  let prevDayClose = null;
   for (let dayIdx = 0; dayIdx < dayList.length; dayIdx += 1) {
     const cell = layout.cells[dayIdx];
     if (!cell) continue;
     const { price, volume } = cell;
-    const dayPts = points.filter((p) => p.dayIdx === dayIdx);
+    const dayPts = dayPoints[dayIdx] || [];
     let dayBase = null;
     for (const row of dayPts) {
       const b = Number(row?.base_price);
@@ -1621,6 +1714,26 @@ function paintDealFiveDayChart() {
     }
     if (dayBase == null && Number.isFinite(basePrice) && basePrice > 0) dayBase = basePrice;
     dayScales[dayIdx] = { dayBase, scale, yAt, cell };
+
+    const dayClose =
+      Array.isArray(dayPts) && dayPts.length ? Number(dayPts[dayPts.length - 1].price) : null;
+    // 除权除息日：前收与上一日收盘相差过大，画出来就是“垂直断档”，标出来避免误读
+    const exRight =
+      prevDayClose != null &&
+      Number.isFinite(dayClose) &&
+      Number.isFinite(dayBase) &&
+      prevDayClose > 0 &&
+      Math.abs(dayBase - prevDayClose) / prevDayClose > DEAL_FIVEDAY_EXRIGHT_GAP;
+    if (exRight && cell.w >= 24) {
+      ctx.save();
+      ctx.font = '9px "JetBrains Mono", Consolas, monospace';
+      ctx.fillStyle = colors.muted;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.fillText("除权", cell.x + 2, sharedPrice.y + 2);
+      ctx.restore();
+    }
+    prevDayClose = dayClose;
 
     if (dayList[dayIdx] === activeDay) {
       ctx.save();
@@ -1728,13 +1841,16 @@ function paintDealFiveDayChart() {
     }
     ctx.restore();
 
-    ctx.save();
-    ctx.font = '10px "JetBrains Mono", Consolas, monospace';
-    ctx.fillStyle = colors.muted;
-    ctx.textBaseline = "bottom";
-    ctx.textAlign = "center";
-    ctx.fillText(fiveDayDateLabel(dayList[dayIdx]), cell.x + cell.w / 2, cell.labelY);
-    ctx.restore();
+    // 日列很密时隔几日标一次日期，始终从最新一日往回标
+    if ((dayList.length - 1 - dayIdx) % labelStep === 0) {
+      ctx.save();
+      ctx.font = '10px "JetBrains Mono", Consolas, monospace';
+      ctx.fillStyle = colors.muted;
+      ctx.textBaseline = "bottom";
+      ctx.textAlign = "center";
+      ctx.fillText(fiveDayDateLabel(dayList[dayIdx]), cell.x + cell.w / 2, cell.labelY);
+      ctx.restore();
+    }
   }
 
   const hoverIdx = dealFiveDayState.hoverIndex;
@@ -1892,6 +2008,14 @@ function bindDealFiveDayPanel() {
       zoomDealFiveDayViewport(0.5, -1);
     });
   }
+  const foldBtn = document.getElementById("dealMainFoldBtn");
+  if (foldBtn && foldBtn.dataset.bound !== "1") {
+    foldBtn.dataset.bound = "1";
+    foldBtn.addEventListener("click", () => {
+      applyDealMainFold(!dealMainFoldState.folded, { persist: true });
+    });
+    applyDealMainFold(readDealMainFolded());
+  }
 
   const body = document.getElementById("dealFiveDayBody");
   if (!body || dealFiveDayState.bound) return;
@@ -1927,7 +2051,7 @@ function bindDealFiveDayPanel() {
     if (!dealFiveDayState.items.length) return;
     if (ev.button != null && ev.button !== 0) return;
     const plot = dealFiveDayState._plot;
-    const cellW = Math.max(24, Number(plot?.layout?.cellW) || 80);
+    const cellW = Math.max(DEAL_FIVEDAY_MIN_CELL_W, Number(plot?.layout?.cellW) || 80);
     dealFiveDayState.drag = {
       pointerId: ev.pointerId,
       startX: ev.clientX,
@@ -2021,17 +2145,34 @@ function bindDealFiveDayPanel() {
   }
 }
 
-async function loadDealFiveDay({ force = false } = {}) {
+async function loadDealFiveDay({ force = false, extend = false, days = 0, revealSize = 0 } = {}) {
   if (!code || !dealAnalysisVisible()) return;
   const gen = ++dealFiveDayState.loadGen;
+  const prevTotal = dealFiveDayTotalDays();
+  const prevSize = dealFiveDayViewSize();
+  const wasRight = !prevTotal || dealFiveDayState.viewStart + prevSize >= prevTotal;
+  // 换股回到首屏窗口，避免沿用上一只票放大后的 60/120 日拉取
+  const sameStock = dealFiveDayState.code === code;
+  const requested = Math.round(
+    Number(days) ||
+      (sameStock ? Number(dealFiveDayState.loadDays) : 0) ||
+      DEAL_FIVEDAY_LOAD_DAYS,
+  );
+  const target = Math.max(
+    DEAL_FIVEDAY_LOAD_DAYS,
+    Math.min(DEAL_FIVEDAY_LOAD_MAX, requested),
+  );
+  dealFiveDayState.code = code;
   dealFiveDayState.loading = true;
+  dealFiveDayState.extending = Boolean(extend && prevTotal);
   dealFiveDayState.error = "";
-  dealFiveDayState.hoverIndex = null;
+  if (!dealFiveDayState.extending) dealFiveDayState.hoverIndex = null;
+  dealFiveDayState.loadDays = target;
   renderDealFiveDayPanel();
   try {
     const qs = new URLSearchParams({
       code,
-      days: String(DEAL_FIVEDAY_LOAD_DAYS),
+      days: String(target),
     });
     if (force) qs.set("refresh", "1");
     const json = await api(`/api/stocks/intraday?${qs.toString()}`);
@@ -2040,16 +2181,26 @@ async function loadDealFiveDay({ force = false } = {}) {
     dealFiveDayState.items = Array.isArray(data.trends) ? data.trends : [];
     dealFiveDayState.days = Array.isArray(data.days) ? data.days : [];
     dealFiveDayState.source = String(data.source || "");
+    const total = dealFiveDayTotalDays();
+    if (dealFiveDayState.extending && prevTotal && total > prevTotal) {
+      // 补拉的是更早的交易日（数组左侧），平移下标保持原视口
+      dealFiveDayState.viewStart += total - prevTotal;
+    }
     if (!Number.isFinite(dealFiveDayState.viewSize) || dealFiveDayState.viewSize < 1) {
       dealFiveDayState.viewSize = DEAL_FIVEDAY_DEFAULT_VIEW;
     }
-    clampDealFiveDayViewport({ stickRight: true });
+    if (revealSize > 0) {
+      dealFiveDayState.viewSize = Math.max(dealFiveDayViewSize(), Math.round(revealSize));
+    }
+    clampDealFiveDayViewport({ stickRight: !dealFiveDayState.extending || wasRight });
     dealFiveDayState.loading = false;
+    dealFiveDayState.extending = false;
     dealFiveDayState.error = "";
     renderDealFiveDayPanel();
   } catch (err) {
     if (gen !== dealFiveDayState.loadGen) return;
     dealFiveDayState.loading = false;
+    dealFiveDayState.extending = false;
     dealFiveDayState.error = String(err?.message || err || "五日成交加载失败");
     renderDealFiveDayPanel();
   }
@@ -13454,6 +13605,8 @@ function renderTicksChart(_hoverIndex = undefined) {
   const canvas = els.ticksChart;
   const wrap = els.ticksChartWrap;
   if (!canvas || !wrap) return;
+  // 成交分析折叠右侧时画布不可见，等展开后再补画
+  if (dealMainFoldState.folded && dealAnalysisVisible()) return;
 
   const dpr = window.devicePixelRatio || 1;
   const cssW = Math.max(240, wrap.clientWidth || 320);
@@ -18602,6 +18755,7 @@ setupMainTabs();
 setupChartsViewport();
 setupMetricTips();
 bindFundamentalsFold();
+applyDealMainFold(readDealMainFolded());
 setupChart();
 setupLcChart();
 setupTicksChart();

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=20261108-deal-ticks-fill" />
+  <link rel="stylesheet" href="/css/style.css?v=20261113-deal-fold" />
   <link rel="stylesheet" href="/css/ai-page.css?v=20261022-risk-q4" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
@@ -319,6 +319,7 @@
                   </div>
                   <div id="dealFiveDayHoverStats" class="deal-fiveday-head-stats" hidden aria-live="polite"></div>
                   <div class="deal-fiveday-tools">
+                    <button id="dealMainFoldBtn" class="btn ghost sm" type="button" aria-controls="dealAnalysisMain" aria-expanded="true" title="折叠实时与明细，把空间让给五日">折叠实时</button>
                     <button id="dealFiveDayZoomOutBtn" class="btn ghost sm" type="button" title="显示更多交易日 (Ctrl+滚轮)">−</button>
                     <button id="dealFiveDayZoomInBtn" class="btn ghost sm" type="button" title="放大单日分时 (Ctrl+滚轮)">+</button>
                     <button id="dealFiveDayRefreshBtn" class="btn ghost sm" type="button">刷新</button>
@@ -328,7 +329,7 @@
                   <p class="muted">进入成交分析后加载五日分时</p>
                 </div>
               </section>
-              <div class="deal-analysis-main" aria-label="实时走势与成交明细">
+              <div id="dealAnalysisMain" class="deal-analysis-main" aria-label="实时走势与成交明细">
                 <div id="dealChartsSlot" class="charts-deck deal-charts-deck" aria-label="实时走势"></div>
                 <div class="deal-analysis-bottom" aria-label="分时成交 · 资金动向 · 盘口委托">
                   <div id="dealHeroSlot" class="deal-metrics-slot" aria-label="分时成交与资金动向"></div>
@@ -1478,6 +1479,6 @@
   <script src="/js/shared/ai-modes.js?v=20261022-risk-meta"></script>
   <script src="/js/shared/company-analysis.js?v=20261027-deal-analysis"></script>
   <script src="/js/shared/line-compare.js?v=20261026-lc-trader-fix"></script>
-  <script src="/js/company.js?v=20261108-deal-switch-perf"></script>
+  <script src="/js/company.js?v=20261113-deal-fold"></script>
 </body>
 </html>

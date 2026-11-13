@@ -19,6 +19,7 @@ KLINE_CACHE_DIR = CACHE_DIR / "kline"
 QUOTE_CACHE_DIR = CACHE_DIR / "quote"
 FUNDFLOW_CACHE_DIR = CACHE_DIR / "fundflow"
 TICKS_CACHE_DIR = CACHE_DIR / "ticks"
+TREND_CACHE_DIR = CACHE_DIR / "trend"
 STEEP_CACHE_DIR = CACHE_DIR / "steep"
 MARKET_HISTORY_CACHE_DIR = CACHE_DIR / "market_history"
 ANALYSIS_CACHE_DIR = CACHE_DIR / "analysis"
@@ -63,6 +64,7 @@ def ensure_cache_dirs() -> None:
     QUOTE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     FUNDFLOW_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     TICKS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    TREND_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     STEEP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     MARKET_HISTORY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     ANALYSIS_CACHE_DIR.mkdir(parents=True, exist_ok=True)

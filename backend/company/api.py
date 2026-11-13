@@ -154,7 +154,7 @@ def stocks_ticks(
 @router.get("/api/stocks/intraday")
 def stocks_intraday(
     code: str = Query("", description="股票代码，如 000338"),
-    days: int = Query(5, ge=1, le=20, description="最近交易日数，默认 5"),
+    days: int = Query(5, ge=1, le=120, description="最近交易日数，默认 5，最多 120"),
     day: str = Query("", description="单日 YYYY-MM-DD；有值则只拉该日"),
 ):
     """同花顺分时成交（分钟级）。与 App「分时 / 五日」图同源。"""
