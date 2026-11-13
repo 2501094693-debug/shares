@@ -3064,7 +3064,8 @@ html.company-charts-on .company-page.app {
   margin: 0;
 }
 
-.big-deal-scroll {
+.big-deal-scroll,
+.deal-entrust-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
@@ -3072,17 +3073,20 @@ html.company-charts-on .company-page.app {
   scrollbar-color: rgba(42, 212, 184, 0.35) transparent;
 }
 
-.big-deal-scroll::-webkit-scrollbar {
+.big-deal-scroll::-webkit-scrollbar,
+.deal-entrust-body::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
-.big-deal-scroll::-webkit-scrollbar-thumb {
+.big-deal-scroll::-webkit-scrollbar-thumb,
+.deal-entrust-body::-webkit-scrollbar-thumb {
   background: rgba(42, 212, 184, 0.28);
   border-radius: 99px;
 }
 
-.big-deal-scroll::-webkit-scrollbar-track {
+.big-deal-scroll::-webkit-scrollbar-track,
+.deal-entrust-body::-webkit-scrollbar-track {
   background: transparent;
 }
 
@@ -9952,9 +9956,10 @@ body.app-shell.screen-page-root .screen-page.market-page {
 .screen-page-root[data-screen-mode="select"] .judgment-stock-board,
 .screen-page-root[data-screen-mode="select"] .judgment-query,
 .screen-page-root[data-screen-mode="select"] .screen-layout,
-.screen-page-root[data-screen-mode="select"] #refreshBtn,
+.screen-page-root[data-screen-mode="select"] .rot-board,
 .screen-page-root:not([data-screen-mode="industry"]) .rot-board,
-.screen-page-root:not([data-screen-mode="stock"]) .judgment-stock-board {
+.screen-page-root:not([data-screen-mode="stock"]) .judgment-stock-board,
+.screen-page-root:not([data-screen-mode="select"]) .judgment-select-board {
   display: none;
 }
 
@@ -9962,7 +9967,8 @@ body.app-shell.screen-page-root .screen-page.market-page {
   display: inline-flex;
 }
 
-.screen-page-root[data-screen-mode="stock"] .stock-eval-board {
+.screen-page-root[data-screen-mode="stock"] .stock-eval-board,
+.screen-page-root[data-screen-mode="select"] .judgment-select-board {
   display: flex;
   flex: 1 1 0%;
   min-height: 0;
@@ -9971,7 +9977,8 @@ body.app-shell.screen-page-root .screen-page.market-page {
   gap: 8px;
 }
 
-.screen-page-root[data-screen-mode="stock"] .stock-eval-pane {
+.screen-page-root[data-screen-mode="stock"] .stock-eval-pane,
+.screen-page-root[data-screen-mode="select"] .stock-eval-pane {
   display: flex;
   flex: 1 1 0%;
   min-height: 0;
@@ -9982,7 +9989,8 @@ body.app-shell.screen-page-root .screen-page.market-page {
   overflow: hidden;
 }
 
-.screen-page-root[data-screen-mode="stock"] .stock-eval-scroll {
+.screen-page-root[data-screen-mode="stock"] .stock-eval-scroll,
+.screen-page-root[data-screen-mode="select"] .stock-eval-scroll {
   flex: 1 1 0%;
   min-height: 0;
   overflow: auto;
@@ -9991,41 +9999,53 @@ body.app-shell.screen-page-root .screen-page.market-page {
 .screen-page-root[data-screen-mode="stock"] .stock-eval-table thead th,
 .screen-page-root[data-screen-mode="stock"] .stock-eval-table thead th.num,
 .screen-page-root[data-screen-mode="stock"] .stock-eval-table td,
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table td.num {
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table td.num,
+.screen-page-root[data-screen-mode="select"] .stock-eval-table thead th,
+.screen-page-root[data-screen-mode="select"] .stock-eval-table thead th.num,
+.screen-page-root[data-screen-mode="select"] .stock-eval-table td,
+.screen-page-root[data-screen-mode="select"] .stock-eval-table td.num {
   text-align: left;
 }
 
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table th.is-sortable {
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table th.is-sortable,
+.screen-page-root[data-screen-mode="select"] .stock-eval-table th.is-sortable {
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
 }
 
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table th.is-sortable:hover {
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table th.is-sortable:hover,
+.screen-page-root[data-screen-mode="select"] .stock-eval-table th.is-sortable:hover {
   color: var(--text);
 }
 
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table th.is-sorted {
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table th.is-sorted,
+.screen-page-root[data-screen-mode="select"] .stock-eval-table th.is-sorted {
   color: var(--accent, #3d7eff);
 }
 
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table tr.is-row {
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table tr.is-row,
+.screen-page-root[data-screen-mode="select"] .stock-eval-table tr.is-row {
   cursor: pointer;
 }
 
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table tr.is-row:hover {
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table tr.is-row:hover,
+.screen-page-root[data-screen-mode="select"] .stock-eval-table tr.is-row:hover {
   background: color-mix(in srgb, var(--accent, #3d7eff) 10%, transparent);
 }
 
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table td[data-tone="up"] {
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table td[data-tone="up"],
+.screen-page-root[data-screen-mode="select"] .stock-eval-table td[data-tone="up"] {
   color: var(--up, #d64545);
 }
 
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table td[data-tone="down"] {
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table td[data-tone="down"],
+.screen-page-root[data-screen-mode="select"] .stock-eval-table td[data-tone="down"] {
   color: var(--down, #1faa6e);
 }
 
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table td.mono {
+.screen-page-root[data-screen-mode="stock"] .stock-eval-table td.mono,
+.screen-page-root[data-screen-mode="select"] .stock-eval-table td.mono {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
 }
@@ -14192,6 +14212,44 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   background: rgba(4, 8, 14, 0.35);
 }
 
+/* 底部三列在窄屏下会挤压成交明细：按容器宽度逐级压缩，避免横向滚动/列被截断 */
+.deal-analysis-bottom .ticks-tape-section {
+  container-type: inline-size;
+}
+
+@container (max-width: 230px) {
+  .ticks-tape-scroll .big-deal-table th,
+  .ticks-tape-scroll .big-deal-table td {
+    padding-right: 4px;
+    font-size: 0.72rem;
+  }
+}
+
+@container (max-width: 190px) {
+  .ticks-tape-scroll .big-deal-table th,
+  .ticks-tape-scroll .big-deal-table td {
+    padding-right: 3px;
+    font-size: 0.68rem;
+  }
+
+  .ticks-tape-scroll .tick-lots-count {
+    display: none;
+  }
+}
+
+@container (max-width: 160px) {
+  .ticks-tape-scroll .big-deal-table th,
+  .ticks-tape-scroll .big-deal-table td {
+    padding-right: 2px;
+    font-size: 0.64rem;
+  }
+
+  .ticks-tape-scroll .big-deal-tag {
+    min-width: 0;
+    font-weight: 600;
+  }
+}
+
 .deal-analysis-bottom .ticks-tape-body,
 .deal-analysis-bottom .big-deal-body {
   flex: 1 1 0%;
@@ -14362,7 +14420,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
 
 .deal-entrust-table th,
 .deal-entrust-table td {
-  padding: 3px 4px;
+  padding: 3px;
   text-align: right;
   white-space: nowrap;
   border-bottom: 1px solid rgba(42, 212, 184, 0.06);

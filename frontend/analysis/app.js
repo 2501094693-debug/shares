@@ -18,6 +18,11 @@
       sub: "非创业板、非科创板、非 ST · ±band 区间内个股/指数四价走势、股指偏离、低点评分；点列头切换排序，点击行进入个股",
       from: "analysis",
     },
+    select: {
+      title: "ORBIT · 行情研判",
+      sub: "非创业板、非科创板、非 ST、非退市 · 最新收盘/最低两价各自「最近最低」交易日数与间隔；默认按间隔升序，点列头切换排序，点击行进入个股",
+      from: "analysis",
+    },
   };
 
   const STOCK_SORT_KEYS = [
@@ -45,6 +50,31 @@
     low_date: "低点日",
   };
   const STOCK_INDEX_CODES = ["000001", "399001", "000300"];
+
+  const SELECT_SORT_KEYS = [
+    "code",
+    "name",
+    "date",
+    "close_price",
+    "low_price",
+    "close_days",
+    "low_days",
+    "gap",
+    "close_since",
+    "low_since",
+  ];
+  const SELECT_SORT_LABELS = {
+    code: "代码",
+    name: "名称",
+    date: "交易日",
+    close_price: "收盘",
+    low_price: "最低",
+    close_days: "收盘天数",
+    low_days: "最低天数",
+    gap: "间隔",
+    close_since: "收盘自",
+    low_since: "最低自",
+  };
 
   const limit = {
     days: 15,
@@ -98,6 +128,25 @@
     params: null,
     sortKey: "divergence",
     sortDir: "desc",
+    pollTimer: 0,
+    fetching: false,
+    started: false,
+    error: "",
+    message: "",
+  };
+
+  const select = {
+    adjust: "qfq",
+    status: "idle",
+    items: [],
+    candidateCount: 0,
+    analyzedCount: 0,
+    foundCount: 0,
+    errorCount: 0,
+    updatedAt: "",
+    params: null,
+    sortKey: "gap",
+    sortDir: "asc",
     pollTimer: 0,
     fetching: false,
     started: false,
@@ -175,6 +224,7 @@
     if (["limit", "screen", "decline", "zt"].includes(value)) return "limit";
     if (["industry", "rotation", "rot", "l3", "hy"].includes(value)) return "industry";
     if (["stock", "evaluate", "eval", "gg"].includes(value)) return "stock";
+    if (["select", "recent-low", "recent_low", "rl", "sx"].includes(value)) return "select";
     return "";
   }
 
@@ -183,6 +233,11 @@
     if (value === "stock_path_close") return "stock_path";
     if (value === "index_path_close") return "index_path";
     return STOCK_SORT_KEYS.includes(value) ? value : "divergence";
+  }
+
+  function parseSelectSortKey(raw) {
+    const value = String(raw || "").toLowerCase();
+    return SELECT_SORT_KEYS.includes(value) ? value : "gap";
   }
 
   function pathLabelOf(row, which) {
@@ -204,6 +259,7 @@
   function current() {
     if (view === "industry") return industry;
     if (view === "stock") return stock;
+    if (view === "select") return select;
     return limit;
   }
 
@@ -276,6 +332,15 @@
       url.searchParams.set("order", stock.sortDir);
       url.searchParams.set("band", String(stock.band));
       url.searchParams.set("index", stock.index);
+      url.searchParams.delete("adjust");
+    } else if (view === "select") {
+      url.searchParams.set("sort", select.sortKey);
+      url.searchParams.set("order", select.sortDir);
+      url.searchParams.set("adjust", select.adjust);
+      url.searchParams.delete("band");
+      url.searchParams.delete("index");
+      url.searchParams.delete("factor");
+      url.searchParams.delete("path");
     } else {
       url.searchParams.delete("sort");
       url.searchParams.delete("order");
@@ -283,6 +348,7 @@
       url.searchParams.delete("index");
       url.searchParams.delete("factor");
       url.searchParams.delete("path");
+      url.searchParams.delete("adjust");
     }
     history.replaceState({}, "", url);
   }
@@ -992,6 +1058,105 @@
       .join("");
   }
 
+  function sortedSelectItems() {
+    const key = select.sortKey;
+    const dir = select.sortDir === "asc" ? 1 : -1;
+    const rows = [...(select.items || [])];
+    rows.sort((a, b) => {
+      const av = a?.[key];
+      const bv = b?.[key];
+      const aNil = av == null || av === "";
+      const bNil = bv == null || bv === "";
+      if (aNil && bNil) return String(a?.code || "").localeCompare(String(b?.code || ""));
+      if (aNil) return 1;
+      if (bNil) return -1;
+      if (typeof av === "number" || typeof bv === "number") {
+        const an = Number(av);
+        const bn = Number(bv);
+        if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return (an - bn) * dir;
+      }
+      const cmp = String(av).localeCompare(String(bv), "zh-CN");
+      if (cmp) return cmp * dir;
+      return String(a?.code || "").localeCompare(String(b?.code || ""));
+    });
+    return rows;
+  }
+
+  function renderSelectSortHeaders() {
+    const table = $("selectTable");
+    if (!table) return;
+    table.querySelectorAll("th[data-sort]").forEach((th) => {
+      const key = th.dataset.sort;
+      const active = key === select.sortKey;
+      th.classList.toggle("is-sorted", active);
+      th.dataset.order = active ? select.sortDir : "";
+      const base = SELECT_SORT_LABELS[key] || key;
+      th.textContent = active ? `${base}${select.sortDir === "asc" ? " ↑" : " ↓"}` : base;
+    });
+  }
+
+  function renderSelectSummary() {
+    const sortLabel = SELECT_SORT_LABELS[select.sortKey] || select.sortKey;
+    const orderLabel = select.sortDir === "asc" ? "升序" : "降序";
+    $("summaryBar").innerHTML = `
+      <span>已分析 <b>${select.analyzedCount || 0}</b> / ${select.candidateCount || 0}</span>
+      <span>命中 <b>${select.foundCount || 0}</b></span>
+      <span>失败 <b>${select.errorCount || 0}</b></span>
+      <span>排序 <b>${esc(sortLabel)} · ${orderLabel}</b></span>
+      <span>排除 <b>创业/科创/ST/退市</b></span>
+    `;
+    $("marketMeta").textContent = select.message || select.updatedAt || "";
+  }
+
+  function fmtDays(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    return String(Math.round(n));
+  }
+
+  function renderSelectTable() {
+    const body = $("selectBody");
+    const hint = $("selectHint");
+    if (!body) return;
+    renderSelectSortHeaders();
+    const rows = sortedSelectItems();
+    if (hint) {
+      hint.textContent = rows.length
+        ? `${rows.length} 只 · ${SELECT_SORT_LABELS[select.sortKey] || select.sortKey}${select.sortDir === "asc" ? "↑" : "↓"}`
+        : select.started
+          ? "暂无命中"
+          : "";
+    }
+    if (!rows.length) {
+      const msg = select.error
+        ? esc(select.error)
+        : select.status === "running"
+          ? esc(select.message || "正在分析…")
+          : select.started
+            ? "暂无有效回溯结果"
+            : "点击「重新分析」开始全市场扫描";
+      body.innerHTML = `<tr><td colspan="10" class="muted">${msg}</td></tr>`;
+      return;
+    }
+    body.innerHTML = rows
+      .map((row) => {
+        const code = esc(row.code || "");
+        return `<tr class="is-row" data-code="${code}" tabindex="0">
+          <td class="mono">${code}</td>
+          <td>${esc(row.name || "—")}</td>
+          <td class="num">${esc(fmtMd(row.date))}</td>
+          <td class="num">${esc(fmtNum(row.close_price, 2))}</td>
+          <td class="num">${esc(fmtNum(row.low_price, 2))}</td>
+          <td class="num">${esc(fmtDays(row.close_days))}</td>
+          <td class="num">${esc(fmtDays(row.low_days))}</td>
+          <td class="num">${esc(fmtDays(row.gap))}</td>
+          <td class="num">${esc(fmtMd(row.close_since))}</td>
+          <td class="num">${esc(fmtMd(row.low_since))}</td>
+        </tr>`;
+      })
+      .join("");
+  }
+
   function renderAll() {
     renderSeg();
     if (view === "limit") {
@@ -1012,6 +1177,11 @@
     if (view === "stock") {
       renderStockSummary();
       renderStockTable();
+      return;
+    }
+    if (view === "select") {
+      renderSelectSummary();
+      renderSelectTable();
     }
   }
 
@@ -1085,7 +1255,9 @@
           view === "industry" && (industry.dayRows || []).length > 0;
         const partialStock =
           view === "stock" && (stock.items || []).length > 0;
-        const partial = partialIndustry || partialStock;
+        const partialSelect =
+          view === "select" && (select.items || []).length > 0;
+        const partial = partialIndustry || partialStock || partialSelect;
         showLoading(!partial, st.message);
         setLive(partial ? "live" : "busy");
         if (partial) {
@@ -1265,10 +1437,69 @@
     }
   }
 
+  function applySelectData(data) {
+    select.items = Array.isArray(data.items) ? data.items : [];
+    select.candidateCount = data.candidate_count || 0;
+    select.analyzedCount = data.analyzed_count || 0;
+    select.foundCount = data.found_count || select.items.length;
+    select.errorCount = data.error_count || 0;
+    select.updatedAt = data.updated_at || "";
+    select.params = data.params || null;
+    if (view === "select") renderAll();
+  }
+
+  async function loadSelect(force) {
+    if (select.fetching && !force) return;
+    select.fetching = true;
+    select.started = true;
+    select.error = "";
+    if (view === "select") showError("");
+    if (force) {
+      select.items = [];
+      select.analyzedCount = 0;
+      select.foundCount = 0;
+      select.errorCount = 0;
+      if (view === "select") renderAll();
+      select.message = "正在加载股票索引…";
+      if (view === "select") {
+        showLoading(true, select.message);
+        setLive("busy");
+      }
+    }
+
+    const qs = new URLSearchParams({
+      adjust: select.adjust || "qfq",
+      refresh: force ? "1" : "0",
+    });
+
+    try {
+      const res = await fetch(`/api/screen/recent-low?${qs}`, { cache: "no-store" });
+      const json = await res.json();
+      if (!json.ok) {
+        throw new Error(json.error || "请求失败");
+      }
+      applyPayload(select, json.data || {}, applySelectData);
+      if (select.status === "running") schedulePoll(select, loadSelect);
+      else stopPoll(select);
+    } catch (err) {
+      select.error = err.message || String(err);
+      select.status = "error";
+      if (view === "select") {
+        showLoading(false);
+        showError(select.error);
+        setLive("idle");
+      }
+      stopPoll(select);
+    } finally {
+      select.fetching = false;
+    }
+  }
+
   function load(force) {
     if (view === "limit") return loadLimit(force);
     if (view === "industry") return loadIndustry(force);
     if (view === "stock") return loadStock(force);
+    if (view === "select") return loadSelect(force);
   }
 
   function openCompany(code) {
@@ -1283,7 +1514,7 @@
   }
 
   function switchView(next) {
-    if (next !== "limit" && next !== "industry" && next !== "stock") {
+    if (next !== "limit" && next !== "industry" && next !== "stock" && next !== "select") {
       return;
     }
     if (next === view) return;
@@ -1484,6 +1715,41 @@
       openCompany(row.dataset.code);
     });
 
+    $("selectTable")?.addEventListener("click", (ev) => {
+      const th = ev.target.closest("th[data-sort]");
+      if (th && $("selectTable").contains(th)) {
+        const key = parseSelectSortKey(th.dataset.sort);
+        if (key === select.sortKey) {
+          select.sortDir = select.sortDir === "asc" ? "desc" : "asc";
+        } else {
+          select.sortKey = key;
+          select.sortDir =
+            key === "code" ||
+            key === "name" ||
+            key === "date" ||
+            key === "close_since" ||
+            key === "low_since" ||
+            key === "gap"
+              ? "asc"
+              : "desc";
+        }
+        syncUrl();
+        if (view === "select") renderSelectTable();
+        renderSelectSummary();
+        return;
+      }
+      const row = ev.target.closest("tr.is-row[data-code]");
+      if (row) openCompany(row.dataset.code);
+    });
+
+    $("selectBody")?.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      const row = ev.target.closest("tr.is-row[data-code]");
+      if (!row) return;
+      ev.preventDefault();
+      openCompany(row.dataset.code);
+    });
+
     function openIndustry(row) {
       const l1 = row.dataset.l1 || "";
       const l2 = row.dataset.l2 || "";
@@ -1551,8 +1817,22 @@
     stock.sortDir = parseSortDir(params.get("order"));
   }
 
+  function hydrateSelectParams() {
+    const params = new URLSearchParams(location.search);
+    const adjust = String(params.get("adjust") || "").toLowerCase();
+    if (["qfq", "hfq", "none"].includes(adjust)) select.adjust = adjust;
+    select.sortKey = parseSelectSortKey(params.get("sort"));
+    const order = params.get("order");
+    if (order) {
+      select.sortDir = parseSortDir(order);
+    } else {
+      select.sortDir = select.sortKey === "gap" ? "asc" : "desc";
+    }
+  }
+
   view = initialView();
   hydrateStockParams();
+  hydrateSelectParams();
   applyChrome();
   bindEvents();
   window.OrbitPrefetch?.bindHover($("resultList"), "article.is-stock[data-code]");

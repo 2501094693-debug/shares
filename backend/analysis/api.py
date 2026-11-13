@@ -19,6 +19,14 @@ from analysis.evaluate.config import (
     MIN_WORKERS,
 )
 from analysis.evaluate.service import service as evaluate_service
+from analysis.recent_low.config import (
+    ALLOWED_ADJUSTS,
+    DEFAULT_ADJUST as RECENT_LOW_ADJUST,
+    DEFAULT_WORKERS as RECENT_LOW_WORKERS,
+    MAX_WORKERS as RECENT_LOW_MAX_WORKERS,
+    MIN_WORKERS as RECENT_LOW_MIN_WORKERS,
+)
+from analysis.recent_low.service import service as recent_low_service
 from analysis.rotation.config import DEFAULT_LOOKBACK_DAYS as ROTATION_LOOKBACK_DAYS
 from analysis.rotation.config import MAX_LOOKBACK_DAYS, MIN_LOOKBACK_DAYS
 from analysis.rotation.service import service as rotation_service
@@ -99,6 +107,33 @@ def get_evaluate_screen(
             index=index_code,
             factor=factor_key,
             lookback=lookback,
+            force=refresh == "1",
+            workers=workers,
+        )
+        return ok(payload)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/screen/recent-low")
+def get_recent_low_screen(
+    adjust: str = Query(RECENT_LOW_ADJUST, description="复权方式：qfq / hfq / none"),
+    refresh: str = Query("0", description="1=强制重算"),
+    workers: int = Query(
+        RECENT_LOW_WORKERS,
+        ge=RECENT_LOW_MIN_WORKERS,
+        le=RECENT_LOW_MAX_WORKERS,
+        description="并发线程数",
+    ),
+):
+    """全市场两价最近最低：收盘/最低各自回溯交易日数与间隔。排除创业板、科创板、ST、退市。"""
+    adjust_key = str(adjust or "").strip().lower() or RECENT_LOW_ADJUST
+    if adjust_key not in ALLOWED_ADJUSTS:
+        return err(f"adjust 须为 {ALLOWED_ADJUSTS} 之一", 400)
+
+    try:
+        payload = recent_low_service.run_or_poll(
+            adjust=adjust_key,
             force=refresh == "1",
             workers=workers,
         )

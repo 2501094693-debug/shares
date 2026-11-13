@@ -26,6 +26,7 @@
             <button type="button" data-view="industry" class="is-active" role="tab" aria-selected="true">行业分析</button>
             <button type="button" data-view="limit" role="tab" aria-selected="false">涨跌停分析</button>
             <button type="button" data-view="stock" role="tab" aria-selected="false">个股分析</button>
+            <button type="button" data-view="select" role="tab" aria-selected="false">个股筛选</button>
           </div>
           <button id="refreshBtn" class="btn ghost" type="button">重新分析</button>
         </div>
@@ -181,12 +182,42 @@
           </div>
         </section>
       </div>
+
+      <div id="selectBoard" class="stock-eval-board judgment-select-board">
+        <section class="stock-eval-pane">
+          <header class="rot-pane-head">
+            <h2>最近最低</h2>
+            <span id="selectHint" class="rot-pane-hint"></span>
+          </header>
+          <div class="rot-scroll stock-eval-scroll">
+            <table class="rot-table stock-eval-table" id="selectTable">
+              <thead>
+                <tr>
+                  <th class="is-sortable" data-sort="code">代码</th>
+                  <th class="is-sortable" data-sort="name">名称</th>
+                  <th class="num is-sortable" data-sort="date" title="最新交易日">交易日</th>
+                  <th class="num is-sortable" data-sort="close_price" title="最新收盘价">收盘</th>
+                  <th class="num is-sortable" data-sort="low_price" title="最新最低价">最低</th>
+                  <th class="num is-sortable" data-sort="close_days" title="最新收盘价是最近多少个交易日的最低">收盘天数</th>
+                  <th class="num is-sortable" data-sort="low_days" title="最新最低价是最近多少个交易日的最低">最低天数</th>
+                  <th class="num is-sortable is-sorted" data-sort="gap" title="两价最近最低交易日数之差">间隔</th>
+                  <th class="num is-sortable" data-sort="close_since" title="收盘最近最低窗口起点">收盘自</th>
+                  <th class="num is-sortable" data-sort="low_since" title="最低最近最低窗口起点">最低自</th>
+                </tr>
+              </thead>
+              <tbody id="selectBody">
+                <tr><td colspan="10" class="muted">切换到个股筛选后开始扫描…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </div>
   </div>
   <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
   <script src="/js/shared/orbit-prefetch.js?v=futures-20260923"></script>
   <script src="/js/shared/nav.js?v=20261101-no-stock"></script>
   <script src="/js/shared/kline-draw.js?v=20261030-no-extrema"></script>
-  <script src="/js/analysis.js?v=20261102-index-seg"></script>
+  <script src="/js/analysis.js?v=20261112-select-rl"></script>
 </body>
 </html>
