@@ -400,6 +400,19 @@ body.app-shell.ai-page-root .ai-page {
   line-height: 1.7;
 }
 
+.valuation-summary-prose {
+  margin: 0 0 14px;
+  line-height: 1.75;
+}
+
+.valuation-summary-prose p {
+  margin: 0 0 10px;
+}
+
+.valuation-summary-prose p:last-child {
+  margin-bottom: 0;
+}
+
 /* 七看：风险仪表盘（区别于其他看的表格式布局） */
 .engine-section .zv-risk-banner {
   display: flex;

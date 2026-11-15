@@ -64,6 +64,56 @@ def total_assets(row: dict[str, Any]) -> float | None:
     return to_float(pick(row, *TOTAL_ASSETS_FIELDS))
 
 
+def resolve_fcf(
+    row: dict[str, Any],
+    *,
+    ocf: float | None = None,
+    capex: float | None = None,
+) -> tuple[float | None, str | None, dict[str, float | None]]:
+    """选取企业自由现金流，并做相对经营现金流的量级校验。
+
+    东财同时给 ``FCFF_BACK`` / ``FCFF_FORWARD``。优先用披露值，但若相对 OCF
+    小到不合理（常见脏数据，如仅数万元而 OCF 上亿），则改用 FORWARD，再退到
+    ``OCF − Capex``。
+
+    返回 ``(fcf, source, detail)``，source 为 fcff_back / fcff_forward /
+    ocf_minus_capex / None。
+    """
+    if ocf is None:
+        ocf = operating_cash(row)
+    if capex is None:
+        capex = to_float(pick(row, *CAPEX_FIELDS))
+    back = to_float(pick(row, "FCFF_BACK"))
+    forward = to_float(pick(row, "FCFF_FORWARD"))
+    proxy = None if ocf is None else ocf - (capex or 0.0)
+    detail: dict[str, float | None] = {
+        "fcff_back": back,
+        "fcff_forward": forward,
+        "fcf_proxy": proxy,
+    }
+
+    def _plausible(value: float | None) -> bool:
+        if value is None:
+            return False
+        # OCF 缺失或本身很小：无法做量级校验，信任披露值
+        if ocf is None or abs(ocf) < 1e7:
+            return True
+        # 披露 FCFF 不足 OCF 的 1%，视为异常脏数据（汉森制药 2025：25万 vs OCF 2.45亿）
+        return abs(value) >= abs(ocf) * 0.01
+
+    if _plausible(back):
+        return back, "fcff_back", detail
+    if _plausible(forward):
+        return forward, "fcff_forward", detail
+    if proxy is not None:
+        return proxy, "ocf_minus_capex", detail
+    if back is not None:
+        return back, "fcff_back", detail
+    if forward is not None:
+        return forward, "fcff_forward", detail
+    return None, None, detail
+
+
 def _gross_margin(row: dict[str, Any], rev: float | None = None, cogs: float | None = None) -> float | None:
     disclosed = to_float(pick(row, "XSMLL"))
     if disclosed is not None:
@@ -158,9 +208,7 @@ def cash_quality(latest: dict[str, Any], prev: dict[str, Any] | None) -> dict[st
     icf = to_float(pick(latest, *ICF_FIELDS))
     fin_cf = to_float(pick(latest, *FCF_FIN_FIELDS))
 
-    fcf = to_float(pick(latest, "FCFF_BACK", "FCFF_FORWARD"))
-    if fcf is None and ocf is not None:
-        fcf = ocf - (capex or 0)
+    fcf, fcf_source, fcf_detail = resolve_fcf(latest, ocf=ocf, capex=capex)
 
     recv = to_float(pick(latest, "ACCOUNTS_RECE"))
     inventory = to_float(pick(latest, "INVENTORY"))
@@ -193,6 +241,10 @@ def cash_quality(latest: dict[str, Any], prev: dict[str, Any] | None) -> dict[st
     return {
         "ocf": ocf,
         "fcf": fcf,
+        "fcf_source": fcf_source,
+        "fcff_back": fcf_detail.get("fcff_back"),
+        "fcff_forward": fcf_detail.get("fcff_forward"),
+        "fcf_proxy": fcf_detail.get("fcf_proxy"),
         "capex": capex,
         "icf": icf,
         "fin_cf": fin_cf,

@@ -133,10 +133,17 @@ def _revenue_cagr(annual_series: list[dict[str, Any]]) -> float | None:
 
 
 def _base_fcf(metrics: dict[str, Any]) -> tuple[float | None, list[str]]:
-    """确定基期自由现金流。优先 FCFF，其次 OCF - 资本开支，再退到净利润代理。"""
+    """确定基期自由现金流。优先 metrics.cash.fcf（已含 FCFF 量级校验），再退到净利润代理。"""
     notes: list[str] = []
     cash = (metrics or {}).get("cash") or {}
     fcf = cash.get("fcf")
+    source = cash.get("fcf_source")
+    if source == "fcff_forward":
+        notes.append(
+            "东财 FCFF_BACK 相对经营现金流量级异常，已改用 FCFF_FORWARD 作为基期 FCF"
+        )
+    elif source == "ocf_minus_capex":
+        notes.append("披露 FCFF 不可用或量级异常，按 经营现金流 − 资本开支 估算基期 FCF")
     if fcf is not None and fcf > 0:
         return fcf, notes
     if fcf is not None:

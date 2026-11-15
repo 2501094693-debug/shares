@@ -12,6 +12,7 @@ from __future__ import annotations
 from .engine import run_valuation, ValuationInput, ValuationResult
 from .dcf import dcf_valuate, DcfAssumptions, DcfResult
 from .relative import relative_valuate, RelativeResult
+from .report import build_valuation_report
 
 __all__ = [
     "run_valuation",
@@ -22,4 +23,5 @@ __all__ = [
     "DcfResult",
     "relative_valuate",
     "RelativeResult",
+    "build_valuation_report",
 ]

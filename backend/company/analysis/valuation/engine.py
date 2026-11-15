@@ -25,6 +25,7 @@ from company.analysis.financialreport.engine import analyze_rows
 
 from .dcf import dcf_valuate, DcfAssumptions, DcfResult
 from .relative import relative_valuate, RelativeResult
+from .report import build_valuation_report
 
 _YI = 1e8
 DEFAULT_PEER_LIMIT = 6
@@ -78,6 +79,9 @@ class ValuationResult:
     verdict: str = "数据不足"          # 买入/观望/回避 的定性提示（非投资建议）
     notes: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    # 逐步报告：每步「数据 → 公式（含义/怎么看）→ 结果」+ 末尾总结
+    steps: list[dict[str, Any]] = field(default_factory=list)
+    summary: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -93,6 +97,8 @@ class ValuationResult:
             "verdict": self.verdict,
             "notes": self.notes,
             "errors": self.errors,
+            "steps": self.steps,
+            "summary": self.summary,
         }
 
     @staticmethod
@@ -273,20 +279,38 @@ def run_valuation(
         margin_of_safety = (intrinsic - current_price) / intrinsic * 100.0
 
     verdict = _verdict(dcf_result, relative_result, margin_of_safety)
+    mos_pct = round(margin_of_safety, 2) if margin_of_safety is not None else None
+    display_name = name or stock.get("name") or ""
+
+    report = build_valuation_report(
+        code=code,
+        name=display_name,
+        dcf=dcf_result,
+        relative=relative_result,
+        metrics=metrics,
+        profile=stock,
+        annual_series=annual,
+        margin_of_safety_pct=mos_pct,
+        verdict=verdict,
+        notes=notes,
+        errors=errors,
+    )
 
     result = ValuationResult(
         code=code,
-        name=name or stock.get("name") or "",
+        name=display_name,
         report_type=rt,
         data_available=data_available,
         industry=industry_meta,
         profile=stock,
         dcf=dcf_result,
         relative=relative_result,
-        margin_of_safety_pct=round(margin_of_safety, 2) if margin_of_safety is not None else None,
+        margin_of_safety_pct=mos_pct,
         verdict=verdict,
         notes=notes,
         errors=errors,
+        steps=report.get("steps") or [],
+        summary=report.get("summary") or {},
     )
     return ok(result.to_dict())
 
