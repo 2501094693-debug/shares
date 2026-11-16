@@ -1,6 +1,6 @@
-"""``python -m company.line.entrust 600519``
+﻿"""``python -m company.entrust 600519``
 
-``python -m company.line.entrust 600519 --price-levels --limit 5``
+``python -m company.entrust 600519 --price-levels --limit 5``
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ _BACKEND = Path(__file__).resolve().parents[3]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-from company.line.entrust.fetcher import fetch_entrust
+from company.entrust.fetcher import fetch_entrust
 
 
 def main() -> int:

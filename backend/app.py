@@ -1,4 +1,4 @@
-"""申万三级行业浏览器 — FastAPI 后端。
+﻿"""申万三级行业浏览器 — FastAPI 后端。
 
 业务模块：
 - ``market``：行情与申万行业（涨跌 / 资金流 / 个股榜 / 基金 / 期货；以及 ``market.industry`` 分类、成分股检索、地图标注）
@@ -50,7 +50,7 @@ from company.analysis.line.section.api import router as line_section_router
 from company.analysis.line.T.api import router as line_trader_router
 from company.analysis.line.chip.api import router as line_chip_router
 from company.analysis.line.evaluate.api import router as line_evaluate_router
-from company.line.entrust.api import router as entrust_router
+from company.entrust.api import router as entrust_router
 from company.news.periodicreport.api import router as periodicreport_router
 from market.funds.fund.api import router as fund_router
 from market.futures.api import router as futures_router

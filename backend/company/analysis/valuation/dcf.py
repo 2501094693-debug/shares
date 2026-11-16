@@ -182,11 +182,25 @@ def _net_debt(metrics: dict[str, Any]) -> tuple[float | None, list[str]]:
 
 
 def _shares_from_profile(profile: dict[str, Any] | None) -> float | None:
-    """从盘口画像提取总股本（原始股数）。"""
+    """从盘口画像提取总股本（原始股数）。
+
+    优先用 ``total_shares`` / ``share_capital``；盘口缺总股本时（如东财 f84 为空），
+    用总市值 ÷ 现价反推。不用 ``issued_shares``（常为发行量/部分口径，AH 股会严重偏小）。
+    """
     if not profile:
         return None
     raw = profile.get("total_shares") or profile.get("share_capital")
-    return _to_raw(raw)
+    shares = _to_raw(raw)
+    if shares and shares > 0:
+        return shares
+    # 回退：总市值 / 现价（两者单位经 _to_raw 统一为原始数值）
+    mcap = _market_cap_from_profile(profile)
+    price = _price_from_profile(profile)
+    if mcap and price and price > 0:
+        derived = mcap / price
+        if derived > 0:
+            return derived
+    return None
 
 
 def _price_from_profile(profile: dict[str, Any] | None) -> float | None:
@@ -268,9 +282,14 @@ def dcf_valuate(
     revenue_cagr_used = growth
 
     # ---------- 3. 股本与净债务 ----------
+    shares_direct = None
+    if profile:
+        shares_direct = _to_raw(profile.get("total_shares") or profile.get("share_capital"))
     total_shares = _shares_from_profile(profile)
     if total_shares is None:
         notes.append("未取到总股本，将只输出企业价值/股权价值总额，不输出每股内在价值")
+    elif not (shares_direct and shares_direct > 0):
+        notes.append("盘口缺总股本，已用总市值÷现价反推股本以计算每股内在价值")
     net_debt, debt_notes = _net_debt(metrics)
     notes.extend(debt_notes)
 

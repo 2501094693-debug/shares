@@ -1,13 +1,13 @@
-"""手机端买卖队列抓包辅助。
+﻿"""手机端买卖队列抓包辅助。
 
-复用 ``company.detail.ths_capture`` 的 mitmproxy addon；本模块只提供
+复用 ``company.entrust.ths_capture`` 的 mitmproxy addon；本模块只提供
 「从落盘日志里筛队列相关 URL / 帧」的分析入口，方便对照 App 里的委托细则。
 
 用法::
 
-    mitmdump -s backend/company/detail/ths_capture.py -p 8080
+    mitmdump -s backend/company/entrust/ths_capture.py -p 8080
     # 手机打开个股买卖队列页后：
-    python -m company.line.entrust.capture --analyze
+    python -m company.entrust.capture --analyze
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ def main() -> int:
     parser.add_argument("--log", default="", help="自定义抓包日志路径")
     args = parser.parse_args()
     if not args.analyze:
-        print("use: python -m company.line.entrust.capture --analyze")
+        print("use: python -m company.entrust.capture --analyze")
         print("first capture with: mitmdump -s backend/company/detail/ths_capture.py -p 8080")
         return 0
     pack = analyze(Path(args.log) if args.log else None)

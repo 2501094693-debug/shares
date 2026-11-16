@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 import requests
 
-from company.detail.ths_mobile import BASE, TRACE_URL, TREND_URL, _HEADERS, market_of
+from company.line.tonghuashun.ths_mobile import BASE, TRACE_URL, TREND_URL, _HEADERS, market_of
 
 code = "600519"
 market = market_of(code)

@@ -1,4 +1,4 @@
-"""同花顺 HQ 游客通道：``depth`` 五档兜底。
+﻿"""同花顺 HQ 游客通道：``depth`` 五档兜底。
 
 不依赖扫码登录；字段号来自抓包（买 1–3 = 24/25…28/29，卖 1–3 = 30/31…34/35，
 买/卖 4–5 = 150–157）。仅有各档总量，无委托单细则。
@@ -15,7 +15,7 @@ from typing import Any
 from core.codes import normalize_code
 from core.fmt import to_float
 
-from company.line.entrust.models import empty_pack, fill_book_last_price, normalize_level
+from company.entrust.models import empty_pack, fill_book_last_price, normalize_level
 
 logger = logging.getLogger(__name__)
 

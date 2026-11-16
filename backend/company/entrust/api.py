@@ -1,4 +1,4 @@
-"""委托盘口 HTTP 路由。"""
+﻿"""委托盘口 HTTP 路由。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from fastapi import APIRouter, Query
 
 from core.api import err, ok
 
-from company.line.entrust.service import fetch_entrust
+from company.entrust.service import fetch_entrust
 
 router = APIRouter()
 

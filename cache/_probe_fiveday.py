@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from company.detail.ths_mobile import (  # noqa: E402
+from company.line.tonghuashun.ths_mobile import (  # noqa: E402
     BASE,
     TRACE_URL,
     TREND_URL,

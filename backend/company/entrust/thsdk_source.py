@@ -1,4 +1,4 @@
-"""同花顺 thsdk：五档盘口 + 分价表 + 账号 Level-2 权限。
+﻿"""同花顺 thsdk：五档盘口 + 分价表 + 账号 Level-2 权限。
 
 - ``list_security_order_books``：买卖各 N 档价量（当前枚举仅 ``depth=5``）
 - ``list_security_price_volume_levels``：当日各价位已成交量（分价表）
@@ -15,7 +15,7 @@ from typing import Any
 from core.codes import normalize_code
 from core.fmt import to_float
 
-from company.line.entrust.models import (
+from company.entrust.models import (
     empty_pack,
     normalize_level,
     normalize_order,

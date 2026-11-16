@@ -342,6 +342,9 @@ def _verdict(
             signals.append("相对估值偏低")
         elif relative.overall == "相对高估":
             signals.append("相对估值偏高")
+        elif relative.overall == "相对合理":
+            # 有明确相对结论时不应落入「数据不足」；与 DCF 一起综合
+            signals.append("相对估值合理")
 
     if not signals:
         return "数据不足，无法定论"
@@ -357,4 +360,6 @@ def _verdict(
         return "可考虑（安全边际充足且相对估值偏低）"
     if bullish:
         return "观望（估值合理，等待更大安全边际）"
+    if "相对估值合理" in signals and margin_of_safety is None:
+        return "观望（相对估值合理，绝对估值数据不足）"
     return "观望"

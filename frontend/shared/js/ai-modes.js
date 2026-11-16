@@ -233,7 +233,11 @@ window.AI_MODES = {
       const dcf = result.dcf || {};
       const rel = result.relative || {};
       const parts = [];
-      if (Number.isFinite(Number(dcf.margin_of_safety_pct))) parts.push(`安全边际 ${dcf.margin_of_safety_pct.toFixed(0)}%`);
+      // Number(null) === 0，不能只靠 isFinite；缺价/缺内在价值时 mos 常为 null
+      const mos = result.margin_of_safety_pct ?? dcf.margin_of_safety_pct;
+      if (mos != null && mos !== "" && Number.isFinite(Number(mos))) {
+        parts.push(`安全边际 ${Number(mos).toFixed(0)}%`);
+      }
       if (rel.overall) parts.push(`相对估值 ${rel.overall}`);
       return parts.length ? parts.join(" · ") : "";
     },

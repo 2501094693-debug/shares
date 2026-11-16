@@ -1,4 +1,4 @@
-"""委托盘口编排：thsdk 优先，HQ depth 兜底。
+﻿"""委托盘口编排：thsdk 优先，HQ depth 兜底。
 
 ``scope``：
 - ``book``：买卖档位总量（五档）
@@ -13,8 +13,8 @@ from typing import Any
 
 from core.codes import normalize_code
 
-from company.line.entrust.models import empty_pack, fill_book_last_price
-from company.line.entrust import hq_source, thsdk_source
+from company.entrust.models import empty_pack, fill_book_last_price
+from company.entrust import hq_source, thsdk_source
 
 logger = logging.getLogger(__name__)
 

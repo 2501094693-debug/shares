@@ -1,4 +1,4 @@
-"""同花顺手机端私有通道抓包辅助（mitmproxy addon）。
+﻿"""同花顺手机端私有通道抓包辅助（mitmproxy addon）。
 
 把手机设为代理指向 mitmdump，打开同花顺 App 的「成交明细」页面，
 即可把原生 App 发出的请求与 WebSocket 帧落盘到 ``cache/ths_capture.jsonl``，
@@ -7,7 +7,7 @@
 用法::
 
     pip install mitmproxy
-    mitmdump -s backend/company/detail/ths_capture.py -p 8080
+    mitmdump -s backend/company/entrust/ths_capture.py -p 8080
 
 手机 Wi-Fi 代理设为运行 mitmdump 的机器 IP:8080，安装 mitmproxy 证书后
 打开同花顺 App。抓到数据后按 URL / Host 过滤日志即可。

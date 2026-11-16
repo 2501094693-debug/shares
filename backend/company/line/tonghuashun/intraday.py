@@ -102,7 +102,7 @@ def _day_int(iso: str) -> int:
 
 def _fetch_day_trend(code: str, day: str) -> list[dict[str, Any]]:
     """``single_trend`` 分钟点（与 App 分时 / 五日图同源）。"""
-    from company.detail.ths_mobile import fetch_trend
+    from company.line.tonghuashun.ths_mobile import fetch_trend
 
     raw = fetch_trend(code, trade_date=_day_int(day), trade_class="intraday")
     if not isinstance(raw, list) or not raw:

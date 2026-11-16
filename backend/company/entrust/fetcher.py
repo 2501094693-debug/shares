@@ -1,4 +1,4 @@
-"""委托盘口统一入口。
+﻿"""委托盘口统一入口。
 
 优先走同花顺 thsdk 五档；附带账号权限与可选分价成交。单笔委托细则
 （买一/卖一队列）要等 ``a_stock_level2`` 或手机端抓包补齐后再填 ``orders``。
@@ -11,7 +11,7 @@ from typing import Any
 
 from core.codes import normalize_code
 
-from company.line.entrust.ths import (
+from company.entrust.ths import (
     fetch_order_book,
     fetch_permissions,
     fetch_price_volume_levels,
