@@ -1,4 +1,6 @@
-"""python -m company.statistics.fundflow.tonghuashun 002384"""
+"""python -m company.statistics.fundflow.tonghuashun 002384
+python -m company.statistics.fundflow.tonghuashun 600519 --scope daily_capital
+"""
 
 from __future__ import annotations
 
@@ -15,8 +17,13 @@ from company.statistics.fundflow.tonghuashun.fetcher import get_fund_flow
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="同花顺 HQ 个股大资金动向")
+    parser = argparse.ArgumentParser(description="同花顺个股资金流向（大单 / 当日拆分）")
     parser.add_argument("code", help="股票代码，如 002384")
+    parser.add_argument(
+        "--scope",
+        default="big_deal",
+        help="big_deal 逐笔大单 | daily_capital 当日资金流拆分",
+    )
     parser.add_argument("--limit", type=int, default=50, help="每页条数；0 为全部")
     parser.add_argument("--page", type=int, default=1)
     parser.add_argument("--order", default="desc", choices=("desc", "asc"))
@@ -25,6 +32,7 @@ def main() -> None:
 
     data = get_fund_flow(
         args.code,
+        scope=args.scope,
         limit=args.limit,
         page=args.page,
         order=args.order,

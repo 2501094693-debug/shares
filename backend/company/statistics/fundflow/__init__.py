@@ -1,7 +1,7 @@
 """个股资金流向（东财 / 同花顺）。
 
 - ``eastmoney``    东方财富日线、分钟、快照
-- ``tonghuashun``  同花顺 HQ 个股大资金动向
+- ``tonghuashun``  同花顺 HQ 大单 + thsdk 当日资金流拆分
 - ``fetcher``      带缓存的统一入口
 - ``api``          FastAPI 路由
 """

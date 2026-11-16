@@ -1,5 +1,6 @@
 """python -m company.line.tonghuashun 600519 --limit 5
 python -m company.line.tonghuashun 600519 --kline --period day --limit 5
+python -m company.line.tonghuashun 600519 --price-levels --limit 10
 """
 
 from __future__ import annotations
@@ -17,7 +18,9 @@ from company.line.tonghuashun.hq_ticks import fetch_time_and_sales
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="同花顺实时逐笔 / 日K（需实盘登录）")
+    parser = argparse.ArgumentParser(
+        description="同花顺实时逐笔 / 日K / 分价表（需实盘登录）"
+    )
     parser.add_argument("code", help="股票代码，如 600519")
     parser.add_argument("--limit", type=int, default=5, help="预览条数，0=全部")
     parser.add_argument("--count", type=int, default=0, help="最近 N 笔，0=拉全天")
@@ -25,6 +28,9 @@ def main() -> None:
     parser.add_argument("--start", default="", help="起始 HH:MM，如 09:30")
     parser.add_argument("--end", default="", help="结束 HH:MM，如 09:35")
     parser.add_argument("--kline", action="store_true", help="拉日K")
+    parser.add_argument("--price-levels", action="store_true", help="拉当日分价表")
+    parser.add_argument("--around", type=float, default=None, help="分价表：只看某价附近")
+    parser.add_argument("--span", type=float, default=5.0, help="分价表：around 半宽（元）")
     parser.add_argument("--period", default="day", help="K线周期")
     args = parser.parse_args()
 
@@ -32,6 +38,17 @@ def main() -> None:
         from company.line.tonghuashun.kline import fetch_line
 
         pack = fetch_line(args.code, period=args.period, limit=args.limit or 320)
+        print(json.dumps(pack, ensure_ascii=False, indent=2))
+        return
+    if args.price_levels:
+        from company.line.tonghuashun.price_levels import fetch_price_levels_pack
+
+        pack = fetch_price_levels_pack(
+            args.code,
+            around=args.around,
+            span=args.span,
+            limit=args.limit,
+        )
         print(json.dumps(pack, ensure_ascii=False, indent=2))
         return
     method, items = fetch_time_and_sales(

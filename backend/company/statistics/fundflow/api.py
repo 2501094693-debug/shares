@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
+from company.analysis.deal.fundflow.service import fetch_big_deal_stats
 from company.statistics.fundflow.fetcher import get_fund_flow
 from core.api import err, ok
 
 router = APIRouter()
+
+_THS_SOURCES = {"", "tonghuashun", "ths", "10jqka", "thsh"}
+_STATS_SCOPES = {"big_deal_stats", "big-deal-stats", "deal_stats"}
 
 
 @router.get("/api/stocks/fund-flow")
@@ -15,7 +19,11 @@ def stocks_fund_flow(
     code: str = Query("", description="股票代码，如 600519"),
     scope: str = Query(
         "daily",
-        description="daily 历史日线 | minute 当日分钟 | snapshot 当日快照 | big_deal 大资金动向（同花顺 HQ）",
+        description=(
+            "daily 历史日线 | minute 当日分钟 | snapshot 当日快照 | "
+            "big_deal 大资金动向（同花顺 HQ）| daily_capital 当日资金流拆分（同花顺 thsdk）| "
+            "big_deal_stats 大单统计（四象限 + 分箱）"
+        ),
     ),
     limit: int = Query(
         120,
@@ -26,23 +34,48 @@ def stocks_fund_flow(
     klt: int = Query(1, description="分钟粒度：1|5|15|30|60，仅 scope=minute 时有效"),
     page: int = Query(1, ge=1, le=20000, description="页码，仅 scope=big_deal 时有效"),
     order: str = Query("desc", description="排序：desc|asc，仅 scope=big_deal 时有效"),
-    source: str = Query("eastmoney", description="eastmoney 东方财富 | tonghuashun 同花顺 HQ 大单"),
+    source: str = Query(
+        "eastmoney",
+        description="eastmoney 东方财富 | tonghuashun 同花顺（big_deal / daily_capital）",
+    ),
     min_amount: float = Query(
         1_000_000,
         ge=0,
         description="大单金额门槛（元），仅 scope=big_deal 时有效，默认 100 万",
     ),
     day: str = Query("", description="交易日 YYYY-MM-DD；历史日只读缓存"),
+    bin_by: str = Query(
+        "amount",
+        description="分箱口径：amount 金额（默认）| lots 手数 | both 两套，仅 scope=big_deal_stats 时有效",
+    ),
     refresh: str = Query("0"),
 ):
     """个股资金流向：小单 / 中单 / 大单 / 超大单净流入及净占比。"""
     code = code.strip()
     if not code:
         return err("缺少参数 code", 400)
+    scope_key = scope.strip() or "daily"
+    if scope_key.lower() in _STATS_SCOPES:
+        if (source.strip().lower() or "") not in _THS_SOURCES:
+            return err("大单统计仅支持 source=tonghuashun", 400)
+        try:
+            return ok(
+                fetch_big_deal_stats(
+                    code,
+                    min_amount=min_amount,
+                    bin_by=bin_by,
+                    force=refresh == "1",
+                    day=day.strip(),
+                )
+            )
+        except ValueError as exc:
+            return err(str(exc), 400)
+        except Exception as exc:  # noqa: BLE001
+            return err(str(exc), 500)
     try:
         data = get_fund_flow(
             code,
-            scope=scope.strip() or "daily",
+            scope=scope_key,
             limit=limit,
             klt=klt,
             page=page,
