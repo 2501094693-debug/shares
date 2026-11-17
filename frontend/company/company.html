@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=20261117-deal-chip-zoom" />
+  <link rel="stylesheet" href="/css/style.css?v=20261117-deal-chip-footer" />
   <link rel="stylesheet" href="/css/ai-page.css?v=20261022-risk-q4" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
@@ -387,11 +387,6 @@
                         <p id="dealChipMeta" class="deal-side-panel-meta muted"></p>
                       </div>
                       <div class="deal-chip-tools">
-                        <div id="dealChipRange" class="deal-chip-seg" role="group" aria-label="计算区间">
-                          <button type="button" class="btn ghost sm deal-chip-range-btn is-active" data-chip-range="5">近5日</button>
-                          <button type="button" class="btn ghost sm deal-chip-range-btn" data-chip-range="20">近20日</button>
-                          <button type="button" class="btn ghost sm deal-chip-range-btn" data-chip-range="60">近60日</button>
-                        </div>
                         <div id="dealChipDecay" class="deal-chip-seg" role="group" aria-label="衰减模式">
                           <button type="button" class="btn ghost sm deal-chip-decay-btn is-active" data-chip-decay="uniform">均匀</button>
                           <button type="button" class="btn ghost sm deal-chip-decay-btn" data-chip-decay="profit">获利优先</button>
@@ -400,17 +395,13 @@
                         <button id="dealChipRefreshBtn" class="btn ghost sm" type="button">刷新</button>
                       </div>
                     </header>
-                    <div id="dealChipCards" class="deal-chip-cards" aria-live="polite"></div>
-                    <div id="dealChipPoolBar" class="deal-chip-pool-bar" hidden aria-hidden="true" title="已知/未知池占比">
-                      <span id="dealChipPoolKnown" class="deal-chip-pool-known"></span>
-                      <span id="dealChipPoolUnknown" class="deal-chip-pool-unknown"></span>
-                    </div>
                     <div id="dealChipBody" class="deal-chip-body">
                       <canvas id="dealChipChart" width="640" height="360" aria-label="筹码分布图"></canvas>
                       <div id="dealChipTip" class="deal-chip-tip" hidden role="tooltip"></div>
-                      <p id="dealChipHint" class="deal-chip-hint muted">滚轮缩放 · 拖拽平移 · 双击复位</p>
+                      <p id="dealChipHint" class="deal-chip-hint muted">价轴跟随五日 · 缩放/平移五日即可</p>
                       <p id="dealChipEmpty" class="muted chart-empty">切换到筹码分布后加载</p>
                     </div>
+                    <div id="dealChipCards" class="deal-chip-cards" aria-live="polite"></div>
                   </section>
                 </div>
               </div>
@@ -1565,6 +1556,6 @@
   <script src="/js/shared/company-analysis.js?v=20261027-deal-analysis"></script>
   <script src="/js/shared/line-compare.js?v=20261026-lc-trader-fix"></script>
   <script src="/js/company/ths-auth.js?v=ths-auth-20261117-deal-stats"></script>
-  <script src="/js/company.js?v=20261117-deal-chip"></script>
+  <script src="/js/company.js?v=20261117-deal-chip-footer"></script>
 </body>
 </html>

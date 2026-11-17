@@ -747,7 +747,6 @@ const DEAL_ENTRUST_POLL_MS = 1000;
 /** 统计视图轮询（资金统计 / 分价走势） */
 const DEAL_STATS_POLL_MS = 5000;
 const DEAL_MODE_KEY = "orbit-deal-mode";
-const DEAL_CHIP_RANGE_KEY = "orbit-deal-chip-range";
 const DEAL_CHIP_DECAY_KEY = "orbit-deal-chip-decay";
 /** 成交分析主区模式：live 实时明细 | stats 统计视图 | chip 筹码分布 */
 const dealModeState = { mode: "live" };
@@ -775,29 +774,26 @@ const dealStatsState = {
   capital: { loading: false, error: "", data: null },
   priceLevels: { loading: false, error: "", data: null },
 };
-/** 成交分析 · 筹码分布（line-chip-v2） */
+/** 成交分析 · 筹码分布（line-chip-v2）；价轴/区间跟随五日可见窗 */
 const dealChipState = {
   loading: false,
   error: "",
   data: null,
   loadGen: 0,
   fetching: false,
-  range: 20,
   decay: "uniform",
   abort: null,
   bound: false,
   ro: null,
-  /** 可见价格档 [viewStart, viewEnd) */
-  viewStart: 0,
-  viewEnd: 0,
-  viewKey: "",
+  /** 与五日联动的取数窗 beg|end */
+  windowKey: "",
+  /** 最近一次从五日同步的价轴 {min,max,ticks,padT,H} */
+  linkAxis: null,
   hover: -1,
-  dragging: false,
-  dragY: 0,
   chartBound: false,
+  /** 可见窗变化后延迟重拉筹码 */
+  linkTimer: 0,
 };
-/** 筹码图最少可见档数 */
-const DEAL_CHIP_MIN_VIEW = 12;
 const DEAL_CAPITAL_TIERS = [
   ["super", "超大"],
   ["big", "大"],
@@ -2176,24 +2172,6 @@ function persistDealMode(mode) {
   }
 }
 
-function readDealChipRange() {
-  try {
-    const n = Number(localStorage.getItem(DEAL_CHIP_RANGE_KEY));
-    if (n === 5 || n === 20 || n === 60) return n;
-  } catch {
-    /* ignore */
-  }
-  return 20;
-}
-
-function persistDealChipRange(range) {
-  try {
-    localStorage.setItem(DEAL_CHIP_RANGE_KEY, String(range));
-  } catch {
-    /* ignore */
-  }
-}
-
 function readDealChipDecay() {
   try {
     const raw = String(localStorage.getItem(DEAL_CHIP_DECAY_KEY) || "").trim().toLowerCase();
@@ -2248,7 +2226,10 @@ function applyDealMainFold(folded, { persist = false } = {}) {
     }
     if (dealMainFoldState.folded) return;
     if (dealModeIsLive()) scheduleDealAnalysisPaint();
-    else if (dealModeIsChip()) paintDealChipChart();
+    else if (dealModeIsChip()) {
+      dealChipState.linkAxis = dealChipPriceAxisFromFiveDay() || dealChipState.linkAxis;
+      paintDealChipChart();
+    }
   });
 }
 
@@ -2260,6 +2241,10 @@ function stopDealChipLoad() {
       /* ignore */
     }
     dealChipState.abort = null;
+  }
+  if (dealChipState.linkTimer) {
+    window.clearTimeout(dealChipState.linkTimer);
+    dealChipState.linkTimer = 0;
   }
   dealChipState.loadGen += 1;
   dealChipState.fetching = false;
@@ -2323,7 +2308,12 @@ function applyDealMode(mode, { persist = false, force = false } = {}) {
     stopDealEntrustPolling();
     stopDealStatsPolling();
     bindDealChipPanel();
-    void loadDealChip();
+    // 等筹码主区从 hidden 完成布局后再对齐五日价轴并取数
+    window.requestAnimationFrame(() => {
+      if (!dealModeIsChip() || !dealAnalysisVisible()) return;
+      if (dealFiveDayState.items.length) paintDealFiveDayChart();
+      void loadDealChip();
+    });
   } else {
     stopDealStatsPolling();
     stopDealChipLoad();
@@ -2333,37 +2323,10 @@ function applyDealMode(mode, { persist = false, force = false } = {}) {
 }
 
 function syncDealChipToolsUi() {
-  document.querySelectorAll("#dealChipRange [data-chip-range]").forEach((btn) => {
-    const active = Number(btn.getAttribute("data-chip-range")) === dealChipState.range;
-    btn.classList.toggle("is-active", active);
-  });
   document.querySelectorAll("#dealChipDecay [data-chip-decay]").forEach((btn) => {
     const active = btn.getAttribute("data-chip-decay") === dealChipState.decay;
     btn.classList.toggle("is-active", active);
   });
-}
-
-/** 近 N 个交易日的起始 ISO；优先五日已加载列表，否则日历回推。 */
-function dealChipBegIso(rangeDays) {
-  const n = Math.max(1, Number(rangeDays) || 20);
-  const days = Array.isArray(dealFiveDayState.days) ? dealFiveDayState.days.filter(Boolean) : [];
-  if (days.length) {
-    const slice = days.slice(-n);
-    return String(slice[0] || "").slice(0, 10);
-  }
-  const end = new Date();
-  let left = n;
-  const cursor = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-  while (left > 0) {
-    const wd = cursor.getDay();
-    if (wd !== 0 && wd !== 6) left -= 1;
-    if (left <= 0) break;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-  const y = cursor.getFullYear();
-  const m = String(cursor.getMonth() + 1).padStart(2, "0");
-  const d = String(cursor.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
 }
 
 function dealChipTodayIso() {
@@ -2372,6 +2335,93 @@ function dealChipTodayIso() {
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+/** 筹码取数窗 = 五日当前可见交易日；五日未就绪时回退近 5 个已加载日 / 今天。 */
+function dealChipWindowFromFiveDay() {
+  const visible = dealFiveDayVisibleDayList()
+    .map((d) => String(d || "").slice(0, 10))
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+  if (visible.length) {
+    return {
+      beg: visible[0],
+      end: visible[visible.length - 1],
+      days: visible.length,
+    };
+  }
+  const days = (Array.isArray(dealFiveDayState.days) ? dealFiveDayState.days : [])
+    .map((d) => String(d || "").slice(0, 10))
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+  if (days.length) {
+    const slice = days.slice(-Math.min(5, days.length));
+    return { beg: slice[0], end: slice[slice.length - 1], days: slice.length };
+  }
+  const end = dealChipTodayIso();
+  return { beg: end, end, days: 1 };
+}
+
+/**
+ * 把五日价格区映射到筹码 body 本地坐标，使同价位水平对齐。
+ * 五日未绘完时返回 null，绘制侧回退到自算价轴。
+ */
+function dealChipPriceAxisFromFiveDay() {
+  const plot = dealFiveDayState._plot;
+  const scale = plot?.scale;
+  const price = plot?.layout?.price;
+  if (!scale || !price || !(price.h > 0)) return null;
+  if (!Number.isFinite(scale.min) || !Number.isFinite(scale.max) || scale.max <= scale.min) {
+    return null;
+  }
+  const fiveCanvas = document.getElementById("dealFiveDayChart");
+  const chipBody = document.getElementById("dealChipBody");
+  if (!fiveCanvas || !chipBody) return null;
+  const fiveRect = fiveCanvas.getBoundingClientRect();
+  const chipRect = chipBody.getBoundingClientRect();
+  if (!(fiveRect.height > 0) || !(chipRect.height > 0)) return null;
+  const padT = fiveRect.top + price.y - chipRect.top;
+  const H = price.h;
+  if (!(H > 8)) return null;
+  return {
+    min: scale.min,
+    max: scale.max,
+    ticks: Array.isArray(scale.ticks) ? scale.ticks.slice() : [],
+    padT,
+    H,
+  };
+}
+
+function dealChipAxisChanged(prev, next) {
+  if (!next) return false;
+  if (!prev) return true;
+  return (
+    prev.min !== next.min ||
+    prev.max !== next.max ||
+    Math.abs((prev.padT || 0) - (next.padT || 0)) > 0.5 ||
+    Math.abs((prev.H || 0) - (next.H || 0)) > 0.5
+  );
+}
+
+/** 五日视口/价轴变化后：同步纵轴，必要时按可见日重拉筹码。 */
+function syncDealChipLinkFromFiveDay() {
+  if (!dealModeIsChip() || dealMainFoldState.folded || !dealAnalysisVisible()) return;
+  const axis = dealChipPriceAxisFromFiveDay();
+  const axisDirty = dealChipAxisChanged(dealChipState.linkAxis, axis);
+  if (axis) dealChipState.linkAxis = axis;
+
+  const win = dealChipWindowFromFiveDay();
+  const key = `${code || ""}|${win.beg}|${win.end}|${dealChipState.decay || ""}`;
+  if (key === dealChipState.windowKey && dealChipState.data) {
+    if (axisDirty) paintDealChipChart();
+    return;
+  }
+  if (dealChipState.linkTimer) window.clearTimeout(dealChipState.linkTimer);
+  dealChipState.linkTimer = window.setTimeout(() => {
+    dealChipState.linkTimer = 0;
+    if (!dealModeIsChip() || !dealAnalysisVisible()) return;
+    void loadDealChip();
+  }, 180);
+  // 窗还没换完数据前，先用新价轴重绘旧筹码，避免纵轴短暂错位
+  if (axisDirty && dealChipState.data) paintDealChipChart();
 }
 
 function setDealChipEmpty(msg, { empty = true } = {}) {
@@ -2387,14 +2437,10 @@ function setDealChipEmpty(msg, { empty = true } = {}) {
 function renderDealChipCards(payload) {
   const cards = document.getElementById("dealChipCards");
   const meta = document.getElementById("dealChipMeta");
-  const bar = document.getElementById("dealChipPoolBar");
-  const knownEl = document.getElementById("dealChipPoolKnown");
-  const unknownEl = document.getElementById("dealChipPoolUnknown");
   if (!cards) return;
   const stats = payload?.stats || {};
   const unknown = Number(payload?.unknown_shares);
   const known = Number(payload?.known_shares);
-  const floatN = Number(payload?.float_shares);
   const profit = Number(stats.profit_ratio);
   const items = [
     ["未知池", Number.isFinite(unknown) ? fmtVol(unknown) : "-"],
@@ -2419,21 +2465,15 @@ function renderDealChipCards(payload) {
         : dealChipState.decay === "cut"
           ? "割肉优先"
           : "均匀";
-    meta.textContent = [beg && end ? `${beg} ~ ${end}` : "", modeLabel, payload?.name || ""]
+    const win = dealChipWindowFromFiveDay();
+    meta.textContent = [
+      beg && end ? `${beg} ~ ${end}` : "",
+      win.days ? `跟随五日·${win.days}日` : "跟随五日",
+      modeLabel,
+      payload?.name || "",
+    ]
       .filter(Boolean)
       .join(" · ");
-  }
-  if (bar && knownEl && unknownEl && Number.isFinite(floatN) && floatN > 0) {
-    const kPct = Math.max(0, Math.min(100, ((Number.isFinite(known) ? known : 0) / floatN) * 100));
-    const uPct = Math.max(0, 100 - kPct);
-    knownEl.style.width = `${kPct}%`;
-    unknownEl.style.width = `${uPct}%`;
-    bar.hidden = false;
-    bar.setAttribute("aria-hidden", "false");
-    bar.title = `已知 ${fmtPct(kPct, 1)} / 未知 ${fmtPct(uPct, 1)}`;
-  } else if (bar) {
-    bar.hidden = true;
-    bar.setAttribute("aria-hidden", "true");
   }
 }
 
@@ -2450,57 +2490,6 @@ function dealChipSeries(payload = dealChipState.data) {
     shares: shares.length === grid.length ? shares : [],
     total: grid.length,
   };
-}
-
-function dealChipViewKey(payload = dealChipState.data) {
-  if (!payload) return "";
-  const n = Array.isArray(payload.grid) ? payload.grid.length : 0;
-  return [
-    code || "",
-    payload.beg || "",
-    payload.date || payload.end || "",
-    dealChipState.decay || "",
-    dealChipState.range || "",
-    n,
-  ].join("|");
-}
-
-function resetDealChipView(total) {
-  const n = Math.max(0, Number(total) || 0);
-  dealChipState.viewStart = 0;
-  dealChipState.viewEnd = n;
-  dealChipState.hover = -1;
-}
-
-function clampDealChipView() {
-  const { total } = dealChipSeries();
-  if (!total) {
-    dealChipState.viewStart = 0;
-    dealChipState.viewEnd = 0;
-    return;
-  }
-  let span = Math.max(1, Math.round(dealChipState.viewEnd - dealChipState.viewStart) || total);
-  span = Math.min(total, Math.max(Math.min(DEAL_CHIP_MIN_VIEW, total), span));
-  let start = Math.round(Number(dealChipState.viewStart) || 0);
-  start = Math.max(0, Math.min(total - span, start));
-  dealChipState.viewStart = start;
-  dealChipState.viewEnd = start + span;
-}
-
-function syncDealChipView(payload = dealChipState.data) {
-  const { total } = dealChipSeries(payload);
-  const key = dealChipViewKey(payload);
-  if (!total) {
-    dealChipState.viewKey = "";
-    resetDealChipView(0);
-    return;
-  }
-  if (dealChipState.viewKey !== key) {
-    dealChipState.viewKey = key;
-    resetDealChipView(total);
-    return;
-  }
-  clampDealChipView();
 }
 
 function hideDealChipTip() {
@@ -2538,38 +2527,26 @@ function showDealChipTip(idx, x, y) {
   tip.style.top = `${Math.min(Math.max(4, y - tipH - 10), Math.max(4, wrapH - tipH - 4))}px`;
 }
 
+/** 价轴 y → 最近筹码档；优先按五日联动价轴反算。 */
 function dealChipIdxFromY(canvas, y) {
   const geom = canvas?._chipGeom;
-  if (!geom || !geom.count) return -1;
+  const { grid, total } = dealChipSeries();
+  if (!geom || !total || !grid.length) return -1;
   if (y < geom.padT || y > geom.padT + geom.H) return -1;
-  const local = (y - geom.padT) / geom.H;
-  // 高价在上：local=0 → 可见窗口末档
-  const offset = Math.floor((1 - local) * geom.count);
-  const idx = geom.start + Math.max(0, Math.min(geom.count - 1, offset));
-  return idx;
-}
-
-function zoomDealChipAtClientY(canvas, clientY, zoomIn) {
-  const { total } = dealChipSeries();
-  if (!total || !canvas) return;
-  const geom = canvas._chipGeom;
-  if (!geom) return;
-  const rect = canvas.getBoundingClientRect();
-  const span = Math.max(1, dealChipState.viewEnd - dealChipState.viewStart);
-  const factor = zoomIn ? 0.8 : 1.25;
-  const newSpan = Math.min(total, Math.max(Math.min(DEAL_CHIP_MIN_VIEW, total), Math.round(span * factor)));
-  if (newSpan === span) return;
-  const y = clientY - rect.top;
-  const ratio = geom.H > 0 ? Math.max(0, Math.min(1, (y - geom.padT) / geom.H)) : 0.5;
-  // 高价在上：ratio=0 对应窗口高端（end），ratio=1 对应低端（start）
-  const anchor = dealChipState.viewStart + (1 - ratio) * span;
-  let start = Math.round(anchor - (1 - ratio) * newSpan);
-  start = Math.max(0, Math.min(total - newSpan, start));
-  dealChipState.viewStart = start;
-  dealChipState.viewEnd = start + newSpan;
-  dealChipState.hover = -1;
-  hideDealChipTip();
-  paintDealChipChart();
+  const pMax = geom.pMax;
+  const pMin = geom.pMin;
+  const pSpan = Math.max(pMax - pMin, 1e-6);
+  const price = pMax - ((y - geom.padT) / geom.H) * pSpan;
+  let best = -1;
+  let bestDist = Infinity;
+  for (let i = 0; i < grid.length; i += 1) {
+    const dist = Math.abs(grid[i] - price);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = i;
+    }
+  }
+  return best;
 }
 
 function paintDealChipChart() {
@@ -2579,8 +2556,6 @@ function paintDealChipChart() {
   const payload = dealChipState.data;
   const { grid, chips, total } = dealChipSeries(payload);
   if (!total) return;
-  syncDealChipView(payload);
-  clampDealChipView();
 
   const cssW = Math.max(120, body.clientWidth || canvas.clientWidth || 640);
   const cssH = Math.max(160, body.clientHeight || canvas.clientHeight || 360);
@@ -2594,19 +2569,32 @@ function paintDealChipChart() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssW, cssH);
 
-  const pad = { t: 10, r: 12, b: 16, l: 52 };
-  const W = Math.max(40, cssW - pad.l - pad.r);
-  const H = Math.max(40, cssH - pad.t - pad.b);
-  const start = dealChipState.viewStart;
-  const end = dealChipState.viewEnd;
-  const visGrid = grid.slice(start, end);
-  const visChips = chips.slice(start, end);
-  if (!visGrid.length) return;
-
-  const maxChip = Math.max(...visChips, 1e-12);
-  const pMin = Math.min(...visGrid);
-  const pMax = Math.max(...visGrid);
+  const link = dealChipState.linkAxis || dealChipPriceAxisFromFiveDay();
+  if (link) dealChipState.linkAxis = link;
+  const padL = 52;
+  const padR = 12;
+  const W = Math.max(40, cssW - padL - padR);
+  let padT;
+  let H;
+  let pMin;
+  let pMax;
+  let tickPrices;
+  if (link && Number.isFinite(link.min) && Number.isFinite(link.max) && link.max > link.min) {
+    padT = link.padT;
+    H = link.H;
+    pMin = link.min;
+    pMax = link.max;
+    tickPrices = Array.isArray(link.ticks) && link.ticks.length ? link.ticks : null;
+  } else {
+    padT = 10;
+    H = Math.max(40, cssH - padT - 16);
+    pMin = Math.min(...grid);
+    pMax = Math.max(...grid);
+    tickPrices = null;
+  }
+  if (!(H > 8) || !(pMax > pMin)) return;
   const pSpan = Math.max(pMax - pMin, 1e-6);
+
   const close = Number(payload.close ?? payload.stats?.close);
   const styles = getComputedStyle(document.documentElement);
   const up = styles.getPropertyValue("--up").trim() || "#ff5d6c";
@@ -2614,52 +2602,64 @@ function paintDealChipChart() {
   const muted = styles.getPropertyValue("--muted").trim() || "#8b9bb4";
   const text = styles.getPropertyValue("--text").trim() || "#e8eef7";
   const accent = "#2ad4b8";
-  const barH = Math.max(1, H / visGrid.length);
-  const yAt = (price) => pad.t + ((pMax - price) / pSpan) * H;
+  const yAt = (price) => padT + ((pMax - price) / pSpan) * H;
   const globalPeakIdx = chips.indexOf(Math.max(...chips));
   const hover = dealChipState.hover;
+  const binStep =
+    grid.length > 1 ? Math.abs(grid[1] - grid[0]) : Math.max(pSpan / Math.max(total, 1), 0.01);
+  const barH = Math.max(1, (binStep / pSpan) * H);
+
+  // 仅统计落入五日价轴视窗内的筹码，避免窗外极值把横向比例压扁
+  let maxChip = 1e-12;
+  for (let i = 0; i < total; i += 1) {
+    const price = grid[i];
+    if (price < pMin || price > pMax) continue;
+    if (chips[i] > maxChip) maxChip = chips[i];
+  }
 
   canvas._chipGeom = {
-    padT: pad.t,
-    padB: pad.b,
-    padL: pad.l,
+    padT,
+    padL,
     W,
     H,
-    start,
-    end,
-    count: visGrid.length,
+    pMin,
+    pMax,
     barH,
   };
 
-  for (let i = 0; i < visGrid.length; i += 1) {
-    const absIdx = start + i;
-    const price = visGrid[i];
-    const w = (visChips[i] / maxChip) * W;
-    if (w <= 0.2 && absIdx !== hover) continue;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(padL - 1, padT - 1, W + 2, H + 2);
+  ctx.clip();
+
+  for (let i = 0; i < total; i += 1) {
+    const price = grid[i];
+    if (price < pMin - binStep || price > pMax + binStep) continue;
+    const w = (chips[i] / maxChip) * W;
+    if (w <= 0.2 && i !== hover) continue;
     const y = yAt(price) - barH / 2;
     const profit = Number.isFinite(close) ? price <= close : true;
     ctx.fillStyle = profit ? up : down;
-    ctx.globalAlpha = absIdx === globalPeakIdx || absIdx === hover ? 0.95 : 0.55;
-    ctx.fillRect(pad.l, y, Math.max(w, absIdx === hover ? 2 : 0), Math.max(1, barH * 0.92));
+    ctx.globalAlpha = i === globalPeakIdx || i === hover ? 0.95 : 0.55;
+    ctx.fillRect(padL, y, Math.max(w, i === hover ? 2 : 0), Math.max(1, barH * 0.92));
   }
   ctx.globalAlpha = 1;
 
-  if (hover >= start && hover < end) {
-    const hi = hover - start;
-    const price = visGrid[hi];
-    const y = yAt(price);
-    const w = (visChips[hi] / maxChip) * W;
-    ctx.save();
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 1;
-    ctx.setLineDash([2, 3]);
-    ctx.beginPath();
-    ctx.moveTo(pad.l, y);
-    ctx.lineTo(pad.l + W, y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.strokeRect(pad.l - 1, y - barH / 2 - 1, Math.max(2, w) + 2, Math.max(1, barH * 0.92) + 2);
-    ctx.restore();
+  if (hover >= 0 && hover < total) {
+    const price = grid[hover];
+    if (price >= pMin && price <= pMax) {
+      const y = yAt(price);
+      const w = (chips[hover] / maxChip) * W;
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(padL + W, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeRect(padL - 1, y - barH / 2 - 1, Math.max(2, w) + 2, Math.max(1, barH * 0.92) + 2);
+    }
   }
 
   if (Number.isFinite(close) && close >= pMin && close <= pMax) {
@@ -2668,36 +2668,42 @@ function paintDealChipChart() {
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 3]);
     ctx.beginPath();
-    ctx.moveTo(pad.l, y);
-    ctx.lineTo(pad.l + W, y);
+    ctx.moveTo(padL, y);
+    ctx.lineTo(padL + W, y);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = accent;
     ctx.font = "11px sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "bottom";
-    ctx.fillText(`收 ${fmtNum(close)}`, pad.l + 4, y - 2);
+    ctx.fillText(`收 ${fmtNum(close)}`, padL + 4, y - 2);
   }
+
+  if (globalPeakIdx >= 0 && globalPeakIdx < total) {
+    const peakPrice = grid[globalPeakIdx];
+    if (peakPrice >= pMin && peakPrice <= pMax) {
+      const y = yAt(peakPrice);
+      const peakW = (chips[globalPeakIdx] / maxChip) * W;
+      ctx.fillStyle = text;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`峰 ${fmtNum(peakPrice)}`, padL + peakW + 6, y);
+    }
+  }
+  ctx.restore();
 
   ctx.fillStyle = muted;
   ctx.font = "11px sans-serif";
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
-  const ticks = 5;
-  for (let i = 0; i <= ticks; i += 1) {
-    const price = pMax - (pSpan * i) / ticks;
+  const labels =
+    tickPrices && tickPrices.length
+      ? tickPrices.filter((p) => p >= pMin - 1e-9 && p <= pMax + 1e-9)
+      : Array.from({ length: 6 }, (_, i) => pMax - (pSpan * i) / 5);
+  for (const price of labels) {
     const y = yAt(price);
-    ctx.fillText(fmtNum(price), pad.l - 6, y);
-  }
-
-  if (globalPeakIdx >= start && globalPeakIdx < end) {
-    const peakPrice = grid[globalPeakIdx];
-    const y = yAt(peakPrice);
-    const peakW = (chips[globalPeakIdx] / maxChip) * W;
-    ctx.fillStyle = text;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillText(`峰 ${fmtNum(peakPrice)}`, pad.l + peakW + 6, y);
+    if (y < padT - 2 || y > padT + H + 2) continue;
+    ctx.fillText(fmtNum(price), padL - 6, y);
   }
 }
 
@@ -2722,7 +2728,6 @@ function renderDealChipPanel() {
     return;
   }
   setDealChipEmpty("", { empty: false });
-  syncDealChipView(payload);
   renderDealChipCards(payload);
   paintDealChipChart();
   if (dealChipState.loading) {
@@ -2785,8 +2790,11 @@ async function loadDealChip({ refresh = false } = {}) {
   // 已有数据也要立刻重绘，才能在 meta 上出现「刷新中」
   renderDealChipPanel();
 
-  const beg = dealChipBegIso(dealChipState.range);
-  const end = dealChipTodayIso();
+  const win = dealChipWindowFromFiveDay();
+  const beg = win.beg;
+  const end = win.end;
+  dealChipState.windowKey = `${code || ""}|${beg}|${end}|${dealChipState.decay || ""}`;
+  dealChipState.linkAxis = dealChipPriceAxisFromFiveDay() || dealChipState.linkAxis;
   const qs = new URLSearchParams({
     code,
     beg,
@@ -2820,6 +2828,7 @@ async function loadDealChip({ refresh = false } = {}) {
       dealChipState.loading = false;
       dealChipState.fetching = false;
       if (dealChipState.abort === controller) dealChipState.abort = null;
+      dealChipState.linkAxis = dealChipPriceAxisFromFiveDay() || dealChipState.linkAxis;
       renderDealChipPanel();
     }
   }
@@ -2831,24 +2840,9 @@ function bindDealChipPanel() {
     return;
   }
   dealChipState.bound = true;
-  dealChipState.range = readDealChipRange();
   dealChipState.decay = readDealChipDecay();
   syncDealChipToolsUi();
 
-  const range = document.getElementById("dealChipRange");
-  if (range) {
-    range.addEventListener("click", (ev) => {
-      const btn = ev.target?.closest?.("[data-chip-range]");
-      if (!btn || !range.contains(btn)) return;
-      const next = Number(btn.getAttribute("data-chip-range"));
-      if (!(next === 5 || next === 20 || next === 60)) return;
-      if (dealChipState.range === next) return;
-      dealChipState.range = next;
-      persistDealChipRange(next);
-      syncDealChipToolsUi();
-      void loadDealChip({ refresh: true });
-    });
-  }
   const decay = document.getElementById("dealChipDecay");
   if (decay) {
     decay.addEventListener("click", (ev) => {
@@ -2859,6 +2853,7 @@ function bindDealChipPanel() {
       if (dealChipState.decay === next) return;
       dealChipState.decay = next;
       persistDealChipDecay(next);
+      dealChipState.windowKey = "";
       syncDealChipToolsUi();
       void loadDealChip({ refresh: true });
     });
@@ -2868,13 +2863,17 @@ function bindDealChipPanel() {
     refreshBtn.dataset.bound = "1";
     refreshBtn.addEventListener("click", () => {
       if (!dealModeIsChip()) return;
+      dealChipState.windowKey = "";
       void loadDealChip({ refresh: true });
     });
   }
   const body = document.getElementById("dealChipBody");
   if (body && typeof ResizeObserver !== "undefined") {
     dealChipState.ro = new ResizeObserver(() => {
-      if (dealModeIsChip() && dealChipState.data) paintDealChipChart();
+      if (!dealModeIsChip() || dealMainFoldState.folded) return;
+      // 布局变化后重算与五日价格区的像素对齐
+      dealChipState.linkAxis = dealChipPriceAxisFromFiveDay() || dealChipState.linkAxis;
+      if (dealChipState.data) paintDealChipChart();
     });
     dealChipState.ro.observe(body);
   }
@@ -2886,54 +2885,8 @@ function bindDealChipChart() {
   if (!canvas || dealChipState.chartBound) return;
   dealChipState.chartBound = true;
 
-  canvas.addEventListener(
-    "wheel",
-    (ev) => {
-      if (!dealModeIsChip() || !dealChipState.data) return;
-      ev.preventDefault();
-      zoomDealChipAtClientY(canvas, ev.clientY, ev.deltaY < 0);
-    },
-    { passive: false },
-  );
-
-  canvas.addEventListener("mousedown", (ev) => {
-    if (ev.button !== 0 || !dealModeIsChip() || !dealChipState.data) return;
-    dealChipState.dragging = true;
-    dealChipState.dragY = ev.clientY;
-    canvas.classList.add("is-dragging");
-    hideDealChipTip();
-    ev.preventDefault();
-  });
-
-  window.addEventListener("mousemove", (ev) => {
-    if (!dealChipState.dragging) return;
-    const geom = canvas._chipGeom;
-    if (!geom || !geom.count) return;
-    const { total } = dealChipSeries();
-    if (!total) return;
-    const span = Math.max(1, dealChipState.viewEnd - dealChipState.viewStart);
-    const band = geom.H / span;
-    const dy = ev.clientY - dealChipState.dragY;
-    // 向下拖：内容上移 → 看更高价 → viewStart 增大
-    const shift = Math.round(dy / band);
-    if (!shift) return;
-    const nextStart = Math.max(0, Math.min(total - span, dealChipState.viewStart + shift));
-    if (nextStart === dealChipState.viewStart) return;
-    dealChipState.viewStart = nextStart;
-    dealChipState.viewEnd = nextStart + span;
-    dealChipState.dragY += shift * band;
-    dealChipState.hover = -1;
-    paintDealChipChart();
-  });
-
-  window.addEventListener("mouseup", () => {
-    if (!dealChipState.dragging) return;
-    dealChipState.dragging = false;
-    canvas.classList.remove("is-dragging");
-  });
-
   canvas.addEventListener("mousemove", (ev) => {
-    if (dealChipState.dragging || !dealModeIsChip() || !dealChipState.data) return;
+    if (!dealModeIsChip() || !dealChipState.data) return;
     const rect = canvas.getBoundingClientRect();
     const x = ev.clientX - rect.left;
     const y = ev.clientY - rect.top;
@@ -2946,20 +2899,11 @@ function bindDealChipChart() {
   });
 
   canvas.addEventListener("mouseleave", () => {
-    if (dealChipState.dragging) return;
     if (dealChipState.hover < 0) {
       hideDealChipTip();
       return;
     }
     dealChipState.hover = -1;
-    hideDealChipTip();
-    paintDealChipChart();
-  });
-
-  canvas.addEventListener("dblclick", () => {
-    if (!dealModeIsChip() || !dealChipState.data) return;
-    const { total } = dealChipSeries();
-    resetDealChipView(total);
     hideDealChipTip();
     paintDealChipChart();
   });
@@ -3455,6 +3399,8 @@ function paintDealFiveDayChart() {
     sharedMaxVol,
   };
   syncDealFiveDayZoomButtons();
+  // 筹码分布：价轴像素对齐 + 取数窗跟随可见日
+  syncDealChipLinkFromFiveDay();
 }
 
 function dealFiveDayAnchorRatioAtClient(clientX, clientY) {

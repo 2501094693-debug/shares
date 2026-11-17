@@ -14232,9 +14232,11 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
 }
 
 .deal-chip-cards {
+  flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   gap: 6px 8px;
+  padding-top: 2px;
   font-size: 12px;
   line-height: 1.35;
   color: var(--muted, #8b9bb4);
@@ -14257,24 +14259,6 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   font-variant-numeric: tabular-nums;
 }
 
-.deal-chip-pool-bar {
-  display: flex;
-  height: 6px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.deal-chip-pool-known {
-  background: rgba(42, 212, 184, 0.75);
-  height: 100%;
-}
-
-.deal-chip-pool-unknown {
-  background: rgba(139, 155, 180, 0.45);
-  height: 100%;
-}
-
 .deal-chip-body {
   position: relative;
   flex: 1 1 auto;
@@ -14287,12 +14271,8 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   display: block;
   width: 100%;
   height: 100%;
-  cursor: grab;
+  cursor: crosshair;
   touch-action: none;
-}
-
-.deal-chip-body canvas.is-dragging {
-  cursor: grabbing;
 }
 
 .deal-chip-hint {
