@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=20261113-deal-fold" />
+  <link rel="stylesheet" href="/css/style.css?v=20261117-deal-stats-unify" />
   <link rel="stylesheet" href="/css/ai-page.css?v=20261022-risk-q4" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
@@ -23,6 +23,7 @@
         </div>
       </div>
       <div class="top-actions">
+        <button id="thsAuthBtn" class="btn ghost" type="button" title="同花顺未登录，点击扫码"><span class="ths-dot" data-state="idle"></span>同花顺</button>
         <a id="backLink" class="btn ghost" href="/market">返回市场</a>
         <button id="refreshNewsBtn" class="btn ghost" type="button" hidden>刷新资讯</button>
         <button id="refreshEmotionBtn" class="btn ghost" type="button" hidden>刷新情绪</button>
@@ -320,6 +321,10 @@
                   </div>
                   <div id="dealFiveDayHoverStats" class="deal-fiveday-head-stats" hidden aria-live="polite"></div>
                   <div class="deal-fiveday-tools">
+                    <div id="dealModeToggle" class="deal-mode-toggle" role="group" aria-label="成交分析视图">
+                      <button type="button" class="btn ghost sm deal-mode-btn is-active" data-deal-mode="live" aria-pressed="true">实时明细</button>
+                      <button type="button" class="btn ghost sm deal-mode-btn" data-deal-mode="stats" aria-pressed="false">统计视图</button>
+                    </div>
                     <button id="dealMainFoldBtn" class="btn ghost sm" type="button" aria-controls="dealAnalysisMain" aria-expanded="true" title="折叠实时与明细，把空间让给五日">折叠实时</button>
                     <button id="dealFiveDayZoomOutBtn" class="btn ghost sm" type="button" title="显示更多交易日 (Ctrl+滚轮)">−</button>
                     <button id="dealFiveDayZoomInBtn" class="btn ghost sm" type="button" title="放大单日分时 (Ctrl+滚轮)">+</button>
@@ -330,18 +335,65 @@
                   <p class="muted">进入成交分析后加载五日分时</p>
                 </div>
               </section>
-              <div id="dealAnalysisMain" class="deal-analysis-main" aria-label="实时走势与成交明细">
-                <div id="dealChartsSlot" class="charts-deck deal-charts-deck" aria-label="实时走势"></div>
-                <div class="deal-analysis-bottom" aria-label="分时成交 · 资金动向 · 盘口委托">
-                  <div id="dealHeroSlot" class="deal-metrics-slot" aria-label="分时成交与资金动向"></div>
-                  <section id="dealEntrustPanel" class="deal-entrust-panel" aria-label="盘口委托">
+              <div id="dealAnalysisMain" class="deal-analysis-main" data-deal-mode="live" aria-label="实时走势与成交明细">
+                <div id="dealLiveMain" class="deal-live-main">
+                  <div id="dealChartsSlot" class="charts-deck deal-charts-deck" aria-label="实时走势"></div>
+                  <div class="deal-analysis-bottom" aria-label="分时成交 · 资金动向 · 盘口委托">
+                    <div id="dealHeroSlot" class="deal-metrics-slot" aria-label="分时成交与资金动向"></div>
+                    <section id="dealEntrustPanel" class="deal-entrust-panel" aria-label="盘口委托">
+                      <header class="deal-side-panel-head">
+                        <h4 class="metrics-section-title">盘口委托</h4>
+                      </header>
+                      <div id="dealEntrustBody" class="deal-entrust-body">
+                        <p class="muted">进入成交分析后加载盘口</p>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+                <div id="dealStatsMain" class="deal-stats-main" hidden aria-hidden="true">
+                  <section id="dealCapitalPanel" class="deal-capital-panel" aria-label="资金统计">
                     <header class="deal-side-panel-head">
-                      <h4 class="metrics-section-title">盘口委托</h4>
+                      <div class="deal-side-panel-title">
+                        <h4 class="metrics-section-title">资金统计</h4>
+                        <p id="dealCapitalMeta" class="deal-side-panel-meta muted"></p>
+                      </div>
+                      <button id="dealStatsRefreshBtn" class="btn ghost sm" type="button">刷新</button>
                     </header>
-                    <div id="dealEntrustBody" class="deal-entrust-body">
-                      <p class="muted">进入成交分析后加载盘口</p>
+                    <div id="dealCapitalChips" class="deal-capital-chips" aria-live="polite"></div>
+                    <div id="dealCapitalBody" class="deal-capital-body">
+                      <p class="muted">切换到统计视图后加载</p>
                     </div>
                   </section>
+                  <div class="deal-stats-body">
+                    <section id="dealQuadPanel" class="deal-quad-panel" aria-label="大单四象限">
+                      <header class="deal-side-panel-head">
+                        <div class="deal-side-panel-title">
+                          <h4 class="metrics-section-title">大单四象限</h4>
+                          <p id="dealQuadMeta" class="deal-side-panel-meta muted"></p>
+                        </div>
+                        <label class="deal-quad-min-filter" title="大单金额门槛（万元），与资金动向同口径">
+                          <span class="muted">≥</span>
+                          <input id="dealQuadMinWan" class="big-deal-range-input" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="大单最低金额（万）" />
+                          <span class="muted">万</span>
+                        </label>
+                      </header>
+                      <div id="dealQuadSummary" class="deal-quad-summary" aria-live="polite"></div>
+                      <div id="dealQuadGrid" class="deal-quad-grid">
+                        <p class="muted">切换到统计视图后加载</p>
+                      </div>
+                    </section>
+                    <section id="dealPriceLevelsPanel" class="deal-price-levels-panel" aria-label="分价表">
+                      <header class="deal-side-panel-head">
+                        <div class="deal-side-panel-title">
+                          <h4 class="metrics-section-title">分价表</h4>
+                          <p id="dealPriceLevelsMeta" class="deal-side-panel-meta muted"></p>
+                        </div>
+                      </header>
+                      <div id="dealPriceLevelsBody" class="deal-price-levels-body">
+                        <p class="muted">切换到统计视图后加载</p>
+                      </div>
+                    </section>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1473,6 +1525,20 @@
   </div>
   </div>
 
+  <div id="thsAuthModal" class="ths-auth-modal hidden" role="dialog" aria-label="同花顺扫码登录">
+    <div class="ths-auth-card">
+      <header class="ths-auth-head">
+        <h3>同花顺扫码登录</h3>
+        <button id="thsAuthClose" class="btn ghost sm" type="button">关闭</button>
+      </header>
+      <p id="thsQrHint" class="muted">正在生成二维码…</p>
+      <img id="thsQrImg" class="ths-qr-img" alt="qr" style="display:none" />
+      <a id="thsQrScan" class="btn ghost sm" href="#" target="_blank" rel="noopener" hidden></a>
+      <p class="muted ths-auth-tip">一次扫码后会话保存在仓库 cache/thsdk/account.session，多天有效；过期才需重扫。扫码页不要开代理/VPN。</p>
+      <button id="thsAuthCancel" class="btn ghost sm" type="button">取消登录</button>
+    </div>
+  </div>
+
   <script src="/js/shared/orbit-http.js?v=20261111"></script>
   <script src="/js/shared/orbit-prefetch.js?v=holders-date-20260919"></script>
   <script src="/js/shared/nav.js?v=nav-industry-20261001"></script>
@@ -1480,6 +1546,7 @@
   <script src="/js/shared/ai-modes.js?v=20261022-risk-meta"></script>
   <script src="/js/shared/company-analysis.js?v=20261027-deal-analysis"></script>
   <script src="/js/shared/line-compare.js?v=20261026-lc-trader-fix"></script>
-  <script src="/js/company.js?v=20261113-deal-fold"></script>
+  <script src="/js/company/ths-auth.js?v=ths-auth-20261117-deal-stats"></script>
+  <script src="/js/company.js?v=20261117-deal-stats-unify2"></script>
 </body>
 </html>

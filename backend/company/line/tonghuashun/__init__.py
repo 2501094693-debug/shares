@@ -1,4 +1,7 @@
-"""同花顺实时逐笔 + 多周期 K + 分时成交 + 分价表。统一入口见 ``company.line.fetcher``。"""
+"""同花顺实时逐笔 + 多周期 K + 分时成交。统一入口见 ``company.line.fetcher``。
+
+分价表已迁至 ``company.analysis.deal.price_levels``；此处仍延迟转发旧名。
+"""
 
 from company.line.tonghuashun import auth
 from company.line.tonghuashun.hq_ticks import fetch_time_and_sales
@@ -31,7 +34,7 @@ def __getattr__(name: str):
 
         return getattr(intraday, name)
     if name in {"fetch_price_levels", "fetch_price_levels_pack"}:
-        from company.line.tonghuashun import price_levels
+        from company.analysis.deal.price_levels import service as price_levels
 
         return getattr(price_levels, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

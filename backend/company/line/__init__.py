@@ -6,8 +6,8 @@
 - ``fetcher``：统一入口 + 内存/TTL/磁盘缓存（``fetch_kline`` / ``fetch_ticks``）。
 - ``eastmoney``：东财 K 线（``kline``）+ 实时逐笔（``ticks``）。
 - ``tencent``：腾讯 K 线（``kline``）+ 实时逐笔（``ticks``）。
-- ``tonghuashun``：同花顺逐笔（``hq_ticks``）+ K 线（``kline``）+ 分时（``intraday``）
-  + 分价表（``price_levels``），统一由 ``fetcher`` 调度。
+- ``tonghuashun``：同花顺逐笔（``hq_ticks``）+ K 线（``kline``）+ 分时（``intraday``），
+  统一由 ``fetcher`` 调度。分价表见 ``company.analysis.deal.price_levels``。
 
 顶层 ``eastmoney_kline`` 等四个文件是兼容垫片，旧引用仍可用，
 新代码请从子包导入。委托盘口见 ``company.entrust``。

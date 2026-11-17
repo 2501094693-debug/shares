@@ -135,7 +135,7 @@
     return _fetch.apply(null, args).then(function (r) {
       try {
         var url = String(args[0] || "");
-        if (/\/api\/stocks\/(line|ticks|fund-flow)/.test(url)) {
+        if (/\/api\/stocks\/(line|ticks|fund-flow|deal-stats|price-levels)/.test(url)) {
           r.clone().json().catch(function () { return null; }).then(function (j) {
             if (j && j.ok === false && needQr(j.error) && window.ThsAuth) window.ThsAuth.notifyMaybeAuthError(j.error);
           });

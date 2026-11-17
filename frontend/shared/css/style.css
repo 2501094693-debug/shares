@@ -14135,10 +14135,329 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   min-height: 0;
   height: 100%;
   display: grid;
-  /* 上实时、下三列；用 fr 分配，避免 aspect-ratio 把 auto 行撑出空洞 */
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  overflow: hidden;
+}
+
+/* 实时明细：上实时、下三列 */
+.deal-live-main {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
   grid-template-rows: minmax(0, 1.35fr) minmax(200px, 1fr);
   gap: 10px;
   overflow: hidden;
+}
+
+.deal-analysis-main[data-deal-mode="stats"] .deal-live-main {
+  display: none;
+}
+
+.deal-analysis-main[data-deal-mode="live"] .deal-stats-main,
+.deal-stats-main[hidden] {
+  display: none !important;
+}
+
+/* 统计视图：顶栏资金矩阵 + 下左四象限 + 下右分价 */
+.deal-stats-main {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  overflow: hidden;
+}
+
+.deal-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px;
+  border: 1px solid rgba(42, 212, 184, 0.14);
+  border-radius: calc(var(--radius) + 2px);
+  background: rgba(4, 8, 14, 0.35);
+}
+
+.deal-mode-toggle .deal-mode-btn {
+  margin: 0;
+  min-width: 4.5em;
+}
+
+.deal-mode-toggle .deal-mode-btn.is-active {
+  background: rgba(42, 212, 184, 0.16);
+  color: var(--text, #e8eef7);
+}
+
+.deal-capital-panel,
+.deal-quad-panel,
+.deal-price-levels-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(42, 212, 184, 0.1);
+  border-radius: calc(var(--radius) + 2px);
+  background: rgba(4, 8, 14, 0.35);
+  padding: 8px 10px 6px;
+  gap: 6px;
+}
+
+.deal-capital-panel {
+  flex: 0 0 auto;
+}
+
+.deal-capital-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted, #8b9bb4);
+}
+
+.deal-capital-chips .deal-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(42, 212, 184, 0.1);
+  background: rgba(42, 212, 184, 0.05);
+}
+
+.deal-capital-chips .deal-chip b {
+  font-weight: 600;
+  color: var(--text, #e8eef7);
+  font-variant-numeric: tabular-nums;
+}
+
+.deal-capital-chips .deal-chip b.change-up { color: var(--up, #ff5d6c); }
+.deal-capital-chips .deal-chip b.change-down { color: var(--down, #3dd68c); }
+
+.deal-capital-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.deal-capital-table,
+.deal-quad-table,
+.deal-price-levels-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.deal-capital-table th,
+.deal-capital-table td,
+.deal-quad-table th,
+.deal-quad-table td,
+.deal-price-levels-table th,
+.deal-price-levels-table td {
+  padding: 3px 6px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.deal-capital-table th:first-child,
+.deal-capital-table td:first-child,
+.deal-price-levels-table th:first-child,
+.deal-price-levels-table td:first-child {
+  text-align: left;
+}
+
+.deal-quad-table th,
+.deal-quad-table td {
+  text-align: left;
+}
+
+.deal-capital-table th,
+.deal-quad-table th,
+.deal-price-levels-table th {
+  color: var(--muted, #8b9bb4);
+  font-weight: 500;
+  border-bottom: 1px solid rgba(42, 212, 184, 0.1);
+}
+
+.deal-capital-table tbody tr + tr td,
+.deal-quad-table tbody tr + tr td,
+.deal-price-levels-table tbody tr + tr td {
+  border-top: 1px solid rgba(42, 212, 184, 0.06);
+}
+
+.deal-stats-body {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(160px, 0.75fr);
+  gap: 10px;
+  overflow: hidden;
+}
+
+.deal-quad-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted, #8b9bb4);
+}
+
+.deal-quad-summary > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(42, 212, 184, 0.1);
+  background: rgba(42, 212, 184, 0.05);
+  white-space: nowrap;
+}
+
+.deal-quad-summary > span b {
+  color: var(--text, #e8eef7);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.deal-quad-grid {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  overflow: hidden;
+}
+
+.deal-quad-card {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(42, 212, 184, 0.08);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.18);
+  padding: 6px 8px;
+  gap: 4px;
+}
+
+.deal-quad-card-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.deal-quad-min-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.deal-quad-min-filter .big-deal-range-input {
+  width: 4.5em;
+}
+
+.deal-quad-card-head .deal-quad-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.deal-quad-card-meta {
+  color: var(--muted, #8b9bb4);
+  font-variant-numeric: tabular-nums;
+}
+
+.deal-quad-card-body {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.deal-quad-card-body .deal-quad-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(6, 11, 18, 0.96);
+}
+
+.deal-capital-table tbody tr:hover td,
+.deal-quad-table tbody tr:hover td,
+.deal-price-levels-table tbody tr:hover td {
+  background: rgba(42, 212, 184, 0.06);
+}
+
+.deal-quad-card[data-event="active_buy"] .deal-quad-title { color: #ff5d6c; }
+.deal-quad-card[data-event="active_sell"] .deal-quad-title { color: #3dd68c; }
+.deal-quad-card[data-event="passive_buy"] .deal-quad-title { color: rgba(255, 93, 108, 0.78); }
+.deal-quad-card[data-event="passive_sell"] .deal-quad-title { color: rgba(61, 214, 140, 0.78); }
+
+.deal-price-levels-body {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.deal-price-levels-body,
+.deal-capital-body,
+.deal-quad-card-body {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(42, 212, 184, 0.35) transparent;
+}
+
+.deal-price-levels-body::-webkit-scrollbar,
+.deal-capital-body::-webkit-scrollbar,
+.deal-quad-card-body::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.deal-price-levels-body::-webkit-scrollbar-thumb,
+.deal-capital-body::-webkit-scrollbar-thumb,
+.deal-quad-card-body::-webkit-scrollbar-thumb {
+  background: rgba(42, 212, 184, 0.28);
+  border-radius: 99px;
+}
+
+.deal-price-levels-body::-webkit-scrollbar-track,
+.deal-capital-body::-webkit-scrollbar-track,
+.deal-quad-card-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.deal-price-levels-table tr.is-near-last td {
+  background: rgba(42, 212, 184, 0.1);
+}
+
+.deal-price-levels-bar {
+  display: inline-block;
+  height: 6px;
+  min-width: 2px;
+  max-width: 64px;
+  border-radius: 2px;
+  background: rgba(42, 212, 184, 0.55);
+  vertical-align: middle;
+}
+
+@media (max-width: 1100px) {
+  .deal-stats-body {
+    grid-template-columns: minmax(0, 1fr) minmax(140px, 0.7fr);
+  }
 }
 
 /* 折叠右侧实时 + 三列明细，五日独占整块 */

@@ -1,6 +1,9 @@
-"""大单资金动向统计：实现位于 ``fundflow`` 子包，此处只做兼容转发。
+"""成交分析：
 
-新代码请直接从 ``company.analysis.deal.fundflow`` 导入。
+- ``fundflow``：大单资金动向统计（四象限 + 分箱）
+- ``price_levels``：当日分价表（各价位已成交量）
+
+顶层对 ``fundflow`` 做兼容转发；新代码请直接从子包导入。
 """
 
 from company.analysis.deal.fundflow import (
