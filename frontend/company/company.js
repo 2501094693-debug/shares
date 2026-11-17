@@ -14695,6 +14695,17 @@ async function bootstrapTicksFromMinuteKline() {
   }
 }
 
+/** 同花顺 single_trend 分钟点 → 分时成交条目（time 用 HH:MM 时钟，均线由 withTickAvg 补算） */
+function intradayTrendToTick(row) {
+  const stamp = String(row?.stamp || "");
+  const time = stamp ? stamp.slice(0, 5) : String(row?.time || "").slice(11, 16);
+  return {
+    time,
+    price: Number(row?.price) || 0,
+    volume: Number(row?.volume_lots ?? row?.volume) || 0,
+  };
+}
+
 async function loadTicksChart({ silent = false, refresh = false } = {}) {
   if (!code || !els.ticksChart) return;
   const gen = ++ticksState.loadGen;
@@ -14705,6 +14716,57 @@ async function loadTicksChart({ silent = false, refresh = false } = {}) {
   if (!silent) {
     setTicksChartStatus(history ? "" : "正在加载实时…");
     hideTicksHoverCard();
+  }
+
+  if (history) {
+    // 历史日：改用同花顺分时成交（single_trend 分钟级，免登录、历史可回溯），不读逐笔缓存
+    try {
+      const qs = new URLSearchParams({ code, day: ticksViewDay() });
+      const json = await api(`/api/stocks/intraday?${qs.toString()}`);
+      if (gen !== ticksState.loadGen) return;
+      const data = json.data || {};
+      const trends = Array.isArray(data.trends) ? data.trends : [];
+      const items = trends.map(intradayTrendToTick);
+      let preClose = null;
+      for (const t of trends) {
+        const base = toFiniteOrNull(t?.base_price);
+        if (base != null) {
+          preClose = base;
+          break;
+        }
+      }
+      ticksState.bootstrap = false;
+      applyTicksItems(items, { resetViewport: true });
+      ticksState.preClose = preClose;
+      ticksState.source = String(data.source || "ths_mobile:trend");
+      ticksState.cached = false;
+      ticksState.tradeDate = ticksViewDay();
+      if (!items.length) {
+        const msg =
+          String(data.error || "").trim() || `${ticksViewDay()} 暂无分时成交数据`;
+        setTicksChartStatus(msg, { empty: true });
+        fillTicksQuoteCard(null);
+        renderTicksChart();
+        return;
+      }
+      if (els.ticksChartEmpty) els.ticksChartEmpty.classList.add("hidden");
+      refreshTicksChartWindowStatus();
+      refreshTicksQuoteCard();
+      renderTicksChart();
+    } catch (err) {
+      if (gen !== ticksState.loadGen) return;
+      ticksState.bootstrap = false;
+      applyTicksItems([], { resetViewport: true });
+      setTicksChartStatus(err.message || "分时成交加载失败", { empty: true });
+      fillTicksQuoteCard(null);
+      renderTicksChart();
+    } finally {
+      if (gen === ticksState.loadGen) {
+        ticksState.loading = false;
+        refreshTicksTapeList();
+      }
+    }
+    return;
   }
 
   if (!history && ticksState.phase === "live" && !ticksState.allItems.length) {
