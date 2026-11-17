@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,8 @@ if str(_BACKEND) not in sys.path:
 
 from core.codes import normalize_code
 from core.fmt import to_float
+
+logger = logging.getLogger(__name__)
 
 # (对外档位名, 源站后缀)
 _TIERS: tuple[tuple[str, str], ...] = (
@@ -150,22 +153,84 @@ def _parse_row(row: dict[str, Any], *, code: str) -> dict[str, Any]:
     }
 
 
-def fetch_daily_capital(
+def _empty_tier(net: float | None = None) -> dict[str, Any]:
+    return {
+        "active_buy": None,
+        "active_sell": None,
+        "passive_buy": None,
+        "passive_sell": None,
+        "active_net": None,
+        "passive_net": None,
+        "buy": None,
+        "sell": None,
+        "net": None if net is None else round(float(net), 2),
+    }
+
+
+def _from_eastmoney_snapshot(code: str) -> dict[str, Any]:
+    """同花顺通道不可用时：东财档位净流入快照（无主动/被动拆分）。"""
+    from company.statistics.fundflow.eastmoney.stock import fetch_snapshot
+
+    snap = fetch_snapshot(code)
+    tiers = {
+        "super": _empty_tier(snap.get("super_net")),
+        "big": _empty_tier(snap.get("big_net")),
+        "mid": _empty_tier(snap.get("mid_net")),
+        "small": _empty_tier(snap.get("small_net")),
+    }
+    main_net = snap.get("main_net")
+    if main_net is None:
+        parts = [tiers[k]["net"] for k, _ in _TIERS if tiers[k]["net"] is not None]
+        main_net = round(sum(float(v) for v in parts), 2) if parts else None
+    return {
+        "code": code,
+        "name": str(snap.get("name") or ""),
+        "period": "daily_capital",
+        "source": "eastmoney",
+        "method": "eastmoney:snapshot",
+        "view": "net_only",
+        "count": 1,
+        "turnover": None,
+        "active_buy": None,
+        "active_sell": None,
+        "passive_buy": None,
+        "passive_sell": None,
+        "active_net": None,
+        "passive_net": None,
+        "buy": None,
+        "sell": None,
+        "net": None if main_net is None else round(float(main_net), 2),
+        "super_net": tiers["super"]["net"],
+        "big_net": tiers["big"]["net"],
+        "mid_net": tiers["mid"]["net"],
+        "small_net": tiers["small"]["net"],
+        "tiers": tiers,
+        "raw": {
+            "main_net": snap.get("main_net"),
+            "super_net": snap.get("super_net"),
+            "big_net": snap.get("big_net"),
+            "mid_net": snap.get("mid_net"),
+            "small_net": snap.get("small_net"),
+        },
+        "notes": [
+            "同花顺资金流通道不可用，已降级东财档位净流入（无主动/被动拆分）",
+            "金额单位元；口径与同花顺主动/被动矩阵不同，仅作对照",
+        ],
+    }
+
+
+def _fetch_ths_daily_capital(
     code: str,
     *,
     timeout: float | None = None,
 ) -> dict[str, Any]:
-    """拉取一只股票的当日资金流拆分快照。"""
     import thsdk
     from company.line.tonghuashun import auth as _ths_auth
 
-    norm = normalize_code(code)
-    if not norm:
-        raise ValueError("无效股票代码")
     if not _ths_auth.ensure(timeout=3):
         raise RuntimeError("THS_NEED_QRCODE:同花顺需扫码登录，前端打开扫码弹窗后重试")
 
-    security = _hq_security(norm)
+    security = _hq_security(code)
     if not security:
         raise ValueError("无法映射同花顺证券代码")
 
@@ -176,15 +241,16 @@ def fetch_daily_capital(
     records = frame.to_dict("records") if hasattr(frame, "to_dict") else list(frame or [])
     row = next((item for item in records if isinstance(item, dict)), None)
     if not row:
-        raise RuntimeError(f"{norm} 当日资金流为空（非交易日或无权限）")
+        raise RuntimeError(f"{code} 当日资金流为空（非交易日或无权限）")
 
-    parsed = _parse_row(row, code=norm)
+    parsed = _parse_row(row, code=code)
     return {
-        "code": norm,
+        "code": code,
         "name": "",
         "period": "daily_capital",
         "source": "tonghuashun",
         "method": "thsdk:daily_capital_flows",
+        "view": "full",
         "count": 1,
         "notes": [
             "当日快照：主动/被动 × 买/卖 × 超大/大/中/小；金额单位元",
@@ -193,6 +259,28 @@ def fetch_daily_capital(
         ],
         **parsed,
     }
+
+
+def fetch_daily_capital(
+    code: str,
+    *,
+    timeout: float | None = None,
+) -> dict[str, Any]:
+    """拉取一只股票的当日资金流拆分快照。
+
+    同花顺 thsdk 优先；通道失败时降级东财档位净流入。
+    """
+    norm = normalize_code(code)
+    if not norm:
+        raise ValueError("无效股票代码")
+
+    try:
+        return _fetch_ths_daily_capital(norm, timeout=timeout)
+    except Exception as exc:  # noqa: BLE001
+        # 未登录 / 通道异常都降级东财净流入（不依赖同花顺会话）
+        logger.info("daily_capital thsdk skip %s: %s", norm, exc)
+
+    return _from_eastmoney_snapshot(norm)
 
 
 def main() -> None:

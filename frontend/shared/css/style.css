@@ -14151,12 +14151,20 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   overflow: hidden;
 }
 
-.deal-analysis-main[data-deal-mode="stats"] .deal-live-main {
+.deal-analysis-main[data-deal-mode="stats"] .deal-live-main,
+.deal-analysis-main[data-deal-mode="chip"] .deal-live-main {
   display: none;
 }
 
 .deal-analysis-main[data-deal-mode="live"] .deal-stats-main,
+.deal-analysis-main[data-deal-mode="chip"] .deal-stats-main,
 .deal-stats-main[hidden] {
+  display: none !important;
+}
+
+.deal-analysis-main[data-deal-mode="live"] .deal-chip-main,
+.deal-analysis-main[data-deal-mode="stats"] .deal-chip-main,
+.deal-chip-main[hidden] {
   display: none !important;
 }
 
@@ -14169,6 +14177,192 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
   overflow: hidden;
+}
+
+/* 筹码分布：参数条 + 统计卡 + 横向筹码图 */
+.deal-chip-main {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 10px;
+  overflow: hidden;
+}
+
+.deal-chip-panel {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(42, 212, 184, 0.1);
+  border-radius: calc(var(--radius) + 2px);
+  background: rgba(4, 8, 14, 0.35);
+  padding: 8px 10px 6px;
+  gap: 8px;
+}
+
+.deal-chip-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.deal-chip-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px;
+  border: 1px solid rgba(42, 212, 184, 0.12);
+  border-radius: calc(var(--radius) + 2px);
+  background: rgba(4, 8, 14, 0.28);
+}
+
+.deal-chip-seg .btn {
+  margin: 0;
+  min-width: 0;
+}
+
+.deal-chip-seg .btn.is-active {
+  background: rgba(42, 212, 184, 0.16);
+  color: var(--text, #e8eef7);
+}
+
+.deal-chip-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted, #8b9bb4);
+}
+
+.deal-chip-cards .deal-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(42, 212, 184, 0.1);
+  background: rgba(42, 212, 184, 0.05);
+}
+
+.deal-chip-cards .deal-chip b {
+  font-weight: 600;
+  color: var(--text, #e8eef7);
+  font-variant-numeric: tabular-nums;
+}
+
+.deal-chip-pool-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.deal-chip-pool-known {
+  background: rgba(42, 212, 184, 0.75);
+  height: 100%;
+}
+
+.deal-chip-pool-unknown {
+  background: rgba(139, 155, 180, 0.45);
+  height: 100%;
+}
+
+.deal-chip-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.deal-chip-body canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.deal-chip-body canvas.is-dragging {
+  cursor: grabbing;
+}
+
+.deal-chip-hint {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.2;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.deal-chip-body:has(.chart-empty:not(.hidden)) .deal-chip-hint {
+  display: none;
+}
+
+.deal-chip-tip {
+  position: absolute;
+  z-index: 5;
+  min-width: 118px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border: 1px solid rgba(42, 212, 184, 0.25);
+  background: rgba(6, 11, 18, 0.95);
+  font-size: 12px;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.deal-chip-tip div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  line-height: 1.55;
+  color: var(--muted, #8b9bb4);
+}
+
+.deal-chip-tip b {
+  color: var(--text, #e8eef7);
+  font-variant-numeric: tabular-nums;
+}
+
+.deal-chip-tip b.change-up {
+  color: var(--up, #ff5d6c);
+}
+
+.deal-chip-tip b.change-down {
+  color: var(--down, #3dd68c);
+}
+
+.deal-chip-tip .tip-price {
+  justify-content: flex-start;
+  font-weight: 600;
+  color: var(--text, #e8eef7);
+}
+
+.deal-chip-body .chart-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  pointer-events: none;
+}
+
+.deal-chip-body .chart-empty.hidden {
+  display: none;
 }
 
 .deal-mode-toggle {

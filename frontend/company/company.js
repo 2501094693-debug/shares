@@ -747,8 +747,11 @@ const DEAL_ENTRUST_POLL_MS = 1000;
 /** 统计视图轮询（资金统计 / 分价走势） */
 const DEAL_STATS_POLL_MS = 5000;
 const DEAL_MODE_KEY = "orbit-deal-mode";
-/** 成交分析主区模式：live 实时明细 | stats 统计视图 */
+const DEAL_CHIP_RANGE_KEY = "orbit-deal-chip-range";
+const DEAL_CHIP_DECAY_KEY = "orbit-deal-chip-decay";
+/** 成交分析主区模式：live 实时明细 | stats 统计视图 | chip 筹码分布 */
 const dealModeState = { mode: "live" };
+const DEAL_MODES = new Set(["live", "stats", "chip"]);
 /** 成交分析 · 盘口委托 */
 const dealEntrustState = {
   loading: false,
@@ -767,9 +770,34 @@ const dealStatsState = {
   loadGen: 0,
   fetching: false,
   pending: false,
+  /** 排队中的手动刷新（避免轮询把 refresh 意图吃掉） */
+  pendingRefresh: false,
   capital: { loading: false, error: "", data: null },
   priceLevels: { loading: false, error: "", data: null },
 };
+/** 成交分析 · 筹码分布（line-chip-v2） */
+const dealChipState = {
+  loading: false,
+  error: "",
+  data: null,
+  loadGen: 0,
+  fetching: false,
+  range: 20,
+  decay: "uniform",
+  abort: null,
+  bound: false,
+  ro: null,
+  /** 可见价格档 [viewStart, viewEnd) */
+  viewStart: 0,
+  viewEnd: 0,
+  viewKey: "",
+  hover: -1,
+  dragging: false,
+  dragY: 0,
+  chartBound: false,
+};
+/** 筹码图最少可见档数 */
+const DEAL_CHIP_MIN_VIEW = 12;
 const DEAL_CAPITAL_TIERS = [
   ["super", "超大"],
   ["big", "大"],
@@ -1081,9 +1109,10 @@ function scheduleDealAnalysisBoot() {
         pinBigDealTapeToLatest();
       }
       if (dealModeIsStats()) startDealStatsPolling();
-      else startDealEntrustPolling();
+      else if (dealModeIsLive()) startDealEntrustPolling();
+      else if (dealModeIsChip()) void loadDealChip();
       void loadDealFiveDay();
-      if (!dealModeIsStats()) {
+      if (dealModeIsLive()) {
         syncTicksChartScrollBar();
         renderTicksChart();
       }
@@ -1105,8 +1134,10 @@ function mountDealAnalysisQuotes() {
   if (alreadyMounted) {
     if (dealModeIsStats()) {
       if (!dealStatsState.timer) startDealStatsPolling();
-    } else if (!dealEntrustState.timer) {
-      startDealEntrustPolling();
+    } else if (dealModeIsLive()) {
+      if (!dealEntrustState.timer) startDealEntrustPolling();
+    } else if (dealModeIsChip()) {
+      void loadDealChip();
     }
     scheduleDealAnalysisPaint();
     return;
@@ -1131,11 +1162,11 @@ function stopDealEntrustPolling() {
 }
 
 function startDealEntrustPolling() {
-  if (dealModeIsStats()) return;
+  if (!dealModeIsLive()) return;
   stopDealEntrustPolling();
   void loadDealEntrust();
   dealEntrustState.timer = window.setInterval(() => {
-    if (!dealAnalysisVisible() || dealModeIsStats()) {
+    if (!dealAnalysisVisible() || !dealModeIsLive()) {
       stopDealEntrustPolling();
       return;
     }
@@ -1149,7 +1180,12 @@ function stopDealStatsPolling() {
     dealStatsState.timer = 0;
   }
   dealStatsState.pending = false;
+  dealStatsState.pendingRefresh = false;
+  // 抬 loadGen 会使进行中的请求在 finally 里跳过清理；这里必须同时放下 fetching，
+  // 否则之后所有 loadDealStatsPack（含刷新按钮）都会卡在 early-return。
+  dealStatsState.fetching = false;
   dealStatsState.loadGen += 1;
+  setDealRefreshBtnBusy(document.getElementById("dealStatsRefreshBtn"), false);
 }
 
 function startDealStatsPolling() {
@@ -1291,7 +1327,7 @@ async function loadDealEntrust(options = {}) {
     if (
       dealEntrustState.pending &&
       dealAnalysisVisible() &&
-      !dealModeIsStats()
+      dealModeIsLive()
     ) {
       dealEntrustState.pending = false;
       void loadDealEntrust({ silent: true });
@@ -1307,6 +1343,16 @@ function dealStatsSignedCls(value) {
   return n > 0 ? "change-up" : "change-down";
 }
 
+function dealCapitalSourceLabel(data) {
+  const source = String(data?.source || "").toLowerCase();
+  const view = String(data?.view || "").toLowerCase();
+  if (source === "eastmoney" || view === "net_only") {
+    return "东财 · 档位净流入（同花顺通道暂不可用）";
+  }
+  if (source === "tonghuashun" || !source) return "同花顺 · 当日快照";
+  return `${source} · 当日快照`;
+}
+
 function renderDealCapitalPanel() {
   const body = document.getElementById("dealCapitalBody");
   const chips = document.getElementById("dealCapitalChips");
@@ -1315,11 +1361,12 @@ function renderDealCapitalPanel() {
   const state = dealStatsState.capital;
   const data = state.data;
   if (meta) {
-    meta.textContent = data
-      ? "同花顺 · 当日快照"
-      : state.loading
-        ? "加载中…"
-        : "";
+    if (data) {
+      const base = dealCapitalSourceLabel(data);
+      meta.textContent = state.loading ? `${base} · 刷新中` : base;
+    } else {
+      meta.textContent = state.loading ? "加载中…" : "";
+    }
   }
   if (chips) {
     if (!data) {
@@ -1329,9 +1376,10 @@ function renderDealCapitalPanel() {
         const cls = dealStatsSignedCls(value);
         return `<span class="deal-chip">${escapeHtml(label)} <b class="${cls}">${escapeHtml(fmtWan(value))}</b></span>`;
       };
-      chips.innerHTML = [
-        chip("成交额", data.turnover),
-      ].join("");
+      const chipRows = [];
+      if (data.turnover != null) chipRows.push(chip("成交额", data.turnover));
+      else if (data.net != null) chipRows.push(chip("主力净流入", data.net));
+      chips.innerHTML = chipRows.join("");
     }
   }
   if (state.loading && !data) {
@@ -1347,6 +1395,29 @@ function renderDealCapitalPanel() {
     return;
   }
   const tiers = data.tiers || {};
+  const netOnly =
+    String(data.view || "").toLowerCase() === "net_only" ||
+    String(data.source || "").toLowerCase() === "eastmoney";
+  if (netOnly) {
+    const rows = DEAL_CAPITAL_TIERS.map(([key, label]) => {
+      const net = (tiers[key] || {}).net;
+      return `<tr>
+        <td>${escapeHtml(label)}</td>
+        <td class="${dealStatsSignedCls(net)}">${escapeHtml(fmtWan(net))}</td>
+      </tr>`;
+    }).join("");
+    body.innerHTML = `<table class="deal-capital-table">
+      <thead><tr><th>档位</th><th>净流入</th></tr></thead>
+      <tbody>
+        ${rows}
+        <tr>
+          <td>合计</td>
+          <td class="${dealStatsSignedCls(data.net)}">${escapeHtml(fmtWan(data.net))}</td>
+        </tr>
+      </tbody>
+    </table>`;
+    return;
+  }
   const head = DEAL_CAPITAL_SIDES.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("");
   const rows = DEAL_CAPITAL_TIERS.map(([key, label]) => {
     const tier = tiers[key] || {};
@@ -1420,12 +1491,19 @@ function renderDealPriceLevelsPanel() {
   if (meta) {
     const source = String(data?.source || "").toLowerCase();
     const sourceLabel =
-      source === "ticks" ? "逐笔聚合" : source === "tonghuashun" ? "同花顺" : source || "";
-    meta.textContent = data
-      ? `${data.total_count || data.count || 0} 档 · 量 ${fmtVolLots(summary?.volume_lots)} · 笔 ${summary?.transaction_count ?? "-"}${sourceLabel ? ` · ${sourceLabel}` : ""}`
-      : state.loading
-        ? "加载中…"
-        : "";
+      source === "ticks"
+        ? "逐笔聚合"
+        : source === "tonghuashun"
+          ? "同花顺"
+          : source === "eastmoney"
+            ? "东财"
+            : source || "";
+    if (data) {
+      const base = `${data.total_count || data.count || 0} 档 · 量 ${fmtVolLots(summary?.volume_lots)} · 笔 ${summary?.transaction_count ?? "-"}${sourceLabel ? ` · ${sourceLabel}` : ""}`;
+      meta.textContent = state.loading ? `${base} · 刷新中` : base;
+    } else {
+      meta.textContent = state.loading ? "加载中…" : "";
+    }
   }
   if (state.loading && !data) {
     body.innerHTML = `<p class="muted">正在加载分价走势…</p>`;
@@ -1631,7 +1709,12 @@ function drawDealPriceLevelsChart(canvas) {
 
   const outLots = items.map((row) => Math.max(0, Number(row.out_volume_lots) || 0));
   const inLots = items.map((row) => Math.max(0, Number(row.in_volume_lots) || 0));
-  const totals = items.map((_, i) => outLots[i] + inLots[i]);
+  const volLots = items.map((row) => Math.max(0, Number(row.volume_lots) || 0));
+  // 逐笔降级时集合竞价无内外盘，用总量补齐柱高，避免柱明显偏矮
+  const otherLots = items.map((_, i) =>
+    Math.max(0, volLots[i] - outLots[i] - inLots[i]),
+  );
+  const totals = items.map((_, i) => outLots[i] + inLots[i] + otherLots[i]);
   const counts = items.map((row) => Number(row.transaction_count) || 0);
 
   const maxLots = Math.max(...totals, 1) * 1.08;
@@ -1675,18 +1758,28 @@ function drawDealPriceLevelsChart(canvas) {
     ctx.fillText(fmtVol((maxCount * (4 - g)) / 4), pad.l + W + 6, y);
   }
 
-  // 堆叠柱：外盘在下（红），内盘在上（绿）
+  // 堆叠柱：外盘在下（红），中性/竞价居中（灰），内盘在上（绿）
   items.forEach((_, i) => {
     const x = xAt(i) - barW / 2;
     const outH = (outLots[i] / maxLots) * H;
+    const otherH = (otherLots[i] / maxLots) * H;
     const inH = (inLots[i] / maxLots) * H;
+    let top = zeroY;
     if (outH > 0) {
       ctx.fillStyle = colors.up;
-      ctx.fillRect(x, zeroY - outH, barW, outH);
+      ctx.fillRect(x, top - outH, barW, outH);
+      top -= outH;
+    }
+    if (otherH > 0) {
+      ctx.fillStyle = colors.muted;
+      ctx.globalAlpha = 0.35;
+      ctx.fillRect(x, top - otherH, barW, otherH);
+      ctx.globalAlpha = 1;
+      top -= otherH;
     }
     if (inH > 0) {
       ctx.fillStyle = colors.down;
-      ctx.fillRect(x, zeroY - outH - inH, barW, inH);
+      ctx.fillRect(x, top - inH, barW, inH);
     }
   });
 
@@ -1764,13 +1857,14 @@ function renderDealStatsPanels() {
   renderDealPriceLevelsPanel();
 }
 
-async function loadDealDailyCapital({ silent = false, refresh = false } = {}) {
+async function loadDealDailyCapital({ silent = false, refresh = false, gen = 0 } = {}) {
   if (!code) return;
   const state = dealStatsState.capital;
-  if (!silent || !state.data) {
+  const mine = () => !gen || gen === dealStatsState.loadGen;
+  if (!silent || !state.data || refresh) {
     state.loading = true;
     state.error = "";
-    renderDealCapitalPanel();
+    if (mine()) renderDealCapitalPanel();
   }
   try {
     const qs = new URLSearchParams({
@@ -1779,44 +1873,55 @@ async function loadDealDailyCapital({ silent = false, refresh = false } = {}) {
       source: "tonghuashun",
       refresh: "1",
     });
-    const json = await api(`/api/stocks/fund-flow?${qs.toString()}`);
+    const json = await api(`/api/stocks/fund-flow?${qs.toString()}`, {
+      bypassCache: true,
+    });
+    if (!mine()) return;
     if (json && json.ok === false) {
       throw new Error(json.error || "资金统计加载失败");
     }
     state.data = json.data || null;
     state.error = "";
   } catch (err) {
+    if (!mine()) return;
     state.error = dealStatsFriendlyError(err?.message || err, "资金统计加载失败");
     if (!state.data) state.data = null;
   } finally {
+    if (!mine()) return;
     state.loading = false;
     renderDealCapitalPanel();
   }
 }
 
-async function loadDealPriceLevels({ silent = false } = {}) {
+async function loadDealPriceLevels({ silent = false, refresh = false, gen = 0 } = {}) {
   if (!code) return;
   const state = dealStatsState.priceLevels;
-  if (!silent || !state.data) {
+  const mine = () => !gen || gen === dealStatsState.loadGen;
+  if (!silent || !state.data || refresh) {
     state.loading = true;
     state.error = "";
-    renderDealPriceLevelsPanel();
+    if (mine()) renderDealPriceLevelsPanel();
   }
   try {
     const qs = new URLSearchParams({
       code,
       refresh: "1",
     });
-    const json = await api(`/api/stocks/price-levels?${qs.toString()}`);
+    const json = await api(`/api/stocks/price-levels?${qs.toString()}`, {
+      bypassCache: true,
+    });
+    if (!mine()) return;
     if (json && json.ok === false) {
       throw new Error(json.error || "分价走势加载失败");
     }
     state.data = json.data || null;
     state.error = "";
   } catch (err) {
+    if (!mine()) return;
     state.error = dealStatsFriendlyError(err?.message || err, "分价走势加载失败");
     if (!state.data) state.data = null;
   } finally {
+    if (!mine()) return;
     state.loading = false;
     renderDealPriceLevelsPanel();
   }
@@ -1825,21 +1930,39 @@ async function loadDealPriceLevels({ silent = false } = {}) {
 async function loadDealStatsPack({ silent = false, refresh = false } = {}) {
   if (!code || !dealAnalysisVisible() || !dealModeIsStats()) return;
   if (dealStatsState.fetching) {
-    dealStatsState.pending = true;
-    return;
+    if (refresh) {
+      // 手动刷新：作废进行中的轮询，立刻重拉，避免只排队、按钮无反馈
+      dealStatsState.loadGen += 1;
+      dealStatsState.fetching = false;
+      dealStatsState.pending = false;
+      dealStatsState.pendingRefresh = false;
+    } else {
+      dealStatsState.pending = true;
+      return;
+    }
   }
   dealStatsState.fetching = true;
   const gen = ++dealStatsState.loadGen;
   try {
     await Promise.all([
-      loadDealDailyCapital({ silent, refresh }),
-      loadDealPriceLevels({ silent }),
+      loadDealDailyCapital({ silent, refresh, gen }),
+      loadDealPriceLevels({ silent, refresh, gen }),
     ]);
   } finally {
     if (gen === dealStatsState.loadGen) dealStatsState.fetching = false;
-    if (dealStatsState.pending && dealAnalysisVisible() && dealModeIsStats()) {
+    if (
+      gen === dealStatsState.loadGen &&
+      dealStatsState.pending &&
+      dealAnalysisVisible() &&
+      dealModeIsStats()
+    ) {
       dealStatsState.pending = false;
-      void loadDealStatsPack({ silent: true });
+      const pendingRefresh = dealStatsState.pendingRefresh;
+      dealStatsState.pendingRefresh = false;
+      void loadDealStatsPack({
+        silent: pendingRefresh ? false : true,
+        refresh: pendingRefresh,
+      });
     }
   }
 }
@@ -2016,14 +2139,30 @@ function persistDealMainFolded(folded) {
   }
 }
 
+function normalizeDealMode(mode) {
+  const key = String(mode || "").trim().toLowerCase();
+  return DEAL_MODES.has(key) ? key : "live";
+}
+
+function dealModeIs(mode) {
+  return dealModeState.mode === mode;
+}
+
 function dealModeIsStats() {
-  return dealModeState.mode === "stats";
+  return dealModeIs("stats");
+}
+
+function dealModeIsLive() {
+  return dealModeIs("live");
+}
+
+function dealModeIsChip() {
+  return dealModeIs("chip");
 }
 
 function readDealMode() {
   try {
-    const raw = String(localStorage.getItem(DEAL_MODE_KEY) || "").trim().toLowerCase();
-    return raw === "stats" ? "stats" : "live";
+    return normalizeDealMode(localStorage.getItem(DEAL_MODE_KEY));
   } catch {
     return "live";
   }
@@ -2031,7 +2170,43 @@ function readDealMode() {
 
 function persistDealMode(mode) {
   try {
-    localStorage.setItem(DEAL_MODE_KEY, mode === "stats" ? "stats" : "live");
+    localStorage.setItem(DEAL_MODE_KEY, normalizeDealMode(mode));
+  } catch {
+    /* ignore */
+  }
+}
+
+function readDealChipRange() {
+  try {
+    const n = Number(localStorage.getItem(DEAL_CHIP_RANGE_KEY));
+    if (n === 5 || n === 20 || n === 60) return n;
+  } catch {
+    /* ignore */
+  }
+  return 20;
+}
+
+function persistDealChipRange(range) {
+  try {
+    localStorage.setItem(DEAL_CHIP_RANGE_KEY, String(range));
+  } catch {
+    /* ignore */
+  }
+}
+
+function readDealChipDecay() {
+  try {
+    const raw = String(localStorage.getItem(DEAL_CHIP_DECAY_KEY) || "").trim().toLowerCase();
+    if (raw === "uniform" || raw === "profit" || raw === "cut") return raw;
+  } catch {
+    /* ignore */
+  }
+  return "uniform";
+}
+
+function persistDealChipDecay(decay) {
+  try {
+    localStorage.setItem(DEAL_CHIP_DECAY_KEY, decay);
   } catch {
     /* ignore */
   }
@@ -2049,16 +2224,15 @@ function syncDealModeToggleUi() {
 function syncDealFoldBtnLabel() {
   const btn = document.getElementById("dealMainFoldBtn");
   if (!btn) return;
-  const stats = dealModeIsStats();
   const folded = dealMainFoldState.folded;
-  const noun = stats ? "统计" : "实时";
+  const noun = dealModeIsStats() ? "统计" : dealModeIsChip() ? "筹码" : "实时";
   btn.setAttribute("aria-expanded", folded ? "false" : "true");
-  btn.setAttribute("aria-label", folded ? `展开${noun}与明细` : `折叠${noun}与明细`);
-  btn.title = folded ? `展开${noun}与明细` : `折叠${noun}与明细，把空间让给五日`;
+  btn.setAttribute("aria-label", folded ? `展开${noun}` : `折叠${noun}`);
+  btn.title = folded ? `展开${noun}` : `折叠${noun}，把空间让给五日`;
   btn.textContent = folded ? `展开${noun}` : `折叠${noun}`;
 }
 
-/** 折叠/展开右侧整块（实时明细或统计视图） */
+/** 折叠/展开右侧整块（实时明细 / 统计 / 筹码） */
 function applyDealMainFold(folded, { persist = false } = {}) {
   dealMainFoldState.folded = Boolean(folded);
   const center = document.querySelector(".deal-analysis-center");
@@ -2066,60 +2240,729 @@ function applyDealMainFold(folded, { persist = false } = {}) {
   syncDealFoldBtnLabel();
   if (persist) persistDealMainFolded(dealMainFoldState.folded);
   if (!dealAnalysisVisible()) return;
-  // 等 grid 尺寸落地后再重算两侧画布；折叠时实时图不绘制
   window.requestAnimationFrame(() => {
     if (!dealAnalysisVisible()) return;
     if (dealFiveDayState.items.length) {
       clampDealFiveDayViewport();
       paintDealFiveDayChart();
     }
-    if (!dealMainFoldState.folded && !dealModeIsStats()) scheduleDealAnalysisPaint();
+    if (dealMainFoldState.folded) return;
+    if (dealModeIsLive()) scheduleDealAnalysisPaint();
+    else if (dealModeIsChip()) paintDealChipChart();
   });
 }
 
-/** 整块切换：实时明细 ↔ 统计视图（五日保留） */
+function stopDealChipLoad() {
+  if (dealChipState.abort) {
+    try {
+      dealChipState.abort.abort();
+    } catch {
+      /* ignore */
+    }
+    dealChipState.abort = null;
+  }
+  dealChipState.loadGen += 1;
+  dealChipState.fetching = false;
+  dealChipState.loading = false;
+  // 切走模式时若刷新请求被 abort，finally 不会清按钮，这里兜底恢复
+  setDealRefreshBtnBusy(document.getElementById("dealChipRefreshBtn"), false);
+}
+
+/** 整块切换：实时明细 ↔ 统计视图 ↔ 筹码分布（五日保留） */
 function applyDealMode(mode, { persist = false, force = false } = {}) {
-  const next = mode === "stats" ? "stats" : "live";
-  if (!force && dealModeState.mode === next) {
+  const next = normalizeDealMode(mode);
+  const prev = dealModeState.mode;
+  if (!force && prev === next) {
     syncDealModeToggleUi();
     syncDealFoldBtnLabel();
     return;
   }
+  if (prev === "chip" && next !== "chip") stopDealChipLoad();
+
   dealModeState.mode = next;
   const main = document.getElementById("dealAnalysisMain");
   const live = document.getElementById("dealLiveMain");
   const stats = document.getElementById("dealStatsMain");
+  const chip = document.getElementById("dealChipMain");
+  const labels = {
+    live: "实时走势与成交明细",
+    stats: "资金统计 · 分价走势",
+    chip: "分时筹码分布",
+  };
   if (main) {
     main.dataset.dealMode = next;
-    main.setAttribute(
-      "aria-label",
-      next === "stats" ? "资金统计 · 分价走势" : "实时走势与成交明细",
-    );
+    main.setAttribute("aria-label", labels[next] || labels.live);
   }
   if (live) {
-    live.hidden = next === "stats";
-    live.setAttribute("aria-hidden", next === "stats" ? "true" : "false");
+    live.hidden = next !== "live";
+    live.setAttribute("aria-hidden", next === "live" ? "false" : "true");
   }
   if (stats) {
     stats.hidden = next !== "stats";
     stats.setAttribute("aria-hidden", next === "stats" ? "false" : "true");
   }
+  if (chip) {
+    chip.hidden = next !== "chip";
+    chip.setAttribute("aria-hidden", next === "chip" ? "false" : "true");
+  }
   syncDealModeToggleUi();
   syncDealFoldBtnLabel();
   if (persist) persistDealMode(next);
 
-  // 切换到统计视图时自动展开主块（无论面板此时是否可见，避免统计视图空白）
-  if (next === "stats" && dealMainFoldState.folded) applyDealMainFold(false, { persist: true });
+  if ((next === "stats" || next === "chip") && dealMainFoldState.folded) {
+    applyDealMainFold(false, { persist: true });
+  }
   if (!dealAnalysisVisible()) return;
 
   if (next === "stats") {
     stopDealEntrustPolling();
+    stopDealChipLoad();
+    bindDealStatsRefreshBtn();
     startDealStatsPolling();
+  } else if (next === "chip") {
+    stopDealEntrustPolling();
+    stopDealStatsPolling();
+    bindDealChipPanel();
+    void loadDealChip();
   } else {
     stopDealStatsPolling();
+    stopDealChipLoad();
     if (!dealEntrustState.timer) startDealEntrustPolling();
     scheduleDealAnalysisPaint();
   }
+}
+
+function syncDealChipToolsUi() {
+  document.querySelectorAll("#dealChipRange [data-chip-range]").forEach((btn) => {
+    const active = Number(btn.getAttribute("data-chip-range")) === dealChipState.range;
+    btn.classList.toggle("is-active", active);
+  });
+  document.querySelectorAll("#dealChipDecay [data-chip-decay]").forEach((btn) => {
+    const active = btn.getAttribute("data-chip-decay") === dealChipState.decay;
+    btn.classList.toggle("is-active", active);
+  });
+}
+
+/** 近 N 个交易日的起始 ISO；优先五日已加载列表，否则日历回推。 */
+function dealChipBegIso(rangeDays) {
+  const n = Math.max(1, Number(rangeDays) || 20);
+  const days = Array.isArray(dealFiveDayState.days) ? dealFiveDayState.days.filter(Boolean) : [];
+  if (days.length) {
+    const slice = days.slice(-n);
+    return String(slice[0] || "").slice(0, 10);
+  }
+  const end = new Date();
+  let left = n;
+  const cursor = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  while (left > 0) {
+    const wd = cursor.getDay();
+    if (wd !== 0 && wd !== 6) left -= 1;
+    if (left <= 0) break;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  const y = cursor.getFullYear();
+  const m = String(cursor.getMonth() + 1).padStart(2, "0");
+  const d = String(cursor.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function dealChipTodayIso() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function setDealChipEmpty(msg, { empty = true } = {}) {
+  const el = document.getElementById("dealChipEmpty");
+  const canvas = document.getElementById("dealChipChart");
+  if (el) {
+    el.textContent = msg || "";
+    el.classList.toggle("hidden", !empty);
+  }
+  if (canvas) canvas.style.opacity = empty ? "0.15" : "1";
+}
+
+function renderDealChipCards(payload) {
+  const cards = document.getElementById("dealChipCards");
+  const meta = document.getElementById("dealChipMeta");
+  const bar = document.getElementById("dealChipPoolBar");
+  const knownEl = document.getElementById("dealChipPoolKnown");
+  const unknownEl = document.getElementById("dealChipPoolUnknown");
+  if (!cards) return;
+  const stats = payload?.stats || {};
+  const unknown = Number(payload?.unknown_shares);
+  const known = Number(payload?.known_shares);
+  const floatN = Number(payload?.float_shares);
+  const profit = Number(stats.profit_ratio);
+  const items = [
+    ["未知池", Number.isFinite(unknown) ? fmtVol(unknown) : "-"],
+    ["已知池", Number.isFinite(known) ? fmtVol(known) : "-"],
+    ["获利", Number.isFinite(profit) ? fmtPct(profit * 100) : "-"],
+    ["均成本", stats.avg_cost != null ? fmtNum(stats.avg_cost) : "-"],
+    ["主峰", stats.peak != null ? fmtNum(stats.peak) : "-"],
+    ["收盘", payload?.close != null ? fmtNum(payload.close) : "-"],
+  ];
+  cards.innerHTML = items
+    .map(
+      ([label, value]) =>
+        `<span class="deal-chip"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></span>`,
+    )
+    .join("");
+  if (meta) {
+    const beg = payload?.beg || "";
+    const end = payload?.date || payload?.end || "";
+    const modeLabel =
+      dealChipState.decay === "profit"
+        ? "获利优先"
+        : dealChipState.decay === "cut"
+          ? "割肉优先"
+          : "均匀";
+    meta.textContent = [beg && end ? `${beg} ~ ${end}` : "", modeLabel, payload?.name || ""]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  if (bar && knownEl && unknownEl && Number.isFinite(floatN) && floatN > 0) {
+    const kPct = Math.max(0, Math.min(100, ((Number.isFinite(known) ? known : 0) / floatN) * 100));
+    const uPct = Math.max(0, 100 - kPct);
+    knownEl.style.width = `${kPct}%`;
+    unknownEl.style.width = `${uPct}%`;
+    bar.hidden = false;
+    bar.setAttribute("aria-hidden", "false");
+    bar.title = `已知 ${fmtPct(kPct, 1)} / 未知 ${fmtPct(uPct, 1)}`;
+  } else if (bar) {
+    bar.hidden = true;
+    bar.setAttribute("aria-hidden", "true");
+  }
+}
+
+function dealChipSeries(payload = dealChipState.data) {
+  const grid = Array.isArray(payload?.grid) ? payload.grid.map(Number) : [];
+  const chips = Array.isArray(payload?.chips) ? payload.chips.map(Number) : [];
+  const shares = Array.isArray(payload?.chips_shares) ? payload.chips_shares.map(Number) : [];
+  if (!grid.length || grid.length !== chips.length) {
+    return { grid: [], chips: [], shares: [], total: 0 };
+  }
+  return {
+    grid,
+    chips,
+    shares: shares.length === grid.length ? shares : [],
+    total: grid.length,
+  };
+}
+
+function dealChipViewKey(payload = dealChipState.data) {
+  if (!payload) return "";
+  const n = Array.isArray(payload.grid) ? payload.grid.length : 0;
+  return [
+    code || "",
+    payload.beg || "",
+    payload.date || payload.end || "",
+    dealChipState.decay || "",
+    dealChipState.range || "",
+    n,
+  ].join("|");
+}
+
+function resetDealChipView(total) {
+  const n = Math.max(0, Number(total) || 0);
+  dealChipState.viewStart = 0;
+  dealChipState.viewEnd = n;
+  dealChipState.hover = -1;
+}
+
+function clampDealChipView() {
+  const { total } = dealChipSeries();
+  if (!total) {
+    dealChipState.viewStart = 0;
+    dealChipState.viewEnd = 0;
+    return;
+  }
+  let span = Math.max(1, Math.round(dealChipState.viewEnd - dealChipState.viewStart) || total);
+  span = Math.min(total, Math.max(Math.min(DEAL_CHIP_MIN_VIEW, total), span));
+  let start = Math.round(Number(dealChipState.viewStart) || 0);
+  start = Math.max(0, Math.min(total - span, start));
+  dealChipState.viewStart = start;
+  dealChipState.viewEnd = start + span;
+}
+
+function syncDealChipView(payload = dealChipState.data) {
+  const { total } = dealChipSeries(payload);
+  const key = dealChipViewKey(payload);
+  if (!total) {
+    dealChipState.viewKey = "";
+    resetDealChipView(0);
+    return;
+  }
+  if (dealChipState.viewKey !== key) {
+    dealChipState.viewKey = key;
+    resetDealChipView(total);
+    return;
+  }
+  clampDealChipView();
+}
+
+function hideDealChipTip() {
+  const tip = document.getElementById("dealChipTip");
+  if (tip) tip.hidden = true;
+}
+
+function showDealChipTip(idx, x, y) {
+  const tip = document.getElementById("dealChipTip");
+  const body = document.getElementById("dealChipBody");
+  const payload = dealChipState.data;
+  const { grid, chips, shares } = dealChipSeries(payload);
+  if (!tip || !body || idx < 0 || idx >= grid.length) {
+    hideDealChipTip();
+    return;
+  }
+  const price = grid[idx];
+  const share = chips[idx];
+  const shareN = shares[idx];
+  const close = Number(payload?.close ?? payload?.stats?.close);
+  const profit = Number.isFinite(close) ? price <= close : null;
+  const sideLabel = profit == null ? "-" : profit ? "获利区" : "套牢区";
+  const sideCls = profit == null ? "" : profit ? "change-up" : "change-down";
+  tip.innerHTML = `
+    <div class="tip-price">${escapeHtml(fmtNum(price))} 元</div>
+    <div><span>占比</span><b>${escapeHtml(fmtPct(share * 100, 2))}</b></div>
+    <div><span>股数</span><b>${escapeHtml(Number.isFinite(shareN) ? fmtVol(shareN) : "-")}</b></div>
+    <div><span>相对收盘</span><b class="${sideCls}">${escapeHtml(sideLabel)}</b></div>`;
+  tip.hidden = false;
+  const wrapW = body.clientWidth || 0;
+  const wrapH = body.clientHeight || 0;
+  const tipW = tip.offsetWidth || 130;
+  const tipH = tip.offsetHeight || 90;
+  tip.style.left = `${Math.min(Math.max(4, x + 14), Math.max(4, wrapW - tipW - 4))}px`;
+  tip.style.top = `${Math.min(Math.max(4, y - tipH - 10), Math.max(4, wrapH - tipH - 4))}px`;
+}
+
+function dealChipIdxFromY(canvas, y) {
+  const geom = canvas?._chipGeom;
+  if (!geom || !geom.count) return -1;
+  if (y < geom.padT || y > geom.padT + geom.H) return -1;
+  const local = (y - geom.padT) / geom.H;
+  // 高价在上：local=0 → 可见窗口末档
+  const offset = Math.floor((1 - local) * geom.count);
+  const idx = geom.start + Math.max(0, Math.min(geom.count - 1, offset));
+  return idx;
+}
+
+function zoomDealChipAtClientY(canvas, clientY, zoomIn) {
+  const { total } = dealChipSeries();
+  if (!total || !canvas) return;
+  const geom = canvas._chipGeom;
+  if (!geom) return;
+  const rect = canvas.getBoundingClientRect();
+  const span = Math.max(1, dealChipState.viewEnd - dealChipState.viewStart);
+  const factor = zoomIn ? 0.8 : 1.25;
+  const newSpan = Math.min(total, Math.max(Math.min(DEAL_CHIP_MIN_VIEW, total), Math.round(span * factor)));
+  if (newSpan === span) return;
+  const y = clientY - rect.top;
+  const ratio = geom.H > 0 ? Math.max(0, Math.min(1, (y - geom.padT) / geom.H)) : 0.5;
+  // 高价在上：ratio=0 对应窗口高端（end），ratio=1 对应低端（start）
+  const anchor = dealChipState.viewStart + (1 - ratio) * span;
+  let start = Math.round(anchor - (1 - ratio) * newSpan);
+  start = Math.max(0, Math.min(total - newSpan, start));
+  dealChipState.viewStart = start;
+  dealChipState.viewEnd = start + newSpan;
+  dealChipState.hover = -1;
+  hideDealChipTip();
+  paintDealChipChart();
+}
+
+function paintDealChipChart() {
+  const canvas = document.getElementById("dealChipChart");
+  const body = document.getElementById("dealChipBody");
+  if (!canvas || !body || !dealModeIsChip() || dealMainFoldState.folded) return;
+  const payload = dealChipState.data;
+  const { grid, chips, total } = dealChipSeries(payload);
+  if (!total) return;
+  syncDealChipView(payload);
+  clampDealChipView();
+
+  const cssW = Math.max(120, body.clientWidth || canvas.clientWidth || 640);
+  const cssH = Math.max(160, body.clientHeight || canvas.clientHeight || 360);
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  canvas.style.width = `${cssW}px`;
+  canvas.style.height = `${cssH}px`;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const pad = { t: 10, r: 12, b: 16, l: 52 };
+  const W = Math.max(40, cssW - pad.l - pad.r);
+  const H = Math.max(40, cssH - pad.t - pad.b);
+  const start = dealChipState.viewStart;
+  const end = dealChipState.viewEnd;
+  const visGrid = grid.slice(start, end);
+  const visChips = chips.slice(start, end);
+  if (!visGrid.length) return;
+
+  const maxChip = Math.max(...visChips, 1e-12);
+  const pMin = Math.min(...visGrid);
+  const pMax = Math.max(...visGrid);
+  const pSpan = Math.max(pMax - pMin, 1e-6);
+  const close = Number(payload.close ?? payload.stats?.close);
+  const styles = getComputedStyle(document.documentElement);
+  const up = styles.getPropertyValue("--up").trim() || "#ff5d6c";
+  const down = styles.getPropertyValue("--down").trim() || "#3dd68c";
+  const muted = styles.getPropertyValue("--muted").trim() || "#8b9bb4";
+  const text = styles.getPropertyValue("--text").trim() || "#e8eef7";
+  const accent = "#2ad4b8";
+  const barH = Math.max(1, H / visGrid.length);
+  const yAt = (price) => pad.t + ((pMax - price) / pSpan) * H;
+  const globalPeakIdx = chips.indexOf(Math.max(...chips));
+  const hover = dealChipState.hover;
+
+  canvas._chipGeom = {
+    padT: pad.t,
+    padB: pad.b,
+    padL: pad.l,
+    W,
+    H,
+    start,
+    end,
+    count: visGrid.length,
+    barH,
+  };
+
+  for (let i = 0; i < visGrid.length; i += 1) {
+    const absIdx = start + i;
+    const price = visGrid[i];
+    const w = (visChips[i] / maxChip) * W;
+    if (w <= 0.2 && absIdx !== hover) continue;
+    const y = yAt(price) - barH / 2;
+    const profit = Number.isFinite(close) ? price <= close : true;
+    ctx.fillStyle = profit ? up : down;
+    ctx.globalAlpha = absIdx === globalPeakIdx || absIdx === hover ? 0.95 : 0.55;
+    ctx.fillRect(pad.l, y, Math.max(w, absIdx === hover ? 2 : 0), Math.max(1, barH * 0.92));
+  }
+  ctx.globalAlpha = 1;
+
+  if (hover >= start && hover < end) {
+    const hi = hover - start;
+    const price = visGrid[hi];
+    const y = yAt(price);
+    const w = (visChips[hi] / maxChip) * W;
+    ctx.save();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(pad.l + W, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeRect(pad.l - 1, y - barH / 2 - 1, Math.max(2, w) + 2, Math.max(1, barH * 0.92) + 2);
+    ctx.restore();
+  }
+
+  if (Number.isFinite(close) && close >= pMin && close <= pMax) {
+    const y = yAt(close);
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(pad.l + W, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = accent;
+    ctx.font = "11px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(`收 ${fmtNum(close)}`, pad.l + 4, y - 2);
+  }
+
+  ctx.fillStyle = muted;
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  const ticks = 5;
+  for (let i = 0; i <= ticks; i += 1) {
+    const price = pMax - (pSpan * i) / ticks;
+    const y = yAt(price);
+    ctx.fillText(fmtNum(price), pad.l - 6, y);
+  }
+
+  if (globalPeakIdx >= start && globalPeakIdx < end) {
+    const peakPrice = grid[globalPeakIdx];
+    const y = yAt(peakPrice);
+    const peakW = (chips[globalPeakIdx] / maxChip) * W;
+    ctx.fillStyle = text;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`峰 ${fmtNum(peakPrice)}`, pad.l + peakW + 6, y);
+  }
+}
+
+function renderDealChipPanel() {
+  const payload = dealChipState.data;
+  if (dealChipState.loading && !payload) {
+    setDealChipEmpty("筹码加载中…", { empty: true });
+    hideDealChipTip();
+    renderDealChipCards(null);
+    return;
+  }
+  if (dealChipState.error && !payload) {
+    setDealChipEmpty(dealChipState.error, { empty: true });
+    hideDealChipTip();
+    renderDealChipCards(null);
+    return;
+  }
+  if (!payload) {
+    setDealChipEmpty("切换到筹码分布后加载", { empty: true });
+    hideDealChipTip();
+    renderDealChipCards(null);
+    return;
+  }
+  setDealChipEmpty("", { empty: false });
+  syncDealChipView(payload);
+  renderDealChipCards(payload);
+  paintDealChipChart();
+  if (dealChipState.loading) {
+    const meta = document.getElementById("dealChipMeta");
+    if (meta && !/刷新中/.test(meta.textContent || "")) {
+      meta.textContent = `${meta.textContent || ""} · 刷新中`.replace(/^ · /, "");
+    }
+  }
+}
+
+function setDealRefreshBtnBusy(btn, busy, label = "刷新") {
+  if (!btn) return;
+  if (busy) {
+    if (!btn.dataset.label) btn.dataset.label = btn.textContent || label;
+    btn.disabled = true;
+    btn.textContent = "刷新中…";
+  } else {
+    btn.disabled = false;
+    btn.textContent = btn.dataset.label || label;
+    delete btn.dataset.label;
+  }
+}
+
+function bindDealStatsRefreshBtn() {
+  const statsRefresh = document.getElementById("dealStatsRefreshBtn");
+  if (!statsRefresh || statsRefresh.dataset.bound === "1") return;
+  statsRefresh.dataset.bound = "1";
+  statsRefresh.addEventListener("click", () => {
+    if (!dealModeIsStats()) return;
+    setDealRefreshBtnBusy(statsRefresh, true);
+    Promise.resolve(loadDealStatsPack({ refresh: true })).finally(() => {
+      setDealRefreshBtnBusy(statsRefresh, false);
+    });
+  });
+}
+
+async function loadDealChip({ refresh = false } = {}) {
+  if (!code || !dealAnalysisVisible() || !dealModeIsChip()) return;
+  if (dealMainFoldState.folded) {
+    // 手动刷新时先展开主区，避免折叠态静默 return
+    if (!refresh) return;
+    applyDealMainFold(false, { persist: true });
+  }
+  bindDealChipPanel();
+  const refreshBtn = document.getElementById("dealChipRefreshBtn");
+  if (refresh) setDealRefreshBtnBusy(refreshBtn, true);
+  const gen = ++dealChipState.loadGen;
+  if (dealChipState.abort) {
+    try {
+      dealChipState.abort.abort();
+    } catch {
+      /* ignore */
+    }
+  }
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  dealChipState.abort = controller;
+  dealChipState.fetching = true;
+  dealChipState.loading = true;
+  dealChipState.error = "";
+  // 已有数据也要立刻重绘，才能在 meta 上出现「刷新中」
+  renderDealChipPanel();
+
+  const beg = dealChipBegIso(dealChipState.range);
+  const end = dealChipTodayIso();
+  const qs = new URLSearchParams({
+    code,
+    beg,
+    end,
+    bins: "200",
+    decay_mode: dealChipState.decay,
+  });
+  if (refresh) qs.set("refresh", "1");
+
+  try {
+    const opts = {};
+    if (controller) opts.signal = controller.signal;
+    if (refresh) opts.bypassCache = true;
+    const json = await api(`/api/stocks/line-chip-v2?${qs.toString()}`, opts);
+    if (gen !== dealChipState.loadGen) return;
+    if (json && json.ok === false) {
+      throw new Error(json.error || "筹码加载失败");
+    }
+    dealChipState.data = json.data || null;
+    dealChipState.error = "";
+  } catch (err) {
+    if (gen !== dealChipState.loadGen) return;
+    if (err?.name === "AbortError") return;
+    dealChipState.error = String(err?.message || err || "筹码加载失败");
+    if (!dealChipState.data) dealChipState.data = null;
+  } finally {
+    const stillCurrent = gen === dealChipState.loadGen;
+    // 当前代结束才清按钮；切走 / 被取代时由 stopDealChipLoad 或下一代接手
+    if (refresh && stillCurrent) setDealRefreshBtnBusy(refreshBtn, false);
+    if (stillCurrent) {
+      dealChipState.loading = false;
+      dealChipState.fetching = false;
+      if (dealChipState.abort === controller) dealChipState.abort = null;
+      renderDealChipPanel();
+    }
+  }
+}
+
+function bindDealChipPanel() {
+  if (dealChipState.bound) {
+    syncDealChipToolsUi();
+    return;
+  }
+  dealChipState.bound = true;
+  dealChipState.range = readDealChipRange();
+  dealChipState.decay = readDealChipDecay();
+  syncDealChipToolsUi();
+
+  const range = document.getElementById("dealChipRange");
+  if (range) {
+    range.addEventListener("click", (ev) => {
+      const btn = ev.target?.closest?.("[data-chip-range]");
+      if (!btn || !range.contains(btn)) return;
+      const next = Number(btn.getAttribute("data-chip-range"));
+      if (!(next === 5 || next === 20 || next === 60)) return;
+      if (dealChipState.range === next) return;
+      dealChipState.range = next;
+      persistDealChipRange(next);
+      syncDealChipToolsUi();
+      void loadDealChip({ refresh: true });
+    });
+  }
+  const decay = document.getElementById("dealChipDecay");
+  if (decay) {
+    decay.addEventListener("click", (ev) => {
+      const btn = ev.target?.closest?.("[data-chip-decay]");
+      if (!btn || !decay.contains(btn)) return;
+      const next = String(btn.getAttribute("data-chip-decay") || "");
+      if (!(next === "uniform" || next === "profit" || next === "cut")) return;
+      if (dealChipState.decay === next) return;
+      dealChipState.decay = next;
+      persistDealChipDecay(next);
+      syncDealChipToolsUi();
+      void loadDealChip({ refresh: true });
+    });
+  }
+  const refreshBtn = document.getElementById("dealChipRefreshBtn");
+  if (refreshBtn && refreshBtn.dataset.bound !== "1") {
+    refreshBtn.dataset.bound = "1";
+    refreshBtn.addEventListener("click", () => {
+      if (!dealModeIsChip()) return;
+      void loadDealChip({ refresh: true });
+    });
+  }
+  const body = document.getElementById("dealChipBody");
+  if (body && typeof ResizeObserver !== "undefined") {
+    dealChipState.ro = new ResizeObserver(() => {
+      if (dealModeIsChip() && dealChipState.data) paintDealChipChart();
+    });
+    dealChipState.ro.observe(body);
+  }
+  bindDealChipChart();
+}
+
+function bindDealChipChart() {
+  const canvas = document.getElementById("dealChipChart");
+  if (!canvas || dealChipState.chartBound) return;
+  dealChipState.chartBound = true;
+
+  canvas.addEventListener(
+    "wheel",
+    (ev) => {
+      if (!dealModeIsChip() || !dealChipState.data) return;
+      ev.preventDefault();
+      zoomDealChipAtClientY(canvas, ev.clientY, ev.deltaY < 0);
+    },
+    { passive: false },
+  );
+
+  canvas.addEventListener("mousedown", (ev) => {
+    if (ev.button !== 0 || !dealModeIsChip() || !dealChipState.data) return;
+    dealChipState.dragging = true;
+    dealChipState.dragY = ev.clientY;
+    canvas.classList.add("is-dragging");
+    hideDealChipTip();
+    ev.preventDefault();
+  });
+
+  window.addEventListener("mousemove", (ev) => {
+    if (!dealChipState.dragging) return;
+    const geom = canvas._chipGeom;
+    if (!geom || !geom.count) return;
+    const { total } = dealChipSeries();
+    if (!total) return;
+    const span = Math.max(1, dealChipState.viewEnd - dealChipState.viewStart);
+    const band = geom.H / span;
+    const dy = ev.clientY - dealChipState.dragY;
+    // 向下拖：内容上移 → 看更高价 → viewStart 增大
+    const shift = Math.round(dy / band);
+    if (!shift) return;
+    const nextStart = Math.max(0, Math.min(total - span, dealChipState.viewStart + shift));
+    if (nextStart === dealChipState.viewStart) return;
+    dealChipState.viewStart = nextStart;
+    dealChipState.viewEnd = nextStart + span;
+    dealChipState.dragY += shift * band;
+    dealChipState.hover = -1;
+    paintDealChipChart();
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (!dealChipState.dragging) return;
+    dealChipState.dragging = false;
+    canvas.classList.remove("is-dragging");
+  });
+
+  canvas.addEventListener("mousemove", (ev) => {
+    if (dealChipState.dragging || !dealModeIsChip() || !dealChipState.data) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = ev.clientX - rect.left;
+    const y = ev.clientY - rect.top;
+    const idx = dealChipIdxFromY(canvas, y);
+    if (idx !== dealChipState.hover) {
+      dealChipState.hover = idx;
+      paintDealChipChart();
+    }
+    showDealChipTip(idx, x, y);
+  });
+
+  canvas.addEventListener("mouseleave", () => {
+    if (dealChipState.dragging) return;
+    if (dealChipState.hover < 0) {
+      hideDealChipTip();
+      return;
+    }
+    dealChipState.hover = -1;
+    hideDealChipTip();
+    paintDealChipChart();
+  });
+
+  canvas.addEventListener("dblclick", () => {
+    if (!dealModeIsChip() || !dealChipState.data) return;
+    const { total } = dealChipSeries();
+    resetDealChipView(total);
+    hideDealChipTip();
+    paintDealChipChart();
+  });
 }
 
 /**
@@ -2739,14 +3582,7 @@ function bindDealFiveDayPanel() {
     });
     applyDealMainFold(readDealMainFolded());
   }
-  const statsRefresh = document.getElementById("dealStatsRefreshBtn");
-  if (statsRefresh && statsRefresh.dataset.bound !== "1") {
-    statsRefresh.dataset.bound = "1";
-    statsRefresh.addEventListener("click", () => {
-      if (!dealModeIsStats()) return;
-      void loadDealStatsPack({ refresh: true });
-    });
-  }
+  bindDealStatsRefreshBtn();
 
   const body = document.getElementById("dealFiveDayBody");
   if (!body || dealFiveDayState.bound) return;
@@ -4667,6 +5503,9 @@ async function loadProfile({ silent = false, refresh = false, liveOnly = false }
     void loadBigDealChart({ refresh });
     if (dealAnalysisVisible() && dealModeIsStats()) {
       void loadDealStatsPack({ refresh });
+    }
+    if (dealAnalysisVisible() && dealModeIsChip()) {
+      void loadDealChip({ refresh });
     }
   }
 
@@ -19475,6 +20314,9 @@ async function refreshQuotesNow() {
     await runStep("大单", (async () => { void loadBigDeals({ refresh: true }); void loadBigDealChart({ refresh: true }); })());
     if (dealAnalysisVisible() && dealModeIsStats()) {
       await runStep("统计", loadDealStatsPack({ refresh: true }));
+    }
+    if (dealAnalysisVisible() && dealModeIsChip()) {
+      await runStep("筹码", loadDealChip({ refresh: true }));
     }
     mark("完成");
     if (failed.length) setError("部分刷新失败：" + failed.join("；"));
