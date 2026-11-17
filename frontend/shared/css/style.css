@@ -14272,13 +14272,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   text-align: left;
 }
 
-.deal-quad-table th,
-.deal-quad-table td {
-  text-align: left;
-}
-
 .deal-capital-table th,
-.deal-quad-table th,
 .deal-price-levels-table th {
   color: var(--muted, #8b9bb4);
   font-weight: 500;
@@ -14286,7 +14280,6 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
 }
 
 .deal-capital-table tbody tr + tr td,
-.deal-quad-table tbody tr + tr td,
 .deal-price-levels-table tbody tr + tr td {
   border-top: 1px solid rgba(42, 212, 184, 0.06);
 }
@@ -14296,121 +14289,117 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   min-height: 0;
   height: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(160px, 0.75fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   overflow: hidden;
 }
 
-.deal-quad-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  font-size: 12px;
-  line-height: 1.35;
-  color: var(--muted, #8b9bb4);
-}
-
-.deal-quad-summary > span {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid rgba(42, 212, 184, 0.1);
-  background: rgba(42, 212, 184, 0.05);
-  white-space: nowrap;
-}
-
-.deal-quad-summary > span b {
-  color: var(--text, #e8eef7);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.deal-quad-grid {
-  flex: 1 1 0%;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px;
-  overflow: hidden;
-}
-
-.deal-quad-card {
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid rgba(42, 212, 184, 0.08);
-  border-radius: var(--radius);
-  background: rgba(0, 0, 0, 0.18);
-  padding: 6px 8px;
-  gap: 4px;
-}
-
-.deal-quad-card-head {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 12px;
-}
-
-.deal-quad-min-filter {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: 0 0 auto;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.deal-quad-min-filter .big-deal-range-input {
-  width: 4.5em;
-}
-
-.deal-quad-card-head .deal-quad-title {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.deal-quad-card-meta {
-  color: var(--muted, #8b9bb4);
-  font-variant-numeric: tabular-nums;
-}
-
-.deal-quad-card-body {
-  flex: 1 1 0%;
-  min-height: 0;
-  overflow: auto;
-}
-
-.deal-quad-card-body .deal-quad-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: rgba(6, 11, 18, 0.96);
-}
-
 .deal-capital-table tbody tr:hover td,
-.deal-quad-table tbody tr:hover td,
 .deal-price-levels-table tbody tr:hover td {
   background: rgba(42, 212, 184, 0.06);
 }
-
-.deal-quad-card[data-event="active_buy"] .deal-quad-title { color: #ff5d6c; }
-.deal-quad-card[data-event="active_sell"] .deal-quad-title { color: #3dd68c; }
-.deal-quad-card[data-event="passive_buy"] .deal-quad-title { color: rgba(255, 93, 108, 0.78); }
-.deal-quad-card[data-event="passive_sell"] .deal-quad-title { color: rgba(61, 214, 140, 0.78); }
 
 .deal-price-levels-body {
   flex: 1 1 0%;
   min-height: 0;
   overflow: auto;
+}
+
+/* 分价走势图：横轴价格，柱为内外盘手数堆叠，线为笔数 */
+.deal-price-chart-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 100%;
+}
+
+.deal-price-chart-hint {
+  margin-left: auto;
+  font-size: 11px;
+}
+
+.deal-price-chart-tip {
+  position: absolute;
+  z-index: 5;
+  min-width: 112px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border: 1px solid rgba(42, 212, 184, 0.25);
+  background: rgba(6, 11, 18, 0.95);
+  font-size: 12px;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.deal-price-chart-tip div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  line-height: 1.55;
+  color: var(--muted, #8b9bb4);
+}
+
+.deal-price-chart-tip b {
+  color: var(--text, #e8eef7);
+  font-variant-numeric: tabular-nums;
+}
+
+.deal-price-chart-tip b.change-up {
+  color: var(--up, #ff5d6c);
+}
+
+.deal-price-chart-tip b.change-down {
+  color: var(--down, #3dd68c);
+}
+
+.deal-price-chart-tip .tip-price {
+  justify-content: flex-start;
+  font-weight: 600;
+  color: var(--text, #e8eef7);
+}
+
+.deal-price-chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted, #8b9bb4);
+  flex: 0 0 auto;
+}
+
+.deal-price-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.deal-price-chart-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.deal-price-chart-legend i.lp-out {
+  background: var(--up, #ff5d6c);
+}
+
+.deal-price-chart-legend i.lp-in {
+  background: var(--down, #3dd68c);
+}
+
+.deal-price-chart-legend i.lp-count {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent, #2ad4b8);
+}
+
+.deal-price-chart-wrap canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: block;
 }
 
 .deal-price-levels-body,
@@ -14456,7 +14445,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
 
 @media (max-width: 1100px) {
   .deal-stats-body {
-    grid-template-columns: minmax(0, 1fr) minmax(140px, 0.7fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

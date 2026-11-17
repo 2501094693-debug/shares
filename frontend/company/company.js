@@ -744,7 +744,7 @@ const dealQuotesHome = {
 };
 /** 与分时成交盘中轮询同频（onTicksMarketClock = 1s） */
 const DEAL_ENTRUST_POLL_MS = 1000;
-/** 统计视图轮询（资金统计 / 分价表 / 大单四象限） */
+/** 统计视图轮询（资金统计 / 分价走势） */
 const DEAL_STATS_POLL_MS = 5000;
 const DEAL_MODE_KEY = "orbit-deal-mode";
 /** 成交分析主区模式：live 实时明细 | stats 统计视图 */
@@ -768,7 +768,6 @@ const dealStatsState = {
   fetching: false,
   pending: false,
   capital: { loading: false, error: "", data: null },
-  quad: { loading: false, error: "", data: null },
   priceLevels: { loading: false, error: "", data: null },
 };
 const DEAL_CAPITAL_TIERS = [
@@ -783,7 +782,7 @@ const DEAL_CAPITAL_SIDES = [
   ["passive_buy", "被动买"],
   ["passive_sell", "被动卖"],
 ];
-const DEAL_QUAD_ORDER = ["active_buy", "active_sell", "passive_buy", "passive_sell"];
+
 /** 成交分析 · 五日：横向日列 + 共用价轴（外看日间、内看分时） */
 const dealFiveDayState = {
   loading: false,
@@ -1331,14 +1330,7 @@ function renderDealCapitalPanel() {
         return `<span class="deal-chip">${escapeHtml(label)} <b class="${cls}">${escapeHtml(fmtWan(value))}</b></span>`;
       };
       chips.innerHTML = [
-        chip("净流入", data.net),
-        chip("主动净", data.active_net),
-        chip("被动净", data.passive_net),
         chip("成交额", data.turnover),
-        chip("超大净", data.super_net),
-        chip("大单净", data.big_net),
-        chip("中单净", data.mid_net),
-        chip("小单净", data.small_net),
       ].join("");
     }
   }
@@ -1386,77 +1378,36 @@ function renderDealCapitalPanel() {
   </table>`;
 }
 
-function renderDealQuadPanel() {
-  const grid = document.getElementById("dealQuadGrid");
-  const summary = document.getElementById("dealQuadSummary");
-  const meta = document.getElementById("dealQuadMeta");
-  if (!grid) return;
-  const state = dealStatsState.quad;
-  const data = state.data;
-  if (meta) {
-    const day = data?.session_day || "";
-    const minLabel = data ? bigDealRangeLabel() : "";
-    meta.textContent = data
-      ? `${day || "当日"} · ${minLabel} · ${data.total_count || 0} 笔`
-      : state.loading
-        ? "加载中…"
-        : "";
-  }
-  if (summary) {
-    if (!data) {
-      summary.innerHTML = "";
-    } else {
-      summary.innerHTML = [
-        `<span>净额 <b class="${dealStatsSignedCls(data.net_amount)}">${escapeHtml(fmtWan(data.net_amount))}</b></span>`,
-        `<span>主动净 <b class="${dealStatsSignedCls(data.active_net_amount)}">${escapeHtml(fmtWan(data.active_net_amount))}</b></span>`,
-        `<span>买 ${escapeHtml(fmtWan(data.buy?.amount))} / 卖 ${escapeHtml(fmtWan(data.sell?.amount))}</span>`,
-      ].join("");
-    }
-  }
-  if (state.loading && !data) {
-    grid.innerHTML = `<p class="muted">正在加载大单四象限…</p>`;
-    return;
-  }
-  if (state.error && !data) {
-    grid.innerHTML = `<p class="muted">${escapeHtml(state.error)}</p>`;
-    return;
-  }
-  if (!data) {
-    grid.innerHTML = `<p class="muted">暂无大单统计</p>`;
-    return;
-  }
-  grid.innerHTML = DEAL_QUAD_ORDER.map((event) => {
-    const info = BIG_DEAL_BAR_TYPES[event] || { label: event };
-    const bucket = data[event] || {};
-    const bins = Array.isArray(bucket.amount_bins) ? bucket.amount_bins : [];
-    const rows = bins.length
-      ? bins
-          .filter((bin) => Number(bin.count) > 0)
-          .map((bin) => {
-            const lo = fmtWan(bin.lo);
-            const hi = fmtWan(bin.hi);
-            return `<tr>
-              <td>${escapeHtml(lo)}–${escapeHtml(hi)}</td>
-              <td>${escapeHtml(String(bin.count || 0))}</td>
-              <td>${escapeHtml(fmtWan(bin.amount))}</td>
-              <td>${escapeHtml(fmtVolLots(bin.volume_lots))}</td>
-            </tr>`;
-          })
-          .join("")
-      : `<tr><td colspan="4" class="muted">无分箱样本</td></tr>`;
-    return `<article class="deal-quad-card" data-event="${escapeHtml(event)}">
-      <header class="deal-quad-card-head">
-        <h5 class="deal-quad-title">${escapeHtml(info.label)}</h5>
-        <span class="deal-quad-card-meta">${escapeHtml(String(bucket.count || 0))} 笔 · ${escapeHtml(fmtWan(bucket.amount))}</span>
-      </header>
-      <div class="deal-quad-card-body">
-        <table class="deal-quad-table">
-          <thead><tr><th>金额档</th><th>笔数</th><th>金额</th><th>手数</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    </article>`;
-  }).join("");
+let dealPriceLevelsResizeBound = false;
+
+/** 分价走势视图状态：可见窗口 [start, end) + 交互（拖拽/悬浮） */
+const dealPriceLevelsView = {
+  items: [],
+  start: 0,
+  end: 0,
+  dragging: false,
+  dragX: 0,
+  hover: -1,
+};
+
+function sortedPriceLevelItems(data) {
+  const items = Array.isArray(data?.items) ? data.items.slice() : [];
+  items.sort((a, b) => Number(a.price) - Number(b.price));
+  return items;
+}
+
+function resetDealPriceLevelsView(count) {
+  dealPriceLevelsView.start = 0;
+  dealPriceLevelsView.end = Math.max(0, count);
+  dealPriceLevelsView.hover = -1;
+}
+
+function clampDealPriceLevelsView() {
+  const view = dealPriceLevelsView;
+  const total = view.items.length;
+  const span = Math.max(1, view.end - view.start);
+  view.start = Math.max(0, Math.min(Math.max(0, total - span), Math.round(view.start)));
+  view.end = Math.min(total, view.start + span);
 }
 
 function renderDealPriceLevelsPanel() {
@@ -1471,75 +1422,345 @@ function renderDealPriceLevelsPanel() {
     const sourceLabel =
       source === "ticks" ? "逐笔聚合" : source === "tonghuashun" ? "同花顺" : source || "";
     meta.textContent = data
-      ? `${data.total_count || data.count || 0} 档 · 量 ${fmtVolLots(summary?.volume_lots)}${sourceLabel ? ` · ${sourceLabel}` : ""}`
+      ? `${data.total_count || data.count || 0} 档 · 量 ${fmtVolLots(summary?.volume_lots)} · 笔 ${summary?.transaction_count ?? "-"}${sourceLabel ? ` · ${sourceLabel}` : ""}`
       : state.loading
         ? "加载中…"
         : "";
   }
   if (state.loading && !data) {
-    body.innerHTML = `<p class="muted">正在加载分价表…</p>`;
+    body.innerHTML = `<p class="muted">正在加载分价走势…</p>`;
     return;
   }
   if (state.error && !data) {
     body.innerHTML = `<p class="muted">${escapeHtml(state.error)}</p>`;
     return;
   }
-  const items = Array.isArray(data?.items) ? data.items.slice() : [];
+  const items = sortedPriceLevelItems(data);
   if (!items.length) {
-    body.innerHTML = `<p class="muted">暂无分价表</p>`;
+    body.innerHTML = `<p class="muted">暂无分价走势</p>`;
     return;
   }
-  items.sort((a, b) => Number(b.price) - Number(a.price));
-  const maxVol = Math.max(...items.map((row) => Number(row.volume_lots) || 0), 1);
-  const lastPrice = Number(
-    dealEntrustState.book?.last ??
-      metricsStock?.price ??
-      metricsStock?.last ??
-      NaN,
+  // 档数变化（切换股票 / 交易日）时重置缩放窗口
+  if (dealPriceLevelsView.items.length !== items.length) {
+    resetDealPriceLevelsView(items.length);
+  }
+  dealPriceLevelsView.items = items;
+  clampDealPriceLevelsView();
+  body.innerHTML = `<div class="deal-price-chart-wrap">
+    <div class="deal-price-chart-legend">
+      <span><i class="lp-out"></i>外盘(手)</span>
+      <span><i class="lp-in"></i>内盘(手)</span>
+      <span><i class="lp-count"></i>笔数</span>
+      <span class="deal-price-chart-hint muted">滚轮缩放 · 拖拽平移 · 双击复位</span>
+    </div>
+    <canvas id="dealPriceLevelsCanvas" role="img" aria-label="分价走势：横轴价格，柱为内外盘手数堆叠（外盘下、内盘上），线为笔数"></canvas>
+    <div class="deal-price-chart-tip" hidden></div>
+  </div>`;
+  const canvas = document.getElementById("dealPriceLevelsCanvas");
+  bindDealPriceLevelsChart(canvas);
+  drawDealPriceLevelsChart(canvas);
+  if (!dealPriceLevelsResizeBound) {
+    dealPriceLevelsResizeBound = true;
+    window.addEventListener("resize", () => {
+      const cv = document.getElementById("dealPriceLevelsCanvas");
+      if (!cv) {
+        dealPriceLevelsResizeBound = false;
+        return;
+      }
+      drawDealPriceLevelsChart(cv);
+    });
+  }
+}
+
+function bindDealPriceLevelsChart(canvas) {
+  if (!canvas || canvas.dataset.plBound === "1") return;
+  canvas.dataset.plBound = "1";
+  canvas.style.cursor = "grab";
+
+  const idxFromX = (x) => {
+    const geom = canvas._plGeom;
+    if (!geom) return -1;
+    if (x < geom.padL || x > geom.padL + geom.W) return -1;
+    const view = dealPriceLevelsView;
+    const idx = geom.start + Math.floor((x - geom.padL) / geom.band);
+    return Math.max(geom.start, Math.min(geom.end - 1, idx));
+  };
+
+  canvas.addEventListener(
+    "wheel",
+    (ev) => {
+      const view = dealPriceLevelsView;
+      const total = view.items.length;
+      if (!total) return;
+      ev.preventDefault();
+      const geom = canvas._plGeom;
+      if (!geom) return;
+      const rect = canvas.getBoundingClientRect();
+      const span = Math.max(1, view.end - view.start);
+      const factor = ev.deltaY < 0 ? 0.8 : 1.25;
+      const newSpan = Math.min(total, Math.max(5, Math.round(span * factor)));
+      const band = (rect.width - geom.padL - geom.padR) / span;
+      const anchor = view.start + (ev.clientX - rect.left - geom.padL) / band;
+      let start = Math.round(anchor - (anchor - view.start) * (newSpan / span));
+      view.start = Math.max(0, Math.min(total - newSpan, start));
+      view.end = view.start + newSpan;
+      view.hover = -1;
+      hideDealPriceLevelsTip(canvas);
+      drawDealPriceLevelsChart(canvas);
+    },
+    { passive: false },
   );
-  let nearIdx = -1;
+
+  canvas.addEventListener("mousedown", (ev) => {
+    if (ev.button !== 0) return;
+    const view = dealPriceLevelsView;
+    view.dragging = true;
+    view.dragX = ev.clientX;
+    canvas.style.cursor = "grabbing";
+    ev.preventDefault();
+  });
+
+  window.addEventListener("mousemove", (ev) => {
+    const view = dealPriceLevelsView;
+    if (!view.dragging) return;
+    const geom = canvas._plGeom;
+    if (!geom) return;
+    const dx = ev.clientX - view.dragX;
+    const rect = canvas.getBoundingClientRect();
+    const span = view.end - view.start;
+    const band = (rect.width - geom.padL - geom.padR) / span;
+    const shift = Math.round(dx / band);
+    if (!shift) return;
+    const total = view.items.length;
+    view.start = Math.max(0, Math.min(total - span, view.start - shift));
+    view.end = view.start + span;
+    view.dragX += shift * band;
+    view.hover = -1;
+    hideDealPriceLevelsTip(canvas);
+    drawDealPriceLevelsChart(canvas);
+  });
+
+  window.addEventListener("mouseup", () => {
+    const view = dealPriceLevelsView;
+    if (!view.dragging) return;
+    view.dragging = false;
+    canvas.style.cursor = "grab";
+  });
+
+  canvas.addEventListener("mousemove", (ev) => {
+    const view = dealPriceLevelsView;
+    if (view.dragging) return;
+    const rect = canvas.getBoundingClientRect();
+    const idx = idxFromX(ev.clientX - rect.left);
+    if (idx !== view.hover) {
+      view.hover = idx;
+      drawDealPriceLevelsChart(canvas);
+    }
+    showDealPriceLevelsTip(canvas, idx, ev.clientX - rect.left, ev.clientY - rect.top);
+  });
+
+  canvas.addEventListener("mouseleave", () => {
+    const view = dealPriceLevelsView;
+    if (view.dragging) return;
+    view.hover = -1;
+    hideDealPriceLevelsTip(canvas);
+    drawDealPriceLevelsChart(canvas);
+  });
+
+  canvas.addEventListener("dblclick", () => {
+    resetDealPriceLevelsView(dealPriceLevelsView.items.length);
+    hideDealPriceLevelsTip(canvas);
+    drawDealPriceLevelsChart(canvas);
+  });
+}
+
+function hideDealPriceLevelsTip(canvas) {
+  const tip = canvas?.parentElement?.querySelector(".deal-price-chart-tip");
+  if (tip) tip.hidden = true;
+}
+
+function showDealPriceLevelsTip(canvas, idx, x, y) {
+  const tip = canvas?.parentElement?.querySelector(".deal-price-chart-tip");
+  const row = idx >= 0 ? dealPriceLevelsView.items[idx] : null;
+  if (!tip || !row) {
+    if (tip) tip.hidden = true;
+    return;
+  }
+  tip.innerHTML = `
+    <div class="tip-price">${escapeHtml(fmtNum(row.price))} 元</div>
+    <div><span>总手</span><b>${escapeHtml(fmtVolLots(Number(row.volume_lots)))}</b></div>
+    <div><span>外盘</span><b class="change-up">${escapeHtml(fmtVolLots(Number(row.out_volume_lots)))}</b></div>
+    <div><span>内盘</span><b class="change-down">${escapeHtml(fmtVolLots(Number(row.in_volume_lots)))}</b></div>
+    <div><span>笔数</span><b>${escapeHtml(String(row.transaction_count ?? 0))}</b></div>`;
+  tip.hidden = false;
+  const wrap = canvas.parentElement;
+  const wrapW = wrap.clientWidth || 0;
+  const tipW = tip.offsetWidth || 130;
+  const tipH = tip.offsetHeight || 90;
+  tip.style.left = `${Math.min(Math.max(4, x + 14), Math.max(4, wrapW - tipW - 4))}px`;
+  tip.style.top = `${Math.max(4, y - tipH - 12)}px`;
+}
+
+function drawDealPriceLevelsChart(canvas) {
+  const wrap = canvas?.parentElement;
+  const view = dealPriceLevelsView;
+  const allItems = view.items;
+  if (!canvas || !wrap || !allItems.length) return;
+  const legend = wrap.querySelector(".deal-price-chart-legend");
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = Math.max(280, wrap.clientWidth || 600);
+  const cssH = Math.max(
+    180,
+    (wrap.clientHeight || 280) - (legend ? legend.offsetHeight + 6 : 0),
+  );
+  canvas.style.width = `${cssW}px`;
+  canvas.style.height = `${cssH}px`;
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const colors = chartColors();
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const pad = { l: 52, r: 56, t: 12, b: 26 };
+  const W = Math.max(40, cssW - pad.l - pad.r);
+  const H = Math.max(40, cssH - pad.t - pad.b);
+  const items = allItems.slice(view.start, view.end);
+  if (!items.length) return;
+
+  const outLots = items.map((row) => Math.max(0, Number(row.out_volume_lots) || 0));
+  const inLots = items.map((row) => Math.max(0, Number(row.in_volume_lots) || 0));
+  const totals = items.map((_, i) => outLots[i] + inLots[i]);
+  const counts = items.map((row) => Number(row.transaction_count) || 0);
+
+  const maxLots = Math.max(...totals, 1) * 1.08;
+  const maxCount = Math.max(...counts, 1) * 1.08;
+
+  const band = W / items.length;
+  const barW = Math.min(Math.max(band * 0.62, 2), 24);
+  const xAt = (i) => pad.l + band * (i + 0.5);
+  const yLots = (v) => pad.t + (1 - v / maxLots) * H;
+  const yCount = (v) => pad.t + (1 - v / maxCount) * H;
+  const zeroY = yLots(0);
+  // 记录几何信息，供缩放 / 悬浮命中测试使用
+  canvas._plGeom = {
+    padL: pad.l,
+    padR: pad.r,
+    W,
+    band,
+    start: view.start,
+    end: view.end,
+  };
+
+  // 网格 + 左轴（手数）
+  ctx.strokeStyle = colors.grid;
+  ctx.lineWidth = 1;
+  ctx.fillStyle = colors.muted;
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let g = 0; g <= 4; g += 1) {
+    const y = pad.t + (H * g) / 4;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(pad.l + W, y);
+    ctx.stroke();
+    ctx.fillText(fmtVol((maxLots * (4 - g)) / 4), pad.l - 6, y);
+  }
+  // 右轴（笔数）
+  ctx.textAlign = "left";
+  for (let g = 0; g <= 4; g += 1) {
+    const y = pad.t + (H * g) / 4;
+    ctx.fillText(fmtVol((maxCount * (4 - g)) / 4), pad.l + W + 6, y);
+  }
+
+  // 堆叠柱：外盘在下（红），内盘在上（绿）
+  items.forEach((_, i) => {
+    const x = xAt(i) - barW / 2;
+    const outH = (outLots[i] / maxLots) * H;
+    const inH = (inLots[i] / maxLots) * H;
+    if (outH > 0) {
+      ctx.fillStyle = colors.up;
+      ctx.fillRect(x, zeroY - outH, barW, outH);
+    }
+    if (inH > 0) {
+      ctx.fillStyle = colors.down;
+      ctx.fillRect(x, zeroY - outH - inH, barW, inH);
+    }
+  });
+
+  // 笔数折线（右轴）
+  ctx.strokeStyle = colors.accent;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  counts.forEach((c, i) => {
+    const y = yCount(c);
+    if (i === 0) ctx.moveTo(xAt(i), y);
+    else ctx.lineTo(xAt(i), y);
+  });
+  ctx.stroke();
+
+  // 最新价参考线
+  const lastPrice = Number(
+    dealEntrustState.book?.last ?? metricsStock?.price ?? metricsStock?.last ?? NaN,
+  );
   if (Number.isFinite(lastPrice) && lastPrice > 0) {
+    let nearIdx = -1;
     let best = Infinity;
-    items.forEach((row, idx) => {
+    items.forEach((row, i) => {
       const diff = Math.abs(Number(row.price) - lastPrice);
       if (diff < best) {
         best = diff;
-        nearIdx = idx;
+        nearIdx = i;
       }
     });
-  }
-  const rows = items
-    .map((row, idx) => {
-      const lots = Number(row.volume_lots) || 0;
-      const barW = Math.max(2, Math.round((lots / maxVol) * 64));
-      // 同花顺 out_volume_rate 已是百分数（0–100），勿再 *100
-      const rate = Number(row.out_volume_rate);
-      const rateText = Number.isFinite(rate) ? `${rate.toFixed(1)}%` : "-";
-      return `<tr class="${idx === nearIdx ? "is-near-last" : ""}">
-        <td>${escapeHtml(fmtNum(row.price))}</td>
-        <td title="${escapeHtml(fmtVolLots(lots))}"><span class="deal-price-levels-bar" style="width:${barW}px"></span> ${escapeHtml(fmtVol(lots))}</td>
-        <td>${escapeHtml(fmtVol(row.out_volume_lots))}</td>
-        <td>${escapeHtml(fmtVol(row.in_volume_lots))}</td>
-        <td>${escapeHtml(String(row.transaction_count || 0))}</td>
-        <td>${escapeHtml(rateText)}</td>
-      </tr>`;
-    })
-    .join("");
-  body.innerHTML = `<table class="deal-price-levels-table">
-    <thead><tr><th>价</th><th>量</th><th>外</th><th>内</th><th>笔</th><th>外%</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
-  if (nearIdx >= 0) {
-    const nearRow = body.querySelector("tr.is-near-last");
-    if (nearRow && typeof nearRow.scrollIntoView === "function") {
-      nearRow.scrollIntoView({ block: "center", inline: "nearest" });
+    if (nearIdx >= 0) {
+      const x = xAt(nearIdx);
+      ctx.save();
+      ctx.strokeStyle = colors.ref;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x, pad.t);
+      ctx.lineTo(x, pad.t + H);
+      ctx.stroke();
+      ctx.restore();
     }
   }
+
+  // 悬浮：十字线 + 高亮柱
+  if (view.hover >= view.start && view.hover < view.end) {
+    const hi = view.hover - view.start;
+    const x = xAt(hi);
+    ctx.save();
+    ctx.strokeStyle = colors.cross;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, pad.t);
+    ctx.lineTo(x, pad.t + H);
+    ctx.stroke();
+    ctx.restore();
+    const bx = xAt(hi) - barW / 2;
+    const totalH = (totals[hi] / maxLots) * H;
+    ctx.strokeStyle = colors.accent;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx - 1, zeroY - totalH - 1, barW + 2, totalH + 2);
+  }
+
+  // X 轴价格标签
+  ctx.fillStyle = colors.muted;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const step = Math.max(1, Math.ceil(items.length / 10));
+  items.forEach((row, i) => {
+    if (i % step === 0 || i === items.length - 1) {
+      ctx.fillText(fmtNum(row.price), xAt(i), pad.t + H + 6);
+    }
+  });
 }
 
 function renderDealStatsPanels() {
   renderDealCapitalPanel();
-  renderDealQuadPanel();
   renderDealPriceLevelsPanel();
 }
 
@@ -1573,34 +1794,6 @@ async function loadDealDailyCapital({ silent = false, refresh = false } = {}) {
   }
 }
 
-async function loadDealQuadStats({ silent = false, refresh = false } = {}) {
-  if (!code) return;
-  const state = dealStatsState.quad;
-  if (!silent || !state.data) {
-    state.loading = true;
-    state.error = "";
-    renderDealQuadPanel();
-  }
-  try {
-    const qs = new URLSearchParams({
-      code,
-      min_amount: String(bigDealMinAmount()),
-      bin_by: "amount",
-      day: ticksViewDay(),
-    });
-    if (refresh && !isTicksHistoryView()) qs.set("refresh", "1");
-    const json = await api(`/api/stocks/deal-stats?${qs.toString()}`);
-    state.data = json.data || null;
-    state.error = "";
-  } catch (err) {
-    state.error = dealStatsFriendlyError(err?.message || err, "大单统计加载失败");
-    if (!state.data) state.data = null;
-  } finally {
-    state.loading = false;
-    renderDealQuadPanel();
-  }
-}
-
 async function loadDealPriceLevels({ silent = false } = {}) {
   if (!code) return;
   const state = dealStatsState.priceLevels;
@@ -1616,12 +1809,12 @@ async function loadDealPriceLevels({ silent = false } = {}) {
     });
     const json = await api(`/api/stocks/price-levels?${qs.toString()}`);
     if (json && json.ok === false) {
-      throw new Error(json.error || "分价表加载失败");
+      throw new Error(json.error || "分价走势加载失败");
     }
     state.data = json.data || null;
     state.error = "";
   } catch (err) {
-    state.error = dealStatsFriendlyError(err?.message || err, "分价表加载失败");
+    state.error = dealStatsFriendlyError(err?.message || err, "分价走势加载失败");
     if (!state.data) state.data = null;
   } finally {
     state.loading = false;
@@ -1640,7 +1833,6 @@ async function loadDealStatsPack({ silent = false, refresh = false } = {}) {
   try {
     await Promise.all([
       loadDealDailyCapital({ silent, refresh }),
-      loadDealQuadStats({ silent, refresh }),
       loadDealPriceLevels({ silent }),
     ]);
   } finally {
@@ -1866,40 +2058,6 @@ function syncDealFoldBtnLabel() {
   btn.textContent = folded ? `展开${noun}` : `折叠${noun}`;
 }
 
-function syncDealQuadMinInput() {
-  const el = document.getElementById("dealQuadMinWan");
-  if (!el || document.activeElement === el) return;
-  el.value = formatWanInput(bigDealMinAmount());
-}
-
-function bindDealQuadMinFilter() {
-  const el = document.getElementById("dealQuadMinWan");
-  if (!el || el.dataset.bound === "1") return;
-  el.dataset.bound = "1";
-  syncDealQuadMinInput();
-  const commit = () => {
-    const minWan = parseWanInputValue(el.value);
-    const minYuan = minWan == null ? BIG_DEAL_DEFAULT_YUAN : yuanFromWan(minWan);
-    if (minYuan == null || minYuan === Number(bigDealState.minAmount)) {
-      syncDealQuadMinInput();
-      return;
-    }
-    persistBigDealRange(minYuan, bigDealMaxAmount());
-    syncBigDealRangeInputs();
-    syncDealQuadMinInput();
-    void loadBigDeals({ keep: true });
-    void loadBigDealChart({ refresh: true });
-    if (dealModeIsStats()) void loadDealQuadStats({ refresh: true });
-  };
-  el.addEventListener("change", commit);
-  el.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter") {
-      ev.preventDefault();
-      commit();
-    }
-  });
-}
-
 /** 折叠/展开右侧整块（实时明细或统计视图） */
 function applyDealMainFold(folded, { persist = false } = {}) {
   dealMainFoldState.folded = Boolean(folded);
@@ -1935,7 +2093,7 @@ function applyDealMode(mode, { persist = false, force = false } = {}) {
     main.dataset.dealMode = next;
     main.setAttribute(
       "aria-label",
-      next === "stats" ? "资金统计 · 大单四象限 · 分价表" : "实时走势与成交明细",
+      next === "stats" ? "资金统计 · 分价走势" : "实时走势与成交明细",
     );
   }
   if (live) {
@@ -1948,7 +2106,6 @@ function applyDealMode(mode, { persist = false, force = false } = {}) {
   }
   syncDealModeToggleUi();
   syncDealFoldBtnLabel();
-  syncDealQuadMinInput();
   if (persist) persistDealMode(next);
 
   // 切换到统计视图时自动展开主块（无论面板此时是否可见，避免统计视图空白）
@@ -2590,7 +2747,6 @@ function bindDealFiveDayPanel() {
       void loadDealStatsPack({ refresh: true });
     });
   }
-  bindDealQuadMinFilter();
 
   const body = document.getElementById("dealFiveDayBody");
   if (!body || dealFiveDayState.bound) return;
@@ -3390,7 +3546,6 @@ function syncBigDealRangeInputs() {
   const maxEl = document.getElementById("bigDealMaxWan");
   if (minEl && document.activeElement !== minEl) minEl.value = formatWanInput(bigDealMinAmount());
   if (maxEl && document.activeElement !== maxEl) maxEl.value = formatWanInput(bigDealMaxAmount());
-  syncDealQuadMinInput();
 }
 
 function commitBigDealRange({ swap = true } = {}) {
@@ -3417,7 +3572,6 @@ function commitBigDealRange({ swap = true } = {}) {
     if (minChanged) {
       void loadBigDeals({ keep: true });
       void loadBigDealChart({ refresh: true });
-      if (dealModeIsStats()) void loadDealQuadStats({ refresh: true });
       return;
     }
     applyBigDealRangeFilter();
@@ -3517,10 +3671,6 @@ async function applyTicksViewDay(iso) {
   refreshTicksTapeList();
   if (dealAnalysisVisible()) {
     renderDealFiveDayPanel();
-  }
-  if (dealAnalysisVisible() && dealModeIsStats()) {
-    dealStatsState.quad.data = null;
-    void loadDealQuadStats({ refresh: true });
   }
   const history = isTicksHistoryView();
   if (history) {

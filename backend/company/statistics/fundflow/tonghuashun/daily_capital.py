@@ -85,8 +85,43 @@ def _parse_row(row: dict[str, Any], *, code: str) -> dict[str, Any]:
         # 净流入：该档全部买入 − 全部卖出
         tier["net"] = _sub(tier["buy"], tier["sell"])
         tiers[alias] = tier
+
+    # 同花顺不提供小单被动方向（passive_buy_small / passive_sell_small）。
+    # 按成交恒等式推断：每笔成交必有一方主动、一方被动且金额相同，因此
+    #   被动买合计 = 主动卖合计，被动卖合计 = 主动买合计
+    #   小单被动买 = 主动卖合计 − (超大+大+中 被动买)
+    #   小单被动卖 = 主动买合计 − (超大+大+中 被动卖)
+    inferred: list[str] = []
+    small = tiers["small"]
+    others = [alias for alias, _ in _TIERS if alias != "small"]
+    known_passive_buy = _add(*(tiers[a]["passive_buy"] for a in others))
+    known_passive_sell = _add(*(tiers[a]["passive_sell"] for a in others))
+    active_sell_total = _add(*(tiers[a]["active_sell"] for a, _ in _TIERS))
+    active_buy_total = _add(*(tiers[a]["active_buy"] for a, _ in _TIERS))
+    if (
+        small["passive_buy"] is None
+        and known_passive_buy is not None
+        and active_sell_total is not None
+    ):
+        small["passive_buy"] = round(active_sell_total - known_passive_buy, 2)
+        inferred.append("passive_buy")
+    if (
+        small["passive_sell"] is None
+        and known_passive_sell is not None
+        and active_buy_total is not None
+    ):
+        small["passive_sell"] = round(active_buy_total - known_passive_sell, 2)
+        inferred.append("passive_sell")
+    if inferred:
+        small["passive_net"] = _sub(small["passive_buy"], small["passive_sell"])
+        small["buy"] = _add(small["active_buy"], small["passive_buy"])
+        small["sell"] = _add(small["active_sell"], small["passive_sell"])
+        small["net"] = _sub(small["buy"], small["sell"])
+        small["passive_inferred"] = True
+
+    for alias, _ in _TIERS:
         for side in _SIDES:
-            flat[f"{side}_{alias}"] = tier[side]
+            flat[f"{side}_{alias}"] = tiers[alias][side]
 
     active_buy = _add(*(tiers[a]["active_buy"] for a, _ in _TIERS))
     active_sell = _add(*(tiers[a]["active_sell"] for a, _ in _TIERS))
@@ -153,7 +188,7 @@ def fetch_daily_capital(
         "count": 1,
         "notes": [
             "当日快照：主动/被动 × 买/卖 × 超大/大/中/小；金额单位元",
-            "小单通常只有 active_*，无 passive_*",
+            "小单 passive_* 为推断值：按 被动买合计=主动卖合计、被动卖合计=主动买合计 反推（tiers.small.passive_inferred=true）",
             "接口无历史日期参数，不能拉多日序列",
         ],
         **parsed,
