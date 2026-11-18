@@ -137,6 +137,11 @@ class IndustryTree:
         self.get_tree()
         return list(self._flat_l3.keys())
 
+    def flat_l3(self) -> list[dict[str, Any]]:
+        """全部三级行业元信息（顺序与缓存 flat_l3 一致）。"""
+        self.get_tree()
+        return list(self._flat_l3.values())
+
     def get_l3_meta(self, code: str) -> dict[str, Any] | None:
         self.get_tree()
         return self._flat_l3.get(code.strip())

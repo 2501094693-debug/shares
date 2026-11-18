@@ -29,6 +29,9 @@ class IndustryService:
     def get_l3_meta(self, code: str) -> dict[str, Any] | None:
         return self.tree.get_l3_meta(code)
 
+    def flat_l3(self) -> list[dict[str, Any]]:
+        return self.tree.flat_l3()
+
     def search(self, keyword: str) -> list[dict[str, Any]]:
         return self.tree.search(keyword)
 
@@ -37,11 +40,13 @@ class IndustryService:
         code: str,
         force_refresh: bool = False,
         update_index: bool = True,
+        allow_stale: bool = False,
     ) -> dict[str, Any]:
         return self.stocks.get_constituents(
             code,
             force_refresh=force_refresh,
             update_index=update_index,
+            allow_stale=allow_stale,
         )
 
     def get_index_status(self) -> dict[str, Any]:

@@ -7,35 +7,36 @@
 
   硬指标（全部满足才算「严格蓝筹」，阈值均可用命令行调整/关闭）：
     1. 非 ST / *ST / 退市整理；
-    2. 总市值 >= --min-cap（默认 100 亿元）—— 行业龙头规模；
-    3. ROE   >= --min-roe（默认 8%）—— 盈利能力；
-    4. 0 < PE_TTM <= --max-pe（默认 40）—— 估值合理且确实盈利；
-    5. PB 合理：仅当 --max-pb > 0 时校验（默认关闭）；
-    6. 股息率 >= --min-yield（默认 1%）—— 稳定现金分红。
+    2. 默认排除创业板（300/301）与科创板（688/689）；
+    3. 总市值 >= --min-cap（默认 100 亿元）—— 行业龙头规模；
+    4. ROE   >= --min-roe（默认 8%）—— 盈利能力；
+    5. 静态 PE 与 PE_TTM 均满足 0 < PE <= --max-pe（默认 20）—— 估值合理且确实盈利；
+    6. PB 合理：仅当 --max-pb > 0 时校验（默认关闭）；
+    7. 股息率 >= --min-yield（默认 1%）—— 稳定现金分红。
 
   综合评分（0~100，仅用于行业内排序，不影响严格/相对判定）：
     市值 30 + ROE 30 + PE 15 + PB 10 + 股息率 15 + 净利润增速 10。
 
-  未满足全部硬指标、但满足「非 ST 且 PE_TTM>0 且 ROE>0」的股票，作为
-  「相对龙头（未达严格蓝筹）」一并打印，便于逐行业对照；加 --strict-only
-  可让它们不进入最终结果。
+  默认：每个三级行业最多 1 只，且必须满足全部硬指标（严格蓝筹）。
+  可用 --top-per-industry / 去掉 --strict-only 放宽（见 CLI）。
 
-数据来源（兼容本机 akshare 不可用的情况）
-----------------------------------------
-- 行业树：直接读 backend/cache/industry_tree.json 的 flat_l3；
-- 成分股：直接读 backend/cache/cons/<行业代码>.json（6 小时 TTL）；
-  缓存缺失/过期时用 requests + pandas 抓乐咕网页（不走 akshare）并回写缓存。
-  缓存过期时会联网刷新；加 --offline 可强制只消费现有缓存（不联网）。
-- 可选：加 --mine 把结果写入「我的」分组（默认关闭，仅打印 + JSON）。
+数据来源（复用 backend/market/industry，不再脚本内抓乐咕 HTML）
+--------------------------------------------------------------
+优先级：
+  1. 全市场索引 ``stocks_index.json``（按 l3_code 分组，零网络）；
+  2. 缺行业时走 ``IndustryService.get_constituents``（成分股缓存 + TTL，
+     必要时才联网乐咕；全量扫描 ``update_index=False`` 避免每行业写索引）；
+  3. ``--offline``：只用索引 / 过期也可用的 cons 缓存，绝不联网；
+  4. ``--force``：忽略索引与缓存，强制联网刷新各行业成分股。
 
 用法（项目根目录）::
 
     python scripts/sw_l3_blue_chips.py
-    python scripts/sw_l3_blue_chips.py --min-cap 200 --min-roe 10 --max-pe 30 --top-per-industry 5
+    python scripts/sw_l3_blue_chips.py --offline --mine
+    python scripts/sw_l3_blue_chips.py --min-cap 200 --min-roe 10 --max-pe 20
     python scripts/sw_l3_blue_chips.py --codes 850111.SI,850112.SI --dry-run
-    python scripts/sw_l3_blue_chips.py --offline --out scripts/blue_chips.json
-    python scripts/sw_l3_blue_chips.py --force --top-per-industry 5
-    python scripts/sw_l3_blue_chips.py --mine --group 申万三级蓝筹
+    python scripts/sw_l3_blue_chips.py --allow-relative --top-per-industry 3
+    python scripts/sw_l3_blue_chips.py --verbose
 """
 
 from __future__ import annotations
@@ -47,8 +48,8 @@ import re
 import sys
 import threading
 import time
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -60,17 +61,11 @@ for path in (_BACKEND, _ROOT):
     if text not in sys.path:
         sys.path.insert(0, text)
 
-import pandas as pd  # noqa: E402
-import requests  # noqa: E402
-
 from core.codes import normalize_code, safe_str  # noqa: E402
 from core.fmt import to_float  # noqa: E402
-from core.paths import (  # noqa: E402
-    CONS_TTL,
-    TREE_CACHE,
-    cons_cache_path,
-    ensure_cache_dirs,
-)
+from core.paths import CONS_TTL, STOCK_INDEX_CACHE, cons_cache_path  # noqa: E402
+from market.industry.service import service as industry_service  # noqa: E402
+from market.industry.stocks.schema import METRIC_KEYS  # noqa: E402
 from mine.service import service as mine_service  # noqa: E402
 
 _print_lock = threading.Lock()
@@ -79,55 +74,18 @@ DEFAULT_GROUP = "申万三级行业蓝筹"
 DEFAULT_WORKERS = 6
 DEFAULT_MIN_CAP = 100.0
 DEFAULT_MIN_ROE = 8.0
-DEFAULT_MAX_PE = 40.0
+DEFAULT_MAX_PE = 20.0
 DEFAULT_MAX_PB = 0.0  # 0 = 不校验
 DEFAULT_MIN_YIELD = 1.0
-DEFAULT_TOP_PER_INDUSTRY = 3
+DEFAULT_TOP_PER_INDUSTRY = 1
+DEFAULT_STRICT_ONLY = True
+DEFAULT_EXCLUDE_CHINEXT = True
+DEFAULT_EXCLUDE_STAR = True
+MAX_STOCKS_PER_GROUP = 1000  # 与 mine.service 上限一致
 
 _CHINEXT_PREFIXES = ("300", "301")
 _STAR_PREFIXES = ("688", "689")
 _EMPTY_CELLS = frozenset({"nan", "None", "—", "-", "<NA>", "NaT", ""})
-
-# 乐咕成分股表按列下标取值（见 backend/market/industry/stocks/cons_fetcher.py）
-_COL_SPECS: list[tuple[int, str]] = [
-    (1, "股票代码"),
-    (2, "股票简称"),
-    (3, "纳入时间"),
-    (4, "申万3级"),
-    (6, "价格"),
-    (7, "市盈率"),
-    (8, "市盈率ttm"),
-    (9, "市净率"),
-    (10, "ROE"),
-    (11, "股息率"),
-    (12, "市值"),
-    (13, "近1日涨幅"),
-    (14, "近5日涨幅"),
-    (15, "今年以来涨幅"),
-    (16, "净利润增速"),
-    (17, "营收增速"),
-]
-_ROW_FIELDS = {
-    "price": "价格",
-    "pe": "市盈率",
-    "pe_ttm": "市盈率ttm",
-    "pb": "市净率",
-    "roe": "ROE",
-    "dividend_yield": "股息率",
-    "market_cap": "市值",
-    "change_1d": "近1日涨幅",
-    "change_5d": "近5日涨幅",
-    "change_ytd": "今年以来涨幅",
-    "profit_growth": "净利润增速",
-    "revenue_growth": "营收增速",
-}
-_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/122.0.0.0 Safari/537.36"
-    )
-}
 
 
 def _configure_stdio() -> None:
@@ -176,137 +134,87 @@ def _fmt(value: float | None, suffix: str = "", digits: int = 2) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 1. 行业树 / 成分股（直接读缓存，缺缓存走乐咕网页，不依赖 akshare）
+# 1. 数据加载：索引优先，缺行业再走 IndustryService
 # ---------------------------------------------------------------------------
 
 
 def _load_tree(force_refresh: bool = False) -> list[dict[str, Any]]:
-    if TREE_CACHE.is_file() and not force_refresh:
-        payload = json.loads(TREE_CACHE.read_text(encoding="utf-8"))
-        rows = payload.get("flat_l3") or []
-        if not rows:
-            raise RuntimeError(f"行业树缓存无三级行业: {TREE_CACHE}")
-        _log(f"行业树读取成功：{len(rows)} 个申万三级行业（缓存 {TREE_CACHE.name}）")
-        return [r for r in rows if isinstance(r, dict)]
-
-    _log("行业树缓存缺失/需刷新，尝试通过 akshare 重建（需要 akshare 可正常 import）...")
-    try:
-        from market.industry.tree.builder import IndustryTree  # noqa: PLC0415
-
-        IndustryTree().get_tree(force_refresh=True)
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(
-            f"无法重建行业树（akshare 不可用？）: {exc}。"
-            f"可先把有效的 {TREE_CACHE} 放回缓存目录再运行。"
-        ) from exc
-    payload = json.loads(TREE_CACHE.read_text(encoding="utf-8"))
-    rows = [r for r in (payload.get("flat_l3") or []) if isinstance(r, dict)]
-    _log(f"行业树重建完成：{len(rows)} 个申万三级行业")
+    industry_service.get_tree(force_refresh=force_refresh)
+    rows = industry_service.flat_l3()
+    if not rows:
+        raise RuntimeError("行业树无三级行业")
+    _log(f"行业树读取成功：{len(rows)} 个申万三级行业")
     return rows
 
 
-def _cell(row: dict[str, Any], key: str) -> str:
-    value = row.get(key, "")
-    if value is None:
-        return ""
-    if isinstance(value, float) and pd.isna(value):
-        return ""
-    text = str(value).strip()
-    return "" if text in _EMPTY_CELLS else text
+def _index_by_l3(*, rebuild_from_cons: bool = False) -> dict[str, list[dict[str, Any]]]:
+    """从全市场索引按三级行业分组。空索引时可选择用 cons 缓存拼一份。"""
+    store = industry_service.stocks
+    stocks = store.all_stocks()
+    if not stocks and rebuild_from_cons:
+        _log("全市场索引为空，尝试用 cons/*.json 重建（不联网）…")
+        store.rebuild_from_cons_cache()
+        stocks = store.all_stocks()
+    by_l3: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for stock in stocks:
+        l3 = safe_str(stock.get("l3_code"))
+        if l3:
+            by_l3[l3].append(stock)
+    return by_l3
 
 
-def _series_at(df: pd.DataFrame, idx: int) -> pd.Series:
-    if df.shape[1] <= idx:
-        return pd.Series([""] * len(df), index=df.index, dtype=object)
-    series = df.iloc[:, idx].where(pd.notna(df.iloc[:, idx]), "")
-    series = series.astype(str).str.strip()
-    return series.map(lambda x: "" if x in _EMPTY_CELLS else x)
-
-
-def _fetch_cons(l3_code: str) -> list[dict[str, Any]]:
-    """抓乐咕三级行业成分股网页 → 规范化股票行。"""
-    url = f"https://legulegu.com/stockdata/index-composition?industryCode={l3_code}"
-    last_error: Exception | None = None
-    for attempt in range(1, 3):
-        try:
-            resp = requests.get(url, headers=_HEADERS, timeout=(5, 45))
-            resp.raise_for_status()
-            df = pd.read_html(StringIO(resp.text))[0]
-            if df.shape[1] < 4:
-                raise ValueError(f"成分股表格列数异常: {df.shape[1]}")
-            table = pd.DataFrame({name: _series_at(df, idx) for idx, name in _COL_SPECS})
-            table = table[table["股票代码"].str.len() > 0]
-            table = table[~table["股票代码"].isin(["nan", "None", "-"])]
-            return table.reset_index(drop=True).to_dict("records")
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
-            if attempt < 2:
-                time.sleep(1.0 * attempt)
-    raise RuntimeError(f"抓取失败: {last_error}")
-
-
-def _normalize(raw: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
-    full = _cell(raw, "股票代码")
-    row: dict[str, Any] = {
-        "code": full.split(".")[0] if full else "",
-        "full_code": full,
-        "name": _cell(raw, "股票简称"),
-        "include_date": _cell(raw, "纳入时间"),
-        "l1_name": meta.get("l1_name", ""),
-        "l2_name": meta.get("l2_name", ""),
-        "l3_name": _cell(raw, "申万3级") or meta.get("name", ""),
-        "l3_code": meta.get("code", ""),
-    }
-    for key, column in _ROW_FIELDS.items():
-        row[key] = _cell(raw, column)
-    return row
-
-
-def _read_cons_cache(l3_code: str) -> dict[str, Any] | None:
+def _cons_cache_meta(l3_code: str) -> tuple[bool, float]:
+    """返回 (文件是否存在, 年龄秒)。不存在时年龄为 inf。"""
     path = cons_cache_path(l3_code)
     if not path.is_file():
-        return None
+        return False, math.inf
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        age = time.time() - float((data or {}).get("fetched_at") or 0)
+        return True, max(0.0, age)
     except Exception:  # noqa: BLE001
-        return None
-    return data if isinstance(data, dict) else None
+        return True, math.inf
 
 
 def _load_constituents(
-    meta: dict[str, Any], *, force: bool = False, offline: bool = False
+    meta: dict[str, Any],
+    *,
+    force: bool = False,
+    offline: bool = False,
+    index_stocks: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
-    """返回 (股票列表, 来源标记 cache/fetch/stale)。失败抛异常。"""
-    l3_code = safe_str(meta.get("code"))
-    cached = _read_cons_cache(l3_code)
-    age = time.time() - float((cached or {}).get("fetched_at") or 0)
-    if cached and offline:
-        return list(cached.get("stocks") or []), "cache(offline)"
-    if cached and not force and age < CONS_TTL:
-        return list(cached.get("stocks") or []), "cache"
+    """返回 (股票列表, 来源标记)。
 
+    来源：index / cache / cache(offline) / fetch
+    """
+    l3_code = safe_str(meta.get("code"))
+    if not force and index_stocks:
+        return list(index_stocks), "index"
+
+    exists, age = _cons_cache_meta(l3_code)
+    fresh = exists and age < CONS_TTL
     try:
-        raw_rows = _fetch_cons(l3_code)
-        stocks = [_normalize(r, meta) for r in raw_rows]
-        ensure_cache_dirs()
-        cons_cache_path(l3_code).write_text(
-            json.dumps(
-                {
-                    "industry": meta,
-                    "count": len(stocks),
-                    "stocks": stocks,
-                    "fetched_at": time.time(),
-                    "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
+        payload = industry_service.get_constituents(
+            l3_code,
+            force_refresh=bool(force),
+            update_index=False,
+            allow_stale=bool(offline),
         )
-        return stocks, "fetch"
     except Exception as exc:  # noqa: BLE001
-        if cached:
-            return list(cached.get("stocks") or []), f"stale({exc})"
+        if index_stocks:
+            return list(index_stocks), f"index(fallback:{exc})"
         raise
+
+    stocks = list(payload.get("stocks") or [])
+    if force:
+        source = "fetch"
+    elif offline:
+        source = "cache(offline)"
+    elif fresh:
+        source = "cache"
+    else:
+        source = "fetch"
+    return stocks, source
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +256,7 @@ def _evaluate(
 ) -> dict[str, Any]:
     code = normalize_code(safe_str(stock.get("code")))
     name = safe_str(stock.get("name"))
-    m: dict[str, float | None] = {key: _num(stock.get(key)) for key in _ROW_FIELDS}
+    m: dict[str, float | None] = {key: _num(stock.get(key)) for key in METRIC_KEYS}
 
     reasons: list[str] = []
     if _is_st_or_delisted(name):
@@ -359,17 +267,22 @@ def _evaluate(
         reasons.append("科创板")
 
     cap, roe = m["market_cap"], m["roe"]
-    pe, pb = m["pe_ttm"], m["pb"]
-    dy = m["dividend_yield"]
+    pe_static, pe_ttm = m["pe"], m["pe_ttm"]
+    pb, dy = m["pb"], m["dividend_yield"]
 
     if cap is None or cap < min_cap:
         reasons.append(f"市值<{min_cap:g}亿")
     if roe is None or roe < min_roe:
         reasons.append(f"ROE<{min_roe:g}%")
-    if pe is None or pe <= 0:
+    # 静态 PE、动态 PE_TTM 都要盈利且不超过上限
+    if pe_static is None or pe_static <= 0:
+        reasons.append("静态PE缺失/亏损")
+    elif max_pe > 0 and pe_static > max_pe:
+        reasons.append(f"静态PE>{max_pe:g}")
+    if pe_ttm is None or pe_ttm <= 0:
         reasons.append("PE_TTM缺失/亏损")
-    elif max_pe > 0 and pe > max_pe:
-        reasons.append(f"PE>{max_pe:g}")
+    elif max_pe > 0 and pe_ttm > max_pe:
+        reasons.append(f"PE_TTM>{max_pe:g}")
     if max_pb > 0 and (pb is None or pb <= 0 or pb > max_pb):
         reasons.append(f"PB越界(>{max_pb:g})")
     if min_yield > 0 and (dy is None or dy < min_yield):
@@ -379,8 +292,15 @@ def _evaluate(
         r in reasons for r in ("ST/退市", "创业板", "科创板")
     )
     strict = not reasons
-    # 相对龙头：非 ST/板块排除，且确实盈利（PE>0、ROE>0）
-    relative = eligible and pe is not None and pe > 0 and roe is not None and roe > 0
+    relative = (
+        eligible
+        and pe_static is not None
+        and pe_static > 0
+        and pe_ttm is not None
+        and pe_ttm > 0
+        and roe is not None
+        and roe > 0
+    )
 
     return {
         "code": code,
@@ -395,7 +315,9 @@ def _evaluate(
 
 
 def _scan_industry(
-    meta: dict[str, Any], args: argparse.Namespace
+    meta: dict[str, Any],
+    args: argparse.Namespace,
+    index_map: dict[str, list[dict[str, Any]]],
 ) -> dict[str, Any]:
     l3_code = safe_str(meta.get("code"))
     l3_name = safe_str(meta.get("name"))
@@ -407,10 +329,13 @@ def _scan_industry(
     }
     try:
         stocks, source = _load_constituents(
-            meta, force=bool(args.force), offline=bool(args.offline)
+            meta,
+            force=bool(args.force),
+            offline=bool(args.offline),
+            index_stocks=None if args.force else index_map.get(l3_code),
         )
     except Exception as exc:  # noqa: BLE001
-        return {**base, "error": str(exc), "source": "error", "rows": []}
+        return {**base, "error": str(exc), "source": "error", "rows": [], "selected": []}
 
     rows = [
         _evaluate(
@@ -437,6 +362,7 @@ def _scan_industry(
         {**r, "tier": "严格蓝筹"}
         for r in (strict_rows[:top] if top else strict_rows)
     ]
+    # 默认 strict_only=True：不补相对龙头；仅显式 --allow-relative 时才补
     if not args.strict_only:
         need = (top - len(selected)) if top else 0
         if need > 0 or top == 0:
@@ -466,13 +392,16 @@ def _log_row(row: dict[str, Any], prefix: str = "    ") -> None:
     _log(
         f"{prefix}{row['code']} {(row['name'] or '')[:8]:<8}  "
         f"市值{_fmt(m['market_cap'], '亿', 1):>9}  ROE{_fmt(m['roe'], '%', 1):>7}  "
-        f"PE{_fmt(m['pe_ttm'], '', 1):>7}  PB{_fmt(m['pb'], '', 1):>6}  "
+        f"静PE{_fmt(m['pe'], '', 1):>6}  TTM{_fmt(m['pe_ttm'], '', 1):>6}  "
+        f"PB{_fmt(m['pb'], '', 1):>6}  "
         f"股息{_fmt(m['dividend_yield'], '%', 1):>6}  "
         f"增速{_fmt(m['profit_growth'], '%', 1):>7}  · {flags}"
     )
 
 
-def _log_industry(result: dict[str, Any], idx: int, total: int) -> None:
+def _log_industry(
+    result: dict[str, Any], idx: int, total: int, *, verbose: bool
+) -> None:
     head = (
         f"[{idx:3d}/{total}] {result['l3_code']} {result['l3_name']} "
         f"（{result['l1_name']} / {result['l2_name']}）"
@@ -490,6 +419,8 @@ def _log_industry(result: dict[str, Any], idx: int, total: int) -> None:
     else:
         _log("    （无符合条件的蓝筹股）")
 
+    if not verbose:
+        return
     rejected = [r for r in result["rows"] if not r["strict"] and not r["relative"]]
     if rejected:
         _log(f"    · 未入选 {len(rejected)} 只（原因）：")
@@ -514,6 +445,30 @@ def _write_mine_group(rows: list[dict[str, Any]], name: str, replace: bool) -> N
     if not rows:
         _log(f"分组「{name}」无结果，跳过写入")
         return
+    # 跨行业可能重复；严格蓝筹优先，同分保留先出现的
+    dedup: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        code = normalize_code(safe_str(row.get("code")))
+        if not code:
+            continue
+        prev = dedup.get(code)
+        if prev is None or (row.get("strict") and not prev.get("strict")):
+            dedup[code] = row
+    uniq = list(dedup.values())
+    uniq.sort(
+        key=lambda r: (
+            0 if r.get("strict") else 1,
+            -float(r.get("score") or 0),
+            safe_str(r.get("code")),
+        )
+    )
+    if len(uniq) > MAX_STOCKS_PER_GROUP:
+        _log(
+            f"警告：去重后 {len(uniq)} 只超过分组上限 {MAX_STOCKS_PER_GROUP}，"
+            f"按严格/评分保留前 {MAX_STOCKS_PER_GROUP} 只"
+        )
+        uniq = uniq[:MAX_STOCKS_PER_GROUP]
+
     group = _ensure_group(name)
     gid = safe_str(group.get("id"))
     if replace:
@@ -522,11 +477,21 @@ def _write_mine_group(rows: list[dict[str, Any]], name: str, replace: bool) -> N
             for s in (group.get("stocks") or [])
             if isinstance(s, dict)
         ]
-        removed = mine_service.remove_stocks(gid, [c for c in old if c])
-        if removed.get("removed"):
-            _log(f"分组「{name}」已清空 {len(removed['removed'])} 只")
-    codes = [r["code"] for r in rows if r["code"]]
-    names = {r["code"]: r["name"] for r in rows if r["code"]}
+        old = [c for c in old if c]
+        if old:
+            removed = mine_service.remove_stocks(gid, old)
+            _log(f"分组「{name}」已清空 {len(removed.get('removed') or [])} 只")
+
+    codes = [normalize_code(safe_str(r.get("code"))) for r in uniq]
+    codes = [c for c in codes if c]
+    names = {
+        normalize_code(safe_str(r.get("code"))): safe_str(r.get("name"))
+        for r in uniq
+        if normalize_code(safe_str(r.get("code")))
+    }
+    if not codes:
+        _log(f"分组「{name}」无有效代码，跳过写入")
+        return
     result = mine_service.add_stocks(gid, codes, names=names)
     final = result.get("group") or group
     _log(
@@ -547,17 +512,63 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--min-cap", type=float, default=DEFAULT_MIN_CAP, help="最小总市值（亿元）")
     parser.add_argument("--min-roe", type=float, default=DEFAULT_MIN_ROE, help="最小 ROE（%%）")
-    parser.add_argument("--max-pe", type=float, default=DEFAULT_MAX_PE, help="最大 PE_TTM，0=不限制")
+    parser.add_argument(
+        "--max-pe",
+        type=float,
+        default=DEFAULT_MAX_PE,
+        help="静态 PE 与 PE_TTM 的共同上限（均需 0<PE≤该值），0=不限制上限",
+    )
     parser.add_argument("--max-pb", type=float, default=DEFAULT_MAX_PB, help="最大 PB，0=不校验")
     parser.add_argument("--min-yield", type=float, default=DEFAULT_MIN_YIELD, help="最小股息率（%%），0=不校验")
-    parser.add_argument("--top-per-industry", type=int, default=DEFAULT_TOP_PER_INDUSTRY, help="每个行业输出的蓝筹数量，0=全部")
-    parser.add_argument("--strict-only", action="store_true", help="只输出满足全部硬指标的严格蓝筹")
-    parser.add_argument("--exclude-chinext", action="store_true", help="排除创业板 300/301")
-    parser.add_argument("--exclude-star", action="store_true", help="排除科创板 688/689")
+    parser.add_argument(
+        "--top-per-industry",
+        type=int,
+        default=DEFAULT_TOP_PER_INDUSTRY,
+        help="每个行业最多输出几只（默认 1；0=该行业全部严格蓝筹）",
+    )
+    parser.add_argument(
+        "--strict-only",
+        dest="strict_only",
+        action="store_true",
+        default=DEFAULT_STRICT_ONLY,
+        help="只输出严格蓝筹（默认开启）",
+    )
+    parser.add_argument(
+        "--allow-relative",
+        dest="strict_only",
+        action="store_false",
+        help="严格蓝筹不足时，用相对龙头补足名额",
+    )
+    parser.add_argument(
+        "--exclude-chinext",
+        dest="exclude_chinext",
+        action="store_true",
+        default=DEFAULT_EXCLUDE_CHINEXT,
+        help="排除创业板 300/301（默认开启）",
+    )
+    parser.add_argument(
+        "--include-chinext",
+        dest="exclude_chinext",
+        action="store_false",
+        help="允许创业板",
+    )
+    parser.add_argument(
+        "--exclude-star",
+        dest="exclude_star",
+        action="store_true",
+        default=DEFAULT_EXCLUDE_STAR,
+        help="排除科创板 688/689（默认开启）",
+    )
+    parser.add_argument(
+        "--include-star",
+        dest="exclude_star",
+        action="store_false",
+        help="允许科创板",
+    )
     parser.add_argument("--codes", default="", help="只扫描这些三级行业代码（逗号分隔），空=全部")
-    parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS, help="并发抓成分股数")
-    parser.add_argument("--force", action="store_true", help="强制联网刷新行业成分股缓存")
-    parser.add_argument("--offline", action="store_true", help="只用现有成分股缓存，忽略过期时间（不联网）")
+    parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS, help="缺缓存需联网时的并发数")
+    parser.add_argument("--force", action="store_true", help="强制联网刷新行业成分股缓存（忽略索引）")
+    parser.add_argument("--offline", action="store_true", help="只用索引/成分股缓存，不联网")
     parser.add_argument("--refresh-tree", action="store_true", help="强制重建申万行业树（需要 akshare）")
     parser.add_argument("--mine", action="store_true", help="把结果写入「我的」分组（默认关闭）")
     parser.add_argument("--group", default=DEFAULT_GROUP, help="写入分组名（需配合 --mine）")
@@ -566,25 +577,41 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true", help="只打印，不写分组/文件")
     parser.add_argument("--out", default="", help="结果写入 JSON 文件路径；空=不写文件")
     parser.add_argument("--json", action="store_true", help="在结尾打印完整 JSON")
+    parser.add_argument("--verbose", action="store_true", help="打印每行业未入选原因（默认不打）")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     _configure_stdio()
     args = build_parser().parse_args(argv)
+    if args.force and args.offline:
+        _log("ERROR: --force 与 --offline 不能同时使用")
+        return 2
     started = time.time()
 
     _log("=" * 78)
     _log("申万三级行业蓝筹股扫描 · 开始")
+    boards = []
+    if args.exclude_chinext:
+        boards.append("排除创业板")
+    if args.exclude_star:
+        boards.append("排除科创板")
     _log(
         f"口径：市值≥{args.min_cap:g}亿 · ROE≥{args.min_roe:g}% · "
-        f"0<PE≤{args.max_pe:g}" + (f" · PB≤{args.max_pb:g}" if args.max_pb > 0 else " · PB不校验")
+        f"0<静态PE/TTM≤{args.max_pe:g}"
+        + (f" · PB≤{args.max_pb:g}" if args.max_pb > 0 else " · PB不校验")
         + (f" · 股息率≥{args.min_yield:g}%" if args.min_yield > 0 else " · 股息率不校验")
+        + (f" · {'/'.join(boards)}" if boards else " · 含创业板/科创板")
     )
     _log(
-        f"输出：每行业前 {args.top_per_industry} 只"
+        f"输出：每行业最多 {args.top_per_industry} 只"
         + ("（仅严格蓝筹）" if args.strict_only else "（严格蓝筹优先，不足补相对龙头）")
         + f" · 并发 {args.workers} · force={args.force} · offline={args.offline}"
+    )
+    _log(
+        "数据：优先 stocks_index → IndustryService 成分股缓存"
+        + ("（离线，过期缓存可用）" if args.offline else "（缺则联网）")
+        + (f"；索引文件 {STOCK_INDEX_CACHE.name}" if STOCK_INDEX_CACHE.is_file() else "；无索引文件")
     )
     _log("=" * 78)
 
@@ -608,36 +635,77 @@ def main(argv: list[str] | None = None) -> int:
         _log("没有可扫描的三级行业")
         return 1
 
+    index_map: dict[str, list[dict[str, Any]]] = {}
+    if not args.force:
+        index_map = _index_by_l3(rebuild_from_cons=bool(args.offline))
+        covered = sum(1 for m in metas if safe_str(m.get("code")) in index_map)
+        stock_n = sum(len(index_map.get(safe_str(m.get("code")), [])) for m in metas)
+        _log(
+            f"索引覆盖：{covered}/{len(metas)} 个行业 · {stock_n} 只股票"
+            + ("（缺的行业将读 cons 缓存）" if args.offline else "（缺的行业将按需拉成分股）")
+        )
+
     results: list[dict[str, Any]] = []
     total = len(metas)
     done = 0
     failed = 0
+    source_counts: dict[str, int] = defaultdict(int)
     t0 = time.time()
 
-    with ThreadPoolExecutor(max_workers=max(1, int(args.workers))) as pool:
-        futures = {pool.submit(_scan_industry, meta, args): meta for meta in metas}
-        for fut in as_completed(futures):
-            done += 1
-            try:
-                result = fut.result()
-            except Exception as exc:  # noqa: BLE001
-                failed += 1
-                meta = futures[fut]
-                _log(f"[{done}/{total}] {meta.get('code')} 任务异常：{exc}")
-                continue
-            results.append(result)
-            _log_industry(result, done, total)
-            if done % 25 == 0 or done == total:
-                _log(
-                    f"  ---- 进度 {done}/{total} · 成功 {len(results)} · 失败 {failed} "
-                    f"· 耗时 {time.time() - t0:.0f}s ----"
-                )
+    # 索引已覆盖的行业本地算即可；真正缺数据的才丢进线程池（避免无意义并发）
+    local_metas: list[dict[str, Any]] = []
+    remote_metas: list[dict[str, Any]] = []
+    for meta in metas:
+        code = safe_str(meta.get("code"))
+        if args.force or code not in index_map:
+            remote_metas.append(meta)
+        else:
+            local_metas.append(meta)
 
-    # 保持行业树顺序
+    def _handle(result: dict[str, Any]) -> None:
+        nonlocal done, failed
+        done += 1
+        if result.get("error"):
+            failed += 1
+        else:
+            source_counts[safe_str(result.get("source")) or "unknown"] += 1
+        results.append(result)
+        _log_industry(result, done, total, verbose=bool(args.verbose))
+        if done % 25 == 0 or done == total:
+            _log(
+                f"  ---- 进度 {done}/{total} · 成功 {len(results) - failed} · 失败 {failed} "
+                f"· 耗时 {time.time() - t0:.0f}s ----"
+            )
+
+    for meta in local_metas:
+        _handle(_scan_industry(meta, args, index_map))
+
+    if remote_metas:
+        workers = 1 if args.offline else max(1, int(args.workers))
+        _log(
+            f"需补拉/读缓存的行业 {len(remote_metas)} 个"
+            + (f"（并发 {workers}）" if not args.offline else "（离线串行读缓存）")
+        )
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(_scan_industry, meta, args, index_map): meta
+                for meta in remote_metas
+            }
+            for fut in as_completed(futures):
+                try:
+                    result = fut.result()
+                except Exception as exc:  # noqa: BLE001
+                    failed += 1
+                    done += 1
+                    meta = futures[fut]
+                    _log(f"[{done}/{total}] {meta.get('code')} 任务异常：{exc}")
+                    continue
+                _handle(result)
+
     order = {safe_str(m.get("code")): i for i, m in enumerate(metas)}
     results.sort(key=lambda r: order.get(r["l3_code"], 9999))
 
-    all_selected = [row for r in results for row in r["selected"]]
+    all_selected = [row for r in results for row in r.get("selected") or []]
     strict_total = sum(1 for row in all_selected if row["strict"])
     relative_total = len(all_selected) - strict_total
     industries_with = sum(1 for r in results if r.get("selected"))
@@ -650,11 +718,16 @@ def main(argv: list[str] | None = None) -> int:
         f"入选 {len(all_selected)} 只（严格蓝筹 {strict_total} · 相对龙头 {relative_total}）"
         f" · 失败行业 {failed} · 耗时 {elapsed:.1f}s"
     )
+    if source_counts:
+        src_text = " · ".join(f"{k} {v}" for k, v in sorted(source_counts.items()))
+        _log(f"数据来源统计：{src_text}")
     _log("=" * 78)
 
     if args.mine and not args.dry_run:
         try:
-            _write_mine_group(all_selected, safe_str(args.group) or DEFAULT_GROUP, bool(args.replace))
+            _write_mine_group(
+                all_selected, safe_str(args.group) or DEFAULT_GROUP, bool(args.replace)
+            )
         except Exception as exc:  # noqa: BLE001
             _log(f"ERROR: 写入分组失败：{exc}")
             return 1
@@ -666,7 +739,7 @@ def main(argv: list[str] | None = None) -> int:
             "criteria": {
                 "min_cap_yi": args.min_cap,
                 "min_roe_pct": args.min_roe,
-                "max_pe_ttm": args.max_pe,
+                "max_pe": args.max_pe,  # 静态 PE 与 PE_TTM 共用上限
                 "max_pb": args.max_pb,
                 "min_yield_pct": args.min_yield,
                 "top_per_industry": args.top_per_industry,
@@ -677,11 +750,22 @@ def main(argv: list[str] | None = None) -> int:
             "selected_total": len(all_selected),
             "failed_industries": failed,
             "elapsed_sec": round(elapsed, 1),
+            "sources": dict(source_counts),
         },
         "industries": [
             {
                 k: r[k]
-                for k in ("l3_code", "l3_name", "l1_name", "l2_name", "source", "total", "strict_count", "relative_count", "selected")
+                for k in (
+                    "l3_code",
+                    "l3_name",
+                    "l1_name",
+                    "l2_name",
+                    "source",
+                    "total",
+                    "strict_count",
+                    "relative_count",
+                    "selected",
+                )
             }
             for r in results
         ],
@@ -690,7 +774,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.out.strip() and not args.dry_run:
         out_path = Path(args.out.strip())
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        out_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         _log(f"结果已写入 {out_path}")
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))

@@ -86,8 +86,10 @@ def _read_json(path: Any) -> dict[str, Any] | None:
         return None
 
 
-def _read_cons_cache(l3_code: str) -> dict[str, Any] | None:
-    """未过期的行业成分股缓存；过期或损坏返回 None。"""
+def _read_cons_cache(
+    l3_code: str, *, allow_stale: bool = False
+) -> dict[str, Any] | None:
+    """行业成分股缓存。默认只返回未过期的；``allow_stale=True`` 时过期也可用。"""
     path = cons_cache_path(l3_code)
     if not path.exists():
         return None
@@ -95,7 +97,9 @@ def _read_cons_cache(l3_code: str) -> dict[str, Any] | None:
     if not data:
         return None
     age = time.time() - float(data.get("fetched_at") or 0)
-    return data if age < CONS_TTL else None
+    if age < CONS_TTL or allow_stale:
+        return data
+    return None
 
 
 def _write_cons_cache(l3_code: str, payload: dict[str, Any]) -> None:
@@ -291,15 +295,23 @@ class StockStore:
         code: str,
         force_refresh: bool = False,
         update_index: bool = True,
+        allow_stale: bool = False,
     ) -> dict[str, Any]:
-        """某个三级行业的成分股。全量扫描请传 update_index=False，避免每行业写一次盘。"""
+        """某个三级行业的成分股。全量扫描请传 update_index=False，避免每行业写一次盘。
+
+        ``allow_stale=True``：可用过期缓存；若磁盘也没有则不再联网（离线/脚本扫描）。
+        """
         code = code.strip()
         meta = self._get_l3_meta(code)
         if meta is None:
             raise KeyError(f"未找到三级行业: {code}")
 
-        payload = None if force_refresh else _read_cons_cache(code)
+        payload = None if force_refresh else _read_cons_cache(
+            code, allow_stale=allow_stale
+        )
         if payload is None:
+            if allow_stale:
+                raise FileNotFoundError(f"无成分股缓存（离线）: {code}")
             df = fetch_third_cons(code)
             stocks = [_normalize_row(row, meta) for _, row in df.iterrows()]
             payload = {
