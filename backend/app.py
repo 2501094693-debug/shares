@@ -48,6 +48,7 @@ from company.analysis.line.local_extrema.api import router as line_local_extrema
 from company.analysis.line.undulate.api import router as line_undulate_router
 from company.analysis.line.section.api import router as line_section_router
 from company.analysis.line.T.api import router as line_trader_router
+from company.analysis.line.MACD.api import router as line_macd_router
 from company.analysis.line.chip.api import router as line_chip_router
 from company.analysis.line.chip.v2_api import router as line_chip_v2_router
 from company.analysis.line.evaluate.api import router as line_evaluate_router
@@ -229,6 +230,7 @@ app.include_router(line_local_extrema_router)
 app.include_router(line_undulate_router)
 app.include_router(line_section_router)
 app.include_router(line_trader_router)
+app.include_router(line_macd_router)
 app.include_router(line_chip_router)
 app.include_router(line_chip_v2_router)
 app.include_router(line_evaluate_router)

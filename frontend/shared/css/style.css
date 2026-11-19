@@ -3896,6 +3896,22 @@ button.chart-legend-item.is-active {
   cursor: not-allowed;
 }
 
+.chart-select.chart-select--num {
+  min-width: 2.8rem;
+  width: 3.2rem;
+  padding-right: 6px;
+  text-align: center;
+  background: rgba(4, 8, 14, 0.58);
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.chart-select.chart-select--num::-webkit-outer-spin-button,
+.chart-select.chart-select--num::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 #chartModeSelect {
   min-width: 0;
   width: 3.5rem;

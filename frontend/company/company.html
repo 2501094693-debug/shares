@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=20261117-deal-chip-footer" />
+  <link rel="stylesheet" href="/css/style.css?v=20261120-lc-macd" />
   <link rel="stylesheet" href="/css/ai-page.css?v=20261022-risk-q4" />
 </head>
 <body class="app-shell company-page-root company-charts-on">
@@ -195,6 +195,7 @@
                           <option value="fundflow">资金流</option>
                           <option value="margin">融资融券</option>
                           <option value="compare" selected>股指对比</option>
+                          <option value="macd">MACD</option>
                         </select>
                       </label>
                       <label id="lcCompareIndexWrap" class="chart-select-wrap" aria-label="对比指数">
@@ -209,6 +210,23 @@
                           <option value="high">最大涨幅</option>
                           <option value="low">最大跌幅</option>
                         </select>
+                      </label>
+                      <label id="lcMacdPriceWrap" class="chart-select-wrap hidden" aria-label="MACD价格">
+                        <select id="lcMacdPriceSelect" class="chart-select">
+                          <option value="close" selected>收盘价</option>
+                          <option value="open">开盘价</option>
+                          <option value="high">最高价</option>
+                          <option value="low">最低价</option>
+                        </select>
+                      </label>
+                      <label id="lcMacdFastWrap" class="chart-select-wrap hidden" aria-label="快线时长" title="快线 EMA">
+                        <input id="lcMacdFastInput" class="chart-select chart-select--num" type="number" min="1" max="200" step="1" value="10" />
+                      </label>
+                      <label id="lcMacdSlowWrap" class="chart-select-wrap hidden" aria-label="慢线时长" title="慢线 EMA">
+                        <input id="lcMacdSlowInput" class="chart-select chart-select--num" type="number" min="2" max="400" step="1" value="22" />
+                      </label>
+                      <label id="lcMacdSignalWrap" class="chart-select-wrap hidden" aria-label="信号线时长" title="DEA 信号线">
+                        <input id="lcMacdSignalInput" class="chart-select chart-select--num" type="number" min="1" max="200" step="1" value="8" />
                       </label>
                       <label id="lcExtremaLayerWrap" class="chart-select-wrap" aria-label="极值层级">
                         <select id="lcExtremaLayerSelect" class="chart-select">
@@ -1556,6 +1574,6 @@
   <script src="/js/shared/company-analysis.js?v=20261027-deal-analysis"></script>
   <script src="/js/shared/line-compare.js?v=20261026-lc-trader-fix"></script>
   <script src="/js/company/ths-auth.js?v=ths-auth-20261117-deal-stats"></script>
-  <script src="/js/company.js?v=20261117-deal-chip-footer"></script>
+  <script src="/js/company.js?v=20261120-lc-macd"></script>
 </body>
 </html>

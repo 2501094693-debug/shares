@@ -16039,6 +16039,14 @@ const lcEls = {
   compareIndexSelect: document.getElementById("lcCompareIndexSelect"),
   compareFactorWrap: document.getElementById("lcCompareFactorWrap"),
   compareFactorSelect: document.getElementById("lcCompareFactorSelect"),
+  macdPriceWrap: document.getElementById("lcMacdPriceWrap"),
+  macdPriceSelect: document.getElementById("lcMacdPriceSelect"),
+  macdFastWrap: document.getElementById("lcMacdFastWrap"),
+  macdFastInput: document.getElementById("lcMacdFastInput"),
+  macdSlowWrap: document.getElementById("lcMacdSlowWrap"),
+  macdSlowInput: document.getElementById("lcMacdSlowInput"),
+  macdSignalWrap: document.getElementById("lcMacdSignalWrap"),
+  macdSignalInput: document.getElementById("lcMacdSignalInput"),
   extremaLayerWrap: document.getElementById("lcExtremaLayerWrap"),
   extremaLayerSelect: document.getElementById("lcExtremaLayerSelect"),
   peLegendWrap: document.getElementById("lcPeLegendWrap"),
@@ -16079,6 +16087,25 @@ const lcChartState = {
 
 let lcComboMetricState = "compare";
 
+const LC_MACD_PRICE_OPTS = new Set(["close", "open", "high", "low"]);
+const LC_MACD_DIF_COLOR = "#f0b429";
+const LC_MACD_DEA_COLOR = "#7aa2f7";
+
+const lcMacdState = {
+  fast: 10,
+  slow: 22,
+  signal: 8,
+  price: "close",
+  key: "",
+  beg: "",
+  end: "",
+  loading: false,
+  error: "",
+  items: [],
+  gen: 0,
+  abort: null,
+};
+
 const lcIndexState = {
   code: "",
   name: "",
@@ -16094,13 +16121,320 @@ const lcIndexState = {
 function syncLcComboLegend() {
   const card = lcEls.priceChart?.closest(".chart-card--kline");
   const metric = lcComboMetricState;
+  const macd = metric === "macd";
   if (card) card.classList.toggle("is-combo", true);
   if (lcEls.comboMetricWrap) lcEls.comboMetricWrap.classList.remove("hidden");
   if (lcEls.compareIndexWrap) lcEls.compareIndexWrap.classList.toggle("hidden", metric !== "compare");
   if (lcEls.compareFactorWrap) lcEls.compareFactorWrap.classList.toggle("hidden", metric !== "compare");
+  if (lcEls.macdPriceWrap) lcEls.macdPriceWrap.classList.toggle("hidden", !macd);
+  if (lcEls.macdFastWrap) lcEls.macdFastWrap.classList.toggle("hidden", !macd);
+  if (lcEls.macdSlowWrap) lcEls.macdSlowWrap.classList.toggle("hidden", !macd);
+  if (lcEls.macdSignalWrap) lcEls.macdSignalWrap.classList.toggle("hidden", !macd);
   if (lcEls.peLegendWrap) lcEls.peLegendWrap.classList.toggle("hidden", metric !== "pe");
   if (lcEls.fundflowLegendWrap) lcEls.fundflowLegendWrap.classList.toggle("hidden", metric !== "fundflow");
   if (lcEls.marginLegendWrap) lcEls.marginLegendWrap.classList.toggle("hidden", metric !== "margin");
+}
+
+function readLcMacdParamsFromUi() {
+  const priceRaw = String(lcEls.macdPriceSelect?.value || lcMacdState.price || "close")
+    .trim()
+    .toLowerCase();
+  const price = LC_MACD_PRICE_OPTS.has(priceRaw) ? priceRaw : "close";
+  const clampInt = (raw, fallback, min, max) => {
+    const n = Math.round(Number(raw));
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  };
+  let fast = clampInt(lcEls.macdFastInput?.value, lcMacdState.fast || 10, 1, 200);
+  let slow = clampInt(lcEls.macdSlowInput?.value, lcMacdState.slow || 22, 2, 400);
+  let signal = clampInt(lcEls.macdSignalInput?.value, lcMacdState.signal || 8, 1, 200);
+  if (fast >= slow) {
+    slow = Math.min(400, fast + 1);
+  }
+  return { fast, slow, signal, price };
+}
+
+function syncLcMacdParamsUi(params = lcMacdState) {
+  if (lcEls.macdPriceSelect && lcEls.macdPriceSelect.value !== params.price) {
+    lcEls.macdPriceSelect.value = params.price;
+  }
+  if (lcEls.macdFastInput && String(lcEls.macdFastInput.value) !== String(params.fast)) {
+    lcEls.macdFastInput.value = String(params.fast);
+  }
+  if (lcEls.macdSlowInput && String(lcEls.macdSlowInput.value) !== String(params.slow)) {
+    lcEls.macdSlowInput.value = String(params.slow);
+  }
+  if (lcEls.macdSignalInput && String(lcEls.macdSignalInput.value) !== String(params.signal)) {
+    lcEls.macdSignalInput.value = String(params.signal);
+  }
+}
+
+function lcMacdCacheKey(stock, beg, end, params) {
+  return [
+    stock || "",
+    beg || "",
+    end || "",
+    params.fast,
+    params.slow,
+    params.signal,
+    params.price,
+  ].join("|");
+}
+
+function abortLcMacd() {
+  if (lcMacdState.abort) {
+    try {
+      lcMacdState.abort.abort();
+    } catch {
+      /* ignore */
+    }
+    lcMacdState.abort = null;
+  }
+}
+
+async function refreshLcMacd({ force = false } = {}) {
+  if (lcComboMetricState !== "macd") return null;
+  const stock = String(code || "").trim();
+  const all = lcChartState.allItems || [];
+  if (!stock || !all.length) {
+    lcMacdState.items = [];
+    lcMacdState.key = "";
+    lcMacdState.error = "";
+    renderLcChart();
+    return null;
+  }
+  const beg = String(all[0]?.time || "").slice(0, 10);
+  const end = String(all[all.length - 1]?.time || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(beg) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+    lcMacdState.error = "日K日期无效";
+    renderLcChart();
+    return null;
+  }
+
+  const params = readLcMacdParamsFromUi();
+  lcMacdState.fast = params.fast;
+  lcMacdState.slow = params.slow;
+  lcMacdState.signal = params.signal;
+  lcMacdState.price = params.price;
+  syncLcMacdParamsUi(params);
+
+  const key = lcMacdCacheKey(stock, beg, end, params);
+  if (lcMacdState.loading && lcMacdState.key === key && !force) {
+    return lcMacdState.items || null;
+  }
+  if (!force && key === lcMacdState.key && (lcMacdState.items || []).length) {
+    renderLcChart();
+    return lcMacdState.items;
+  }
+
+  abortLcMacd();
+  const ac = typeof AbortController !== "undefined" ? new AbortController() : null;
+  lcMacdState.abort = ac;
+  const gen = ++lcMacdState.gen;
+  lcMacdState.key = key;
+  lcMacdState.beg = beg;
+  lcMacdState.end = end;
+  lcMacdState.loading = true;
+  lcMacdState.error = "";
+  renderLcChart();
+
+  try {
+    const qs = new URLSearchParams({
+      code: stock,
+      beg,
+      end,
+      fast: String(params.fast),
+      slow: String(params.slow),
+      signal: String(params.signal),
+      price: params.price,
+      adjust: "qfq",
+    });
+    const json = await api(`/api/stocks/line-macd?${qs.toString()}`, {
+      signal: ac?.signal,
+    });
+    if (gen !== lcMacdState.gen) return null;
+    const rows = Array.isArray(json?.data?.items) ? json.data.items : [];
+    lcMacdState.items = rows.map((row) => ({
+      ...row,
+      time: String(row?.date || row?.time || "").slice(0, 10),
+    }));
+    lcMacdState.error = "";
+    return lcMacdState.items;
+  } catch (err) {
+    if (err?.name === "AbortError") return null;
+    if (gen !== lcMacdState.gen) return null;
+    lcMacdState.items = [];
+    lcMacdState.key = "";
+    lcMacdState.error = err?.message || String(err);
+    return null;
+  } finally {
+    if (gen === lcMacdState.gen) {
+      lcMacdState.loading = false;
+      if (lcMacdState.abort === ac) lcMacdState.abort = null;
+      renderLcChart();
+      hideLcHoverCard();
+    }
+  }
+}
+
+function drawMacdPane(ctx, layout, items, colors, hoverIndex) {
+  const n = items.length;
+  if (!n) return false;
+  const { price } = layout;
+  const values = [];
+  for (const d of items) {
+    for (const k of ["dif", "dea", "macd"]) {
+      const v = Number(d?.[k]);
+      if (Number.isFinite(v)) values.push(v);
+    }
+  }
+  if (!values.length) return false;
+
+  const absVals = values.map((v) => Math.abs(v)).sort((a, b) => a - b);
+  const p95 = quantile(absVals, 0.95);
+  const peak = absVals.length ? absVals[absVals.length - 1] : 0;
+  const maxAbs = Math.max(p95 ?? peak, 1e-6);
+  const priceScale = buildPriceScale(-maxAbs, maxAbs, {
+    tickCount: priceScaleTickCount(price.h),
+    padRatio: 0.08,
+    center: 0,
+  });
+  const yAt = (p) =>
+    price.y + ((priceScale.max - p) / (priceScale.max - priceScale.min || 1)) * price.h;
+  const yZero = yAt(0);
+  const slot = price.w / n;
+  const gap = Math.min(3, slot * 0.22);
+  const barW = Math.max(1, slot - gap);
+  const xAt = (i) => price.x + (i + 0.5) * slot;
+
+  const yTicks = (priceScale.ticks || []).map(yAt);
+  const xTicks = [0, 0.5, 1].map((t) => price.x + price.w * t);
+  drawGrid(ctx, price, yTicks, xTicks, colors);
+
+  ctx.save();
+  ctx.strokeStyle = colors.muted || "#8494a8";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(price.x, yZero);
+  ctx.lineTo(price.x + price.w, yZero);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = colors.muted || "#8494a8";
+  ctx.font = '10px "JetBrains Mono", Consolas, monospace';
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (const frac of [-1, 0, 1]) {
+    const v = frac * maxAbs;
+    const label = Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2);
+    ctx.fillText(label, price.x - 6, yAt(v));
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(price.x, price.y, price.w, price.h);
+  ctx.clip();
+
+  for (let i = 0; i < n; i += 1) {
+    const macd = Number(items[i]?.macd);
+    if (!Number.isFinite(macd)) continue;
+    const active = hoverIndex == null || hoverIndex === i;
+    const x = price.x + i * slot + (slot - barW) / 2;
+    const y1 = yAt(Math.max(-maxAbs, Math.min(maxAbs, macd)));
+    const top = Math.min(yZero, y1);
+    const h = Math.max(1, Math.abs(y1 - yZero));
+    if (active && hoverIndex === i) {
+      ctx.fillStyle = "rgba(232, 238, 247, 0.06)";
+      ctx.fillRect(price.x + i * slot, price.y, slot, price.h);
+    }
+    const up = macd >= 0;
+    const base = up ? colors.up || "#e63946" : colors.down || "#2a9d8f";
+    ctx.fillStyle = active ? base : `${base}99`;
+    ctx.fillRect(x, top, barW, h);
+  }
+
+  const strokeLine = (key, color) => {
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < n; i += 1) {
+      const v = Number(items[i]?.[key]);
+      if (!Number.isFinite(v)) {
+        started = false;
+        continue;
+      }
+      const x = xAt(i);
+      const y = yAt(Math.max(-maxAbs, Math.min(maxAbs, v)));
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  };
+  strokeLine("dif", LC_MACD_DIF_COLOR);
+  strokeLine("dea", LC_MACD_DEA_COLOR);
+  ctx.restore();
+
+  if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < n) {
+    const x = xAt(hoverIndex);
+    ctx.save();
+    ctx.strokeStyle = colors.cross;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, price.y);
+    ctx.lineTo(x, price.y + price.h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    for (const [key, color] of [
+      ["dif", LC_MACD_DIF_COLOR],
+      ["dea", LC_MACD_DEA_COLOR],
+    ]) {
+      const v = Number(items[hoverIndex]?.[key]);
+      if (!Number.isFinite(v)) continue;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, yAt(Math.max(-maxAbs, Math.min(maxAbs, v))), 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  return true;
+}
+
+function fmtMacdNum(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "—";
+  const abs = Math.abs(v);
+  if (abs >= 100) return v.toFixed(1);
+  if (abs >= 10) return v.toFixed(2);
+  return v.toFixed(3);
+}
+
+function macdHoverRows(hit, row) {
+  if (!hit) return [];
+  const rows = [];
+  if (hit.dif != null && Number.isFinite(Number(hit.dif))) {
+    rows.push(
+      row("DIF", `<span style="color:${LC_MACD_DIF_COLOR}">${escapeHtml(fmtMacdNum(hit.dif))}</span>`)
+    );
+  }
+  if (hit.dea != null && Number.isFinite(Number(hit.dea))) {
+    rows.push(
+      row("DEA", `<span style="color:${LC_MACD_DEA_COLOR}">${escapeHtml(fmtMacdNum(hit.dea))}</span>`)
+    );
+  }
+  if (hit.macd != null && Number.isFinite(Number(hit.macd))) {
+    const n = Number(hit.macd);
+    const cls = n > 0 ? "change-up" : n < 0 ? "change-down" : "";
+    rows.push(row("MACD", `<span class="${cls}">${escapeHtml(fmtMacdNum(n))}</span>`));
+  }
+  return rows;
 }
 
 async function refreshLcComparePane({ force = false } = {}) {
@@ -16435,7 +16769,8 @@ function syncLcJettonGeometry() {
   if (dw < 32 || dh < 32) return false;
 
   const metric = lcComboMetricState;
-  const fundflow = metric === "fundflow" || metric === "margin" || metric === "compare";
+  const fundflow =
+    metric === "fundflow" || metric === "margin" || metric === "compare" || metric === "macd";
   const layout = chartLayout(dw, dh, { combo: true, fundflow });
   const price = layout?.price;
   const volume = layout?.volume;
@@ -18240,6 +18575,7 @@ function zoomLcChartViewport(anchorRatio, factor, { render = true } = {}) {
           syncLcChartScrollBar();
           refreshLcChartWindowStatus();
           if (lcComboMetricState === "compare") await refreshLcComparePane();
+          else if (lcComboMetricState === "macd") await refreshLcMacd();
           else renderLcChart();
         }
       });
@@ -18297,6 +18633,12 @@ async function loadOlderLcKline() {
       if (lcComboMetricState === "compare") {
         try {
           await refreshLcComparePane();
+        } catch {
+          renderLcChart();
+        }
+      } else if (lcComboMetricState === "macd") {
+        try {
+          await refreshLcMacd();
         } catch {
           renderLcChart();
         }
@@ -18475,7 +18817,8 @@ function syncLcIndexCanvasAspect() {
   if (dw < 32 || dh < 32 || iw < 32) return false;
 
   const metric = lcComboMetricState;
-  const fundflow = metric === "fundflow" || metric === "margin" || metric === "compare";
+  const fundflow =
+    metric === "fundflow" || metric === "margin" || metric === "compare" || metric === "macd";
   const dayLayout = chartLayout(dw, dh, { combo: true, fundflow });
   // 日K：画布顶≈表头底 → 成交量底；指数非 combo 时成交量底 = h - pad.bottom
   const daySpan = dayLayout.volume.y + dayLayout.volume.h;
@@ -18784,9 +19127,10 @@ function renderLcChart(hoverIndex = null) {
   const fundflow = metric === "fundflow";
   const margin = metric === "margin";
   const compare = metric === "compare";
+  const macd = metric === "macd";
   const layout = chartLayout(cssW, cssH, {
     combo: true,
-    fundflow: fundflow || margin || compare,
+    fundflow: fundflow || margin || compare || macd,
   });
   const maBundle = getKlineMaBundle(
     lcChartState.allItems,
@@ -18824,6 +19168,20 @@ function renderLcChart(hoverIndex = null) {
     price: layout.pe,
     volume: { x: layout.pe.x, y: layout.pe.y + layout.pe.h, w: layout.pe.w, h: 0 },
   };
+  if (macd) {
+    const macdItems = alignMetricsToKline(items, lcMacdState.items);
+    const painted = drawMacdPane(ctx, metricPane, macdItems, metricColors, hoverIndex);
+    if (!painted) {
+      drawPaneCenterLabel(
+        ctx,
+        layout.pe,
+        lcMacdState.loading ? "MACD 加载中…" : lcMacdState.error || "暂无 MACD",
+        metricColors
+      );
+    }
+    paintLcJetton();
+    return;
+  }
   if (compare) {
     const cmpItems = window.LineCompare?.paneAligned?.(items) || items.map((d) => ({ time: d.time }));
     const meta = window.LineCompare?.paneMeta?.() || {};
@@ -18953,6 +19311,9 @@ function fillLcKlineQuoteCard(absIndex) {
     const hit = window.LineCompare?.paneAtDate?.(d.time);
     if (hit) auxRows.push(...compareHoverRows(hit, row));
     auxRows.push(...undulateHoverRows(d.time, row));
+  } else if (lcComboMetricState === "macd") {
+    const hit = alignMetricsToKline([d], lcMacdState.items)[0];
+    if (hit) auxRows.push(...macdHoverRows(hit, row));
   } else {
     const peRow = alignMetricsToKline([d], peState.allItems)[0];
     if (peRow) auxRows.push(...peHoverRows(peRow, row));
@@ -19013,7 +19374,12 @@ function panLcChartByPixels(dx, canvasWidth) {
 }
 
 function applyLcComboMetric(metric) {
-  if (!["pe", "fundflow", "margin", "compare"].includes(metric) || metric === lcComboMetricState) return;
+  if (
+    !["pe", "fundflow", "margin", "compare", "macd"].includes(metric) ||
+    metric === lcComboMetricState
+  ) {
+    return;
+  }
   lcComboMetricState = metric;
   if (lcEls.comboMetricSelect && lcEls.comboMetricSelect.value !== metric) {
     lcEls.comboMetricSelect.value = metric;
@@ -19025,6 +19391,9 @@ function applyLcComboMetric(metric) {
     void loadMarginChart();
   } else if (metric === "compare") {
     void refreshLcComparePane();
+    return;
+  } else if (metric === "macd") {
+    void refreshLcMacd();
     return;
   }
   renderLcChart();
@@ -19081,6 +19450,8 @@ async function loadLcChart({ force = false } = {}) {
     void refreshLcJetton({ force: true });
     if (lcComboMetricState === "compare") {
       await refreshLcComparePane();
+    } else if (lcComboMetricState === "macd") {
+      await refreshLcMacd();
     } else {
       renderLcChart();
     }
@@ -19124,6 +19495,21 @@ function setupLcChart() {
     renderLcChart();
     hideLcHoverCard();
   });
+  const onLcMacdParamChange = () => {
+    if (lcComboMetricState !== "macd") return;
+    void refreshLcMacd({ force: true });
+  };
+  lcEls.macdPriceSelect?.addEventListener("change", onLcMacdParamChange);
+  for (const el of [lcEls.macdFastInput, lcEls.macdSlowInput, lcEls.macdSignalInput]) {
+    el?.addEventListener("change", onLcMacdParamChange);
+    el?.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        onLcMacdParamChange();
+      }
+    });
+  }
+  syncLcMacdParamsUi();
 
   const bindLegend = (wrap, kind) => {
     if (!wrap) return;
@@ -19276,6 +19662,7 @@ window.CompanyLcKline = {
       requestAnimationFrame(() => {
         renderLcChart();
         if (lcComboMetricState === "compare") void refreshLcComparePane();
+        if (lcComboMetricState === "macd") void refreshLcMacd();
         void refreshLcPvAxes();
         void refreshLcEvaluate();
         scheduleExtremaForVisible();
@@ -19288,6 +19675,9 @@ window.CompanyLcKline = {
     window.clearTimeout(lcUndulateTimer);
     window.clearTimeout(lcEvaluateTimer);
     window.clearTimeout(lcJettonTimer);
+    abortLcMacd();
+    lcMacdState.gen += 1;
+    lcMacdState.loading = false;
     lcJettonState.gen += 1;
     lcJettonAbortInflight();
     lcJettonState.loading = false;
