@@ -96,8 +96,8 @@ class ComputeMacdTests(unittest.TestCase):
         bars = [_bar(d, 10.0 + (i % 7) * 0.3) for i, d in enumerate(dates)]
         out = compute_macd(bars, dates[30], dates[-1])
         self.assertEqual(out["fast"], 10)
-        self.assertEqual(out["slow"], 22)
-        self.assertEqual(out["signal"], 8)
+        self.assertEqual(out["slow"], 20)
+        self.assertEqual(out["signal"], 7)
         row = out["latest"]
         if row["dif"] is not None and row["dea"] is not None:
             self.assertAlmostEqual(

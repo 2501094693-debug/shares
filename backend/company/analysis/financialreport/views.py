@@ -33,7 +33,6 @@ from company.analysis.financialreport.metrics import (
     competitiveness,
     core_profit,
     cost_structure,
-    grade,
     operating_cash,
     revenue,
     strategy_type,
@@ -992,166 +991,36 @@ def build_summary(
     *,
     coverage: str = "",
 ) -> dict[str, Any]:
-    """汇总方法：把八看收敛成七个评分方面 + 综合诊断（战略方向不计分）。"""
-    strategy = bundle.get("strategy") or {}
-    profit = bundle.get("profit") or {}
-    cash = bundle.get("cash") or {}
-    comp = bundle.get("competitiveness") or {}
-    cost = cost_structure(series[0]).get("rates", {}) if series else {}
+    """汇总方法：把八看收敛成七个评分方面 + 综合诊断（战略方向不计分）。
+
+    计分见 ``scoring.compute_scores``：连续 sigmoid，二~六看水平/变化各 50%，
+    七看逐项扣分，八看仅同比连续分。
+    """
+    from company.analysis.financialreport.scoring import ASPECT_WEIGHTS, compute_scores
 
     risk_items, risk_count = _risk_items(series) if series else ([], 0)
-    hit_detail = "；".join(f"{item['name']}：{item['value']}" for item in risk_items if item["triggered"])
-
-    expense_ratio = sum(
-        (cost.get(k) or 0) for k in ("销售费用率", "管理费用率", "研发费用率", "财务费用率")
+    hit_detail = "；".join(
+        f"{item['name']}：{item['value']}" for item in risk_items if item["triggered"]
     )
-    expense_ratio = expense_ratio if series and revenue(series[0]) else None
 
-    def _trend(curr: float | None, prev: float | None, higher_is_better: bool = True) -> str:
-        """与上一期同口径对比：变好 / 变差 / 持平 / —（缺数据）。"""
-        if curr is None or prev is None:
-            return "—"
-        if curr == prev:
-            return "持平"
-        better = curr > prev if higher_is_better else curr < prev
-        return "变好" if better else "变差"
-
-    prev_row = series[1] if len(series) > 1 else None
-    prev_comp = competitiveness(prev_row) if prev_row else {}
-    prev_profit = core_profit(prev_row) if prev_row else {}
-    prev_cash = (
-        cash_quality(prev_row, series[2] if len(series) > 2 else None) if prev_row else {}
-    )
-    prev_cost = cost_structure(prev_row).get("rates", {}) if prev_row else {}
-    prev_expense = (
-        sum((prev_cost.get(k) or 0) for k in ("销售费用率", "管理费用率", "研发费用率", "财务费用率"))
-        if prev_row and revenue(prev_row)
-        else None
-    )
-    core_profit_val = profit.get("core_profit")
-    prev_core_profit_val = prev_profit.get("core_profit")
-    prev_roe = prev_profit.get("roe")
-    prev_ocf_core = prev_cash.get("ocf_core_ratio")
-    prev_two_ends = prev_comp.get("two_ends_index")
-
-    latest = series[0] if series else {}
-    prev = series[1] if len(series) > 1 else None
-    core_vals = [core_profit(r).get("core_profit") for r in series]
-    core_vals = [v for v in core_vals if v is not None]
-    ocf_vals = [operating_cash(r) for r in series]
-    ocf_vals = [v for v in ocf_vals if v is not None]
-    rev_vals = [revenue(r) for r in series]
-    rev_vals = [v for v in rev_vals if v is not None]
-
-    def _multi_trend(vals: list) -> str:
-        """最近几期报告来看：增长 / 减少 / 不变 / —（不足两期有效数据）。"""
-        if len(vals) < 2:
-            return "—"
-        if vals[0] > vals[-1]:
-            return "增长"
-        if vals[0] < vals[-1]:
-            return "减少"
-        return "不变"
-
-    core_trend = _multi_trend(core_vals)
-    ocf_trend = _multi_trend(ocf_vals)
-    rev_trend = _multi_trend(rev_vals)
-    rev_yoy = yoy(revenue(latest), revenue(prev) if prev else None)
-    core_yoy = yoy(profit.get("core_profit"), core_profit(prev).get("core_profit") if prev else None)
-    ocf_yoy = yoy(operating_cash(latest), operating_cash(prev) if prev else None)
-    op_yoy = yoy(
-        classify_assets(latest).get("operating_assets"),
-        classify_assets(prev).get("operating_assets") if prev else None,
-    )
-    inv_yoy = yoy(
-        classify_assets(latest).get("investing_assets"),
-        classify_assets(prev).get("investing_assets") if prev else None,
-    )
-    core_yoy = yoy(profit.get("core_profit"), core_profit(prev).get("core_profit") if prev else None)
-    ocf_yoy = yoy(operating_cash(latest), operating_cash(prev) if prev else None)
-    if op_yoy is None or inv_yoy is None:
-        direction = "—"
-    else:
-        direction = "扩张" if op_yoy > 0 and inv_yoy > 0 else "收缩"
-    if op_yoy is None or core_yoy is None or ocf_yoy is None:
-        coherence, outlook_grade = "—", "—"
-    elif op_yoy > 0 and core_yoy > 0 and ocf_yoy > 0:
-        coherence, outlook_grade = "自洽", "优"
-    else:
-        coherence, outlook_grade = "待观察", "中"
-    if direction == "—" and coherence == "—" and core_trend == "—" and ocf_trend == "—" and rev_trend == "—":
-        outlook_evidence = "—"
-    else:
-        outlook_parts = [
-            f"营业收入：近{len(rev_vals)}期{rev_trend}（最新同比 {fmt_pct(rev_yoy)}）",
-            f"核心利润：近{len(core_vals)}期{core_trend}（最新同比 {fmt_pct(core_yoy)}）",
-            f"经营现金流：近{len(ocf_vals)}期{ocf_trend}（最新同比 {fmt_pct(ocf_yoy)}）",
-        ]
-        if direction != "—":
-            outlook_parts.append(f"扩张/收缩：{direction}")
-        if coherence != "—":
-            outlook_parts.append(f"是否自洽：{coherence}")
-        outlook_evidence = "；".join(outlook_parts)
+    scored = compute_scores(series, bundle, risk_count=risk_count)
+    aspects = scored["aspects"]
+    # 七看证据用触发明细覆盖
+    for asp in aspects:
+        if asp.get("key") == "risk":
+            prefix = f"触发 {risk_count} 项" if risk_count else "无触发"
+            detail = hit_detail if hit_detail else "8 项均未触发"
+            asp["evidence"] = f"{prefix}：{detail}" if risk_count else detail
+            break
 
     rows: list[list[str]] = [
-        [
-            "战略方向（一看）",
-            strategy.get("strategy_type", "—"),
-            f"经营{fmt_pct(strategy.get('operating_asset_ratio'))} / 投资{fmt_pct(strategy.get('investing_asset_ratio'))}",
-        ],
-        [
-            "竞争力（二看）",
-            grade(comp.get("two_ends_index"), 1.2, 0.8),
-            f"两头吃指数 {fmt_x(comp.get('two_ends_index'))}（上期 {fmt_x(prev_two_ends)}，{_trend(comp.get('two_ends_index'), prev_two_ends)})",
-        ],
-        [
-            "效益质量（三看）",
-            f"{fmt_yi(core_profit_val)}" if core_profit_val is not None else "—",
-            f"核心利润 {fmt_yi(core_profit_val)}（上期 {fmt_yi(prev_core_profit_val)}，{_trend(core_profit_val, prev_core_profit_val)}）",
-        ],
-        [
-            "价值创造（四看）",
-            grade(profit.get("roe"), 15, 8),
-            f"ROE {fmt_pct(profit.get('roe'))}（上期 {fmt_pct(prev_roe)}，{_trend(profit.get('roe'), prev_roe)}）",
-        ],
-        [
-            "成本控制（五看）",
-            grade(expense_ratio, 15, 25, higher_is_better=False),
-            f"期间费用率合计 {fmt_pct(expense_ratio)}（上期 {fmt_pct(prev_expense)}，{_trend(expense_ratio, prev_expense, higher_is_better=False)}）",
-        ],
-        [
-            "现金流质量（六看）",
-            grade(cash.get("ocf_core_ratio"), 100, 80),
-            f"OCF/核心利润 {fmt_pct(cash.get('ocf_core_ratio'))}（上期 {fmt_pct(prev_ocf_core)}，{_trend(cash.get('ocf_core_ratio'), prev_ocf_core)}）",
-        ],
-        [
-            "风险状况（七看）",
-            f"{risk_count}项" if risk_count else "无",
-            hit_detail if hit_detail else "8 项均未触发",
-        ],
-        [
-            "前景（八看）",
-            outlook_grade,
-            outlook_evidence,
-        ],
+        [asp["name"], asp.get("evaluation") or "—", asp.get("evidence") or "—"]
+        for asp in aspects
     ]
-
     results = md_table(["方面", "评价", "关键证据"], rows)
+    score_total = scored.get("score_total")
+    score_weights = scored.get("score_weights") or list(ASPECT_WEIGHTS)
 
-    def _grade_score(g: str) -> int:
-        return {"优": 90, "中": 65, "差": 30}.get(g, 60)
-
-    score_weights = [0, 15, 15, 20, 10, 15, 15, 10]
-    aspect_scores = [
-        _grade_score(rows[1][1]),
-        {"变好": 90, "持平": 70, "变差": 30}.get(_trend(core_profit_val, prev_core_profit_val), 60),
-        _grade_score(rows[3][1]),
-        _grade_score(rows[4][1]),
-        _grade_score(rows[5][1]),
-        100 if risk_count == 0 else (70 if risk_count <= 2 else 30),
-        _grade_score(outlook_grade),
-    ]
-    score_total = round(sum(s * w for s, w in zip(aspect_scores, score_weights[1:])) / 100)
     conc: list[str] = []
     raw = ""
     formulas = [
@@ -1159,55 +1028,59 @@ def build_summary(
             "name": "战略方向（一看）",
             "formula": "投资占比>35%且投资增速>经营增速→投资主导；经营占比>65%→经营主导；否则混合",
             "meaning": "看公司的钱主要投在经营还是投资上，判断战略重心。",
-            "reading": "无优劣之分，关键是战略与能力匹不匹配；投资主导型要盯投资回报，经营主导型要盯经营效率。",
+            "reading": "无优劣之分，不参与综合评分。",
         },
         {
             "name": "竞争力（二看）",
-            "formula": "两头吃指数 ≥1.2 优，≥0.8 中，否则差",
-            "meaning": "公司在产业链上的话语权，能否占用上下游资金。",
-            "reading": "优说明两头吃、地位强；差说明被上下游占用资金，竞争力弱。",
+            "formula": "两头吃指数、毛利率各算「当前水平分」和「较上期变化分」，再对半合成；两项等权平均",
+            "meaning": "产业链话语权与产品定价能力。",
+            "reading": "两头吃指数约 1.0、毛利率约 25% 时水平分接近中位；分数越高竞争力越强。",
         },
         {
             "name": "效益质量（三看）",
-            "formula": "核心利润 = 营业收入 − 营业成本 − 税金及附加 − 销售/管理/研发/财务费用，以金额看趋势",
-            "meaning": "主业自身赚了多少钱，只看核心利润金额，不看比率。",
-            "reading": "金额越大越好；与上期比变好还是变差才是关键，持续下滑说明主业赚钱能力在减弱。",
+            "formula": "核心利润率（水平与变化对半）与核心利润金额变化分（本期−上期，亿元）等权平均",
+            "meaning": "主业赚钱能力：比率看水平，金额只看变化。",
+            "reading": "核心利润率约 10% 时水平分接近中位；金额不打水平分，只看增减。",
         },
         {
             "name": "价值创造（四看）",
-            "formula": "ROE ≥15% 优，≥8% 中，否则差",
-            "meaning": "股东投入的回报率，是价值创造的核心标尺。",
-            "reading": "优说明赚钱能力强；长期低于 8% 说明股东回报偏弱。",
+            "formula": "ROE 的当前水平分与较上期变化分对半合成",
+            "meaning": "股东投入的回报率。",
+            "reading": "ROE 约 10% 时水平分接近中位；与上期持平则变化分约 50。",
         },
         {
             "name": "成本控制（五看）",
-            "formula": "期间费用率合计（销售+管理+研发+财务）≤15% 优，≤25% 中，否则差",
-            "meaning": "每 1 元收入要花多少期间费用，衡量费用管控水平。",
-            "reading": "越低越好；偏高说明费用侵蚀利润，需看是哪一项费用在涨。",
+            "formula": "营业成本率与销售/管理/研发/财务费用率（越低越好）分别打分；四项费用先等权，再与成本率等权",
+            "meaning": "成本与期间费用对收入的侵蚀程度。",
+            "reading": "越低越好；每项内部水平与变化对半。",
         },
         {
-            "name": "现金流质量（六看）",
-            "formula": "OCF/核心利润 ≥100% 优，≥80% 中，否则差",
-            "meaning": "主业利润有多少变成真金白银收回来。",
-            "reading": "优说明利润足额变现；差说明利润是账面富贵。",
+            "name": "财务状况质量（六看）",
+            "formula": "金融负债占比（越低越好）、经营负债占比（越高越好）、自由现金流/营收、经营现金流/核心利润 四项等权",
+            "meaning": "负债结构与利润含金量、自由现金流。",
+            "reading": "核心利润为负时不算比率：现金仍回笼给 60 分，现金也差给 25 分。",
         },
         {
             "name": "风险状况（七看）",
-            "formula": "8 项硬阈值逐项判定，触发即列出",
-            "meaning": "商誉、存贷双高、负债率等 8 项硬阈值，触发哪项就列哪项，不做优中差评级。",
+            "formula": "满分 100，8 项风险每触发 1 项扣 12.5 分，最低 0 分",
+            "meaning": "商誉、存贷双高、负债率等风险触达情况。",
             "reading": "无触发最好；触发的每一项都要去七看核实具体数值和成因。",
         },
         {
             "name": "前景（八看）",
-            "formula": "经营性资产、核心利润、经营现金流同比同向为正→自洽→优，否则中",
-            "meaning": "投入、利润、现金三者是否同步向好，判断增长能不能持续。",
-            "reading": "优说明扩张且自洽；中说明增长质量待观察，要看是哪一节掉了队。",
+            "formula": "营收、核心利润、经营现金流三条同比分别连续打分后等权平均；上期为负或零时改用扭亏/减亏等固定分",
+            "meaning": "增长势头：三条同比是否向好。",
+            "reading": "同比持平约 50 分；扭亏 75、减亏 65、扩亏 25、由零转亏 20。",
         },
         {
             "name": "综合评分",
-            "formula": "竞争力15 + 效益质量15 + 价值创造20 + 成本控制10 + 现金流质量15 + 风险状况15 + 前景10 = 100（战略方向不计分）",
-            "meaning": "七个方面按权重加权平均，满分 100 分。优90分、中65分、差30分、缺数据60分；效益质量按核心利润趋势变好90/持平70/变差30分；风险无触发100分、1~2项70分、3项及以上30分；战略方向本身无优劣，不参与评分。",
-            "reading": "分数越高基本面越好，重点看丢分项是哪几个方面，再去对应的一看里找原因。分数只反映财报基本面，不构成买卖建议。",
+            "formula": (
+                "竞争力 15%、效益质量 15%、价值创造 20%、成本控制 10%、"
+                "财务状况质量 15%、风险状况 15%、前景 10%；战略方向不计分。"
+                "某方面缺数据则去掉该项，其余权重按比例放大；多数指标为当前水平与较上期变化对半。"
+            ),
+            "meaning": "七个方面加权得到 0～100 分；连续打分，不再用优/中/差分档。",
+            "reading": "分数越高基本面越好，重点看丢分方面；只反映财报基本面，不构成买卖建议。",
         },
     ]
     return {
@@ -1220,8 +1093,11 @@ def build_summary(
         "table": results,
         "series": {"periods": [], "metrics": []},
         "dimensions": rows,
+        "aspects": aspects,
         "score_total": score_total,
         "score_weights": score_weights,
+        "score_weights_effective": scored.get("score_weights_effective"),
+        "coverage": coverage,
         "conclusions": conc,
         "text": _step(raw, formulas, results, conc),
     }

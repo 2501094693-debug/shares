@@ -23,7 +23,7 @@ from company.news.financialreport.fetcher import get_financial_report
 from company.analysis.financialreport._common import normalize_report_type
 from company.analysis.financialreport.engine import analyze_rows
 
-from .dcf import dcf_valuate, DcfAssumptions, DcfResult
+from .dcf import REVENUE_GROWTH_YEARS, dcf_valuate, DcfAssumptions, DcfResult
 from .relative import relative_valuate, RelativeResult
 from .report import build_valuation_report
 
@@ -211,10 +211,31 @@ def run_valuation(
         try:
             profile_pack = _get_stock_profile(code, name=name)
             stock = profile_pack.get("stock") or {}
-            industry_meta = profile_pack.get("industry") or {}
+            industry_meta = dict(profile_pack.get("industry") or {})
         except Exception as exc:  # noqa: BLE001
             errors.append(f"盘口画像获取失败：{exc}")
     # 若 _get_stock_profile 为 None，errors 已在导入时记录，stock/industry 保持空
+
+    # 统一申万三级行业字段：画像侧多为 name/code，前端与同业逻辑用 l3_name/l3_code
+    l3_code = (
+        str(industry_meta.get("l3_code") or industry_meta.get("code") or stock.get("l3_code") or "").strip()
+    )
+    l3_name = (
+        str(
+            industry_meta.get("l3_name")
+            or industry_meta.get("name")
+            or stock.get("l3_name")
+            or ""
+        ).strip()
+    )
+    if l3_code or l3_name:
+        industry_meta = {
+            **industry_meta,
+            "l3_code": l3_code or industry_meta.get("l3_code") or "",
+            "l3_name": l3_name or industry_meta.get("l3_name") or "",
+            "code": l3_code or industry_meta.get("code") or "",
+            "name": l3_name or industry_meta.get("name") or "",
+        }
 
     # ---------- 3. 历史估值序列 ----------
     pe_hist_pack: dict[str, Any] = {}
@@ -226,7 +247,6 @@ def run_valuation(
 
     # ---------- 4. 同业倍数 ----------
     peer_multiples: list[dict[str, Any]] = []
-    l3_code = (industry_meta or {}).get("code") or stock.get("l3_code") or ""
     if l3_code and _compare_peers:
         try:
             peers_pack = _compare_peers(
@@ -255,11 +275,14 @@ def run_valuation(
         first_stage_growth=first_stage_growth,
         safety_discount=safety_discount,
     )
+    # 增速推导与报告第二步共用同一窗口，避免「表上 8 年、实算全历史」对不上
+    annual_for_growth = annual[:REVENUE_GROWTH_YEARS]
     dcf_result = dcf_valuate(
         metrics,
         profile=stock,
         assumptions=assumptions,
-        annual_series=annual,
+        annual_series=annual_for_growth,
+        industry=industry_meta,
     )
 
     # ---------- 6. 相对估值 ----------
@@ -289,7 +312,7 @@ def run_valuation(
         relative=relative_result,
         metrics=metrics,
         profile=stock,
-        annual_series=annual,
+        annual_series=annual_for_growth,
         margin_of_safety_pct=mos_pct,
         verdict=verdict,
         notes=notes,

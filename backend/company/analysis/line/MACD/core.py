@@ -8,7 +8,7 @@
     DEA      = EMA(DIF, signal)             # 慢线 / 信号线
     MACD     = 2 * (DIF - DEA)              # 柱线
 
-默认参数：fast=10, slow=22, signal=8；价格序列默认收盘价。
+默认参数：fast=10, slow=20, signal=7；价格序列默认收盘价。
 纯函数，无网络依赖，便于单测。
 """
 
@@ -19,8 +19,8 @@ from typing import Any
 from core.fmt import to_float
 
 DEFAULT_FAST = 10
-DEFAULT_SLOW = 22
-DEFAULT_SIGNAL = 8
+DEFAULT_SLOW = 20
+DEFAULT_SIGNAL = 7
 
 PRICE_OPTIONS: tuple[str, ...] = ("close", "open", "high", "low")
 PRICE_LABELS: dict[str, str] = {

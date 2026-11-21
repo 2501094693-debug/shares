@@ -229,17 +229,8 @@ window.AI_MODES = {
       const name = result.name || result.code || "";
       return `${name} 估值分析`.trim();
     },
-    resultMeta(result) {
-      const dcf = result.dcf || {};
-      const rel = result.relative || {};
-      const parts = [];
-      // Number(null) === 0，不能只靠 isFinite；缺价/缺内在价值时 mos 常为 null
-      const mos = result.margin_of_safety_pct ?? dcf.margin_of_safety_pct;
-      if (mos != null && mos !== "" && Number.isFinite(Number(mos))) {
-        parts.push(`安全边际 ${Number(mos).toFixed(0)}%`);
-      }
-      if (rel.overall) parts.push(`相对估值 ${rel.overall}`);
-      return parts.length ? parts.join(" · ") : "";
+    resultMeta() {
+      return "";
     },
     runningTitle(company) {
       return `${company} · 估值分析`;
@@ -296,7 +287,7 @@ window.AI_MODES = {
 
   sentiment: {
     id: "sentiment",
-    label: "情绪分析",
+    label: "炒作分析",
     pageTitle: "ORBIT · 智能分析",
     heading: "发声散户情绪",
     subtitle: "东财股吧 / 同花顺讨论 / 雪球 · 按用户去重 · 看多看空与买卖观望",
@@ -306,7 +297,7 @@ window.AI_MODES = {
     reportMetaDefault: "选择历史报告或生成新的",
     historyMeta: "历史报告",
     emptyReports: "暂无历史报告",
-    resumeFail: "恢复情绪分析任务失败",
+    resumeFail: "恢复炒作分析任务失败",
     apiRoot: "/api/ai/retail-sentiment",
     jobStoreKey: "orbit.retailSentiment.activeJob",
     reportNameRe: /发声散户情绪/,
@@ -397,6 +388,7 @@ window.AI_MODE_ALIASES = {
   sentiment: "sentiment",
   retail: "sentiment",
   "retail-sentiment": "sentiment",
+  "炒作分析": "sentiment",
   "情绪分析": "sentiment",
   "散户情绪": "sentiment",
 };

@@ -23,9 +23,9 @@ def stocks_line_macd(
     beg: str = Query(..., description="起始日期 YYYY-MM-DD 或 YYYYMMDD"),
     end: str = Query("", description="结束日期，默认今天"),
     fast: int = Query(DEFAULT_FAST, ge=1, le=200, description="快线 EMA 时长，默认 10"),
-    slow: int = Query(DEFAULT_SLOW, ge=2, le=400, description="慢线 EMA 时长，默认 22"),
+    slow: int = Query(DEFAULT_SLOW, ge=2, le=400, description="慢线 EMA 时长，默认 20"),
     signal: int = Query(
-        DEFAULT_SIGNAL, ge=1, le=200, description="DEA 信号线时长，默认 8"
+        DEFAULT_SIGNAL, ge=1, le=200, description="DEA 信号线时长，默认 7"
     ),
     price: str = Query(
         "close",

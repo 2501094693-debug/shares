@@ -47,7 +47,7 @@ def stocks_valuation(
         None, ge=1, le=10, description="DCF 显性预测期年数，缺省 5"
     ),
     first_stage_growth: float | None = Query(
-        None, ge=-1.0, le=1.0, description="显性期年复合增长率，缺省由营收 CAGR 推导"
+        None, ge=-1.0, le=1.0, description="显性期年增长率，缺省由各期营收 YoY 加权平均（近端权重大）推导"
     ),
     safety_discount: float = Query(
         0.0, ge=0.0, le=1.0, description="对内在价值的额外安全发令，如 0.1 表示打九成"

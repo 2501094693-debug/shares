@@ -18,6 +18,49 @@ from core.fmt import to_float
 _YI = 1e8
 _WAN = 1e4
 
+# 显性期增速：计算与报告展示共用的最近年报期数（最新在前）
+REVENUE_GROWTH_YEARS = 8
+
+# 银行 / 券商 / 期货 / 保险等金融中介：OCF 与货币资金含客户资金，不能套工业 FCFF+净债务
+_FINANCIAL_L1_NAMES = frozenset({"银行", "非银金融"})
+_FINANCIAL_NAME_KEYWORDS = (
+    "银行",
+    "证券",
+    "期货",
+    "保险",
+    "信托",
+    "租赁",
+    "多元金融",
+)
+VALUATION_MODE_INDUSTRIAL = "industrial_fcff"
+VALUATION_MODE_FINANCIAL = "financial_earnings"
+
+
+def is_financial_intermediary(
+    industry: dict[str, Any] | None = None,
+    profile: dict[str, Any] | None = None,
+) -> bool:
+    """判断是否为银行/券商/期货/保险等金融中介（DCF 需改用业主盈余口径）。"""
+    blobs: list[str] = []
+    for src in (industry or {}, profile or {}):
+        for key in (
+            "l1_name",
+            "l2_name",
+            "l3_name",
+            "name",
+            "industry_name",
+            "sw_l1_name",
+            "sw_l2_name",
+            "sw_l3_name",
+        ):
+            text = str(src.get(key) or "").strip()
+            if text:
+                blobs.append(text)
+    joined = " ".join(blobs)
+    if any(name and name in _FINANCIAL_L1_NAMES for name in blobs):
+        return True
+    return any(kw in joined for kw in _FINANCIAL_NAME_KEYWORDS)
+
 
 def _to_raw(value: Any) -> float | None:
     """把东财展示字符串（如 "12.34亿"/"1234万"）或原始数字还原为原始单位数值。
@@ -59,7 +102,7 @@ class DcfAssumptions:
     projection_years: int = 5          # 显性预测期年数
     wacc: float = 0.09                 # 折现率（加权平均资本成本）
     terminal_growth: float = 0.025     # 永续增长率（必须 < wacc）
-    first_stage_growth: float | None = None  # 显性期年复合增长率；None 时由营收 CAGR 推导
+    first_stage_growth: float | None = None  # 显性期年增长率；None 时由各期营收 YoY 加权平均推导
     safety_discount: float = 0.0       # 额外安全发令（0~1，对内在价值打折）
 
     def __post_init__(self) -> None:
@@ -98,6 +141,7 @@ class DcfResult:
     assumptions_used: dict[str, Any] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     revenue_cagr_used: float | None = None
+    valuation_mode: str = VALUATION_MODE_INDUSTRIAL
 
 
 def _latest_series_value(series: list[dict[str, Any]], *keys: str) -> float | None:
@@ -111,9 +155,15 @@ def _latest_series_value(series: list[dict[str, Any]], *keys: str) -> float | No
 
 
 def _revenue_cagr(annual_series: list[dict[str, Any]]) -> float | None:
-    """按可用的年度营收算复合增长率（首尾两期）。返回小数，失败返回 None。"""
+    """按各期营收同比增速的加权平均估计显性期增长率（近端权重大）。
+
+    ``annual_series`` 通常按时间降序（最新在前）；只取最近
+    ``REVENUE_GROWTH_YEARS`` 期，与报告第二步展示窗口一致。对相邻两期算 YoY：
+    ``g_i = 较新年 ÷ 较旧年 − 1``；权重线性：最近一期权重 = n，最早一期 = 1。
+    返回小数；样本不足时返回 None。
+    """
     revenues: list[float] = []
-    for row in annual_series or []:
+    for row in (annual_series or [])[:REVENUE_GROWTH_YEARS]:
         rev = to_float(
             row.get("TOTALOPERATEREVE")
             or row.get("TOTAL_OPERATE_INCOME")
@@ -123,18 +173,92 @@ def _revenue_cagr(annual_series: list[dict[str, Any]]) -> float | None:
             revenues.append(rev)
     if len(revenues) < 2:
         return None
-    # annual_series 通常按时间降序，最新在前；取首末
-    latest, oldest = revenues[0], revenues[-1]
-    periods = len(revenues) - 1
-    if periods <= 0 or oldest <= 0:
+
+    # revenues[0]=最新 … revenues[-1]=最早；growths[0]=最近一期 YoY
+    growths: list[float] = []
+    for i in range(len(revenues) - 1):
+        older = revenues[i + 1]
+        newer = revenues[i]
+        if older <= 0:
+            continue
+        growths.append(newer / older - 1.0)
+    if not growths:
         return None
-    cagr = (latest / oldest) ** (1.0 / periods) - 1.0
-    return cagr
+
+    n = len(growths)
+    weighted_sum = 0.0
+    weight_total = 0.0
+    for i, g in enumerate(growths):
+        w = float(n - i)  # i=0（最近）权重 n；i=n-1（最早）权重 1
+        weighted_sum += g * w
+        weight_total += w
+    return weighted_sum / weight_total
 
 
-def _base_fcf(metrics: dict[str, Any]) -> tuple[float | None, list[str]]:
-    """确定基期自由现金流。优先 metrics.cash.fcf（已含 FCFF 量级校验），再退到净利润代理。"""
+def _earnings_cagr(annual_series: list[dict[str, Any]]) -> float | None:
+    """按各期归母净利润同比增速的加权平均估计显性期增长率（近端权重大）。
+
+    金融中介营收常因口径调整（如风险管理业务总额法→净额法）剧烈跳动，
+    净利润更能代表业主盈余增速。窗口与 ``REVENUE_GROWTH_YEARS`` 一致。
+    """
+    earnings: list[float] = []
+    for row in (annual_series or [])[:REVENUE_GROWTH_YEARS]:
+        net = to_float(
+            row.get("PARENTNETPROFIT")
+            or row.get("PARENT_NETPROFIT")
+            or row.get("NETPROFIT")
+            or row.get("NET_PROFIT")
+        )
+        # 只纳入正利润年份，避免亏损期把增速打成无意义的极端值
+        if net is not None and net > 0:
+            earnings.append(net)
+    if len(earnings) < 2:
+        return None
+
+    growths: list[float] = []
+    for i in range(len(earnings) - 1):
+        older = earnings[i + 1]
+        newer = earnings[i]
+        if older <= 0:
+            continue
+        growths.append(newer / older - 1.0)
+    if not growths:
+        return None
+
+    n = len(growths)
+    weighted_sum = 0.0
+    weight_total = 0.0
+    for i, g in enumerate(growths):
+        w = float(n - i)
+        weighted_sum += g * w
+        weight_total += w
+    return weighted_sum / weight_total
+
+
+def _base_fcf(
+    metrics: dict[str, Any],
+    *,
+    financial: bool = False,
+) -> tuple[float | None, list[str]]:
+    """确定基期自由现金流。
+
+    工业公司：优先 metrics.cash.fcf（已含 FCFF 量级校验），再退到净利润代理。
+    金融中介：经营现金流含客户保证金进出，改用归母净利润作业主盈余代理。
+    """
     notes: list[str] = []
+    profit = (metrics or {}).get("profit") or {}
+    net = profit.get("net_profit")
+
+    if financial:
+        if net is not None and net > 0:
+            notes.append(
+                "金融中介（银行/券商/期货/保险）口径：经营现金流含客户资金，"
+                "基期 FCF 改用归母净利润作业主盈余代理"
+            )
+            return net, notes
+        notes.append("金融中介口径下归母净利润不可用或≤0，无法确定基期业主盈余")
+        return None, notes
+
     cash = (metrics or {}).get("cash") or {}
     fcf = cash.get("fcf")
     source = cash.get("fcf_source")
@@ -155,17 +279,30 @@ def _base_fcf(metrics: dict[str, Any]) -> tuple[float | None, list[str]]:
         if derived > 0:
             notes.append("FCF 未直接披露，按 经营现金流 - 资本开支 估算")
             return derived, notes
-    profit = (metrics or {}).get("profit") or {}
-    net = profit.get("net_profit")
     if net is not None and net > 0:
         notes.append("经营现金流亦不可用，以净利润作极保守的 FCF 代理（高估可能）")
         return net, notes
     return None, notes
 
 
-def _net_debt(metrics: dict[str, Any]) -> tuple[float | None, list[str]]:
-    """净债务 = 有息债务 - 货币资金。失败返回 None。"""
+def _net_debt(
+    metrics: dict[str, Any],
+    *,
+    financial: bool = False,
+) -> tuple[float | None, list[str]]:
+    """净债务 = 有息债务 - 货币资金。
+
+    金融中介：货币资金大量为客户保证金/存款，不能抵作公司净现金；
+    且业主盈余口径已直接对应股权价值，净债务按 0 处理。
+    """
     notes: list[str] = []
+    if financial:
+        notes.append(
+            "金融中介口径：货币资金含客户资金，不从企业价值中加减净债务"
+            "（业主盈余折现已直接对应股权价值，净债务按 0）"
+        )
+        return 0.0, notes
+
     liab = (metrics or {}).get("liabilities") or {}
     assets = (metrics or {}).get("assets") or {}
     debt = liab.get("financial_liabilities")
@@ -230,6 +367,7 @@ def dcf_valuate(
     profile: dict[str, Any] | None = None,
     assumptions: DcfAssumptions | None = None,
     annual_series: list[dict[str, Any]] | None = None,
+    industry: dict[str, Any] | None = None,
 ) -> DcfResult:
     """基于自由现金流折现（DCF）估算每股内在价值。
 
@@ -242,7 +380,10 @@ def dcf_valuate(
     assumptions:
         折现假设；缺省用保守值（wacc 9%、永续增长 2.5%、预测 5 年）。
     annual_series:
-        年度定期报告序列（最新在前），用于推导营收 CAGR 作为显性期增长率。
+        年度定期报告序列（最新在前），用于推导显性期增长率
+        （工业：营收 YoY；金融中介：归母净利润 YoY）。
+    industry:
+        申万行业元信息（含 l1/l2/l3_name），用于识别银行/券商/期货/保险口径。
 
     返回
     -------
@@ -250,9 +391,11 @@ def dcf_valuate(
     """
     assumptions = assumptions or DcfAssumptions()
     notes: list[str] = []
+    financial = is_financial_intermediary(industry, profile)
+    valuation_mode = VALUATION_MODE_FINANCIAL if financial else VALUATION_MODE_INDUSTRIAL
 
     # ---------- 1. 基期 FCF ----------
-    fcf_base, fcf_notes = _base_fcf(metrics)
+    fcf_base, fcf_notes = _base_fcf(metrics, financial=financial)
     notes.extend(fcf_notes)
     if fcf_base is None:
         return DcfResult(
@@ -261,20 +404,40 @@ def dcf_valuate(
                 "projection_years": assumptions.projection_years,
                 "wacc": assumptions.wacc,
                 "terminal_growth": assumptions.terminal_growth,
+                "valuation_mode": valuation_mode,
             },
+            valuation_mode=valuation_mode,
         )
 
     # ---------- 2. 显性期增长率 ----------
     growth = assumptions.first_stage_growth
     if growth is None and annual_series:
-        growth = _revenue_cagr(annual_series)
-        if growth is not None:
-            # 保守截断：过高增长不可持续，上限 20%，下限 -10%
-            growth = max(-0.10, min(0.20, growth))
-            notes.append(f"显性期增长率取营收 CAGR {growth*100:.1f}%（已截断到 [-10%, 20%]）")
+        if financial:
+            growth = _earnings_cagr(annual_series)
+            if growth is not None:
+                notes.append(
+                    f"金融中介口径：显性期增长率取各期归母净利润 YoY 加权平均 "
+                    f"{growth*100:.1f}%（近端权重大；避免营收口径调整失真）"
+                )
+            else:
+                growth = _revenue_cagr(annual_series)
+                if growth is not None:
+                    notes.append(
+                        f"金融中介口径下净利润增速样本不足，回退营收 YoY 加权平均 "
+                        f"{growth*100:.1f}%"
+                    )
+                else:
+                    notes.append("未取到足够年度利润/营收，显性期增长率暂按 0%（极保守）")
+                    growth = 0.0
         else:
-            notes.append("未取到足够年度营收，显性期增长率暂按 0%（极保守）")
-            growth = 0.0
+            growth = _revenue_cagr(annual_series)
+            if growth is not None:
+                notes.append(
+                    f"显性期增长率取各期营收 YoY 加权平均 {growth*100:.1f}%（近端权重大）"
+                )
+            else:
+                notes.append("未取到足够年度营收，显性期增长率暂按 0%（极保守）")
+                growth = 0.0
     elif growth is None:
         notes.append("未提供显性期增长率，暂按 0%（极保守）")
         growth = 0.0
@@ -290,7 +453,7 @@ def dcf_valuate(
         notes.append("未取到总股本，将只输出企业价值/股权价值总额，不输出每股内在价值")
     elif not (shares_direct and shares_direct > 0):
         notes.append("盘口缺总股本，已用总市值÷现价反推股本以计算每股内在价值")
-    net_debt, debt_notes = _net_debt(metrics)
+    net_debt, debt_notes = _net_debt(metrics, financial=financial)
     notes.extend(debt_notes)
 
     # ---------- 4. 显性期现金流折现 ----------
@@ -394,7 +557,9 @@ def dcf_valuate(
             "first_stage_growth": round(g * 100, 2),
             "safety_discount": round(assumptions.safety_discount * 100, 2),
             "fcf_base_yi": round(fcf_base / _YI, 2),
+            "valuation_mode": valuation_mode,
         },
         notes=notes,
         revenue_cagr_used=round(revenue_cagr_used * 100, 2) if revenue_cagr_used is not None else None,
+        valuation_mode=valuation_mode,
     )

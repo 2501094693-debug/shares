@@ -69,9 +69,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--beg", default="", help="起始日期 YYYY-MM-DD 或 YYYYMMDD")
     p.add_argument("--end", default="", help="结束日期，默认今天")
     p.add_argument("--fast", type=int, default=DEFAULT_FAST, help="快线时长，默认 10")
-    p.add_argument("--slow", type=int, default=DEFAULT_SLOW, help="慢线时长，默认 22")
+    p.add_argument("--slow", type=int, default=DEFAULT_SLOW, help="慢线时长，默认 20")
     p.add_argument(
-        "--signal", type=int, default=DEFAULT_SIGNAL, help="信号线时长，默认 8"
+        "--signal", type=int, default=DEFAULT_SIGNAL, help="信号线时长，默认 7"
     )
     p.add_argument(
         "--price",

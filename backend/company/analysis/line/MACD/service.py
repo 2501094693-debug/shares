@@ -131,7 +131,7 @@ def analyze_macd(
     price: str = "close",
     adjust: str = "qfq",
 ) -> dict[str, Any]:
-    """主入口：拉日线后计算 MACD（默认前复权，参数 10/22/8）。"""
+    """主入口：拉日线后计算 MACD（默认前复权，参数 10/20/7）。"""
     norm = normalize_code(code)
     if not norm:
         raise ValueError("无效股票代码")

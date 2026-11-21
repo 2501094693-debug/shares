@@ -51,12 +51,12 @@
           <nav id="judgmentSourceBar" class="emotion-source-bar judgment-source-bar" aria-label="研判分类">
             <button type="button" class="emotion-source-btn is-active" data-source="kline" aria-selected="true">K线分析</button>
             <button type="button" class="emotion-source-btn" data-source="deal" aria-selected="false">成交分析</button>
+            <button type="button" class="emotion-source-btn" data-source="sentiment" aria-selected="false">炒作分析</button>
             <button type="button" class="emotion-source-btn" data-source="business" aria-selected="false">业务简述</button>
             <button type="button" class="emotion-source-btn" data-source="earnings" aria-selected="false">财报简述</button>
             <button type="button" class="emotion-source-btn" data-source="peers" aria-selected="false">竞争分析</button>
             <button type="button" class="emotion-source-btn" data-source="risk" aria-selected="false">风险评估</button>
             <button type="button" class="emotion-source-btn" data-source="valuation" aria-selected="false">估值分析</button>
-            <button type="button" class="emotion-source-btn" data-source="sentiment" aria-selected="false">情绪分析</button>
           </nav>
           <div class="judgment-view">
         <div id="bizViewBar" class="judgment-view-bar" role="tablist" aria-label="业务简述视角" hidden>
@@ -223,10 +223,10 @@
                         <input id="lcMacdFastInput" class="chart-select chart-select--num" type="number" min="1" max="200" step="1" value="10" />
                       </label>
                       <label id="lcMacdSlowWrap" class="chart-select-wrap hidden" aria-label="慢线时长" title="慢线 EMA">
-                        <input id="lcMacdSlowInput" class="chart-select chart-select--num" type="number" min="2" max="400" step="1" value="22" />
+                        <input id="lcMacdSlowInput" class="chart-select chart-select--num" type="number" min="2" max="400" step="1" value="20" />
                       </label>
                       <label id="lcMacdSignalWrap" class="chart-select-wrap hidden" aria-label="信号线时长" title="DEA 信号线">
-                        <input id="lcMacdSignalInput" class="chart-select chart-select--num" type="number" min="1" max="200" step="1" value="8" />
+                        <input id="lcMacdSignalInput" class="chart-select chart-select--num" type="number" min="1" max="200" step="1" value="7" />
                       </label>
                       <label id="lcExtremaLayerWrap" class="chart-select-wrap" aria-label="极值层级">
                         <select id="lcExtremaLayerSelect" class="chart-select">
@@ -1574,6 +1574,6 @@
   <script src="/js/shared/company-analysis.js?v=20261027-deal-analysis"></script>
   <script src="/js/shared/line-compare.js?v=20261026-lc-trader-fix"></script>
   <script src="/js/company/ths-auth.js?v=ths-auth-20261117-deal-stats"></script>
-  <script src="/js/company.js?v=20261120-lc-macd"></script>
+  <script src="/js/company.js?v=20261121-macd-10207"></script>
 </body>
 </html>

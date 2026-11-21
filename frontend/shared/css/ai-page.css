@@ -311,6 +311,32 @@ body.app-shell.ai-page-root .ai-page {
   color: #6fd6a2;
 }
 
+.engine-kpi-verdict {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 14px 16px;
+  border-width: 1.5px;
+}
+
+.engine-kpi-verdict span {
+  display: inline;
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.engine-kpi-verdict strong {
+  display: inline;
+  margin-top: 0;
+  font-size: 1.12rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+}
+
 .engine-section {
   margin: 0 0 18px;
 }
@@ -400,17 +426,25 @@ body.app-shell.ai-page-root .ai-page {
   line-height: 1.7;
 }
 
-.valuation-summary-prose {
-  margin: 0 0 14px;
-  line-height: 1.75;
+/* 估值「数据」横表：列=指标名，行=数值；多列表可横向滚动 */
+.valuation-data-tables {
+  overflow-x: auto;
+  margin: 0 0 12px;
 }
 
-.valuation-summary-prose p {
-  margin: 0 0 10px;
+.valuation-data-tables table {
+  width: max-content;
+  min-width: 100%;
 }
 
-.valuation-summary-prose p:last-child {
-  margin-bottom: 0;
+.valuation-data-tables th,
+.valuation-data-tables td {
+  text-align: center;
+}
+
+.valuation-data-tables th:first-child,
+.valuation-data-tables td:first-child {
+  text-align: center;
 }
 
 /* 七看：风险仪表盘（区别于其他看的表格式布局） */

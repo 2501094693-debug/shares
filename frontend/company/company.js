@@ -1116,7 +1116,7 @@ function scheduleDealAnalysisBoot() {
   });
 }
 
-function mountDealAnalysisQuotes() {
+function mountDealAnalysisQuotes({ activate = true } = {}) {
   const metricsSlot = document.getElementById("dealHeroSlot");
   const chartsSlot = document.getElementById("dealChartsSlot");
   const metrics = els.metricsPanels;
@@ -1128,12 +1128,25 @@ function mountDealAnalysisQuotes() {
     metrics.parentElement === metricsSlot &&
     ticksCard.parentElement === chartsSlot;
   if (alreadyMounted) {
+    if (!activate) {
+      // 研判内切到其他子页：只停轮询/在途请求，保留已挂载的行情 DOM 与数据，
+      // 避免下次进入成交分析时来回搬运大表格、重复拉数造成切换卡顿
+      cancelDealAnalysisBoot();
+      stopDealEntrustPolling();
+      stopDealStatsPolling();
+      stopDealChipLoad();
+      return;
+    }
     if (dealModeIsStats()) {
       if (!dealStatsState.timer) startDealStatsPolling();
     } else if (dealModeIsLive()) {
       if (!dealEntrustState.timer) startDealEntrustPolling();
     } else if (dealModeIsChip()) {
       void loadDealChip();
+    }
+    // 重入成交分析时，若五日分时尚未成功加载过，则补拉；避免首次 boot 被快速切换打断导致“暂无数据”
+    if (dealModeIsLive() && !(dealFiveDayState.items || []).length && !dealFiveDayState.loading) {
+      void loadDealFiveDay();
     }
     scheduleDealAnalysisPaint();
     return;
@@ -1145,7 +1158,7 @@ function mountDealAnalysisQuotes() {
   dealQuotesHome.mounted = true;
   bindDealFiveDayPanel();
   applyDealMode(dealModeState.mode || readDealMode(), { force: true });
-  scheduleDealAnalysisBoot();
+  if (activate) scheduleDealAnalysisBoot();
 }
 
 function stopDealEntrustPolling() {
@@ -5660,8 +5673,15 @@ function syncJudgmentToolPages(view = judgmentSubTab) {
 }
 
 function syncDealQuotesMount() {
-  if (activeMainPanel === "judgment" && judgmentSubTab === "deal") mountDealAnalysisQuotes();
-  else unmountDealAnalysisQuotes();
+  const inJudgment = activeMainPanel === "judgment";
+  const onDeal = inJudgment && judgmentSubTab === "deal";
+  if (inJudgment && (onDeal || dealQuotesHome.mounted)) {
+    // 研判内切换子页时保留挂载：仅首次进入成交分析才搬运行情 DOM 并拉数，
+    // 成交分析 ↔ K线分析 来回切换走轻量路径，避免重复挂载/重绘造成卡顿
+    mountDealAnalysisQuotes({ activate: onDeal });
+    return;
+  }
+  unmountDealAnalysisQuotes();
 }
 
 function syncJudgmentSubTabUi() {
@@ -16066,6 +16086,7 @@ const lcEls = {
 };
 
 const lcChartState = {
+  code: "",
   mode: "day",
   adjust: "qfq",
   loading: false,
@@ -16093,8 +16114,8 @@ const LC_MACD_DEA_COLOR = "#7aa2f7";
 
 const lcMacdState = {
   fast: 10,
-  slow: 22,
-  signal: 8,
+  slow: 20,
+  signal: 7,
   price: "close",
   key: "",
   beg: "",
@@ -16146,8 +16167,8 @@ function readLcMacdParamsFromUi() {
     return Math.min(max, Math.max(min, n));
   };
   let fast = clampInt(lcEls.macdFastInput?.value, lcMacdState.fast || 10, 1, 200);
-  let slow = clampInt(lcEls.macdSlowInput?.value, lcMacdState.slow || 22, 2, 400);
-  let signal = clampInt(lcEls.macdSignalInput?.value, lcMacdState.signal || 8, 1, 200);
+  let slow = clampInt(lcEls.macdSlowInput?.value, lcMacdState.slow || 20, 2, 400);
+  let signal = clampInt(lcEls.macdSignalInput?.value, lcMacdState.signal || 7, 1, 200);
   if (fast >= slow) {
     slow = Math.min(400, fast + 1);
   }
@@ -19435,6 +19456,7 @@ async function loadLcChart({ force = false } = {}) {
       lcChartState.source = data.source || "";
     }
 
+    lcChartState.code = code;
     const count = lcChartState.allItems.length;
     if (!count) {
       setLcChartSource("");
@@ -19652,17 +19674,29 @@ function lcVisibleWindowRange() {
 window.CompanyLcKline = {
   show(identity = {}) {
     lcChartState.visible = true;
-    if (identity.code) {
-      /* code is page-global */
+    const sameCode = String(lcChartState.code || "") === String(code || "");
+    const loaded = sameCode && (lcChartState.allItems || []).length > 0;
+    syncLcComboLegend();
+    if (loaded) {
+      // 再次进入 K线分析：日K / 指标 / 谷值等数据均已缓存，仅从缓存补画一帧。
+      // 不再自动触发 refreshLcComparePane / refreshLcMacd（它们会再次发请求并重复画布二次渲染），
+      // 避免 K线分析 ↔ 成交分析 来回切换时的卡顿；需要刷新由各下拉/刷新按钮按需触发。
+      return Promise.resolve().then(() => {
+        requestAnimationFrame(() => {
+          renderLcChart();
+          renderLcEvaluate();
+          renderLcPvAxes();
+          renderLcUndulate();
+        });
+      });
     }
     clearLcSections();
     clearLcRangePick({ silent: true });
-    syncLcComboLegend();
     return loadLcChart().then(() => {
       requestAnimationFrame(() => {
         renderLcChart();
-        if (lcComboMetricState === "compare") void refreshLcComparePane();
-        if (lcComboMetricState === "macd") void refreshLcMacd();
+        // loadLcChart 已按当前底部指标 await 过 refreshLcComparePane / refreshLcMacd，
+        // 这里不再重复触发，避免同一次进入 K线分析时重复渲染多次
         void refreshLcPvAxes();
         void refreshLcEvaluate();
         scheduleExtremaForVisible();

@@ -632,6 +632,12 @@
           if (evaluation === "优") cls = "is-good";
           else if (evaluation === "中") cls = "is-mid";
           else if (evaluation === "差") cls = "is-bad";
+          else {
+            const n = Number(evaluation);
+            if (Number.isFinite(n)) {
+              cls = n >= 80 ? "is-good" : (n >= 60 ? "is-mid" : "is-bad");
+            }
+          }
           const w = Number(weights[i]) > 0 ? ` · ${weights[i]}%` : "";
           const headTitle = `${esc(aspect || "")}<span class="zv-sum-weight">${esc(w)}</span>`;
           let evidenceHtml = "";
@@ -643,8 +649,11 @@
               evidenceHtml = `<div class="zv-sum-evidence">${esc(evidence)}</div>`;
             }
           }
+          const badge = Number.isFinite(Number(evaluation)) && String(evaluation).trim() !== ""
+            ? `${esc(String(evaluation))}分`
+            : esc(evaluation || "—");
           return `<div class="zv-sum-card ${cls}">`
-            + `<div class="zv-sum-head"><strong>${headTitle}</strong><span class="zv-sum-badge">${esc(evaluation || "—")}</span></div>`
+            + `<div class="zv-sum-head"><strong>${headTitle}</strong><span class="zv-sum-badge">${badge}</span></div>`
             + evidenceHtml
             + `</div>`;
         }).join("")}</div>`
@@ -1639,12 +1648,109 @@
     pb: "市净率",
     ps_ttm: "市销率TTM",
   };
-  const VAL_REPORT_TYPE_LABELS = { annual: "年报", semi: "半年报", q1: "一季报", q3: "三季报" };
+  /** 横表：列=指标名，单行=数值。 */
+  function valuationWideMd(pairs) {
+    if (!pairs.length) return "";
+    const headers = pairs.map(([k]) => k);
+    const values = pairs.map(([, v]) => v);
+    return [
+      `| ${headers.join(" | ")} |`,
+      `| ${headers.map(() => "---").join(" | ")} |`,
+      `| ${values.join(" | ")} |`,
+    ].join("\n");
+  }
+
+  function valuationParseMdRow(line) {
+    const trimmed = String(line || "").trim();
+    if (!trimmed.includes("|")) return null;
+    return trimmed
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split("|")
+      .map((c) => c.trim());
+  }
+
+  /** 竖表（指标|数值）→ 横表；多列表（行=样本）原样保留。 */
+  function valuationNormalizeMdTable(block) {
+    const lines = String(block || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) return block;
+    const header = valuationParseMdRow(lines[0]);
+    if (!header || header.length < 2) return block;
+    const isSep = (line) => /---/.test(line) && /^[\s|:-]+$/.test(line);
+    if (!isSep(lines[1])) return block;
+    const dataRows = lines.slice(2).map(valuationParseMdRow).filter((r) => r && r.length);
+    if (!dataRows.length) return block;
+
+    // 两列且表头为「指标/数值」类 → 转横表（列=数据名，行=数值）
+    const h0 = header[0];
+    const h1 = header[1];
+    const verticalKv = header.length === 2 && (
+      (h0 === "指标" && (h1 === "数值" || h1 === "值"))
+      || (h0 === "项目" && h1 === "结果")
+    );
+    if (verticalKv) {
+      const pairs = dataRows
+        .filter((r) => r.length >= 2)
+        .map((r) => [r[0], r[1]]);
+      return valuationWideMd(pairs);
+    }
+    // 已是「列=字段、行=样本/年份」的多列表，保持不变
+    return block;
+  }
+
+  /**
+   * 估值「数据」区统一为表格：
+   * - 列表「- 指标：数值」→ 横表（列=指标，行=数值）
+   * - 竖表「指标|数值」→ 横表
+   * - 多列表（营收序列/同业样本等）保持「列=字段、行=各条数据」
+   */
+  function valuationRawAsTables(rawText) {
+    const text = String(rawText || "").trim();
+    if (!text) return "";
+
+    const blocks = text.split(/\n\s*\n/);
+    const out = [];
+
+    for (const block of blocks) {
+      const trimmed = block.trim();
+      if (!trimmed) continue;
+
+      if (/^\|.+\|/m.test(trimmed) && /\|[-| :]+\|/.test(trimmed)) {
+        out.push(valuationNormalizeMdTable(trimmed));
+        continue;
+      }
+
+      const lines = trimmed.split(/\r?\n/);
+      const kv = [];
+      const other = [];
+      let allKv = true;
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t) continue;
+        const m = t.match(/^[-*]\s*(.+?)[：:]\s*(.+)$/);
+        if (m) {
+          kv.push([m[1].trim(), m[2].trim()]);
+        } else {
+          allKv = false;
+          other.push(t);
+        }
+      }
+      if (kv.length && (allKv || kv.length >= 2)) {
+        out.push(valuationWideMd(kv));
+        if (other.length) out.push(other.join("\n"));
+      } else {
+        out.push(trimmed);
+      }
+    }
+    return out.join("\n\n");
+  }
 
   function valuationStepBody(step) {
     if (!step) return "";
-    const rawText = String(step.raw || "").trim();
-    const rawSection = rawText ? `<h4>数据</h4>${renderMarkdown(rawText)}` : "";
+    const rawText = valuationRawAsTables(String(step.raw || "").trim());
+    const rawSection = rawText
+      ? `<h4>数据</h4><div class="valuation-data-tables">${renderMarkdown(rawText)}</div>`
+      : "";
     const fs = Array.isArray(step.formulas) ? step.formulas : [];
     const formulaHtml = fs.length
       ? `<ul class="zv-formula">${fs.map((f) => {
@@ -1656,8 +1762,10 @@
         }).join("")}</ul>`
       : "<p class='muted'>（本节无二次加工公式）</p>";
     const formulaSection = `<h4>计算公式</h4>${formulaHtml}`;
-    const resultsText = String(step.results || "").trim();
-    const resultsSection = resultsText ? `<h4>结果</h4>${renderMarkdown(resultsText)}` : "";
+    const resultsText = valuationRawAsTables(String(step.results || "").trim());
+    const resultsSection = resultsText
+      ? `<h4>结果</h4><div class="valuation-data-tables">${renderMarkdown(resultsText)}</div>`
+      : "";
     const conc = (Array.isArray(step.conclusions) ? step.conclusions : []).filter(Boolean);
     const concHtml = conc.length
       ? `<h4>结论</h4><ul class="zv-conc">${conc.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>`
@@ -1666,51 +1774,33 @@
     return `${rawSection}${formulaSection}${resultsSection}${concHtml}`;
   }
 
-  function valuationSummaryBody(summary) {
-    if (!summary) return "";
-    const paras = Array.isArray(summary.paragraphs) && summary.paragraphs.length
-      ? summary.paragraphs
-      : (String(summary.text || "").trim() ? [summary.text] : []);
-    const prose = paras.length
-      ? `<div class="valuation-summary-prose">${paras.map((p) => `<p>${esc(p)}</p>`).join("")}</div>`
-      : "";
-    const resultsText = String(summary.results || "").trim();
-    const resultsSection = resultsText ? `<h4>关键结果</h4>${renderMarkdown(resultsText)}` : "";
-    const conc = (Array.isArray(summary.conclusions) ? summary.conclusions : []).filter(Boolean);
-    const concHtml = conc.length
-      ? `<h4>结论</h4><ul class="zv-conc">${conc.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>`
-      : "";
-    // 总结：先叙述段落，再附关键结果一览（不再套数据/公式模板）
-    return `${prose}${resultsSection}${concHtml}`;
-  }
-
   function valuationHtml(pack) {
     if (!pack) return `<div class="engine-hero"><p class="engine-type">估值分析</p><p class="muted">未取到估值结果</p></div>`;
     const dcf = pack.dcf || {};
+    const relative = pack.relative || {};
     const profile = pack.profile || {};
     const industry = pack.industry || {};
     const curPrice = dcf.current_price;
     const intrinsic = dcf.intrinsic_value_per_share;
     const mos = pack.margin_of_safety_pct;
     const steps = Array.isArray(pack.steps) ? pack.steps : [];
-    const summary = pack.summary || null;
 
+    const verdict = pack.verdict || "数据不足";
+    const verdictTone = /可考虑/.test(verdict)
+      ? "is-low"
+      : /回避/.test(verdict)
+        ? "is-high"
+        : "is-mid";
     const profileRows = [
-      ["公司", pack.name || pack.code || ""],
-      ["代码", pack.code || ""],
-      ["报告口径", VAL_REPORT_TYPE_LABELS[pack.report_type] || pack.report_type || ""],
-      ["行业", industry.l3_name || industry.l3_code || "—"],
+      ["行业", industry.l3_name || industry.name || profile.l3_name || industry.l3_code || industry.code || profile.l3_code || "—"],
+      ["总市值", profile.total_market_cap || profile.market_cap || "—"],
+      ["总股本", profile.total_shares || profile.share_capital || "—"],
       ["当前价", valFmtPrice(curPrice)],
-      ["总股本", esc(profile.total_shares || profile.share_capital || "—")],
-      ["总市值", esc(profile.total_market_cap || profile.market_cap || "—")],
-      ["每股内在价值", valFmtPrice(intrinsic)],
+      ["内在价值", valFmtPrice(intrinsic)],
       ["安全边际", mos == null ? "—" : valFmtPct(mos)],
-      ["综合结论", pack.verdict || "数据不足"],
+      ["历史分位", relative.history_verdict || "—"],
+      ["同业对比", relative.peer_verdict || "—"],
     ];
-
-    const verdictCls = pack.verdict && pack.verdict.includes("回避")
-      ? "is-bad"
-      : (pack.verdict && (pack.verdict.includes("可考虑") || pack.verdict.includes("安全边际充足")) ? "is-good" : "is-mid");
 
     const stepsHtml = steps.map((step) => `
       <section class="engine-section valuation-step">
@@ -1719,49 +1809,19 @@
       </section>
     `).join("");
 
-    const summaryHtml = summary
-      ? `<section class="engine-section valuation-summary">
-          <header class="engine-section-head"><h3>${esc(summary.name || "总结")}</h3></header>
-          <div class="zv-body">${valuationSummaryBody(summary)}</div>
-        </section>`
-      : "";
-
-    // 敏感性表仍作附录保留（不打断逐步叙述）
-    const sens = Array.isArray(dcf.sensitivity) ? dcf.sensitivity : [];
-    const sensRows = sens.map((s) => `
-      <tr><td>${valFmtPct(s.wacc)}</td><td>${valFmtPct(s.terminal_growth)}</td><td class="num">${valFmtPrice(s.intrinsic_per_share)}</td></tr>
-    `).join("");
-    const sensHtml = sens.length
-      ? `<section class="engine-section valuation-sensitivity">
-          <header class="engine-section-head"><h3>附录：敏感性分析</h3></header>
-          <div class="valuation-table-wrap"><table class="peers-table valuation-table">
-            <thead><tr><th>折现率 WACC</th><th>永续增长 g</th><th class="num">每股内在价值</th></tr></thead>
-            <tbody>${sensRows}</tbody>
-          </table>
-          <p class="muted valuation-note">WACC ±1%、永续增长 ±0.5% 下的每股内在价值。</p></div>
-        </section>`
-      : "";
-
     const errorsHtml = (Array.isArray(pack.errors) && pack.errors.length)
       ? `<div class="engine-flags"><h3>数据缺口</h3><ul>${pack.errors.map((e) => `<li>${esc(e)}</li>`).join("")}</ul></div>`
       : "";
 
     return `
-      <div class="engine-hero">
-        <p class="engine-type">估值分析</p>
-        <p class="muted">${[profileRows[2], profileRows[3]].map((r) => esc(r[1])).filter(Boolean).join(" · ")} · ${pack.data_available ? "数据可用" : "数据缺失"}</p>
-        ${pack.name ? `<p class="muted">${esc(pack.name)}（${esc(pack.code)})</p>` : ""}
+      <div class="engine-kpi engine-kpi-verdict ${verdictTone}">
+        <span>结论</span>
+        <strong>${esc(verdict)}</strong>
       </div>
-      <div class="valuation-verdict ${verdictCls}">
-        <strong>安全边际：${mos == null ? "—" : valFmtPct(mos)}</strong>
-        <span class="valuation-verdict-label">${esc(pack.verdict || "数据不足，无法定论")}</span>
-      </div>
-      <div class="engine-kpis">${profileRows.slice(0, 9).map(([label, value]) => `
+      <div class="engine-kpis">${profileRows.map(([label, value]) => `
         <div class="engine-kpi"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>
       `).join("")}</div>
       ${stepsHtml || "<p class='muted'>暂无逐步估值明细</p>"}
-      ${summaryHtml}
-      ${sensHtml}
       ${errorsHtml}
     `;
   }
