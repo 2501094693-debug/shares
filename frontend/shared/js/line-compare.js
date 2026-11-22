@@ -1285,8 +1285,7 @@
     state.code = nextCode || state.code;
     state.name = nextName || state.name;
     ensureDefaults();
-    const page = $("lineComparePage");
-    if (page) page.hidden = false;
+    // 不改 page.hidden：研判工具页显隐由 judgmentFamily CSS 停泊/唤醒
 
     try {
       await loadMeta();
@@ -1329,13 +1328,8 @@
       pane.abort.abort();
       pane.abort = null;
     }
-    abortUndulateSlot(undulate.stock);
-    abortUndulateSlot(undulate.index);
-    abortTrader();
-    hideResultChart();
+    // 不 abort undulate/trader、不 destroy 对比图；也不改 page.hidden（由 family CSS 停泊）
     window.CompanyLcKline?.hide?.();
-    const page = $("lineComparePage");
-    if (page) page.hidden = true;
   }
 
   function syncIdentity(next = {}) {

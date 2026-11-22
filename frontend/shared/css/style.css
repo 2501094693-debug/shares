@@ -1,5 +1,5 @@
 :root {
-  /* Orbital console — aerospace HUD, not neon-purple cyberpunk */
+  /* Orbital console ? aerospace HUD, not neon-purple cyberpunk */
   --bg: #070b12;
   --bg-elevated: rgba(11, 18, 30, 0.9);
   --bg-panel: rgba(9, 14, 24, 0.82);
@@ -67,7 +67,7 @@ body {
   border: 0;
 }
 
-/* —— 应用壳：左侧模块导航 —— */
+/* ?? ?????????? ?? */
 html.app-shell-root,
 html.app-shell-root body.app-shell {
   height: 100%;
@@ -496,7 +496,7 @@ html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source=
   min-height: 0;
   height: 80px;
 }
-/* 同花顺热度区整体压紧：标题脚注与头部重复，藏掉；英雄区与指标卡收窄 */
+/* ????????????????????????????????? */
 html.company-charts-on .company-panel[data-panel="emotion"][data-emotion-source="tonghuashun"] .ths-heat-board .emotion-score-foot {
   display: none;
 }
@@ -2504,7 +2504,7 @@ tr.highlight {
   font-weight: 800;
 }
 
-/* 高德 InfoWindow：深色底 + 亮字，避免继承页面浅色导致发灰 */
+/* ?? InfoWindow???? + ??????????????? */
 .amap-info-contentWrapper .amap-info-content,
 .map-stage .amap-info-content,
 .reg-map .amap-info-content,
@@ -4124,7 +4124,7 @@ button.chart-legend-item.is-active {
   overflow: hidden;
 }
 
-/* 报告期 | 目录 | 正文 */
+/* ??? | ?? | ?? */
 .periodic-board {
   display: grid;
   grid-template-columns: minmax(10rem, 13rem) minmax(11rem, 16rem) minmax(0, 1fr);
@@ -4407,7 +4407,7 @@ button.chart-legend-item.is-active {
   color: var(--muted);
 }
 
-/* 仅当前正在拉取的页用紧凑条，不再铺满 A4 空白「加载中」 */
+/* ?????????????????? A4 ??????? */
 .periodic-page-placeholder.is-loading {
   min-height: 3rem;
   color: var(--accent);
@@ -4435,7 +4435,7 @@ button.chart-legend-item.is-active {
   opacity: 0.7;
 }
 
-/* 报告页：把高度锁在视口内，让 #periodicDetail 成为唯一滚动容器，避免外层裁切后只能看见前两页 */
+/* ?????????????? #periodicDetail ??????????????????????? */
 html.company-charts-on .company-panel[data-panel="news"][data-news-source="reports"] .news-open {
   display: flex;
   flex-direction: column;
@@ -4706,6 +4706,7 @@ html.company-charts-on .company-panel[data-panel="news"][data-news-source="repor
 }
 
 .company-panel[data-panel="judgment"] .judgment-view {
+  position: relative;
   flex: 1 1 0%;
   min-height: 0;
   display: flex;
@@ -4713,7 +4714,7 @@ html.company-charts-on .company-panel[data-panel="news"][data-news-source="repor
   gap: 8px;
 }
 
-/* 业务简述：规则视角 / AI 视角 切换 */
+/* ????????? / AI ?? ?? */
 .company-panel[data-panel="judgment"] .judgment-view-bar {
   flex: 0 0 auto;
   display: flex;
@@ -4768,24 +4769,43 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .c
   min-height: 0;
 }
 
-/* K线分析 / 成交分析时隐藏 AI 研判板（display:flex 会压过裸 [hidden]） */
+/* K? / ?? / ??????? AI ????display:flex ???? [hidden]? */
 .company-panel[data-panel="judgment"] .judgment-view > .company-analysis-page[hidden],
 .company-panel[data-panel="judgment"][data-judgment-family="kline"] .company-analysis-page,
-.company-panel[data-panel="judgment"][data-judgment-family="deal"] .company-analysis-page {
+.company-panel[data-panel="judgment"][data-judgment-family="deal"] .company-analysis-page,
+.company-panel[data-panel="judgment"][data-judgment-family="sentiment"] .company-analysis-page {
   display: none !important;
 }
 
-.company-panel[data-panel="judgment"][data-judgment-family="kline"] .line-compare-page {
+/* ?????????? flex ?? */
+.company-panel[data-panel="judgment"][data-judgment-family="kline"] .line-compare-page,
+.company-panel[data-panel="judgment"][data-judgment-family="deal"] .deal-analysis-page,
+.company-panel[data-panel="judgment"][data-judgment-family="sentiment"] .speculation-page {
   display: flex !important;
+  position: relative;
+  z-index: 1;
+  visibility: visible;
+  pointer-events: auto;
+  content-visibility: visible;
 }
 
-.company-panel[data-panel="judgment"][data-judgment-family="deal"] .deal-analysis-page {
-  display: flex !important;
-}
-
+/* ?????????? display:none??? canvas ???????????? */
 .company-panel[data-panel="judgment"][data-judgment-family="deal"] .line-compare-page,
-.company-panel[data-panel="judgment"][data-judgment-family="kline"] .deal-analysis-page {
-  display: none !important;
+.company-panel[data-panel="judgment"][data-judgment-family="kline"] .deal-analysis-page,
+.company-panel[data-panel="judgment"][data-judgment-family="kline"] .speculation-page,
+.company-panel[data-panel="judgment"][data-judgment-family="deal"] .speculation-page,
+.company-panel[data-panel="judgment"][data-judgment-family="sentiment"] .line-compare-page,
+.company-panel[data-panel="judgment"][data-judgment-family="sentiment"] .deal-analysis-page {
+  display: flex !important;
+  position: absolute !important;
+  inset: 0;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  z-index: 0;
+  content-visibility: hidden;
+  flex: none !important;
+  height: 100% !important;
+  min-height: 0;
 }
 
 .company-panel[data-panel="emotion"] {
@@ -5438,7 +5458,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .c
 }
 
 .stat-cell.has-tip .detail-label::after {
-  content: " ·";
+  content: " ?";
   color: rgba(42, 212, 184, 0.55);
   font-weight: 600;
 }
@@ -6072,7 +6092,7 @@ td.code {
   letter-spacing: 0.02em;
 }
 
-/* A股惯例：红涨绿跌 */
+/* A???????? */
 td.change-up,
 .change-up {
   color: var(--up);
@@ -6138,7 +6158,7 @@ td.change-down,
   }
 }
 
-/* ========== 行业页：全屏地图 + 轨道 HUD ========== */
+/* ========== ???????? + ?? HUD ========== */
 html.map-app-root,
 html.map-app-root body.map-app {
   width: 100%;
@@ -7067,7 +7087,7 @@ body.map-app .city-area-label {
   }
 }
 
-/* —— 申万行业行情页：SVG 图谱 —— */
+/* ?? ????????SVG ?? ?? */
 body.market-page-root {
   height: 100dvh;
   overflow: hidden;
@@ -7497,7 +7517,7 @@ body.market-page-root {
   }
 }
 
-/* —— 个股涨跌榜 —— */
+/* ?? ????? ?? */
 body.app-shell.shares-page-root {
   --company-quotes-inner: calc(100vw - var(--rail-w) - 24px);
   --company-hero-w: clamp(280px, calc(var(--company-quotes-inner) * 0.34), 380px);
@@ -7833,9 +7853,9 @@ body.app-shell.shares-page-root .shares-page.market-page {
   color: var(--ink);
 }
 
-/* —— 涨跌停日历 —— */
+/* ?? ????? ?? */
 body.app-shell.steep-page-root {
-  /* 扣除主导航 + 日期侧栏，让卡片宽度贴近当日面板可用区 */
+  /* ????? + ??????????????????? */
   --steep-dates-w: 180px;
   --company-quotes-inner: calc(100vw - var(--rail-w) - var(--steep-dates-w) - 24px);
   --company-hero-w: clamp(280px, calc(var(--company-quotes-inner) * 0.34), 380px);
@@ -7874,7 +7894,7 @@ body.app-shell.steep-page-root .steep-page.market-page {
   flex-wrap: wrap;
 }
 
-/* 主区：日期列表 | 当日涨跌停 */
+/* ??????? | ????? */
 .steep-board {
   flex: 1;
   min-height: 0;
@@ -8229,7 +8249,7 @@ body.app-shell.steep-page-root .steep-page.market-page {
 }
 
 
-/* —— 龙虎榜（公司详情） —— */
+/* ?? ????????? ?? */
 .lhb-layout {
   flex: 1;
   min-height: 0;
@@ -8379,7 +8399,7 @@ body.app-shell.steep-page-root .steep-page.market-page {
   color: var(--accent);
 }
 
-.lhb-dept-type[data-type="机构"] {
+.lhb-dept-type[data-type="??"] {
   color: var(--accent-hot);
   border-color: rgba(240, 180, 41, 0.4);
 }
@@ -8468,7 +8488,7 @@ html.company-charts-on .company-panel[data-panel="news"] .financials-hub {
   }
 }
 
-/* —— 场内 / 场外基金 —— */
+/* ?? ?? / ???? ?? */
 body.fund-page-root,
 body.otc-fund-page-root,
 body.futures-page-root {
@@ -9233,7 +9253,7 @@ html.company-charts-on .company-panel[data-panel="others"] .others-view[data-oth
   grid-auto-rows: minmax(0, 1fr);
   gap: 10px;
   align-items: stretch;
-  /* 两行占满剩余空间：每张图高 = 剩余空间的二分之一 */
+  /* ????????????? = ????????? */
   height: calc(100dvh - 220px);
   min-height: 520px;
   margin-bottom: 0;
@@ -9749,7 +9769,7 @@ html.company-charts-on .company-panel[data-panel="others"] .others-view[data-oth
   }
 }
 
-/* 业务简述样式见 ai-page.css */
+/* ??????? ai-page.css */
 
 .company-analysis-page {
   display: flex;
@@ -9837,7 +9857,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .company-analysis-p
   height: 100%;
 }
 
-/* —— 研判（行业分析 / 涨跌停分析） —— */
+/* ?? ??????? / ?????? ?? */
 body.app-shell.screen-page-root .app-stage {
   display: flex;
   flex-direction: column;
@@ -10087,16 +10107,16 @@ body.app-shell.screen-page-root .screen-page.market-page {
   margin-right: 1px;
 }
 
-.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="上行"] {
+.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="??"] {
   color: var(--up, #d64545);
 }
 
-.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="下行"] {
+.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="??"] {
   color: var(--down, #1faa6e);
 }
 
-.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="冲高回落"],
-.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="探底回升"] {
+.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="????"],
+.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="????"] {
   color: color-mix(in srgb, var(--accent, #3d7eff) 80%, var(--text));
 }
 
@@ -10104,7 +10124,7 @@ body.app-shell.screen-page-root .screen-page.market-page {
   display: inline-flex;
 }
 
-/* 个股分析：筛选式工作台 —— 顶栏式 + 近月池 + 左编辑/右结果 */
+/* ??????????? ?? ??? + ??? + ???/??? */
 .screen-page-root[data-screen-mode="shares"] .screen-layout {
   display: grid;
   grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
@@ -10196,7 +10216,7 @@ body.app-shell.screen-page-root .screen-page.market-page {
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) + 2px);
   background: color-mix(in srgb, var(--accent) 6%, var(--bg-panel));
-  /* 固定外框：模式切换不改变高度 */
+  /* ?????????????? */
   height: 7.15rem;
   box-sizing: border-box;
   overflow: hidden;
@@ -11146,7 +11166,7 @@ body.app-shell.screen-page-root .screen-page.market-page {
   min-height: 0;
   width: 100%;
   display: grid;
-  /* 交易日固定；上涨 6 列、待涨 9 列、领涨 3 列按字段数分宽 */
+  /* ???????? 6 ???? 9 ???? 3 ??????? */
   grid-template-columns: 120px minmax(0, 6fr) minmax(0, 9fr) minmax(0, 3fr);
   gap: 10px;
   overflow: hidden;
@@ -12330,7 +12350,7 @@ button.shares-join-node.is-active,
   font-size: 0.75rem;
 }
 
-/* 涨跌停分析页实时涨跌幅标签 */
+/* ????????????? */
 .screen-card-score .live-change {
   display: block;
   font-family: var(--mono);
@@ -12534,10 +12554,10 @@ button.shares-join-node.is-active,
   }
 }
 
-/* —— 全球市场 · 地图（Google，不可用时回退高德） —— */
+/* ?? ???? ? ???Google?????????? ?? */
 body.app-shell.world-page-root {
   margin: 0;
-  /* 与个股行情「走势」卡同比例，整体缩小以免弹出时出现滚动条 */
+  /* ???????????????????????????? */
   --company-quotes-inner: calc(100vw - var(--rail-w) - 24px);
   --company-hero-w: clamp(280px, calc(var(--company-quotes-inner) * 0.34), 380px);
   --company-kline-w: calc((var(--company-quotes-inner) - var(--company-hero-w) - 20px) * 1.2 / 2.2);
@@ -12897,7 +12917,7 @@ body.app-shell.world-page-root .app-stage {
   overflow: hidden;
 }
 
-/* 悬浮走势卡 = 个股行情 K 线卡同尺寸 */
+/* ????? = ???? K ????? */
 .world-chart-pop--card .world-index-card.screen-card {
   flex: 1 1 auto;
   width: 100%;
@@ -12962,7 +12982,7 @@ body.app-shell.world-page-root .app-stage {
   background: color-mix(in srgb, var(--bg) 55%, transparent);
 }
 
-/* 头部右侧给关闭按钮留位，避免盖住涨跌幅 */
+/* ??????????????????? */
 .world-chart-pop--card .world-index-card .screen-card-head {
   padding-right: 34px;
 }
@@ -13217,7 +13237,7 @@ body.app-shell.world-page-root .world-side {
   width: 100%;
   min-width: 0;
   max-width: none;
-  /* 宽随侧栏，高按统一比例（与悬浮卡一致） */
+  /* ??????????????????? */
   aspect-ratio: var(--world-card-ratio);
   height: auto;
   min-height: 0;
@@ -13444,7 +13464,7 @@ body.app-shell.world-page-root .world-map-controls {
   }
 
   .world-index-card.screen-card {
-    /* 移动端同样按比例随宽度变高 */
+    /* ????????????? */
     min-height: 0;
   }
 
@@ -13486,7 +13506,7 @@ body.app-shell.world-page-root .world-map-controls {
   }
 }
 
-/* —— 我的：自选分组 —— */
+/* ?? ??????? ?? */
 .mine-page .topbar,
 .mine-page .mine-toolbar,
 .mine-page > .error,
@@ -13788,7 +13808,7 @@ body.app-shell.world-page-root .world-map-controls {
   }
 }
 
-/* —— 行情页：添加至分组 —— */
+/* ?? ????????? ?? */
 .mine-add-btn {
   padding: 3px 8px;
   font-size: 0.74rem;
@@ -14021,7 +14041,7 @@ body.app-shell.world-page-root .world-map-controls {
 }
 
 .ths-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#8494a8;margin-right:6px;vertical-align:1px}.ths-dot[data-state=ok]{background:#3dd68c}.ths-dot[data-state=pending]{background:#f0b429;animation:ths-blink 1s infinite alternate}@keyframes ths-blink{from{opacity:1}to{opacity:.3}}.ths-auth-modal{position:fixed;inset:0;background:rgba(2,6,12,.6);display:flex;align-items:center;justify-content:center;z-index:200}.ths-auth-modal.hidden{display:none}.ths-auth-card{background:#0d1622;border:1px solid rgba(42,212,184,.25);border-radius:12px;padding:20px 22px;max-width:360px;text-align:center}.ths-auth-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.ths-auth-head h3{margin:0}.ths-qr-img{width:260px;height:260px;object-fit:contain;background:#fff;border-radius:8px;margin:10px auto;display:block}.ths-auth-tip{font-size:12px;margin-top:10px}
-/* 我的分组：每行同步按钮 */
+/* ??????????? */
 .mine-group-row{display:flex;align-items:center;gap:6px;padding:2px;border:1px solid transparent;border-radius:var(--radius)}
 .mine-group-row:hover{background:var(--accent-soft);border-color:var(--line)}
 .mine-group-row.is-active{background:var(--accent-soft);border-color:var(--line-strong);box-shadow:inset 2px 0 0 var(--accent)}
@@ -14031,7 +14051,7 @@ body.app-shell.world-page-root .world-map-controls {
 .mine-sync-btn{flex:0 0 auto;opacity:.55}
 .mine-group-row:hover .mine-sync-btn,.mine-group-row.is-active .mine-sync-btn{opacity:1}
 .mine-sync-btn[data-busy]{opacity:.4;pointer-events:none}
-/* 我的：股票列表/卡片切换 + 股票卡片 */
+/* ???????/???? + ???? */
 .mine-view-toggle{display:flex;gap:4px}
 .mine-view-toggle .btn.is-on{background:var(--accent-soft);border-color:var(--line-strong)}
 .mine-sort-seg{flex:0 0 auto}
@@ -14064,7 +14084,7 @@ body.app-shell.world-page-root .world-map-controls {
 .mine-cards::-webkit-scrollbar-thumb{background:rgba(42, 212, 184, 0.4);border-radius:4px}
 .mine-cards::-webkit-scrollbar-track{background:rgba(7, 11, 18, 0.35);border-radius:4px}
 .mine-cards[hidden]{display:none}
-/* —— 我的：分组股票卡片（宽度与个股行情页 screen-card 同公式） —— */
+/* ?? ?????????????????? screen-card ???? ?? */
 body.app-shell.mine-page-root {
   --company-quotes-inner: calc(100vw - var(--rail-w) - 24px);
   --company-hero-w: clamp(280px, calc(var(--company-quotes-inner) * 0.34), 380px);
@@ -14081,7 +14101,7 @@ body.app-shell.mine-page-root {
 .mine-cards .screen-card-meta b[data-tone="down"]{color:var(--down)}
 .mine-cards .chart-card--kline{min-height:220px}
 
-/* 公司详情研判 · K线分析（股指日线对比） */
+/* ?????? ? K??????????? */
 .company-panel[data-panel="judgment"] .judgment-view > .line-compare-page,
 html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .line-compare-page {
   flex: 1 1 0%;
@@ -14095,7 +14115,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .l
   display: none !important;
 }
 
-/* 公司详情研判 · 成交分析（借用行情分时成交 / 资金动向 / 实时走势） */
+/* ?????? ? ????????????? / ???? / ????? */
 .company-panel[data-panel="judgment"] .judgment-view > .deal-analysis-page,
 html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .deal-analysis-page {
   flex: 1 1 0%;
@@ -14118,7 +14138,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   flex: 1 1 0%;
   min-height: 0;
   display: grid;
-  /* 整页一块：五日 | 实时+(分时/资金/盘口) */
+  /* ??????? | ??+(??/??/??) */
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   grid-template-areas: "center";
@@ -14127,7 +14147,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
 }
 
 .deal-analysis-center {
-  /* 五日吃满左侧剩余；右侧上实时、下三列并排 */
+  /* ???????????????????? */
   --deal-fiveday-min: 320px;
   --deal-main-min: 420px;
   grid-area: center;
@@ -14135,7 +14155,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   min-height: 0;
   height: 100%;
   display: grid;
-  /* 五日更宽、实时更窄（约 1.35 : 1） */
+  /* ??????????? 1.35 : 1? */
   grid-template-columns: minmax(var(--deal-fiveday-min), 1.35fr) minmax(var(--deal-main-min), 1fr);
   grid-template-rows: minmax(0, 1fr);
   grid-template-areas: "fiveday main";
@@ -14156,7 +14176,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   overflow: hidden;
 }
 
-/* 实时明细：上实时、下三列 */
+/* ???????????? */
 .deal-live-main {
   min-width: 0;
   min-height: 0;
@@ -14184,7 +14204,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   display: none !important;
 }
 
-/* 统计视图：顶栏资金矩阵 + 下左四象限 + 下右分价 */
+/* ??????????? + ????? + ???? */
 .deal-stats-main {
   min-width: 0;
   min-height: 0;
@@ -14195,7 +14215,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   overflow: hidden;
 }
 
-/* 筹码分布：参数条 + 统计卡 + 横向筹码图 */
+/* ???????? + ??? + ????? */
 .deal-chip-main {
   min-width: 0;
   min-height: 0;
@@ -14495,7 +14515,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   overflow: auto;
 }
 
-/* 分价走势图：横轴价格，柱为内外盘手数堆叠，线为笔数 */
+/* ????????????????????????? */
 .deal-price-chart-wrap {
   position: relative;
   display: flex;
@@ -14639,7 +14659,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   }
 }
 
-/* 折叠右侧实时 + 三列明细，五日独占整块 */
+/* ?????? + ??????????? */
 .deal-analysis-center.is-main-folded {
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas: "fiveday";
@@ -14651,7 +14671,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
 
 .deal-analysis-center .deal-charts-deck,
 .deal-analysis-center .charts-deck {
-  /* 覆盖全局 .charts-deck { height:100%; flex:1; 双列 } */
+  /* ???? .charts-deck { height:100%; flex:1; ?? } */
   flex: none;
   min-width: 0;
   min-height: 0;
@@ -14687,14 +14707,14 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   min-height: 0;
   height: 100%;
   display: grid;
-  /* 分时成交4列 · 资金动向5列 · 盘口委托3列 */
+  /* ????4? ? ????5? ? ????3? */
   grid-template-columns: minmax(0, 4fr) minmax(0, 5fr) minmax(0, 3fr);
   gap: 10px;
   overflow: hidden;
   padding: 0;
 }
 
-/* 让分时成交 / 资金动向成为底部三列的直接子项 */
+/* ????? / ??????????????? */
 .deal-analysis-bottom .deal-metrics-slot,
 .deal-analysis-bottom .company-metrics-panels {
   display: contents;
@@ -14720,7 +14740,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   background: rgba(4, 8, 14, 0.35);
 }
 
-/* 底部三列在窄屏下会挤压成交明细：按容器宽度逐级压缩，避免横向滚动/列被截断 */
+/* ????????????????????????????????/???? */
 .deal-analysis-bottom .ticks-tape-section {
   container-type: inline-size;
 }
@@ -14763,6 +14783,21 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   flex: 1 1 0%;
   min-height: 0;
   overflow: auto;
+  /* ??????/??????????????????? */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 240px;
+}
+
+.deal-analysis-page[hidden],
+.company-panel[data-panel="judgment"][data-judgment-family="kline"] .deal-analysis-page,
+.company-panel[data-panel="judgment"][data-judgment-family="sentiment"] .deal-analysis-page {
+  content-visibility: hidden;
+}
+
+.line-compare-page[hidden],
+.company-panel[data-panel="judgment"][data-judgment-family="deal"] .line-compare-page,
+.company-panel[data-panel="judgment"][data-judgment-family="sentiment"] .line-compare-page {
+  content-visibility: hidden;
 }
 
 .deal-entrust-panel,
@@ -14980,7 +15015,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
     min-height: 720px;
   }
 
-  /* 窄屏折叠后只用一行；旧 min-height 是为上下堆叠留的，这里要放开 */
+  /* ??????????? min-height ?????????????? */
   .deal-analysis-center.is-main-folded {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 1fr);
@@ -15004,9 +15039,9 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   min-height: 0;
   display: grid;
   /*
-   * 列宽不变：指数列 = 日K 列 × 0.72；日K 左移，右侧留白。
-   * 行：指数按内容定高（画布高度由 JS 按「成交量底→表头底」/图宽 与日K 对齐），
-   * 四价区吃掉剩余高度。
+   * ???????? = ?K ? ? 0.72??K ????????
+   * ??????????????? JS ???????????/?? ??K ????
+   * ??????????
    */
   grid-template-columns:
     minmax(0, 0.864fr)
@@ -15023,7 +15058,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   overflow: hidden;
 }
 
-/* 右侧列：上 T王，中筹码（绝对定位对齐日K价轴），下四价波动（右下角） */
+/* ????? T?????????????K?????????????? */
 .line-compare-side {
   grid-area: side;
   position: relative;
@@ -15079,7 +15114,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   flex: 0 0 auto;
 }
 
-/* 高度由 syncLcIndexCanvasAspect 按日K「量底→表头底」/宽 写入；覆盖通用 wrap 的 flex:1 防塌缩 */
+/* ??? syncLcIndexCanvasAspect ??K????????/? ??????? wrap ? flex:1 ??? */
 .line-compare-index .chart-canvas-wrap {
   flex: 0 0 auto;
   width: 100%;
@@ -15290,8 +15325,8 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
 }
 
 /*
- * 筹码峰：JS 按日K layout.price → layout.volume 对齐
- * （高度=价格纵轴，底边=成交量柱顶）
+ * ????JS ??K layout.price ? layout.volume ??
+ * ???=???????=??????
  */
 .lc-jetton {
   position: absolute;
@@ -15375,13 +15410,13 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   z-index: 1;
 }
 
-/* 上面这条 display:flex 与 .chart-empty.hidden 同权重且更靠后，会把 hidden 顶掉；
-   这里补回隐藏语义，否则筹码加载完成后「筹码加载中…」仍压在图上。 */
+/* ???? display:flex ? .chart-empty.hidden ?????????? hidden ???
+   ???????????????????????????????? */
 .lc-jetton-wrap .chart-empty.hidden {
   display: none;
 }
 
-/* 与行情 .charts-deck .chart-card__foot 一致：隐藏底栏，画布区高度对齐 */
+/* ??? .charts-deck .chart-card__foot ??????????????? */
 .line-compare-chart .chart-card__foot {
   display: none;
 }
@@ -15563,7 +15598,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   overflow: auto;
 }
 
-/* 研判 K线分析 · 左栏面板（现为四价前低：现价得分 + 谷值表） */
+/* ?? K??? ? ???????????????? + ???? */
 .line-compare-undulate {
   min-width: 0;
   min-height: 0;
@@ -15663,7 +15698,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   font-size: 0.62rem;
 }
 
-/* 研判 K线分析 · 右下角面板（现为四价波动：稳定区间 + 个股/指数，高度由 JS 收束） */
+/* ?? K??? ? ????????????????? + ??/?????? JS ??? */
 .line-compare-extremum {
   position: relative;
   z-index: 3;
@@ -15767,7 +15802,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   scrollbar-color: rgba(42, 212, 184, 0.35) transparent;
 }
 
-/* 右下角四价波动：内容自适应，超出可滚动 */
+/* ??????????????????? */
 .line-compare-extremum > .lc-extremum-body.lc-undulate-stats {
   overflow-x: hidden;
   overflow-y: auto;
@@ -15782,7 +15817,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   line-height: 1.35;
 }
 
-/* ---------- 四价前低（line-evaluate：现价得分 + 谷值细则表） ---------- */
+/* ---------- ?????line-evaluate????? + ?????? ---------- */
 .lc-eval {
   display: flex;
   flex-direction: column;
@@ -16057,7 +16092,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   color: var(--ink);
 }
 
-/* ---------- 四价波动：稳定区间 / 个股 / 指数（内容自适应，不压缩重叠） ---------- */
+/* ---------- ????????? / ?? / ??????????????? ---------- */
 .lc-und-bundle {
   display: flex;
   flex-direction: column;
@@ -16094,7 +16129,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   margin-top: 0;
 }
 
-/* 三块扁平排列：按内容高度，行间分隔 */
+/* ????????????????? */
 .lc-und-bundle .lc-und-stat {
   margin: 0;
   padding: 7px 2px 8px;
@@ -16126,7 +16161,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   min-width: 4.5em;
 }
 
-/* 指标两行：上 4（各占 3/12）下 3（各占 4/12） */
+/* ?????? 4??? 3/12?? 3??? 4/12? */
 .lc-und-bundle .lc-und-stat-metrics,
 .lc-und-bundle .lc-und-stat-metrics--eval {
   display: grid;
@@ -16214,7 +16249,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   padding: 6px 8px 8px;
 }
 
-/* σ 对比曲线：横轴=起始日期，纵轴=涨跌幅（以各自 σ 为单位） */
+/* ? ???????=???????=??????? ? ???? */
 .lc-sigma-mode {
   display: inline-flex;
   gap: 2px;
@@ -16227,7 +16262,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   gap: 6px;
 }
 
-/* 四价波动：可切换单卡（默认收盘价）；仅统计，无二维图 */
+/* ?????????????????????????? */
 .lc-und-grid {
   flex: 0 0 auto;
   min-width: 0;
@@ -16395,7 +16430,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   cursor: grabbing;
 }
 
-/* 横轴日期：HTML 层加密刻度，与 canvas 左右 padding 对齐 */
+/* ?????HTML ??????? canvas ?? padding ?? */
 .lc-und-card-axis {
   flex: 0 0 auto;
   display: grid;
@@ -16522,7 +16557,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   text-overflow: ellipsis;
 }
 
-/* A股惯例：红涨(正)绿跌(负) */
+/* A??????(?)??(?) */
 .lc-und-metric b.change-up {
   color: var(--up);
 }
@@ -16686,7 +16721,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   color: var(--muted);
 }
 
-/* 结束日在「均值=0、σ=单位」坐标轴上的位置 */
+/* ???????=0??=?????????? */
 .lc-undulate-z {
   grid-column: 1 / -1;
   display: flex;
@@ -16844,10 +16879,10 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
 .line-compare-legend-inline [data-series="index"] { color: #7aa2f7; }
 .line-compare-legend-inline [data-series="excess"] { color: #f0b429; }
 
-.line-compare-dir-legend [data-dir="股跌指涨"] { color: #0f7a4a; }
-.line-compare-dir-legend [data-dir="同跌"] { color: #3dd68c; }
-.line-compare-dir-legend [data-dir="同涨"] { color: #ff8a95; }
-.line-compare-dir-legend [data-dir="股涨指跌"] { color: #d62839; }
+.line-compare-dir-legend [data-dir="????"] { color: #0f7a4a; }
+.line-compare-dir-legend [data-dir="??"] { color: #3dd68c; }
+.line-compare-dir-legend [data-dir="??"] { color: #ff8a95; }
+.line-compare-dir-legend [data-dir="????"] { color: #d62839; }
 
 .line-compare-chart-summary {
   display: flex;
@@ -17009,10 +17044,10 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   color: #f0b429;
 }
 
-.line-compare-level[data-level="紧贴"] { color: var(--muted); }
-.line-compare-level[data-level="轻度偏离"] { color: #f0b429; }
-.line-compare-level[data-level="明显偏离"] { color: #f4a261; }
-.line-compare-level[data-level="极端偏离"] { color: var(--up); }
+.line-compare-level[data-level="??"] { color: var(--muted); }
+.line-compare-level[data-level="????"] { color: #f0b429; }
+.line-compare-level[data-level="????"] { color: #f4a261; }
+.line-compare-level[data-level="????"] { color: var(--up); }
 
 .line-compare-card {
   appearance: none;
@@ -17066,13 +17101,13 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   color: var(--muted);
 }
 
-.line-compare-level[data-level="持平"] { color: var(--muted); }
-.line-compare-level[data-level="轻度偏强"] { color: #f0b429; }
-.line-compare-level[data-level="明显偏强"] { color: #f4a261; }
-.line-compare-level[data-level="极端偏强"] { color: var(--up); }
-.line-compare-level[data-level="轻度偏弱"] { color: #7eb8da; }
-.line-compare-level[data-level="明显偏弱"] { color: #5b9bd5; }
-.line-compare-level[data-level="极端偏弱"] { color: var(--down); }
+.line-compare-level[data-level="??"] { color: var(--muted); }
+.line-compare-level[data-level="????"] { color: #f0b429; }
+.line-compare-level[data-level="????"] { color: #f4a261; }
+.line-compare-level[data-level="????"] { color: var(--up); }
+.line-compare-level[data-level="????"] { color: #7eb8da; }
+.line-compare-level[data-level="????"] { color: #5b9bd5; }
+.line-compare-level[data-level="????"] { color: var(--down); }
 
 .line-compare-card-meta {
   font-size: 0.7rem;
@@ -17237,7 +17272,7 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   }
 
   .lc-jetton {
-    /* 窄屏仍由 JS 对齐；给一个保底可见高度 */
+    /* ???? JS ???????????? */
     min-height: 0;
   }
 
@@ -17276,5 +17311,248 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
 
   .line-compare-table-wrap {
     max-height: 360px;
+  }
+}
+
+/* ???? ?????????????? ?? sentiment?? ???? */
+.speculation-page {
+  display: none;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-height: 0;
+  gap: 12px;
+  padding: 12px 16px 20px;
+  overflow: auto;
+}
+
+.speculation-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.speculation-title-block h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
+.speculation-title-block .muted,
+.speculation-meta {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+}
+
+.speculation-error:not(.hidden) {
+  margin: 0;
+}
+
+.speculation-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.speculation-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.speculation-section-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.speculation-section-head .muted {
+  margin: 2px 0 0;
+  font-size: 0.82rem;
+}
+
+.speculation-chip-grid,
+.speculation-sit-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.speculation-chip-row,
+.speculation-sit-row,
+.speculation-sit-head {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1.2fr 1fr;
+  gap: 8px 12px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  font-size: 0.9rem;
+}
+
+.speculation-sit-head,
+.speculation-sit-row {
+  grid-template-columns: 1.4fr 1fr 1fr;
+}
+
+.speculation-chip-row span,
+.speculation-sit-head span {
+  color: var(--muted, #6b7280);
+}
+
+.speculation-chip-row strong,
+.speculation-sit-row strong {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.speculation-fund-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.speculation-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+}
+
+.speculation-kpi span {
+  font-size: 0.78rem;
+  color: var(--muted, #6b7280);
+}
+
+.speculation-kpi strong {
+  font-size: 1rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.speculation-holders-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.speculation-table-wrap {
+  overflow: auto;
+  max-height: 360px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+}
+
+.speculation-table-wrap h4 {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.02);
+  position: sticky;
+  top: 0;
+}
+
+.speculation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.speculation-table th,
+.speculation-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  white-space: nowrap;
+}
+
+.speculation-table th {
+  font-weight: 600;
+  color: var(--muted, #6b7280);
+}
+
+.speculation-table td.num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.speculation-table tr.is-empty td {
+  text-align: center;
+  color: var(--muted, #6b7280);
+  padding: 16px 8px;
+}
+
+.speculation-heat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.speculation-heat-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+}
+
+.speculation-heat-head h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.speculation-heat-head .muted {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+}
+
+.speculation-heat-block h5 {
+  margin: 0 0 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted, #6b7280);
+}
+
+.speculation-heat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.speculation-heat-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 0;
+}
+
+.speculation-heat-row time {
+  color: var(--muted, #6b7280);
+}
+
+.speculation-empty {
+  margin: 24px 0;
+  text-align: center;
+}
+
+@media (max-width: 960px) {
+  .speculation-holders-grid,
+  .speculation-heat-grid,
+  .speculation-fund-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .speculation-chip-row {
+    grid-template-columns: 1fr 1fr;
   }
 }

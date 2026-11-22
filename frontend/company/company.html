@@ -194,8 +194,8 @@
                           <option value="pe">估值</option>
                           <option value="fundflow">资金流</option>
                           <option value="margin">融资融券</option>
-                          <option value="compare" selected>股指对比</option>
-                          <option value="macd">MACD</option>
+                          <option value="compare">股指对比</option>
+                          <option value="macd" selected>MACD</option>
                         </select>
                       </label>
                       <label id="lcCompareIndexWrap" class="chart-select-wrap" aria-label="对比指数">
@@ -219,14 +219,11 @@
                           <option value="low">最低价</option>
                         </select>
                       </label>
-                      <label id="lcMacdFastWrap" class="chart-select-wrap hidden" aria-label="快线时长" title="快线 EMA">
-                        <input id="lcMacdFastInput" class="chart-select chart-select--num" type="number" min="1" max="200" step="1" value="10" />
-                      </label>
-                      <label id="lcMacdSlowWrap" class="chart-select-wrap hidden" aria-label="慢线时长" title="慢线 EMA">
-                        <input id="lcMacdSlowInput" class="chart-select chart-select--num" type="number" min="2" max="400" step="1" value="20" />
-                      </label>
-                      <label id="lcMacdSignalWrap" class="chart-select-wrap hidden" aria-label="信号线时长" title="DEA 信号线">
-                        <input id="lcMacdSignalInput" class="chart-select chart-select--num" type="number" min="1" max="200" step="1" value="7" />
+                      <label id="lcMacdParamsWrap" class="chart-select-wrap hidden" aria-label="MACD参数" title="快线 / 慢线 / 信号线">
+                        <select id="lcMacdParamsSelect" class="chart-select">
+                          <option value="12,26,9" selected>12 / 26 / 9</option>
+                          <option value="10,20,7">10 / 20 / 7</option>
+                        </select>
                       </label>
                       <label id="lcExtremaLayerWrap" class="chart-select-wrap" aria-label="极值层级">
                         <select id="lcExtremaLayerSelect" class="chart-select">
@@ -424,6 +421,21 @@
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+        <div id="speculationPage" class="speculation-page" hidden aria-hidden="true">
+          <header class="speculation-head">
+            <div class="speculation-title-block">
+              <h2>炒作分析</h2>
+              <p id="speculationMeta" class="muted">筹码门槛 · 十大股东 · 三源热度</p>
+            </div>
+            <div class="speculation-tools">
+              <button id="speculationRefreshBtn" class="btn ghost sm" type="button">刷新</button>
+            </div>
+          </header>
+          <p id="speculationError" class="error speculation-error hidden" role="alert"></p>
+          <div id="speculationBody" class="speculation-body">
+            <p class="muted speculation-empty">打开本页后加载筹码、股东与热度…</p>
           </div>
         </div>
         <div class="ai-page company-analysis-page" hidden aria-hidden="true">

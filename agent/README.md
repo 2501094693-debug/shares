@@ -1,6 +1,8 @@
 # 智能分析（agent）
 
-业务简述、八看财报解读、巴菲特读表规则引擎、散户情绪 — HTTP API + LangGraph 智能体。
+业务简述、八看财报解读、巴菲特读表规则引擎 — HTTP API + LangGraph 智能体。
+
+炒作分析（筹码/股东/热度）在 `backend/company/analysis/speculation`，不走 agent。
 
 ## 目录结构
 
@@ -11,7 +13,6 @@ agent/
 ├── config.py               # LLM / 搜索配置
 ├── business_explainer/     # 业务简述智能体
 ├── buffett_analyst/        # 巴菲特读表规则引擎（纯 Python）
-├── retail_sentiment/       # 发声散户情绪智能体
 ├── rules/                  # 规则引擎公共工具
 ├── tools/                  # 数据采集、PDF、联网搜索
 ├── utils/

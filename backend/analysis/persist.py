@@ -17,6 +17,7 @@ KIND_ROTATION = "rotation"
 KIND_SHARES = "shares"
 KIND_EVALUATE = "evaluate"
 KIND_RECENT_LOW = "recent_low"
+KIND_MACD = "macd"
 
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 

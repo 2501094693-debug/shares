@@ -19,6 +19,7 @@
     { prefix: "/api/stocks/holder-num", ttl: 600_000 },
     { prefix: "/api/stocks/fund-holders", ttl: 600_000 },
     { prefix: "/api/stocks/emotion", ttl: 60_000 },
+    { prefix: "/api/stocks/speculation", ttl: 120_000 },
     { prefix: "/api/list/stock", ttl: 600_000 },
     { prefix: "/api/industries/", ttl: 6 * 3600_000 },
     { prefix: "/api/industries", ttl: 30 * 60_000 },

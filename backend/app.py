@@ -41,6 +41,7 @@ from company.analysis.financialreport.api import router as financial_views_route
 from company.analysis.competition.api import router as competition_router
 from company.analysis.valuation.api import router as valuation_router
 from company.analysis.riskassessment.api import router as riskassessment_router
+from company.analysis.speculation.api import router as speculation_router
 from company.analysis.businessoverview.interfaces.api import router as businessoverview_router
 from company.analysis.businessoverview.bizprofile.api import router as bizprofile_router
 from company.analysis.line.compare.api import router as line_compare_router
@@ -223,6 +224,7 @@ app.include_router(financial_views_router)
 app.include_router(competition_router)
 app.include_router(valuation_router)
 app.include_router(riskassessment_router)
+app.include_router(speculation_router)
 app.include_router(businessoverview_router)
 app.include_router(bizprofile_router)
 app.include_router(line_compare_router)

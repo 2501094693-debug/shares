@@ -19,6 +19,27 @@ from analysis.evaluate.config import (
     MIN_WORKERS,
 )
 from analysis.evaluate.service import service as evaluate_service
+from analysis.macd.config import (
+    ALLOWED_ADJUSTS as MACD_ALLOWED_ADJUSTS,
+    ALLOWED_BANDS as MACD_ALLOWED_BANDS,
+    ALLOWED_FACTORS as MACD_ALLOWED_FACTORS,
+    ALLOWED_INDEXES as MACD_ALLOWED_INDEXES,
+    DEFAULT_ADJUST as MACD_ADJUST,
+    DEFAULT_BAND as MACD_BAND,
+    DEFAULT_FACTOR as MACD_FACTOR,
+    DEFAULT_FAST as MACD_FAST,
+    DEFAULT_INDEX as MACD_INDEX,
+    DEFAULT_LOOKBACK_DAYS as MACD_LOOKBACK_DAYS,
+    DEFAULT_NEAR_RATIO as MACD_NEAR_RATIO,
+    DEFAULT_SIGNAL as MACD_SIGNAL,
+    DEFAULT_SLOW as MACD_SLOW,
+    DEFAULT_W_DIV as MACD_W_DIV,
+    DEFAULT_W_PRIOR as MACD_W_PRIOR,
+    DEFAULT_WORKERS as MACD_WORKERS,
+    MAX_WORKERS as MACD_MAX_WORKERS,
+    MIN_WORKERS as MACD_MIN_WORKERS,
+)
+from analysis.macd.service import service as macd_service
 from analysis.recent_low.config import (
     ALLOWED_ADJUSTS,
     DEFAULT_ADJUST as RECENT_LOW_ADJUST,
@@ -134,6 +155,72 @@ def get_recent_low_screen(
     try:
         payload = recent_low_service.run_or_poll(
             adjust=adjust_key,
+            force=refresh == "1",
+            workers=workers,
+        )
+        return ok(payload)
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc), 500)
+
+
+@router.get("/api/screen/macd")
+def get_macd_screen(
+    band: float = Query(MACD_BAND, description="波动带（小数，0.09=±9%）"),
+    index: str = Query(MACD_INDEX, description="对比指数公开码"),
+    factor: str = Query(MACD_FACTOR, description="波动口径：open/high/low/close/all"),
+    lookback: int = Query(MACD_LOOKBACK_DAYS, description="回溯自然日"),
+    adjust: str = Query(MACD_ADJUST, description="复权方式：qfq / hfq / none"),
+    near_ratio: float = Query(
+        MACD_NEAR_RATIO, description="即将金叉相对缺口阈值 (DEA−DIF)/|DEA|"
+    ),
+    fast: int = Query(MACD_FAST, ge=1, le=200, description="MACD 快线"),
+    slow: int = Query(MACD_SLOW, ge=2, le=200, description="MACD 慢线"),
+    signal: int = Query(MACD_SIGNAL, ge=1, le=200, description="DEA 信号线"),
+    w_prior: float = Query(MACD_W_PRIOR, description="前低分权重"),
+    w_div: float = Query(MACD_W_DIV, description="股指反向日占比分权重"),
+    refresh: str = Query("0", description="1=强制重算"),
+    workers: int = Query(
+        MACD_WORKERS,
+        ge=MACD_MIN_WORKERS,
+        le=MACD_MAX_WORKERS,
+        description="并发线程数",
+    ),
+):
+    """MACD 水下/水上金叉或即将金叉 + 最大稳定区间综合分。排除创业板、科创板、ST、退市。"""
+    band_abs = abs(float(band))
+    if band_abs not in MACD_ALLOWED_BANDS:
+        return err(f"band 须为 {MACD_ALLOWED_BANDS} 之一", 400)
+    factor_key = str(factor or "").strip().lower()
+    if factor_key not in MACD_ALLOWED_FACTORS:
+        return err(f"factor 须为 {MACD_ALLOWED_FACTORS} 之一", 400)
+    index_code = str(index or "").strip() or MACD_INDEX
+    if index_code not in MACD_ALLOWED_INDEXES:
+        return err(f"index 须为 {MACD_ALLOWED_INDEXES} 之一", 400)
+    adjust_key = str(adjust or "").strip().lower() or MACD_ADJUST
+    if adjust_key not in MACD_ALLOWED_ADJUSTS:
+        return err(f"adjust 须为 {MACD_ALLOWED_ADJUSTS} 之一", 400)
+    if lookback < 60 or lookback > EVALUATE_MAX_LOOKBACK:
+        return err(f"lookback 须在 60–{EVALUATE_MAX_LOOKBACK} 之间", 400)
+    if fast >= slow:
+        return err("fast 须小于 slow", 400)
+    if near_ratio <= 0 or near_ratio > 1:
+        return err("near_ratio 须在 (0, 1] 之间", 400)
+    if w_prior < 0 or w_div < 0 or (w_prior + w_div) <= 0:
+        return err("w_prior / w_div 须非负且之和 > 0", 400)
+
+    try:
+        payload = macd_service.run_or_poll(
+            band=band_abs,
+            index=index_code,
+            factor=factor_key,
+            lookback=lookback,
+            adjust=adjust_key,
+            near_ratio=float(near_ratio),
+            fast=fast,
+            slow=slow,
+            signal=signal,
+            w_prior=float(w_prior),
+            w_div=float(w_div),
             force=refresh == "1",
             workers=workers,
         )

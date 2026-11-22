@@ -727,9 +727,19 @@ const xqEmotionState = {
 let newsGroup = normalizeNewsGroup(params.get("news") || "");
 let newsBootstrapped = { official: false, other: false, reports: false, financials: false };
 let emotionBootstrapped = { eastmoney: false, tonghuashun: false, xueqiu: false };
-const ANALYSIS_PANELS = new Set(["business", "bizprofile", "zhang-views", "peers", "risk", "valuation", "sentiment"]);
+const ANALYSIS_PANELS = new Set(["business", "bizprofile", "zhang-views", "peers", "risk", "valuation"]);
 const KLINE_JUDGMENT_VIEWS = new Set(["kline", "line-compare", "linecompare", "k线分析", "k线"]);
 const DEAL_JUDGMENT_VIEWS = new Set(["deal", "成交分析", "成交"]);
+const SPECULATION_JUDGMENT_VIEWS = new Set([
+  "sentiment",
+  "speculation",
+  "炒作分析",
+  "炒作",
+  "retail",
+  "retail-sentiment",
+  "情绪分析",
+  "散户情绪",
+]);
 const BUSINESS_FAMILY_VIEWS = new Set(["business", "bizprofile"]);
 const EARNINGS_VIEWS = new Set(["zhang-views"]);
 const EARNINGS_FAMILY = new Set(["earnings", "财报简述", ...EARNINGS_VIEWS]);
@@ -872,7 +882,13 @@ if (["list", "lhb", "longhu"].includes(tabParamRaw)) {
   }
 }
 let judgmentSubTab = normalizeJudgmentSubTab(params.get("judgment") || "kline");
-if (isAnalysisPanel(tabParamRaw) || tabParamRaw === "analysis" || isKlineJudgment(tabParamRaw) || isDealJudgment(tabParamRaw)) {
+if (
+  isAnalysisPanel(tabParamRaw)
+  || tabParamRaw === "analysis"
+  || isKlineJudgment(tabParamRaw)
+  || isDealJudgment(tabParamRaw)
+  || isSpeculationJudgment(tabParamRaw)
+) {
   judgmentSubTab = normalizeJudgmentSubTab(
     tabParamRaw === "analysis" ? "kline" : tabParamRaw
   );
@@ -915,9 +931,14 @@ function isDealJudgment(panelId = "") {
   return DEAL_JUDGMENT_VIEWS.has(raw);
 }
 
+function isSpeculationJudgment(panelId = "") {
+  const raw = String(panelId || "").trim().toLowerCase();
+  return SPECULATION_JUDGMENT_VIEWS.has(raw);
+}
+
 function isAnalysisPanel(panelId = "") {
   const raw = String(panelId || "").trim().toLowerCase();
-  if (isKlineJudgment(raw) || isDealJudgment(raw)) return false;
+  if (isKlineJudgment(raw) || isDealJudgment(raw) || isSpeculationJudgment(raw)) return false;
   if (EARNINGS_FAMILY.has(raw)) return true;
   const aliases = window.AI_MODE_ALIASES || {};
   const mapped = aliases[raw] || raw;
@@ -973,6 +994,7 @@ function normalizeMainPanel(panelId) {
     || isAnalysisPanel(panelId)
     || isKlineJudgment(panelId)
     || isDealJudgment(panelId)
+    || isSpeculationJudgment(panelId)
   ) {
     return "judgment";
   }
@@ -983,6 +1005,7 @@ function normalizeJudgmentSubTab(view) {
   const raw = String(view || "").trim().toLowerCase();
   if (isKlineJudgment(raw)) return "kline";
   if (isDealJudgment(raw)) return "deal";
+  if (isSpeculationJudgment(raw)) return "sentiment";
   if (raw === "earnings" || raw === "财报简述") {
     return EARNINGS_VIEWS.has(lastEarningsView) ? lastEarningsView : "zhang-views";
   }
@@ -1070,6 +1093,12 @@ function restoreNodeHome(node, parent, next) {
 
 /** 成交分析挂载后的延后启动（等 tab 先画出再拉数/重绘，避免切换卡顿） */
 let dealAnalysisBootRaf = 0;
+/** 五日画布补画合并（切换 / ResizeObserver 共用） */
+let dealFiveDayPaintRaf = 0;
+/** 最近一次成交分析画布尺寸；隐藏后再显示且尺寸未变时可跳过重绘（bitmap 仍在） */
+const dealSurfacePaint = { ticksW: 0, ticksH: 0, fiveW: 0, fiveH: 0 };
+/** K线分析主图画布尺寸；来回切换尺寸未变则跳过 renderLcChart */
+const lcSurfacePaint = { w: 0, h: 0 };
 
 function cancelDealAnalysisBoot() {
   if (!dealAnalysisBootRaf) return;
@@ -1077,21 +1106,74 @@ function cancelDealAnalysisBoot() {
   dealAnalysisBootRaf = 0;
 }
 
-function scheduleDealAnalysisPaint() {
+function dealPaintSizeClose(a, b) {
+  return Math.abs(Number(a) - Number(b)) <= 2;
+}
+
+function scheduleDealFiveDayPaint({ force = false, _retry = 0 } = {}) {
+  if (dealFiveDayPaintRaf) return;
+  dealFiveDayPaintRaf = window.requestAnimationFrame(() => {
+    dealFiveDayPaintRaf = 0;
+    if (!dealAnalysisVisible() || !dealFiveDayState.items.length) return;
+    const body = document.getElementById("dealFiveDayBody");
+    const cssW = Math.round(body?.clientWidth || 0);
+    const cssH = Math.round(body?.clientHeight || 0);
+    // 刚从停泊态出来时尺寸可能仍是 0，最多再等两帧
+    if (!force && (!cssW || !cssH)) {
+      if (_retry < 2) scheduleDealFiveDayPaint({ force: false, _retry: _retry + 1 });
+      return;
+    }
+    if (
+      !force &&
+      dealPaintSizeClose(dealSurfacePaint.fiveW, cssW) &&
+      dealPaintSizeClose(dealSurfacePaint.fiveH, cssH)
+    ) {
+      return;
+    }
+    clampDealFiveDayViewport();
+    paintDealFiveDayChart();
+    dealSurfacePaint.fiveW = Math.round(body?.clientWidth || cssW);
+    dealSurfacePaint.fiveH = Math.round(body?.clientHeight || cssH);
+  });
+}
+
+function scheduleDealAnalysisPaint({ force = false, _retry = 0 } = {}) {
+  // boot 在途时由其负责首帧重绘，避免切换瞬间叠两次 canvas
+  if (dealAnalysisBootRaf) return;
   window.requestAnimationFrame(() => {
-    if (!dealAnalysisVisible()) return;
+    if (!dealAnalysisVisible() || dealAnalysisBootRaf) return;
+    const wrap = els.ticksChartWrap;
+    const cssW = Math.round(wrap?.clientWidth || 0);
+    const cssH = Math.round(wrap?.clientHeight || 0);
+    if (!force && (!cssW || !cssH)) {
+      if (_retry < 2) scheduleDealAnalysisPaint({ force: false, _retry: _retry + 1 });
+      return;
+    }
+    // 来回切换且布局未变：canvas 像素还在，跳过重绘
+    if (
+      !force &&
+      dealPaintSizeClose(dealSurfacePaint.ticksW, cssW) &&
+      dealPaintSizeClose(dealSurfacePaint.ticksH, cssH)
+    ) {
+      return;
+    }
     syncTicksChartScrollBar();
     renderTicksChart();
+    dealSurfacePaint.ticksW = Math.round(wrap?.clientWidth || cssW);
+    dealSurfacePaint.ticksH = Math.round(wrap?.clientHeight || cssH);
   });
 }
 
 function scheduleDealAnalysisBoot() {
   cancelDealAnalysisBoot();
-  // 双 rAF：等本次样式/布局提交后再跑重活
+  // 双 rAF：先让 tab/布局提交一帧，再拆开绑定与重绘，避免切换卡顿
   dealAnalysisBootRaf = window.requestAnimationFrame(() => {
     dealAnalysisBootRaf = window.requestAnimationFrame(() => {
-      dealAnalysisBootRaf = 0;
-      if (!dealAnalysisVisible() || !dealQuotesHome.mounted) return;
+      if (!dealAnalysisVisible() || !dealQuotesHome.mounted) {
+        dealAnalysisBootRaf = 0;
+        return;
+      }
+      // 轻量：事件绑定 + 轮询；大表格/画布放到下一帧
       if (!document.getElementById("ticksTapeBody") || !document.getElementById("bigDealBody")) {
         renderMetrics(metricsStock);
       } else {
@@ -1099,19 +1181,28 @@ function scheduleDealAnalysisBoot() {
         bindTapeChartLink();
         bindTicksDayPicker();
         syncTicksDayInput();
-        refreshTicksTapeList();
-        pinTicksTapeToLatest();
-        refreshBigDealList();
-        pinBigDealTapeToLatest();
       }
       if (dealModeIsStats()) startDealStatsPolling();
       else if (dealModeIsLive()) startDealEntrustPolling();
       else if (dealModeIsChip()) void loadDealChip();
-      void loadDealFiveDay();
-      if (dealModeIsLive()) {
-        syncTicksChartScrollBar();
-        renderTicksChart();
-      }
+
+      dealAnalysisBootRaf = window.requestAnimationFrame(() => {
+        dealAnalysisBootRaf = 0;
+        if (!dealAnalysisVisible() || !dealQuotesHome.mounted) return;
+        if (document.getElementById("ticksTapeBody") && document.getElementById("bigDealBody")) {
+          refreshTicksTapeList();
+          pinTicksTapeToLatest();
+          refreshBigDealList();
+          pinBigDealTapeToLatest();
+        }
+        // 有缓存则直接画，无缓存才拉数（loadDealFiveDay 内部已短路）
+        void loadDealFiveDay();
+        if (dealModeIsLive()) {
+          scheduleDealAnalysisPaint({ force: true });
+        } else if (dealModeIsChip() && dealFiveDayState.items.length) {
+          scheduleDealFiveDayPaint({ force: true });
+        }
+      });
     });
   });
 }
@@ -1137,18 +1228,20 @@ function mountDealAnalysisQuotes({ activate = true } = {}) {
       stopDealChipLoad();
       return;
     }
+    // 重入（K线↔成交来回）：只软启轮询。画布 bitmap 在停泊态仍在，
+    // 不主动重绘；尺寸真变了由 ResizeObserver → scheduleDealFiveDayPaint 补。
     if (dealModeIsStats()) {
-      if (!dealStatsState.timer) startDealStatsPolling();
+      startDealStatsPolling({ soft: true });
     } else if (dealModeIsLive()) {
-      if (!dealEntrustState.timer) startDealEntrustPolling();
+      startDealEntrustPolling({ soft: true });
     } else if (dealModeIsChip()) {
-      void loadDealChip();
+      // 有筹码缓存则只补画，避免来回切换重复请求
+      if (!dealChipState.data) void loadDealChip();
+      else scheduleDealFiveDayPaint({ force: false });
     }
-    // 重入成交分析时，若五日分时尚未成功加载过，则补拉；避免首次 boot 被快速切换打断导致“暂无数据”
-    if (dealModeIsLive() && !(dealFiveDayState.items || []).length && !dealFiveDayState.loading) {
+    if (!(dealFiveDayState.items || []).length && !dealFiveDayState.loading) {
       void loadDealFiveDay();
     }
-    scheduleDealAnalysisPaint();
     return;
   }
 
@@ -1157,7 +1250,8 @@ function mountDealAnalysisQuotes({ activate = true } = {}) {
   if (ticksCard.parentElement !== chartsSlot) chartsSlot.appendChild(ticksCard);
   dealQuotesHome.mounted = true;
   bindDealFiveDayPanel();
-  applyDealMode(dealModeState.mode || readDealMode(), { force: true });
+  // 仅同步模式 DOM；轮询/重绘交给 boot，避免与 bind 内逻辑叠两次
+  applyDealMode(dealModeState.mode || readDealMode(), { force: true, activate: false });
   if (activate) scheduleDealAnalysisBoot();
 }
 
@@ -1170,10 +1264,22 @@ function stopDealEntrustPolling() {
   dealEntrustState.loadGen += 1;
 }
 
-function startDealEntrustPolling() {
+function startDealEntrustPolling({ soft = false } = {}) {
   if (!dealModeIsLive()) return;
-  stopDealEntrustPolling();
-  void loadDealEntrust();
+  if (soft && dealEntrustState.timer) return;
+  if (!soft) {
+    stopDealEntrustPolling();
+    void loadDealEntrust();
+  } else {
+    // 软启：保留已有盘口 DOM，只恢复定时器；无缓存时再静默补一次
+    if (dealEntrustState.timer) {
+      window.clearInterval(dealEntrustState.timer);
+      dealEntrustState.timer = 0;
+    }
+    if (!dealEntrustState.book && !dealEntrustState.fetching) {
+      void loadDealEntrust({ silent: true });
+    }
+  }
   dealEntrustState.timer = window.setInterval(() => {
     if (!dealAnalysisVisible() || !dealModeIsLive()) {
       stopDealEntrustPolling();
@@ -1197,10 +1303,23 @@ function stopDealStatsPolling() {
   setDealRefreshBtnBusy(document.getElementById("dealStatsRefreshBtn"), false);
 }
 
-function startDealStatsPolling() {
+function startDealStatsPolling({ soft = false } = {}) {
   if (!dealModeIsStats()) return;
-  stopDealStatsPolling();
-  void loadDealStatsPack();
+  if (soft && dealStatsState.timer) return;
+  if (!soft) {
+    stopDealStatsPolling();
+    void loadDealStatsPack();
+  } else {
+    if (dealStatsState.timer) {
+      window.clearInterval(dealStatsState.timer);
+      dealStatsState.timer = 0;
+    }
+    const hasCache =
+      dealStatsState.capital?.data || dealStatsState.priceLevels?.data;
+    if (!hasCache && !dealStatsState.fetching) {
+      void loadDealStatsPack({ silent: true });
+    }
+  }
   dealStatsState.timer = window.setInterval(() => {
     if (!dealAnalysisVisible() || !dealModeIsStats()) {
       stopDealStatsPolling();
@@ -2266,8 +2385,10 @@ function stopDealChipLoad() {
   setDealRefreshBtnBusy(document.getElementById("dealChipRefreshBtn"), false);
 }
 
-/** 整块切换：实时明细 ↔ 统计视图 ↔ 筹码分布（五日保留） */
-function applyDealMode(mode, { persist = false, force = false } = {}) {
+/** 整块切换：实时明细 ↔ 统计视图 ↔ 筹码分布（五日保留）
+ * activate=false 时只同步模式 DOM，不启轮询/重绘（供首次挂载后交给 boot）
+ */
+function applyDealMode(mode, { persist = false, force = false, activate = true } = {}) {
   const next = normalizeDealMode(mode);
   const prev = dealModeState.mode;
   if (!force && prev === next) {
@@ -2310,7 +2431,7 @@ function applyDealMode(mode, { persist = false, force = false } = {}) {
   if ((next === "stats" || next === "chip") && dealMainFoldState.folded) {
     applyDealMainFold(false, { persist: true });
   }
-  if (!dealAnalysisVisible()) return;
+  if (!activate || !dealAnalysisVisible()) return;
 
   if (next === "stats") {
     stopDealEntrustPolling();
@@ -3122,6 +3243,11 @@ function paintDealFiveDayChart() {
   const cssH = fitted.cssH;
   if (dom.wrap.style.width !== `${cssW}px`) dom.wrap.style.width = `${cssW}px`;
   if (dom.wrap.style.height !== `${cssH}px`) dom.wrap.style.height = `${cssH}px`;
+  // 记录布局尺寸，供来回切换时跳过无意义重绘
+  if (body.clientWidth > 0 && body.clientHeight > 0) {
+    dealSurfacePaint.fiveW = Math.round(body.clientWidth);
+    dealSurfacePaint.fiveH = Math.round(body.clientHeight);
+  }
   dom.canvas.width = Math.floor(cssW * dpr);
   dom.canvas.height = Math.floor(cssH * dpr);
   const ctx = dom.canvas.getContext("2d");
@@ -3531,7 +3657,9 @@ function bindDealFiveDayPanel() {
       if (!btn || !modeToggle.contains(btn)) return;
       applyDealMode(btn.getAttribute("data-deal-mode"), { persist: true });
     });
-    applyDealMode(readDealMode(), { force: true });
+    // 仅恢复按钮态；真正激活由 mount / boot 负责，避免首次进入叠两次轮询+重绘
+    dealModeState.mode = normalizeDealMode(readDealMode());
+    syncDealModeToggleUi();
   }
   const foldBtn = document.getElementById("dealMainFoldBtn");
   if (foldBtn && foldBtn.dataset.bound !== "1") {
@@ -3658,10 +3786,10 @@ function bindDealFiveDayPanel() {
     dealFiveDayState.ro = new ResizeObserver(() => {
       if (!dealAnalysisVisible() || !dealFiveDayState.items.length) return;
       if (roTimer) window.clearTimeout(roTimer);
+      // 尺寸抖动合并；真正绘制走 scheduleDealFiveDayPaint，与切 tab 补画共用一帧
       roTimer = window.setTimeout(() => {
         roTimer = 0;
-        clampDealFiveDayViewport();
-        paintDealFiveDayChart();
+        scheduleDealFiveDayPaint();
       }, 50);
     });
     const center = document.querySelector(".deal-analysis-center");
@@ -3673,7 +3801,6 @@ function bindDealFiveDayPanel() {
 
 async function loadDealFiveDay({ force = false, extend = false, days = 0, revealSize = 0 } = {}) {
   if (!code || !dealAnalysisVisible()) return;
-  const gen = ++dealFiveDayState.loadGen;
   const prevTotal = dealFiveDayTotalDays();
   const prevSize = dealFiveDayViewSize();
   const wasRight = !prevTotal || dealFiveDayState.viewStart + prevSize >= prevTotal;
@@ -3688,6 +3815,23 @@ async function loadDealFiveDay({ force = false, extend = false, days = 0, reveal
     DEAL_FIVEDAY_LOAD_DAYS,
     Math.min(DEAL_FIVEDAY_LOAD_MAX, requested),
   );
+  // 同股已有足量缓存：切回成交分析只重画，不重拉/不清屏
+  if (
+    !force &&
+    !extend &&
+    sameStock &&
+    (dealFiveDayState.items || []).length &&
+    Number(dealFiveDayState.loadDays) >= target &&
+    !dealFiveDayState.loading
+  ) {
+    if (revealSize > 0) {
+      dealFiveDayState.viewSize = Math.max(dealFiveDayViewSize(), Math.round(revealSize));
+      clampDealFiveDayViewport({ stickRight: wasRight });
+    }
+    renderDealFiveDayPanel();
+    return;
+  }
+  const gen = ++dealFiveDayState.loadGen;
   dealFiveDayState.code = code;
   dealFiveDayState.loading = true;
   dealFiveDayState.extending = Boolean(extend && prevTotal);
@@ -5647,27 +5791,35 @@ function judgmentFamilyOf(view) {
   if (EARNINGS_VIEWS.has(view)) return "earnings";
   if (view === "kline") return "kline";
   if (view === "deal") return "deal";
+  if (view === "sentiment") return "sentiment";
   return view;
 }
 
 function syncJudgmentToolPages(view = judgmentSubTab) {
   const isKline = view === "kline";
   const isDeal = view === "deal";
-  const toolOnly = isKline || isDeal;
+  const isSpec = view === "sentiment";
+  const toolOnly = isKline || isDeal || isSpec;
   const aiPage = document.querySelector("#panel-judgment .company-analysis-page");
   const lcPage = document.getElementById("lineComparePage");
   const dealPage = document.getElementById("dealAnalysisPage");
+  const specPage = document.getElementById("speculationPage");
   if (aiPage) {
     aiPage.hidden = toolOnly;
     aiPage.setAttribute("aria-hidden", toolOnly ? "true" : "false");
   }
+  // 工具页之间不切换 [hidden]（避免 display:none 拆布局）；用 judgmentFamily CSS 停泊/唤醒
   if (lcPage) {
-    lcPage.hidden = !isKline;
+    lcPage.hidden = !toolOnly;
     lcPage.setAttribute("aria-hidden", isKline ? "false" : "true");
   }
   if (dealPage) {
-    dealPage.hidden = !isDeal;
+    dealPage.hidden = !toolOnly;
     dealPage.setAttribute("aria-hidden", isDeal ? "false" : "true");
+  }
+  if (specPage) {
+    specPage.hidden = !toolOnly;
+    specPage.setAttribute("aria-hidden", isSpec ? "false" : "true");
   }
   syncDealQuotesMount();
 }
@@ -5713,25 +5865,26 @@ function syncJudgmentSubTabUi() {
 }
 
 function bootstrapJudgmentSubTab(view = judgmentSubTab) {
-  syncJudgmentToolPages(view);
+  // 页面显隐 / DOM 挂载已由 syncJudgmentSubTabUi → syncJudgmentToolPages 完成，这里只做数据激活
   if (view === "kline") {
+    // CompanyLcKline.show 内部已补画；这里不再二次 renderLcChart
     const shown = window.LineCompare?.show?.({
       code,
       name: stockDisplayName || nameHint || "",
     });
     Promise.resolve(shown).finally(() => {
-      window.requestAnimationFrame(() => {
-        syncLcChartScrollBar();
-        renderLcChart();
-      });
+      window.requestAnimationFrame(() => syncLcChartScrollBar());
     });
     return;
   }
   window.LineCompare?.hide?.();
   if (view === "deal") {
     if (els.refreshQuotesBtn) els.refreshQuotesBtn.hidden = !code;
-    // 首次挂载由 scheduleDealAnalysisBoot 负责拉数+重绘；已挂载则轻量补一帧
-    if (dealQuotesHome.mounted) scheduleDealAnalysisPaint();
+    // 首次挂载由 scheduleDealAnalysisBoot 负责；已挂载由 mount 轻量补帧，这里不再叠画
+    return;
+  }
+  if (view === "sentiment") {
+    loadSpeculation({ refresh: false });
     return;
   }
   window.CompanyAnalysis?.onPanel?.(view);
@@ -5743,7 +5896,11 @@ function setJudgmentSubTab(nextView, { reload = true } = {}) {
   if (view === judgmentSubTab) {
     // AI syncIdentity/applyChrome 可能改坏源栏 DOM，即使 view 未变也重同步
     syncJudgmentSubTabUi();
-    if (reload && activeMainPanel === "judgment" && (view === "kline" || view === "deal")) {
+    if (
+      reload
+      && activeMainPanel === "judgment"
+      && (view === "kline" || view === "deal" || view === "sentiment")
+    ) {
       bootstrapJudgmentSubTab(view);
     }
     return;
@@ -5752,6 +5909,258 @@ function setJudgmentSubTab(nextView, { reload = true } = {}) {
   syncJudgmentSubTabUi();
   if (!reload || activeMainPanel !== "judgment") return;
   bootstrapJudgmentSubTab(view);
+}
+
+const speculationState = {
+  loading: false,
+  error: "",
+  data: null,
+  bootstrapped: false,
+};
+
+function speculationEls() {
+  return {
+    page: document.getElementById("speculationPage"),
+    meta: document.getElementById("speculationMeta"),
+    error: document.getElementById("speculationError"),
+    body: document.getElementById("speculationBody"),
+    refresh: document.getElementById("speculationRefreshBtn"),
+  };
+}
+
+function speculationHolderRows(items) {
+  if (!items?.length) {
+    return `<tr class="is-empty"><td colspan="7">暂无数据</td></tr>`;
+  }
+  return items
+    .map((item) => {
+      const changeCls = holderChangeClass(item);
+      return `<tr class="is-row">
+        <td>${escapeHtml(item.rank ?? "")}</td>
+        <td>${escapeHtml(item.name || "-")}</td>
+        <td class="num">${escapeHtml(displayValue(item.shares_fmt))}</td>
+        <td class="num">${escapeHtml(displayValue(item.ratio_fmt))}</td>
+        <td class="num ${changeCls}">${escapeHtml(displayValue(item.change_fmt))}</td>
+        <td>${escapeHtml(displayValue(item.shares_type || item.holder_type))}</td>
+        <td class="num">${escapeHtml(displayValue(item.market_value_fmt))}</td>
+      </tr>`;
+    })
+    .join("");
+}
+
+function speculationFundRows(items) {
+  if (!items?.length) {
+    return `<tr class="is-empty"><td colspan="5">暂无剔重后基金持股</td></tr>`;
+  }
+  return items
+    .slice(0, 40)
+    .map((item) => `<tr class="is-row">
+      <td>${escapeHtml(item.name || "-")}</td>
+      <td>${escapeHtml(displayValue(item.org_type))}</td>
+      <td class="num">${escapeHtml(displayValue(item.shares_fmt))}</td>
+      <td class="num">${escapeHtml(displayValue(item.total_share_ratio))}</td>
+      <td class="num">${escapeHtml(displayValue(item.market_value))}</td>
+    </tr>`)
+    .join("");
+}
+
+function speculationHeatColumn(sourceKey, block) {
+  const current = block?.current || {};
+  const ranks = Array.isArray(block?.ranks) ? block.ranks : [];
+  const daily = Array.isArray(block?.daily) ? block.daily : [];
+  const rankText = current.rank != null ? `第 ${current.rank} 名` : "未上榜/无";
+  const historyNote = current.history_available
+    ? "近十日排名"
+    : "暂仅今日（历史待日采）";
+  const rankRows = ranks.length
+    ? ranks
+        .slice()
+        .reverse()
+        .map((row) => `<div class="speculation-heat-row">
+          <time>${escapeHtml(row.date || "")}</time>
+          <strong>${row.rank != null ? escapeHtml(String(row.rank)) : "—"}</strong>
+        </div>`)
+        .join("")
+    : `<p class="muted speculation-heat-empty">${escapeHtml(
+        current.title || (sourceKey === "eastmoney" ? "暂无排名历史" : historyNote)
+      )}</p>`;
+  const dailyRows = daily
+    .slice()
+    .reverse()
+    .map((row) => `<div class="speculation-heat-row">
+      <time>${escapeHtml(row.date || "")}</time>
+      <span>帖 ${escapeHtml(String(row.post_count ?? 0))} · 回 ${escapeHtml(String(row.reply_count ?? 0))} · 合计 ${escapeHtml(String(row.comment_total ?? 0))}</span>
+    </div>`)
+    .join("");
+  return `<section class="speculation-heat-col" data-source="${escapeHtml(sourceKey)}">
+    <header class="speculation-heat-head">
+      <h4>${escapeHtml(block?.label || sourceKey)}</h4>
+      <p class="muted">${escapeHtml(rankText)} · ${escapeHtml(historyNote)}</p>
+    </header>
+    <div class="speculation-heat-block">
+      <h5>热度排名</h5>
+      <div class="speculation-heat-list">${rankRows}</div>
+    </div>
+    <div class="speculation-heat-block">
+      <h5>每日评论（帖+回复）</h5>
+      <div class="speculation-heat-list">${dailyRows || '<p class="muted">暂无</p>'}</div>
+    </div>
+  </section>`;
+}
+
+function renderSpeculation(data) {
+  const ui = speculationEls();
+  if (!ui.body) return;
+  if (!data) {
+    ui.body.innerHTML = `<p class="muted speculation-empty">暂无炒作分析数据</p>`;
+    return;
+  }
+  const chip = data.chip || {};
+  const sit = chip.sit || {};
+  const funds = data.funds || {};
+  const holders = data.holders || {};
+  const freeHolders = data.free_holders || {};
+  const heat = data.heat || {};
+  const chipRows = [
+    ["总股本", chip.total_shares_fmt, "总市值", chip.total_market_cap_fmt],
+    ["流通股", chip.float_shares_fmt, "流通市值", chip.float_market_cap_fmt],
+    ["自由流通股", chip.free_float_shares_fmt, "自由流通市值", chip.free_float_market_cap_fmt],
+  ]
+    .map(
+      ([a, av, b, bv]) => `<div class="speculation-chip-row">
+        <span>${escapeHtml(a)}</span><strong>${escapeHtml(displayValue(av))}</strong>
+        <span>${escapeHtml(b)}</span><strong>${escapeHtml(displayValue(bv))}</strong>
+      </div>`
+    )
+    .join("");
+  const sitRows = ["long", "mid", "short"]
+    .map((key) => {
+      const row = sit[key] || {};
+      return `<div class="speculation-sit-row">
+        <span>${escapeHtml(row.label || key)}（${escapeHtml(row.pct_fmt || "")}）</span>
+        <strong>${escapeHtml(displayValue(row.shares_fmt))}</strong>
+        <strong>${escapeHtml(displayValue(row.market_cap_fmt))}</strong>
+      </div>`;
+    })
+    .join("");
+
+  ui.body.innerHTML = `
+    <section class="speculation-section" aria-label="筹码与坐庄门槛">
+      <header class="speculation-section-head">
+        <h3>筹码与坐庄门槛</h3>
+        <p class="muted">${escapeHtml(chip.note || "自由流通口径 · 规则阈值")}</p>
+      </header>
+      <div class="speculation-chip-grid">${chipRows}</div>
+      <div class="speculation-sit-grid">
+        <div class="speculation-sit-head"><span>档位</span><span>股数</span><span>市值</span></div>
+        ${sitRows}
+      </div>
+    </section>
+
+    <section class="speculation-section" aria-label="股东与基金">
+      <header class="speculation-section-head">
+        <h3>股东结构</h3>
+        <p class="muted">基金占比分母=总股本 · 已剔除前十大（含流通前十）</p>
+      </header>
+      <div class="speculation-fund-summary">
+        <div class="speculation-kpi"><span>持股基金</span><strong>${escapeHtml(String(funds.count ?? "—"))} 只</strong></div>
+        <div class="speculation-kpi"><span>基金持股</span><strong>${escapeHtml(displayValue(funds.shares_fmt))}</strong></div>
+        <div class="speculation-kpi"><span>占总股本</span><strong>${escapeHtml(displayValue(funds.ratio_fmt))}</strong></div>
+        <div class="speculation-kpi"><span>剔重条数</span><strong>${escapeHtml(String(funds.excluded_in_top10 ?? 0))}</strong></div>
+      </div>
+      <div class="speculation-holders-grid">
+        <div class="speculation-table-wrap">
+          <h4>${escapeHtml(holders.label || "前十大股东")} · ${escapeHtml(holders.report_date || "")}</h4>
+          <table class="speculation-table">
+            <thead><tr><th>名次</th><th>股东</th><th>持股</th><th>占比</th><th>变动</th><th>类型</th><th>市值</th></tr></thead>
+            <tbody>${speculationHolderRows(holders.items)}</tbody>
+          </table>
+        </div>
+        <div class="speculation-table-wrap">
+          <h4>${escapeHtml(freeHolders.label || "前十大流通股东")} · ${escapeHtml(freeHolders.report_date || "")}</h4>
+          <table class="speculation-table">
+            <thead><tr><th>名次</th><th>股东</th><th>持股</th><th>占比</th><th>变动</th><th>类型</th><th>市值</th></tr></thead>
+            <tbody>${speculationHolderRows(freeHolders.items)}</tbody>
+          </table>
+        </div>
+      </div>
+      <div class="speculation-table-wrap">
+        <h4>剔重后基金持股 · ${escapeHtml(funds.report_date || "")}</h4>
+        <table class="speculation-table">
+          <thead><tr><th>基金</th><th>类型</th><th>持股</th><th>占总股本</th><th>市值</th></tr></thead>
+          <tbody>${speculationFundRows(funds.items)}</tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="speculation-section" aria-label="社区热度">
+      <header class="speculation-section-head">
+        <h3>社区热度</h3>
+        <p class="muted">${escapeHtml(heat.note || "东财十日 + 同花顺/雪球今日")}</p>
+      </header>
+      <div class="speculation-heat-grid">
+        ${speculationHeatColumn("eastmoney", heat.eastmoney)}
+        ${speculationHeatColumn("tonghuashun", heat.tonghuashun)}
+        ${speculationHeatColumn("xueqiu", heat.xueqiu)}
+      </div>
+    </section>`;
+}
+
+function paintSpeculation() {
+  const ui = speculationEls();
+  const st = speculationState;
+  if (ui.meta) {
+    if (st.loading && !st.data) ui.meta.textContent = "正在加载…";
+    else if (st.loading) ui.meta.textContent = `刷新中… · ${st.data?.as_of || ""}`;
+    else if (st.error && !st.data) ui.meta.textContent = "加载失败";
+    else {
+      const bits = [st.data?.name || "", st.data?.code || "", st.data?.as_of ? `截至 ${st.data.as_of}` : ""]
+        .filter(Boolean);
+      ui.meta.textContent = bits.join(" · ") || "筹码门槛 · 十大股东 · 三源热度";
+    }
+  }
+  if (ui.error) {
+    ui.error.textContent = st.error || "";
+    ui.error.classList.toggle("hidden", !st.error);
+  }
+  if (ui.refresh) ui.refresh.disabled = st.loading;
+  if (st.loading && !st.data) {
+    if (ui.body) ui.body.innerHTML = `<p class="muted speculation-empty">正在加载炒作分析…</p>`;
+    return;
+  }
+  if (st.data) renderSpeculation(st.data);
+  else if (st.error && ui.body) {
+    ui.body.innerHTML = `<p class="muted speculation-empty">${escapeHtml(st.error)}</p>`;
+  }
+}
+
+async function loadSpeculation({ refresh = false } = {}) {
+  if (!code) return;
+  if (speculationState.loading) return;
+  if (speculationState.bootstrapped && speculationState.data && !refresh) {
+    paintSpeculation();
+    return;
+  }
+  speculationState.loading = true;
+  speculationState.error = "";
+  paintSpeculation();
+  try {
+    const qs = new URLSearchParams({ code, heat: "1" });
+    const json = await api(`/api/stocks/speculation?${qs.toString()}`, {
+      bypassCache: refresh,
+      writeCache: true,
+    });
+    if (json && json.ok === false) {
+      throw new Error(json.error || json.message || "炒作分析失败");
+    }
+    speculationState.data = json.data || null;
+    speculationState.bootstrapped = true;
+  } catch (err) {
+    speculationState.error = err?.message || String(err);
+  } finally {
+    speculationState.loading = false;
+    paintSpeculation();
+  }
 }
 
 async function loadAllNews({ refresh = false, group = newsGroup } = {}) {
@@ -11765,6 +12174,11 @@ function setupJudgmentSubTabs() {
       setJudgmentSubTab(btn.getAttribute("data-biz-view") || "bizprofile");
     });
   }
+  const specRefresh = document.getElementById("speculationRefreshBtn");
+  if (specRefresh && specRefresh.dataset.bound !== "1") {
+    specRefresh.dataset.bound = "1";
+    specRefresh.addEventListener("click", () => loadSpeculation({ refresh: true }));
+  }
   syncJudgmentSubTabUi();
 }
 
@@ -11832,7 +12246,10 @@ function switchMainPanel(panelId) {
   const next = normalizeMainPanel(panelId);
   if (!next) return;
   if (next === activeMainPanel) {
-    if (next === "judgment" && (isAnalysisPanel(rawPanel) || isKlineJudgment(rawPanel) || isDealJudgment(rawPanel))) {
+    if (
+      next === "judgment"
+      && (isAnalysisPanel(rawPanel) || isKlineJudgment(rawPanel) || isDealJudgment(rawPanel) || isSpeculationJudgment(rawPanel))
+    ) {
       setJudgmentSubTab(rawPanel);
     }
     return;
@@ -11854,7 +12271,8 @@ function switchMainPanel(panelId) {
   if (els.refreshEmotionBtn) {
     els.refreshEmotionBtn.hidden = next !== "emotion";
   }
-  syncDealQuotesMount();
+  // 进入研判时由 syncJudgmentSubTabUi → syncDealQuotesMount 统一挂载，避免这里再挂一次
+  if (next !== "judgment") syncDealQuotesMount();
   if (els.refreshQuotesBtn) {
     els.refreshQuotesBtn.hidden = !(isQuotesPanel(next) || (next === "judgment" && judgmentSubTab === "deal"));
   }
@@ -15158,6 +15576,11 @@ function renderTicksChart(_hoverIndex = undefined) {
   const dpr = window.devicePixelRatio || 1;
   const cssW = Math.max(240, wrap.clientWidth || 320);
   const cssH = Math.max(240, wrap.clientHeight || 300);
+  // 记录真实布局尺寸，供来回切换时跳过无意义重绘
+  if (wrap.clientWidth > 0 && wrap.clientHeight > 0) {
+    dealSurfacePaint.ticksW = Math.round(wrap.clientWidth);
+    dealSurfacePaint.ticksH = Math.round(wrap.clientHeight);
+  }
   canvas.width = Math.floor(cssW * dpr);
   canvas.height = Math.floor(cssH * dpr);
   const ctx = canvas.getContext("2d");
@@ -16061,12 +16484,8 @@ const lcEls = {
   compareFactorSelect: document.getElementById("lcCompareFactorSelect"),
   macdPriceWrap: document.getElementById("lcMacdPriceWrap"),
   macdPriceSelect: document.getElementById("lcMacdPriceSelect"),
-  macdFastWrap: document.getElementById("lcMacdFastWrap"),
-  macdFastInput: document.getElementById("lcMacdFastInput"),
-  macdSlowWrap: document.getElementById("lcMacdSlowWrap"),
-  macdSlowInput: document.getElementById("lcMacdSlowInput"),
-  macdSignalWrap: document.getElementById("lcMacdSignalWrap"),
-  macdSignalInput: document.getElementById("lcMacdSignalInput"),
+  macdParamsWrap: document.getElementById("lcMacdParamsWrap"),
+  macdParamsSelect: document.getElementById("lcMacdParamsSelect"),
   extremaLayerWrap: document.getElementById("lcExtremaLayerWrap"),
   extremaLayerSelect: document.getElementById("lcExtremaLayerSelect"),
   peLegendWrap: document.getElementById("lcPeLegendWrap"),
@@ -16106,16 +16525,21 @@ const lcChartState = {
   rangePick: { a: null, b: null },
 };
 
-let lcComboMetricState = "compare";
+let lcComboMetricState = "macd";
 
 const LC_MACD_PRICE_OPTS = new Set(["close", "open", "high", "low"]);
+const LC_MACD_PARAM_PRESETS = [
+  { key: "12,26,9", fast: 12, slow: 26, signal: 9 },
+  { key: "10,20,7", fast: 10, slow: 20, signal: 7 },
+];
+const LC_MACD_PARAM_DEFAULT = LC_MACD_PARAM_PRESETS[0];
 const LC_MACD_DIF_COLOR = "#f0b429";
 const LC_MACD_DEA_COLOR = "#7aa2f7";
 
 const lcMacdState = {
-  fast: 10,
-  slow: 20,
-  signal: 7,
+  fast: LC_MACD_PARAM_DEFAULT.fast,
+  slow: LC_MACD_PARAM_DEFAULT.slow,
+  signal: LC_MACD_PARAM_DEFAULT.signal,
   price: "close",
   key: "",
   beg: "",
@@ -16126,6 +16550,18 @@ const lcMacdState = {
   gen: 0,
   abort: null,
 };
+
+function resolveLcMacdParamPreset(raw) {
+  const key = String(raw || "").trim();
+  return LC_MACD_PARAM_PRESETS.find((p) => p.key === key) || LC_MACD_PARAM_DEFAULT;
+}
+
+function lcMacdParamsKey(params = lcMacdState) {
+  const hit = LC_MACD_PARAM_PRESETS.find(
+    (p) => p.fast === params.fast && p.slow === params.slow && p.signal === params.signal
+  );
+  return hit?.key || LC_MACD_PARAM_DEFAULT.key;
+}
 
 const lcIndexState = {
   code: "",
@@ -16148,9 +16584,7 @@ function syncLcComboLegend() {
   if (lcEls.compareIndexWrap) lcEls.compareIndexWrap.classList.toggle("hidden", metric !== "compare");
   if (lcEls.compareFactorWrap) lcEls.compareFactorWrap.classList.toggle("hidden", metric !== "compare");
   if (lcEls.macdPriceWrap) lcEls.macdPriceWrap.classList.toggle("hidden", !macd);
-  if (lcEls.macdFastWrap) lcEls.macdFastWrap.classList.toggle("hidden", !macd);
-  if (lcEls.macdSlowWrap) lcEls.macdSlowWrap.classList.toggle("hidden", !macd);
-  if (lcEls.macdSignalWrap) lcEls.macdSignalWrap.classList.toggle("hidden", !macd);
+  if (lcEls.macdParamsWrap) lcEls.macdParamsWrap.classList.toggle("hidden", !macd);
   if (lcEls.peLegendWrap) lcEls.peLegendWrap.classList.toggle("hidden", metric !== "pe");
   if (lcEls.fundflowLegendWrap) lcEls.fundflowLegendWrap.classList.toggle("hidden", metric !== "fundflow");
   if (lcEls.marginLegendWrap) lcEls.marginLegendWrap.classList.toggle("hidden", metric !== "margin");
@@ -16161,32 +16595,19 @@ function readLcMacdParamsFromUi() {
     .trim()
     .toLowerCase();
   const price = LC_MACD_PRICE_OPTS.has(priceRaw) ? priceRaw : "close";
-  const clampInt = (raw, fallback, min, max) => {
-    const n = Math.round(Number(raw));
-    if (!Number.isFinite(n)) return fallback;
-    return Math.min(max, Math.max(min, n));
-  };
-  let fast = clampInt(lcEls.macdFastInput?.value, lcMacdState.fast || 10, 1, 200);
-  let slow = clampInt(lcEls.macdSlowInput?.value, lcMacdState.slow || 20, 2, 400);
-  let signal = clampInt(lcEls.macdSignalInput?.value, lcMacdState.signal || 7, 1, 200);
-  if (fast >= slow) {
-    slow = Math.min(400, fast + 1);
-  }
-  return { fast, slow, signal, price };
+  const preset = resolveLcMacdParamPreset(
+    lcEls.macdParamsSelect?.value || lcMacdParamsKey(lcMacdState)
+  );
+  return { fast: preset.fast, slow: preset.slow, signal: preset.signal, price };
 }
 
 function syncLcMacdParamsUi(params = lcMacdState) {
   if (lcEls.macdPriceSelect && lcEls.macdPriceSelect.value !== params.price) {
     lcEls.macdPriceSelect.value = params.price;
   }
-  if (lcEls.macdFastInput && String(lcEls.macdFastInput.value) !== String(params.fast)) {
-    lcEls.macdFastInput.value = String(params.fast);
-  }
-  if (lcEls.macdSlowInput && String(lcEls.macdSlowInput.value) !== String(params.slow)) {
-    lcEls.macdSlowInput.value = String(params.slow);
-  }
-  if (lcEls.macdSignalInput && String(lcEls.macdSignalInput.value) !== String(params.signal)) {
-    lcEls.macdSignalInput.value = String(params.signal);
+  const key = lcMacdParamsKey(params);
+  if (lcEls.macdParamsSelect && lcEls.macdParamsSelect.value !== key) {
+    lcEls.macdParamsSelect.value = key;
   }
 }
 
@@ -19131,6 +19552,11 @@ function renderLcChart(hoverIndex = null) {
   const dpr = window.devicePixelRatio || 1;
   const cssW = Math.max(320, wrap.clientWidth || 640);
   const cssH = Math.max(240, wrap.clientHeight || 320);
+  // 记录真实布局尺寸，供 K线↔成交 来回切换时跳过重绘
+  if (wrap.clientWidth > 0 && wrap.clientHeight > 0) {
+    lcSurfacePaint.w = Math.round(wrap.clientWidth);
+    lcSurfacePaint.h = Math.round(wrap.clientHeight);
+  }
   canvas.width = Math.floor(cssW * dpr);
   canvas.height = Math.floor(cssH * dpr);
   const ctx = canvas.getContext("2d");
@@ -19522,15 +19948,7 @@ function setupLcChart() {
     void refreshLcMacd({ force: true });
   };
   lcEls.macdPriceSelect?.addEventListener("change", onLcMacdParamChange);
-  for (const el of [lcEls.macdFastInput, lcEls.macdSlowInput, lcEls.macdSignalInput]) {
-    el?.addEventListener("change", onLcMacdParamChange);
-    el?.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") {
-        ev.preventDefault();
-        onLcMacdParamChange();
-      }
-    });
-  }
+  lcEls.macdParamsSelect?.addEventListener("change", onLcMacdParamChange);
   syncLcMacdParamsUi();
 
   const bindLegend = (wrap, kind) => {
@@ -19678,15 +20096,54 @@ window.CompanyLcKline = {
     const loaded = sameCode && (lcChartState.allItems || []).length > 0;
     syncLcComboLegend();
     if (loaded) {
-      // 再次进入 K线分析：日K / 指标 / 谷值等数据均已缓存，仅从缓存补画一帧。
-      // 不再自动触发 refreshLcComparePane / refreshLcMacd（它们会再次发请求并重复画布二次渲染），
-      // 避免 K线分析 ↔ 成交分析 来回切换时的卡顿；需要刷新由各下拉/刷新按钮按需触发。
+      // 再次进入：尺寸未变则完全跳过重绘（canvas bitmap 仍在）；变了再拆帧补画
       return Promise.resolve().then(() => {
         requestAnimationFrame(() => {
+          if (!lcChartState.visible) return;
+          const wrap = lcEls.chartWrap;
+          const w = Math.round(wrap?.clientWidth || 0);
+          const h = Math.round(wrap?.clientHeight || 0);
+          if (
+            w &&
+            h &&
+            dealPaintSizeClose(lcSurfacePaint.w, w) &&
+            dealPaintSizeClose(lcSurfacePaint.h, h)
+          ) {
+            syncLcChartScrollBar();
+            return;
+          }
+          // 刚从停泊态出来尺寸可能仍是 0，再等一帧
+          if (!w || !h) {
+            requestAnimationFrame(() => {
+              if (!lcChartState.visible) return;
+              const w2 = Math.round(lcEls.chartWrap?.clientWidth || 0);
+              const h2 = Math.round(lcEls.chartWrap?.clientHeight || 0);
+              if (
+                w2 &&
+                h2 &&
+                dealPaintSizeClose(lcSurfacePaint.w, w2) &&
+                dealPaintSizeClose(lcSurfacePaint.h, h2)
+              ) {
+                syncLcChartScrollBar();
+                return;
+              }
+              syncLcChartScrollBar();
+              renderLcChart();
+              requestAnimationFrame(() => {
+                if (!lcChartState.visible) return;
+                renderLcEvaluate();
+                renderLcPvAxes();
+              });
+            });
+            return;
+          }
+          syncLcChartScrollBar();
           renderLcChart();
-          renderLcEvaluate();
-          renderLcPvAxes();
-          renderLcUndulate();
+          requestAnimationFrame(() => {
+            if (!lcChartState.visible) return;
+            renderLcEvaluate();
+            renderLcPvAxes();
+          });
         });
       });
     }
@@ -19717,8 +20174,7 @@ window.CompanyLcKline = {
     lcJettonState.loading = false;
     lcJettonState.loadingSince = 0;
     lcJettonState.pendingKey = "";
-    clearLcSections();
-    clearLcRangePick({ silent: true });
+    // 保留 section / range 缓存，来回切换成交分析时不必重建
   },
   sync() {
     if (!lcChartState.visible) return Promise.resolve();
