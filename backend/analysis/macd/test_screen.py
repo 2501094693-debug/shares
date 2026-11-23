@@ -4,8 +4,37 @@ from __future__ import annotations
 
 import unittest
 
-from analysis.macd.screen import slim_row
+from analysis.macd.config import (
+    CROSS_TYPE_ALL,
+    CROSS_TYPE_OVER,
+    CROSS_TYPE_UNDER,
+)
+from analysis.macd.screen import cross_type_matches, slim_row
 from analysis.recent_low.screen import is_eligible_stock
+
+
+class CrossTypeFilterTests(unittest.TestCase):
+    def test_all_passes_any(self) -> None:
+        self.assertTrue(cross_type_matches({"underwater": True}, CROSS_TYPE_ALL))
+        self.assertTrue(cross_type_matches({"underwater": False}, CROSS_TYPE_ALL))
+        self.assertTrue(cross_type_matches({}, CROSS_TYPE_ALL))
+
+    def test_under_only(self) -> None:
+        self.assertTrue(cross_type_matches({"underwater": True}, CROSS_TYPE_UNDER))
+        self.assertFalse(cross_type_matches({"underwater": False}, CROSS_TYPE_UNDER))
+        self.assertFalse(cross_type_matches({}, CROSS_TYPE_UNDER))
+
+    def test_over_only(self) -> None:
+        self.assertTrue(cross_type_matches({"underwater": False}, CROSS_TYPE_OVER))
+        self.assertFalse(cross_type_matches({"underwater": True}, CROSS_TYPE_OVER))
+        self.assertFalse(cross_type_matches({}, CROSS_TYPE_OVER))
+
+    def test_case_insensitive(self) -> None:
+        self.assertTrue(cross_type_matches({"underwater": True}, " UNDER "))
+        self.assertTrue(cross_type_matches({"underwater": False}, "Over"))
+
+    def test_invalid_falls_back_to_all(self) -> None:
+        self.assertTrue(cross_type_matches({"underwater": True}, "unknown"))
 
 
 class UniverseFilterTests(unittest.TestCase):

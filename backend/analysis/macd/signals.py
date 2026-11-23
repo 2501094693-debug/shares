@@ -6,7 +6,9 @@
 - 水上金叉 / 即将水上金叉：``DEA ≥ 0``
 
 已金叉：昨 ``DIF < DEA``，今 ``DIF ≥ DEA``。
-即将金叉：今仍 ``DIF < DEA``，缺口收窄且相对缺口 ≤ ``near_ratio``。
+即将金叉：今仍 ``DIF < DEA`` 且缺口收窄，并满足以下任一：
+按最近两日速度外推下一交易日会金叉（``pred_next_gap <= 0``），
+或相对缺口 ``(DEA-DIF)/(|DEA|+ε) <= near_ratio``。
 """
 
 from __future__ import annotations
@@ -41,6 +43,21 @@ def _num(value: Any) -> float | None:
     return n if n == n else None  # NaN guard
 
 
+def gap_velocity(
+    dif: float,
+    dea: float,
+    prev_dif: float,
+    prev_dea: float,
+) -> tuple[float, float, float]:
+    """返回 ``(当前缺口, 上一缺口, 收窄速度)``。
+
+    缺口为 ``DEA - DIF``；速度 = 上一缺口 - 当前缺口，正数代表收窄。
+    """
+    gap_t = float(dea) - float(dif)
+    gap_prev = float(prev_dea) - float(prev_dif)
+    return gap_t, gap_prev, gap_prev - gap_t
+
+
 def relative_gap(dif: float, dea: float) -> float:
     """相对缺口 ``(DEA − DIF) / (|DEA| + ε)``；仅在 DIF < DEA 时有意义。"""
     return (float(dea) - float(dif)) / (abs(float(dea)) + _EPS)
@@ -69,6 +86,11 @@ def classify_macd_cross(
         "prev_dea": None,
         "rel_gap": None,
         "gap_narrowing": None,
+        "gap_velocity": None,
+        "pred_next_gap": None,
+        "pred_next_cross": None,
+        "near_by_prediction": None,
+        "near_by_relative_gap": None,
         "near_ratio": theta,
         "underwater": None,
     }
@@ -87,16 +109,19 @@ def classify_macd_cross(
     date = str(cur.get("date") or "")[:10] or None
     prev_date = str(prev.get("date") or "")[:10] or None
     underwater = dea < 0.0
-    gap_t = dea - dif
-    gap_prev = prev_dea - prev_dif
-    narrowing = gap_t < gap_prev
+    gap_t, gap_prev, velocity = gap_velocity(dif, dea, prev_dif, prev_dea)
+    narrowing = velocity > 0.0
     rel = relative_gap(dif, dea) if dif < dea else 0.0
+    pred_next_gap = gap_t - velocity
+    pred_next_cross = pred_next_gap <= 0.0
+    near_by_prediction = pred_next_cross
+    near_by_relative_gap = rel <= theta
 
     signals: list[str] = []
     # 已金叉优先
     if prev_dif < prev_dea and dif >= dea:
         signals.append(SIGNAL_UNDER_CROSS if underwater else SIGNAL_OVER_CROSS)
-    elif dif < dea and narrowing and rel <= theta:
+    elif dif < dea and narrowing and (near_by_prediction or near_by_relative_gap):
         signals.append(SIGNAL_UNDER_NEAR if underwater else SIGNAL_OVER_NEAR)
 
     primary = None
@@ -118,6 +143,11 @@ def classify_macd_cross(
         "prev_dea": round(prev_dea, 6),
         "rel_gap": round(rel, 6) if dif < dea else None,
         "gap_narrowing": narrowing if dif < dea else None,
+        "gap_velocity": round(velocity, 6) if dif < dea else None,
+        "pred_next_gap": round(pred_next_gap, 6) if dif < dea else None,
+        "pred_next_cross": pred_next_cross if dif < dea else None,
+        "near_by_prediction": near_by_prediction if dif < dea else None,
+        "near_by_relative_gap": near_by_relative_gap if dif < dea else None,
         "near_ratio": theta,
         "underwater": underwater,
     }
@@ -130,5 +160,6 @@ __all__ = [
     "SIGNAL_UNDER_CROSS",
     "SIGNAL_UNDER_NEAR",
     "classify_macd_cross",
+    "gap_velocity",
     "relative_gap",
 ]

@@ -13,11 +13,18 @@ from company.analysis.line.MACD.core import (
     DEFAULT_SLOW,
 )
 
-# 即将金叉：相对缺口阈值 (DEA−DIF)/(|DEA|+ε) ≤ θ
+# 即将金叉相对缺口阈值；与速度外推任一命中即可
 DEFAULT_NEAR_RATIO = 0.10
 # 综合分权重：前低均分 / 股指反向日占比分
 DEFAULT_W_PRIOR = 0.70
 DEFAULT_W_DIV = 0.30
+
+# 信号类别：全部 / 水下类（水下金叉+即将水下金叉）/ 水上类（水上金叉+即将水上金叉）
+CROSS_TYPE_ALL = "all"
+CROSS_TYPE_UNDER = "under"
+CROSS_TYPE_OVER = "over"
+ALLOWED_CROSS_TYPES = (CROSS_TYPE_ALL, CROSS_TYPE_UNDER, CROSS_TYPE_OVER)
+DEFAULT_CROSS_TYPE = CROSS_TYPE_ALL
 
 DEFAULT_FACTOR = "close"
 DEFAULT_ADJUST = "qfq"
@@ -28,7 +35,7 @@ MAX_WORKERS = 32
 PROGRESS_EVERY = 20
 
 # 落盘键版本，算法变更后与旧缓存隔离
-CACHE_TAG = "m1"
+CACHE_TAG = "m3"
 
 ALLOWED_BANDS = (0.05, 0.09, 0.12)
 ALLOWED_FACTORS = ("open", "high", "low", "close", "all")
@@ -38,11 +45,16 @@ ALLOWED_ADJUSTS = ("qfq", "hfq", "none")
 __all__ = [
     "ALLOWED_ADJUSTS",
     "ALLOWED_BANDS",
+    "ALLOWED_CROSS_TYPES",
     "ALLOWED_FACTORS",
     "ALLOWED_INDEXES",
     "CACHE_TAG",
+    "CROSS_TYPE_ALL",
+    "CROSS_TYPE_OVER",
+    "CROSS_TYPE_UNDER",
     "DEFAULT_ADJUST",
     "DEFAULT_BAND",
+    "DEFAULT_CROSS_TYPE",
     "DEFAULT_FACTOR",
     "DEFAULT_FAST",
     "DEFAULT_INDEX",

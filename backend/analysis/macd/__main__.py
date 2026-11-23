@@ -1,8 +1,9 @@
 """命令行运行 MACD 金叉 + 稳定区间筛选。
 
     python -m analysis.macd
-    python -m analysis.macd --near-ratio 0.1 --band 0.09 --json
+    python -m analysis.macd --band 0.09 --json
     python -m analysis.macd --codes 600519,000001
+    python -m analysis.macd --end 2026-11-20
 """
 
 from __future__ import annotations
@@ -21,7 +22,9 @@ if str(_BACKEND) not in sys.path:
 
 from analysis.macd.analyze import analyze_macd_stable
 from analysis.macd.config import (
+    ALLOWED_CROSS_TYPES,
     DEFAULT_BAND,
+    DEFAULT_CROSS_TYPE,
     DEFAULT_FACTOR,
     DEFAULT_INDEX,
     DEFAULT_LOOKBACK_DAYS,
@@ -31,7 +34,18 @@ from analysis.macd.config import (
     DEFAULT_WORKERS,
 )
 from analysis.macd.mine import default_group_name, write_mine_group
-from analysis.macd.screen import screen_macd_stable, slim_row
+from analysis.macd.screen import cross_type_matches, screen_macd_stable, slim_row
+from company.analysis.line.undulate.service import _iso, _today_iso
+
+
+def _end_arg(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        return _iso(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _configure_stdio() -> None:
@@ -58,6 +72,7 @@ def _print_hit(row: dict[str, Any], *, prefix: str = "命中") -> None:
     _log(
         f"  [{prefix}] {row.get('code')} {row.get('name') or ''}  "
         f"信号={row.get('macd_signal') or '—'}  "
+        f"预测下日金叉={row.get('pred_next_cross') if row.get('pred_next_cross') is not None else '—'}  "
         f"区间={row.get('beg') or '—'}~{row.get('end') or '—'} "
         f"({row.get('count') or 0}日)  "
         f"前低={_fmt_score(row.get('score_prior'))} "
@@ -160,13 +175,26 @@ def main() -> None:
         "--lookback", type=int, default=DEFAULT_LOOKBACK_DAYS, help="回溯自然日"
     )
     parser.add_argument(
+        "--end",
+        type=_end_arg,
+        default="",
+        help="截止交易日 YYYY-MM-DD/YYYYMMDD；空=最新交易日",
+    )
+    parser.add_argument(
         "--near-ratio",
         type=float,
         default=DEFAULT_NEAR_RATIO,
-        help="即将金叉相对缺口阈值",
+        help="相对缺口阈值；与速度外推任一命中即可",
     )
     parser.add_argument("--w-prior", type=float, default=DEFAULT_W_PRIOR)
     parser.add_argument("--w-div", type=float, default=DEFAULT_W_DIV)
+    parser.add_argument(
+        "--cross-type",
+        type=str,
+        choices=ALLOWED_CROSS_TYPES,
+        default=DEFAULT_CROSS_TYPE,
+        help="信号类别：all=全部 / under=水下类 / over=水上类",
+    )
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     parser.add_argument("--codes", type=str, default="", help="逗号分隔代码，仅测这些")
     parser.add_argument("--json", action="store_true")
@@ -199,8 +227,10 @@ def main() -> None:
     if not args.json and not args.quiet:
         _log(
             f"参数 band={args.band} index={args.index} factor={args.factor} "
-            f"lookback={args.lookback} near_ratio={args.near_ratio} "
-            f"w_prior={args.w_prior} w_div={args.w_div} workers={args.workers}"
+            f"lookback={args.lookback} end={args.end or _today_iso()} "
+            f"near_ratio={args.near_ratio} "
+            f"w_prior={args.w_prior} w_div={args.w_div} "
+            f"cross_type={args.cross_type} workers={args.workers}"
         )
 
     if codes:
@@ -213,6 +243,7 @@ def main() -> None:
             t0 = time.time()
             pack = analyze_macd_stable(
                 code,
+                end=args.end,
                 band=args.band,
                 index=args.index,
                 factor=args.factor,
@@ -222,6 +253,15 @@ def main() -> None:
                 w_div=args.w_div,
             )
             elapsed = time.time() - t0
+            macd = pack.get("macd") if isinstance(pack.get("macd"), dict) else {}
+            cross = macd.get("cross") if isinstance(macd.get("cross"), dict) else {}
+            if not cross_type_matches(cross, args.cross_type):
+                pack = {
+                    **pack,
+                    "found": False,
+                    "reason": "cross_type_mismatch",
+                    "message": f"信号类别不属于 {args.cross_type}",
+                }
             row = slim_row(pack)
             if row:
                 items.append(row)
@@ -248,7 +288,9 @@ def main() -> None:
                 "band": args.band,
                 "index": args.index,
                 "factor": args.factor,
+                "end": args.end or _today_iso(),
                 "near_ratio": args.near_ratio,
+                "cross_type": args.cross_type,
                 "codes": codes,
             },
             "found_count": sum(1 for r in items if r.get("score_total") is not None),
@@ -264,9 +306,11 @@ def main() -> None:
             index=args.index,
             factor=args.factor,
             lookback_days=args.lookback,
+            end=args.end,
             near_ratio=args.near_ratio,
             w_prior=args.w_prior,
             w_div=args.w_div,
+            cross_type=args.cross_type,
             workers=args.workers,
             on_update=on_update,
         )

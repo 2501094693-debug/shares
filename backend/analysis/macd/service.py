@@ -10,6 +10,7 @@ from analysis.macd.config import (
     CACHE_TAG,
     DEFAULT_ADJUST,
     DEFAULT_BAND,
+    DEFAULT_CROSS_TYPE,
     DEFAULT_FACTOR,
     DEFAULT_FAST,
     DEFAULT_INDEX,
@@ -23,6 +24,7 @@ from analysis.macd.config import (
 )
 from analysis.macd.screen import screen_macd_stable
 from analysis.persist import KIND_MACD, JobSlot, is_fresh, load_disk, save_disk
+from company.analysis.line.undulate.service import _iso
 
 
 class MacdStableScreenService:
@@ -37,6 +39,7 @@ class MacdStableScreenService:
         index: str,
         factor: str,
         lookback: int,
+        end: str,
         adjust: str,
         near_ratio: float,
         fast: int,
@@ -44,14 +47,18 @@ class MacdStableScreenService:
         signal: int,
         w_prior: float,
         w_div: float,
+        cross_type: str = DEFAULT_CROSS_TYPE,
     ) -> str:
         band_s = f"{float(band):.4g}".replace(".", "p")
         near_s = f"{float(near_ratio):.4g}".replace(".", "p")
         wp = f"{float(w_prior):.2g}".replace(".", "p")
         wd = f"{float(w_div):.2g}".replace(".", "p")
+        end_s = str(end or "").strip() or "latest"
+        ct_s = str(cross_type or "").strip().lower() or DEFAULT_CROSS_TYPE
         return (
-            f"b{band_s}_i{index}_f{factor}_l{lookback}_a{adjust}"
-            f"_n{near_s}_m{fast}-{slow}-{signal}_w{wp}-{wd}_{CACHE_TAG}"
+            f"e{end_s}_b{band_s}_i{index}_f{factor}_l{lookback}_a{adjust}"
+            f"_n{near_s}_m{fast}-{slow}-{signal}_w{wp}-{wd}"
+            f"_ct{ct_s}_{CACHE_TAG}"
         )
 
     def _progress(self, raw: dict[str, Any] | None) -> dict[str, int]:
@@ -97,6 +104,7 @@ class MacdStableScreenService:
         index: str = DEFAULT_INDEX,
         factor: str = DEFAULT_FACTOR,
         lookback: int = DEFAULT_LOOKBACK_DAYS,
+        end: str = "",
         adjust: str = DEFAULT_ADJUST,
         near_ratio: float = DEFAULT_NEAR_RATIO,
         fast: int = DEFAULT_FAST,
@@ -104,14 +112,17 @@ class MacdStableScreenService:
         signal: int = DEFAULT_SIGNAL,
         w_prior: float = DEFAULT_W_PRIOR,
         w_div: float = DEFAULT_W_DIV,
+        cross_type: str = DEFAULT_CROSS_TYPE,
         force: bool = False,
         workers: int = DEFAULT_WORKERS,
     ) -> dict[str, Any]:
+        end_key = _iso(end) if str(end or "").strip() else ""
         key = self._make_key(
             band=band,
             index=index,
             factor=factor,
             lookback=lookback,
+            end=end_key,
             adjust=adjust,
             near_ratio=near_ratio,
             fast=fast,
@@ -119,6 +130,7 @@ class MacdStableScreenService:
             signal=signal,
             w_prior=w_prior,
             w_div=w_div,
+            cross_type=cross_type,
         )
 
         with self._lock:
@@ -168,6 +180,7 @@ class MacdStableScreenService:
             target=self._worker,
             args=(
                 key,
+                end_key,
                 band,
                 index,
                 factor,
@@ -179,6 +192,7 @@ class MacdStableScreenService:
                 signal,
                 w_prior,
                 w_div,
+                cross_type,
                 workers,
                 run_id,
             ),
@@ -192,6 +206,7 @@ class MacdStableScreenService:
     def _worker(
         self,
         key: str,
+        end: str,
         band: float,
         index: str,
         factor: str,
@@ -203,6 +218,7 @@ class MacdStableScreenService:
         signal: int,
         w_prior: float,
         w_div: float,
+        cross_type: str,
         workers: int,
         run_id: int,
     ) -> None:
@@ -219,6 +235,7 @@ class MacdStableScreenService:
                 index=index,
                 factor=factor,
                 lookback_days=lookback,
+                end=end,
                 adjust=adjust,
                 near_ratio=near_ratio,
                 fast=fast,
@@ -226,6 +243,7 @@ class MacdStableScreenService:
                 signal=signal,
                 w_prior=w_prior,
                 w_div=w_div,
+                cross_type=cross_type,
                 workers=workers,
                 on_update=on_update,
             )

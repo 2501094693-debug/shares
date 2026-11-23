@@ -12,8 +12,13 @@ from market.industry.service import service as industry_service
 
 from analysis.macd.analyze import analyze_macd_stable
 from analysis.macd.config import (
+    ALLOWED_CROSS_TYPES,
+    CROSS_TYPE_ALL,
+    CROSS_TYPE_OVER,
+    CROSS_TYPE_UNDER,
     DEFAULT_ADJUST,
     DEFAULT_BAND,
+    DEFAULT_CROSS_TYPE,
     DEFAULT_FACTOR,
     DEFAULT_FAST,
     DEFAULT_INDEX,
@@ -32,7 +37,7 @@ from company.analysis.line.evaluate.service import (
     EXTREMA_LOOKBACK_DAYS,
     MAX_LOOKBACK_DAYS,
 )
-from company.analysis.line.undulate.service import _today_iso
+from company.analysis.line.undulate.service import _iso, _today_iso
 from company.analysis.line.undulate.volatility import (
     _fetch_index_day_range,
     _norm_index_code,
@@ -53,6 +58,27 @@ def _num(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return n if n == n else None
+
+
+def cross_type_matches(cross: dict[str, Any], cross_type: str) -> bool:
+    """判断信号是否属于指定类别。
+
+    ``under`` 命中水下金叉 / 即将水下金叉，``over`` 命中水上金叉 /
+    即将水上金叉，``all`` 不做过滤。无信号或非法类别均不命中。
+    """
+    key = str(cross_type or "").strip().lower()
+    if key not in ALLOWED_CROSS_TYPES:
+        key = CROSS_TYPE_ALL
+    if key == CROSS_TYPE_ALL:
+        return True
+    underwater = cross.get("underwater") if isinstance(cross, dict) else None
+    if underwater is None:
+        return False
+    if key == CROSS_TYPE_UNDER:
+        return bool(underwater)
+    if key == CROSS_TYPE_OVER:
+        return not bool(underwater)
+    return False
 
 
 def slim_row(
@@ -88,6 +114,11 @@ def slim_row(
         "macd_signal": cross.get("primary"),
         "macd_signals": list(cross.get("signals") or []),
         "macd_date": str(cross.get("date") or "")[:10] or None,
+        "gap_velocity": _num(cross.get("gap_velocity")),
+        "pred_next_gap": _num(cross.get("pred_next_gap")),
+        "pred_next_cross": cross.get("pred_next_cross"),
+        "near_by_prediction": cross.get("near_by_prediction"),
+        "near_by_relative_gap": cross.get("near_by_relative_gap"),
         "dif": _num(cross.get("dif") if cross.get("dif") is not None else latest.get("dif")),
         "dea": _num(cross.get("dea") if cross.get("dea") is not None else latest.get("dea")),
         "underwater": cross.get("underwater"),
@@ -113,11 +144,12 @@ def _prefetch_index_hist(
     index: str,
     *,
     lookback_days: int,
+    end: str = "",
 ) -> dict[str, Any] | None:
     index_code = _norm_index_code(index) or str(index or "").strip()
     if not index_code:
         return None
-    end_iso = _today_iso()
+    end_iso = _iso(end) if end else _today_iso()
     span = max(int(lookback_days), int(EXTREMA_LOOKBACK_DAYS), int(MAX_LOOKBACK_DAYS))
     beg_iso = (
         datetime.strptime(end_iso, "%Y-%m-%d") - timedelta(days=span)
@@ -143,6 +175,8 @@ def _analyze_one(
     signal: int,
     w_prior: float,
     w_div: float,
+    cross_type: str = DEFAULT_CROSS_TYPE,
+    end: str = "",
     index_hist: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     code = str(meta.get("code") or "").strip()
@@ -162,6 +196,7 @@ def _analyze_one(
             signal=signal,
             w_prior=w_prior,
             w_div=w_div,
+            end=end,
             index_hist=index_hist,
         )
     except Exception as exc:  # noqa: BLE001
@@ -169,6 +204,10 @@ def _analyze_one(
         return None, str(exc)
 
     if not pack.get("found"):
+        return None, None
+    macd = pack.get("macd") if isinstance(pack.get("macd"), dict) else {}
+    cross = macd.get("cross") if isinstance(macd.get("cross"), dict) else {}
+    if not cross_type_matches(cross, cross_type):
         return None, None
     row = slim_row(pack, meta=meta)
     return row, None
@@ -206,7 +245,7 @@ def _assemble(
         "updated_at": _now_iso(),
         "note": (
             "主板/中小板等（非创业板、非科创板、非 ST、非退市）；"
-            "MACD 水下/水上金叉或即将金叉 + 最大稳定区间；"
+            f"MACD 信号类别={params.get('cross_type') or 'all'}（all/under/over） + 最大稳定区间；"
             "收盘/最低前低分与股指反向日占比合成总分"
         ),
     }
@@ -218,6 +257,7 @@ def screen_macd_stable(
     index: str = DEFAULT_INDEX,
     factor: str = DEFAULT_FACTOR,
     lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+    end: str = "",
     adjust: str = DEFAULT_ADJUST,
     near_ratio: float = DEFAULT_NEAR_RATIO,
     fast: int = DEFAULT_FAST,
@@ -225,6 +265,7 @@ def screen_macd_stable(
     signal: int = DEFAULT_SIGNAL,
     w_prior: float = DEFAULT_W_PRIOR,
     w_div: float = DEFAULT_W_DIV,
+    cross_type: str = DEFAULT_CROSS_TYPE,
     workers: int = DEFAULT_WORKERS,
     on_update: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
@@ -235,11 +276,16 @@ def screen_macd_stable(
         for meta in industry_service.stocks.all_stocks()
         if is_eligible_stock(meta)
     ]
+    end_iso = _iso(end) if end else _today_iso()
+    cross_type_key = str(cross_type or "").strip().lower()
+    if cross_type_key not in ALLOWED_CROSS_TYPES:
+        cross_type_key = DEFAULT_CROSS_TYPE
     params = {
         "band": float(band),
         "index": str(index or DEFAULT_INDEX).strip() or DEFAULT_INDEX,
         "factor": str(factor or DEFAULT_FACTOR).strip().lower() or DEFAULT_FACTOR,
         "lookback": int(lookback_days),
+        "end": end_iso,
         "adjust": str(adjust or DEFAULT_ADJUST).strip().lower() or DEFAULT_ADJUST,
         "near_ratio": abs(float(near_ratio)),
         "fast": int(fast),
@@ -247,6 +293,7 @@ def screen_macd_stable(
         "signal": int(signal),
         "w_prior": float(w_prior),
         "w_div": float(w_div),
+        "cross_type": cross_type_key,
         "exclude": "chinext+star+st+delisted",
     }
     total = len(stocks)
@@ -267,7 +314,7 @@ def screen_macd_stable(
         return {**empty, "note": "股票索引为空"}
 
     index_hist = _prefetch_index_hist(
-        params["index"], lookback_days=params["lookback"]
+        params["index"], lookback_days=params["lookback"], end=end_iso
     )
 
     max_workers = min(max(1, workers), int(MAX_WORKERS), max(1, total))
@@ -287,6 +334,8 @@ def screen_macd_stable(
                 signal=params["signal"],
                 w_prior=params["w_prior"],
                 w_div=params["w_div"],
+                cross_type=params["cross_type"],
+                end=end_iso,
                 index_hist=index_hist,
             ): meta
             for meta in stocks
@@ -323,6 +372,7 @@ def screen_macd_stable(
 
 
 __all__ = [
+    "cross_type_matches",
     "is_eligible_stock",
     "screen_macd_stable",
     "slim_row",

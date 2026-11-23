@@ -22,10 +22,12 @@ from analysis.evaluate.service import service as evaluate_service
 from analysis.macd.config import (
     ALLOWED_ADJUSTS as MACD_ALLOWED_ADJUSTS,
     ALLOWED_BANDS as MACD_ALLOWED_BANDS,
+    ALLOWED_CROSS_TYPES as MACD_ALLOWED_CROSS_TYPES,
     ALLOWED_FACTORS as MACD_ALLOWED_FACTORS,
     ALLOWED_INDEXES as MACD_ALLOWED_INDEXES,
     DEFAULT_ADJUST as MACD_ADJUST,
     DEFAULT_BAND as MACD_BAND,
+    DEFAULT_CROSS_TYPE as MACD_CROSS_TYPE,
     DEFAULT_FACTOR as MACD_FACTOR,
     DEFAULT_FAST as MACD_FAST,
     DEFAULT_INDEX as MACD_INDEX,
@@ -52,6 +54,7 @@ from analysis.rotation.config import DEFAULT_LOOKBACK_DAYS as ROTATION_LOOKBACK_
 from analysis.rotation.config import MAX_LOOKBACK_DAYS, MIN_LOOKBACK_DAYS
 from analysis.rotation.service import service as rotation_service
 from company.analysis.line.evaluate.service import MAX_LOOKBACK_DAYS as EVALUATE_MAX_LOOKBACK
+from company.analysis.line.undulate.service import _iso
 from core.api import err, ok
 
 router = APIRouter()
@@ -169,15 +172,21 @@ def get_macd_screen(
     index: str = Query(MACD_INDEX, description="对比指数公开码"),
     factor: str = Query(MACD_FACTOR, description="波动口径：open/high/low/close/all"),
     lookback: int = Query(MACD_LOOKBACK_DAYS, description="回溯自然日"),
+    end: str = Query("", description="截止交易日 YYYY-MM-DD；空=最新交易日"),
     adjust: str = Query(MACD_ADJUST, description="复权方式：qfq / hfq / none"),
     near_ratio: float = Query(
-        MACD_NEAR_RATIO, description="即将金叉相对缺口阈值 (DEA−DIF)/|DEA|"
+        MACD_NEAR_RATIO,
+        description="相对缺口阈值；与速度外推任一命中即可",
     ),
     fast: int = Query(MACD_FAST, ge=1, le=200, description="MACD 快线"),
     slow: int = Query(MACD_SLOW, ge=2, le=200, description="MACD 慢线"),
     signal: int = Query(MACD_SIGNAL, ge=1, le=200, description="DEA 信号线"),
     w_prior: float = Query(MACD_W_PRIOR, description="前低分权重"),
     w_div: float = Query(MACD_W_DIV, description="股指反向日占比分权重"),
+    cross_type: str = Query(
+        MACD_CROSS_TYPE,
+        description="信号类别：all=全部 / under=水下类 / over=水上类",
+    ),
     refresh: str = Query("0", description="1=强制重算"),
     workers: int = Query(
         MACD_WORKERS,
@@ -199,6 +208,12 @@ def get_macd_screen(
     adjust_key = str(adjust or "").strip().lower() or MACD_ADJUST
     if adjust_key not in MACD_ALLOWED_ADJUSTS:
         return err(f"adjust 须为 {MACD_ALLOWED_ADJUSTS} 之一", 400)
+    end_key = str(end or "").strip()
+    if end_key:
+        try:
+            end_key = _iso(end_key)
+        except ValueError as exc:
+            return err(f"end 格式错误：{exc}", 400)
     if lookback < 60 or lookback > EVALUATE_MAX_LOOKBACK:
         return err(f"lookback 须在 60–{EVALUATE_MAX_LOOKBACK} 之间", 400)
     if fast >= slow:
@@ -207,6 +222,9 @@ def get_macd_screen(
         return err("near_ratio 须在 (0, 1] 之间", 400)
     if w_prior < 0 or w_div < 0 or (w_prior + w_div) <= 0:
         return err("w_prior / w_div 须非负且之和 > 0", 400)
+    cross_type_key = str(cross_type or "").strip().lower()
+    if cross_type_key not in MACD_ALLOWED_CROSS_TYPES:
+        return err(f"cross_type 须为 {MACD_ALLOWED_CROSS_TYPES} 之一", 400)
 
     try:
         payload = macd_service.run_or_poll(
@@ -214,6 +232,7 @@ def get_macd_screen(
             index=index_code,
             factor=factor_key,
             lookback=lookback,
+            end=end_key,
             adjust=adjust_key,
             near_ratio=float(near_ratio),
             fast=fast,
@@ -221,6 +240,7 @@ def get_macd_screen(
             signal=signal,
             w_prior=float(w_prior),
             w_div=float(w_div),
+            cross_type=cross_type_key,
             force=refresh == "1",
             workers=workers,
         )
