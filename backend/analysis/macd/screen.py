@@ -32,7 +32,7 @@ from analysis.macd.config import (
     MAX_WORKERS,
     PROGRESS_EVERY,
 )
-from analysis.recent_low.screen import is_eligible_stock
+from analysis.universe import is_eligible_stock
 from company.analysis.line.evaluate.service import (
     EXTREMA_LOOKBACK_DAYS,
     MAX_LOOKBACK_DAYS,

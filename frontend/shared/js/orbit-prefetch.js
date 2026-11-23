@@ -30,7 +30,6 @@
       docs: ["/mine", "/js/mine.js"],
     },
     analysis: { urls: [], docs: ["/analysis", "/js/analysis.js"] },
-    screen: { urls: [], docs: ["/analysis", "/js/analysis.js"] },
     fund: {
       urls: ["/api/funds/tree", "/api/otc-funds/tree"],
       docs: ["/futures", "/js/futures.js"],
@@ -52,7 +51,6 @@
     fund: ["/api/funds/tree", "/api/otc-funds/tree"],
     futures: ["/api/futures/tree", "/api/futures/categories"],
     analysis: [],
-    screen: [],
   };
 
   let booted = false;

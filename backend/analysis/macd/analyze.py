@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Sequence
 
 from core.codes import normalize_code
 
@@ -99,14 +99,23 @@ def _score_series(
     return low, block
 
 
-def analyze_macd_stable(
+def _bars_on_or_before(bars: Sequence[dict[str, Any]], end_iso: str) -> list[dict[str, Any]]:
+    end_key = _iso(end_iso)
+    out = [b for b in bars if (d := _bar_date(b)) and d <= end_key]
+    out.sort(key=_bar_date)
+    return out
+
+
+def analyze_macd_stable_on_bars(
     code: str,
+    bars: Sequence[dict[str, Any]],
     *,
-    end: str = "",
+    end: str,
+    name: str = "",
+    source: str = "",
     factor: str = DEFAULT_FACTOR,
     band: float = DEFAULT_BAND,
     index: str = DEFAULT_INDEX,
-    lookback_days: int = DEFAULT_LOOKBACK_DAYS,
     adjust: str = DEFAULT_ADJUST,
     near_ratio: float = DEFAULT_NEAR_RATIO,
     fast: int = DEFAULT_FAST,
@@ -117,38 +126,31 @@ def analyze_macd_stable(
     layers: int = DEFAULT_LAYERS,
     smooth_window: int = DEFAULT_SMOOTH_WINDOW,
     index_hist: dict[str, Any] | None = None,
+    macd_items: Sequence[dict[str, Any]] | None = None,
+    allow_fetch_more: bool = False,
 ) -> dict[str, Any]:
-    """主入口：MACD 四类信号筛 → 最大 ±band 区间 → 双价前低分 + 反向日综合分。"""
-    norm = normalize_code(code)
+    """在已有日线上，以 ``end`` 为截止日做金叉 + 稳定区间综合分。
+
+    ``macd_items`` 可传入整段 MACD 序列（按日升序）；函数会截到 ``end`` 再判信号，
+    便于区间回测时「一只股票只算一次 MACD」。
+    ``allow_fetch_more=False`` 时不额外拉数（区间扫描应预先覆盖 lookback）。
+    """
+    norm = normalize_code(code) or str(code or "").strip()
     if not norm:
         raise ValueError("无效股票代码")
     if factor not in TEST_FACTOR_CHOICES:
         raise ValueError(f"不支持的波动口径 {factor!r}，可选 {TEST_FACTOR_CHOICES}")
 
-    end_iso = _iso(end) if end else _today_iso()
+    end_iso = _iso(end)
     band_abs = abs(float(band))
     index_code = str(index or DEFAULT_INDEX).strip() or DEFAULT_INDEX
     adj = str(adjust or DEFAULT_ADJUST).strip().lower() or DEFAULT_ADJUST
 
-    search_lb = max(60, int(lookback_days))
-    probe_lb = min(search_lb, int(PROBE_LOOKBACK_DAYS))
-    max_lb = max(search_lb, MAX_LOOKBACK_DAYS)
-
-    def _pull(lb_days: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        beg_lb = (
-            datetime.strptime(end_iso, "%Y-%m-%d") - timedelta(days=int(lb_days))
-        ).strftime("%Y-%m-%d")
-        pack = _fetch_day_range(norm, beg_iso=beg_lb, end_iso=end_iso, adjust=adj)
-        items = list(pack.get("items") or [])
-        if not items:
-            raise ValueError("无日线数据")
-        return pack, items
-
-    hist, bars = _pull(probe_lb)
+    day_bars = _bars_on_or_before(list(bars), end_iso)
     meta = {
         "code": norm,
-        "name": str(hist.get("name") or ""),
-        "source": str(hist.get("source") or ""),
+        "name": str(name or ""),
+        "source": str(source or ""),
         "adjust": adj,
         "factor": factor,
         "band": band_abs,
@@ -160,40 +162,66 @@ def analyze_macd_stable(
         "layers": int(layers),
         "smooth": int(smooth_window),
     }
-
-    # --- MACD 信号（短窗即够；暖机由 bars 头部提供） ---
-    bar_dates = [d for d in (_bar_date(b) for b in bars) if d]
-    macd_beg = bar_dates[0] if bar_dates else end_iso
-    try:
-        macd_pack = compute_macd(
-            bars,
-            macd_beg,
-            end_iso,
-            fast=fast,
-            slow=slow,
-            signal=signal,
-            price="close",
-        )
-    except ValueError as exc:
+    if not day_bars:
         return {
             **meta,
             "found": False,
-            "reason": "macd_fail",
-            "message": str(exc),
+            "reason": "no_bars",
+            "message": "无日线数据",
             "macd": None,
         }
 
-    macd_items = list(macd_pack.get("items") or [])
-    cross = classify_macd_cross(macd_items, near_ratio=near_ratio)
-    macd_block = {
-        "beg": macd_pack.get("beg"),
-        "end": macd_pack.get("end"),
-        "fast": macd_pack.get("fast"),
-        "slow": macd_pack.get("slow"),
-        "signal": macd_pack.get("signal"),
-        "latest": macd_pack.get("latest"),
-        "cross": cross,
-    }
+    # --- MACD 信号 ---
+    if macd_items is not None:
+        macd_prefix = [
+            m
+            for m in macd_items
+            if str(m.get("date") or "")[:10] <= end_iso
+        ]
+        cross = classify_macd_cross(macd_prefix, near_ratio=near_ratio)
+        latest = macd_prefix[-1] if macd_prefix else None
+        macd_block = {
+            "beg": str(macd_prefix[0].get("date") or "")[:10] if macd_prefix else None,
+            "end": str(macd_prefix[-1].get("date") or "")[:10] if macd_prefix else None,
+            "fast": int(fast),
+            "slow": int(slow),
+            "signal": int(signal),
+            "latest": latest,
+            "cross": cross,
+        }
+    else:
+        bar_dates = [d for d in (_bar_date(b) for b in day_bars) if d]
+        macd_beg = bar_dates[0] if bar_dates else end_iso
+        try:
+            macd_pack = compute_macd(
+                day_bars,
+                macd_beg,
+                end_iso,
+                fast=fast,
+                slow=slow,
+                signal=signal,
+                price="close",
+            )
+        except ValueError as exc:
+            return {
+                **meta,
+                "found": False,
+                "reason": "macd_fail",
+                "message": str(exc),
+                "macd": None,
+            }
+        macd_prefix = list(macd_pack.get("items") or [])
+        cross = classify_macd_cross(macd_prefix, near_ratio=near_ratio)
+        macd_block = {
+            "beg": macd_pack.get("beg"),
+            "end": macd_pack.get("end"),
+            "fast": macd_pack.get("fast"),
+            "slow": macd_pack.get("slow"),
+            "signal": macd_pack.get("signal"),
+            "latest": macd_pack.get("latest"),
+            "cross": cross,
+        }
+
     if not cross.get("matched"):
         return {
             **meta,
@@ -204,18 +232,30 @@ def analyze_macd_stable(
         }
 
     # --- 最大稳定区间 ---
-    result = find_max_range(bars, end=end_iso, factor=factor, band=band_abs)
-    if result.get("reached_start"):
+    hist = {"name": meta["name"], "source": meta["source"]}
+    work_bars = day_bars
+    result = find_max_range(work_bars, end=end_iso, factor=factor, band=band_abs)
+    if allow_fetch_more and result.get("reached_start"):
+        search_lb = max(60, int(DEFAULT_LOOKBACK_DAYS))
+        probe_lb = min(search_lb, int(PROBE_LOOKBACK_DAYS))
+        max_lb = max(search_lb, MAX_LOOKBACK_DAYS)
         need_lb = max(
             search_lb,
             int(EXTREMA_LOOKBACK_DAYS),
             min(max_lb, max(probe_lb * 2, search_lb)),
         )
         while True:
-            hist, bars = _pull(need_lb)
-            meta["name"] = str(hist.get("name") or meta["name"])
-            meta["source"] = str(hist.get("source") or meta["source"])
-            result = find_max_range(bars, end=end_iso, factor=factor, band=band_abs)
+            beg_lb = (
+                datetime.strptime(end_iso, "%Y-%m-%d") - timedelta(days=int(need_lb))
+            ).strftime("%Y-%m-%d")
+            pack = _fetch_day_range(norm, beg_iso=beg_lb, end_iso=end_iso, adjust=adj)
+            work_bars = list(pack.get("items") or [])
+            if not work_bars:
+                break
+            hist = pack
+            meta["name"] = str(pack.get("name") or meta["name"])
+            meta["source"] = str(pack.get("source") or meta["source"])
+            result = find_max_range(work_bars, end=end_iso, factor=factor, band=band_abs)
             if not result.get("found"):
                 break
             if result.get("reached_start") and need_lb < max_lb:
@@ -240,12 +280,14 @@ def analyze_macd_stable(
     beg_iso = window["beg"]
     used_end = window["end"]
 
-    bars, hist = _ensure_extrema_history(
-        norm, bars, hist, end_iso=used_end, adjust=adj
-    )
-    meta["name"] = str(hist.get("name") or meta["name"])
-    meta["source"] = str(hist.get("source") or meta["source"])
-    extrema_bars = _extrema_bars(bars, end=used_end)
+    if allow_fetch_more:
+        work_bars, hist = _ensure_extrema_history(
+            norm, work_bars, hist, end_iso=used_end, adjust=adj
+        )
+        meta["name"] = str(hist.get("name") or meta["name"])
+        meta["source"] = str(hist.get("source") or meta["source"])
+
+    extrema_bars = _extrema_bars(work_bars, end=used_end)
 
     low_close, score_close_block = _score_series(
         extrema_bars,
@@ -267,7 +309,7 @@ def analyze_macd_stable(
         if isinstance(index_hist, dict) and index_hist.get("items") is not None
         else None
     )
-    if resolved_index is None:
+    if resolved_index is None and allow_fetch_more:
         try:
             from company.analysis.line.undulate.volatility import (
                 _fetch_index_day_range,
@@ -281,7 +323,6 @@ def analyze_macd_stable(
         except Exception:  # noqa: BLE001
             resolved_index = None
 
-    # 偏离口径：all → close
     div_factor = factor if factor in ("open", "high", "low", "close") else "close"
     divergence = _safe_divergence(
         norm,
@@ -289,9 +330,9 @@ def analyze_macd_stable(
         beg=beg_iso,
         end=used_end,
         factor=div_factor,
-        stock_bars=bars,
-        stock_name=str(hist.get("name") or ""),
-        stock_source=str(hist.get("source") or ""),
+        stock_bars=work_bars,
+        stock_name=str(meta.get("name") or ""),
+        stock_source=str(meta.get("source") or ""),
         index_hist=resolved_index,
     )
 
@@ -337,4 +378,66 @@ def analyze_macd_stable(
     }
 
 
-__all__ = ["analyze_macd_stable"]
+def analyze_macd_stable(
+    code: str,
+    *,
+    end: str = "",
+    factor: str = DEFAULT_FACTOR,
+    band: float = DEFAULT_BAND,
+    index: str = DEFAULT_INDEX,
+    lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+    adjust: str = DEFAULT_ADJUST,
+    near_ratio: float = DEFAULT_NEAR_RATIO,
+    fast: int = DEFAULT_FAST,
+    slow: int = DEFAULT_SLOW,
+    signal: int = DEFAULT_SIGNAL,
+    w_prior: float = DEFAULT_W_PRIOR,
+    w_div: float = DEFAULT_W_DIV,
+    layers: int = DEFAULT_LAYERS,
+    smooth_window: int = DEFAULT_SMOOTH_WINDOW,
+    index_hist: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """主入口：拉日线后做 MACD 四类信号筛 → 最大 ±band 区间 → 综合分。"""
+    norm = normalize_code(code)
+    if not norm:
+        raise ValueError("无效股票代码")
+    if factor not in TEST_FACTOR_CHOICES:
+        raise ValueError(f"不支持的波动口径 {factor!r}，可选 {TEST_FACTOR_CHOICES}")
+
+    end_iso = _iso(end) if end else _today_iso()
+    adj = str(adjust or DEFAULT_ADJUST).strip().lower() or DEFAULT_ADJUST
+    search_lb = max(60, int(lookback_days))
+    probe_lb = min(search_lb, int(PROBE_LOOKBACK_DAYS))
+
+    beg_lb = (
+        datetime.strptime(end_iso, "%Y-%m-%d") - timedelta(days=int(probe_lb))
+    ).strftime("%Y-%m-%d")
+    hist = _fetch_day_range(norm, beg_iso=beg_lb, end_iso=end_iso, adjust=adj)
+    bars = list(hist.get("items") or [])
+    if not bars:
+        raise ValueError("无日线数据")
+
+    return analyze_macd_stable_on_bars(
+        norm,
+        bars,
+        end=end_iso,
+        name=str(hist.get("name") or ""),
+        source=str(hist.get("source") or ""),
+        factor=factor,
+        band=band,
+        index=index,
+        adjust=adj,
+        near_ratio=near_ratio,
+        fast=fast,
+        slow=slow,
+        signal=signal,
+        w_prior=w_prior,
+        w_div=w_div,
+        layers=layers,
+        smooth_window=smooth_window,
+        index_hist=index_hist,
+        allow_fetch_more=True,
+    )
+
+
+__all__ = ["analyze_macd_stable", "analyze_macd_stable_on_bars"]

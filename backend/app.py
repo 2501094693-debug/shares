@@ -382,16 +382,7 @@ def js_world():
 @app.get("/screen")
 @app.get("/screen.html")
 def screen_page():
-    return RedirectResponse(url="/analysis?view=limit", status_code=302)
-
-
-@app.get("/js/screen.js")
-def js_screen():
-    return FileResponse(
-        FRONTEND / "screen" / "app.js",
-        media_type="application/javascript",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
+    return RedirectResponse(url="/analysis", status_code=302)
 
 
 @app.get("/analysis")

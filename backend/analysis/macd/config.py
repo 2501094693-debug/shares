@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 from company.analysis.line.evaluate.core import DEFAULT_BAND
-from company.analysis.line.evaluate.service import (
-    DEFAULT_INDEX,
-    DEFAULT_LOOKBACK_DAYS,
-)
+from company.analysis.line.evaluate.service import DEFAULT_INDEX
 from company.analysis.line.MACD.core import (
     DEFAULT_FAST,
     DEFAULT_SIGNAL,
     DEFAULT_SLOW,
 )
+
+# 回溯自然日（稳定区间 / 前低打分）；金叉本身只看截止日最近两根 K
+DEFAULT_LOOKBACK_DAYS = 240
 
 # 即将金叉相对缺口阈值；与速度外推任一命中即可
 DEFAULT_NEAR_RATIO = 0.10
@@ -33,6 +33,11 @@ MIN_WORKERS = 1
 MAX_WORKERS = 32
 
 PROGRESS_EVERY = 20
+
+# 区间回测：最多覆盖的交易日数（逐日全市场扫描很重）
+MAX_RANGE_DAYS = 30
+# 区间回测落盘键版本
+RANGE_CACHE_TAG = "r2"
 
 # 落盘键版本，算法变更后与旧缓存隔离
 CACHE_TAG = "m3"
@@ -65,7 +70,9 @@ __all__ = [
     "DEFAULT_W_DIV",
     "DEFAULT_W_PRIOR",
     "DEFAULT_WORKERS",
+    "MAX_RANGE_DAYS",
     "MAX_WORKERS",
     "MIN_WORKERS",
     "PROGRESS_EVERY",
+    "RANGE_CACHE_TAG",
 ]

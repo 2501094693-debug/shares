@@ -10,7 +10,7 @@ from analysis.macd.config import (
     CROSS_TYPE_UNDER,
 )
 from analysis.macd.screen import cross_type_matches, slim_row
-from analysis.recent_low.screen import is_eligible_stock
+from analysis.universe import is_eligible_stock
 
 
 class CrossTypeFilterTests(unittest.TestCase):

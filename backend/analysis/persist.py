@@ -12,12 +12,10 @@ from company.line.session import last_session_close, market_phase, today_session
 from core.paths import ANALYSIS_CACHE_DIR, ensure_cache_dirs
 
 CACHE_VERSION = 1
-KIND_DECLINE = "decline"
 KIND_ROTATION = "rotation"
 KIND_SHARES = "shares"
-KIND_EVALUATE = "evaluate"
-KIND_RECENT_LOW = "recent_low"
 KIND_MACD = "macd"
+KIND_MACD_RANGE = "macd_range"
 
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 

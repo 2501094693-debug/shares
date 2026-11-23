@@ -7,9 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=20261102-index-seg" />
+  <link rel="stylesheet" href="/css/style.css?v=20261124-company-link" />
 </head>
-<body class="app-shell company-page-root market-page-root screen-page-root" data-nav="analysis" data-screen-mode="industry">
+<body class="app-shell company-page-root market-page-root screen-page-root analysis-page" data-nav="analysis" data-screen-mode="industry">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
 
   <div class="app-stage">
@@ -22,13 +22,8 @@
           </div>
         </div>
         <div class="top-actions">
-          <div id="viewSeg" class="market-seg judgment-view" role="tablist" aria-label="研判类型">
-            <button type="button" data-view="industry" class="is-active" role="tab" aria-selected="true">行业分析</button>
-            <button type="button" data-view="limit" role="tab" aria-selected="false">涨跌停分析</button>
-            <button type="button" data-view="stock" role="tab" aria-selected="false">个股分析</button>
-            <button type="button" data-view="select" role="tab" aria-selected="false">个股筛选</button>
-          </div>
           <button id="refreshBtn" class="btn ghost" type="button">重新分析</button>
+          <button id="modeShareBtn" class="btn ghost" type="button">个股分析</button>
         </div>
       </header>
 
@@ -37,15 +32,6 @@
         <div class="market-toolbar-tail">
           <span id="liveDot" class="market-live" data-state="idle">IDLE</span>
           <span id="marketMeta" class="muted market-meta"></span>
-          <div id="limitDaysSeg" class="market-seg screen-range judgment-limit" role="group" aria-label="回看窗口">
-            <button type="button" data-days="15" class="is-active">15日</button>
-            <button type="button" data-days="30">30日</button>
-          </div>
-          <div id="limitTopSeg" class="market-seg screen-range judgment-limit" role="group" aria-label="显示数量">
-            <button type="button" data-top="30" class="is-active">每日Top30</button>
-            <button type="button" data-top="50">每日Top50</button>
-            <button type="button" data-top="0">全部</button>
-          </div>
           <div id="industryDaysSeg" class="market-seg screen-range judgment-industry" role="group" aria-label="回看窗口">
             <button type="button" data-days="20" class="is-active">近一个月</button>
             <button type="button" data-days="60">近三个月</button>
@@ -53,34 +39,11 @@
             <button type="button" data-days="245">一年</button>
             <button type="button" data-days="490">两年</button>
           </div>
-          <div id="stockBandSeg" class="market-seg screen-range judgment-stock" role="group" aria-label="波动带">
-            <button type="button" data-band="0.05">±5%</button>
-            <button type="button" data-band="0.09" class="is-active">±9%</button>
-            <button type="button" data-band="0.12">±12%</button>
-          </div>
-          <div id="stockIndexSeg" class="market-seg screen-range judgment-stock" role="group" aria-label="对比指数">
-            <button type="button" data-index="000001" class="is-active">上证</button>
-            <button type="button" data-index="399001">成指</button>
-            <button type="button" data-index="000300">沪深300</button>
-          </div>
         </div>
       </div>
 
-      <div id="errorBox" class="error hidden"></div>
-      <div id="loading" class="loading screen-progress hidden">正在分析…</div>
-
-
-      <div class="screen-layout">
-        <nav id="dayRail" class="screen-day-rail" aria-label="交易日"></nav>
-        <div class="screen-day-main">
-          <div id="dayHead" class="screen-day-head"></div>
-          <div id="resultList" class="screen-result-list">
-            <p class="screen-empty muted">加载中…</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="rot-board judgment-industry-board">
+      <!-- 行业轮动（原有） -->
+      <div class="rot-board judgment-industry-board" id="rotBoard">
         <section class="rot-pane" data-kind="days">
           <header class="rot-pane-head">
             <h2>交易日</h2>
@@ -153,71 +116,93 @@
         </section>
       </div>
 
-      <div id="stockEvalBoard" class="stock-eval-board judgment-stock-board">
-        <section class="stock-eval-pane">
-          <header class="rot-pane-head">
-            <h2>区间评估</h2>
-            <span id="stockEvalHint" class="rot-pane-hint"></span>
+      <!-- 个股分析（区间回测，参照涨跌停左右分栏） -->
+      <div class="judgment-shares" id="sharesView">
+        <div class="judgment-shares-panel">
+          <header class="judgment-shares-head">
+            <h2>个股分析 · 区间回测</h2>
+            <span class="judgment-shares-hint" id="sharesHint"></span>
           </header>
-          <div class="rot-scroll stock-eval-scroll">
-            <table class="rot-table stock-eval-table" id="stockEvalTable">
-              <thead>
-                <tr>
-                  <th class="is-sortable" data-sort="code">代码</th>
-                  <th class="is-sortable" data-sort="name">名称</th>
-                  <th class="num is-sortable" data-sort="beg" title="区间起始">起始</th>
-                  <th class="num is-sortable" data-sort="end" title="区间结束">结束</th>
-                  <th class="num is-sortable" data-sort="count" title="区间交易日数">天数</th>
-                  <th class="is-sortable" data-sort="stock_path" title="区间内个股收盘走势">个股收盘</th>
-                  <th class="is-sortable" data-sort="index_path" title="区间内指数收盘走势">指数收盘</th>
-                  <th class="num is-sortable is-sorted" data-sort="divergence" title="股指反向偏离分">偏离</th>
-                  <th class="num is-sortable" data-sort="low_score" title="区间低点极值评分">低点分</th>
-                  <th class="num is-sortable" data-sort="low_date">低点日</th>
-                </tr>
-              </thead>
-              <tbody id="stockEvalBody">
-                <tr><td colspan="10" class="muted">切换到个股分析后开始扫描…</td></tr>
-              </tbody>
-            </table>
+          <div class="judgment-shares-toolbar">
+            <label class="field">
+              <span class="field-label">起始日</span>
+              <input type="date" id="shareStartDate" class="field-input" />
+            </label>
+            <label class="field">
+              <span class="field-label">截止日</span>
+              <input type="date" id="shareEndDate" class="field-input" />
+            </label>
+            <label class="field">
+              <span class="field-label">涨幅截止</span>
+              <input type="date" id="shareAsOfDate" class="field-input" />
+            </label>
+            <button type="button" id="shareRefreshBtn" class="btn">开始分析</button>
           </div>
-        </section>
+          <div id="shareErrorBox" class="error hidden"></div>
+          <div id="shareLoading" class="loading hidden">正在分析…</div>
+          <aside class="judgment-shares-dates" aria-label="交易日列表">
+            <div class="judgment-shares-dates-head">交易日</div>
+            <div class="judgment-shares-dates-scroll" id="shareDateList" role="listbox" aria-label="选择交易日"></div>
+          </aside>
+        </div>
+
+        <div class="judgment-shares-body">
+          <section class="judgment-shares-row" data-kind="near">
+            <button type="button" class="judgment-shares-label" data-kind="near" aria-expanded="true" title="折叠即将水下金叉">
+              <span>即将水下金叉</span>
+              <span class="judgment-shares-row-count">0</span>
+            </button>
+            <div class="judgment-shares-pane-scroll">
+              <table class="share-table">
+                <thead>
+                  <tr>
+                    <th>股票</th>
+                    <th>相对缺口</th>
+                    <th>相对速度</th>
+                    <th>稳定区间</th>
+                    <th class="num">反向日</th>
+                    <th>收盘价低点</th>
+                    <th>最低价低点</th>
+                    <th>事后涨幅</th>
+                  </tr>
+                </thead>
+                <tbody id="shareNearBody"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="judgment-shares-row" data-kind="under">
+            <button type="button" class="judgment-shares-label" data-kind="under" aria-expanded="true" title="折叠水下金叉">
+              <span>水下金叉</span>
+              <span class="judgment-shares-row-count">0</span>
+            </button>
+            <div class="judgment-shares-pane-scroll">
+              <table class="share-table">
+                <thead>
+                  <tr>
+                    <th>股票</th>
+                    <th>相对缺口</th>
+                    <th>相对速度</th>
+                    <th>稳定区间</th>
+                    <th class="num">反向日</th>
+                    <th>收盘价低点</th>
+                    <th>最低价低点</th>
+                    <th>事后涨幅</th>
+                  </tr>
+                </thead>
+                <tbody id="shareUnderBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
       </div>
 
-      <div id="selectBoard" class="stock-eval-board judgment-select-board">
-        <section class="stock-eval-pane">
-          <header class="rot-pane-head">
-            <h2>最近最低</h2>
-            <span id="selectHint" class="rot-pane-hint"></span>
-          </header>
-          <div class="rot-scroll stock-eval-scroll">
-            <table class="rot-table stock-eval-table" id="selectTable">
-              <thead>
-                <tr>
-                  <th class="is-sortable" data-sort="code">代码</th>
-                  <th class="is-sortable" data-sort="name">名称</th>
-                  <th class="num is-sortable" data-sort="date" title="最新交易日">交易日</th>
-                  <th class="num is-sortable" data-sort="close_price" title="最新收盘价">收盘</th>
-                  <th class="num is-sortable" data-sort="low_price" title="最新最低价">最低</th>
-                  <th class="num is-sortable" data-sort="close_days" title="最新收盘价是最近多少个交易日的最低">收盘天数</th>
-                  <th class="num is-sortable" data-sort="low_days" title="最新最低价是最近多少个交易日的最低">最低天数</th>
-                  <th class="num is-sortable is-sorted" data-sort="gap" title="两价最近最低交易日数之差">间隔</th>
-                  <th class="num is-sortable" data-sort="close_since" title="收盘最近最低窗口起点">收盘自</th>
-                  <th class="num is-sortable" data-sort="low_since" title="最低最近最低窗口起点">最低自</th>
-                </tr>
-              </thead>
-              <tbody id="selectBody">
-                <tr><td colspan="10" class="muted">切换到个股筛选后开始扫描…</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
+      <div id="errorBox" class="error hidden"></div>
+      <div id="loading" class="loading screen-progress hidden">正在分析…</div>
     </div>
   </div>
   <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
   <script src="/js/shared/orbit-prefetch.js?v=futures-20260923"></script>
-  <script src="/js/shared/nav.js?v=20261101-no-stock"></script>
-  <script src="/js/shared/kline-draw.js?v=20261030-no-extrema"></script>
-  <script src="/js/analysis.js?v=20261112-select-rl"></script>
+  <script src="/js/shared/nav.js?v=20261123-industry-only"></script>
+  <script src="/js/analysis.js?v=20261124-company-link"></script>
 </body>
 </html>

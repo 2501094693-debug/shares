@@ -9960,164 +9960,11 @@ body.app-shell.screen-page-root .screen-page.market-page {
   overflow: hidden;
 }
 
-.screen-page-root[data-screen-mode="limit"] .judgment-industry,
-.screen-page-root[data-screen-mode="limit"] .judgment-stock,
-.screen-page-root[data-screen-mode="limit"] .judgment-stock-board,
-.screen-page-root[data-screen-mode="limit"] .judgment-shares,
-.screen-page-root[data-screen-mode="limit"] .judgment-shares-panel,
-.screen-page-root[data-screen-mode="limit"] .judgment-query,
-.screen-page-root[data-screen-mode="shares"] .judgment-limit,
 .screen-page-root[data-screen-mode="shares"] .judgment-industry,
-.screen-page-root[data-screen-mode="shares"] .judgment-stock,
-.screen-page-root[data-screen-mode="shares"] .judgment-stock-board,
-.screen-page-root[data-screen-mode="industry"] .judgment-limit,
-.screen-page-root[data-screen-mode="industry"] .judgment-stock,
-.screen-page-root[data-screen-mode="industry"] .judgment-stock-board,
-.screen-page-root[data-screen-mode="industry"] .judgment-shares,
-.screen-page-root[data-screen-mode="industry"] .judgment-shares-panel,
 .screen-page-root[data-screen-mode="industry"] .judgment-query,
 .screen-page-root[data-screen-mode="industry"] .screen-layout,
-.screen-page-root[data-screen-mode="stock"] .judgment-limit,
-.screen-page-root[data-screen-mode="stock"] .judgment-industry,
-.screen-page-root[data-screen-mode="stock"] .judgment-shares,
-.screen-page-root[data-screen-mode="stock"] .judgment-shares-panel,
-.screen-page-root[data-screen-mode="stock"] .judgment-query,
-.screen-page-root[data-screen-mode="stock"] .screen-layout,
-.screen-page-root[data-screen-mode="stock"] .rot-board,
-.screen-page-root[data-screen-mode="select"] .judgment-limit,
-.screen-page-root[data-screen-mode="select"] .judgment-shares,
-.screen-page-root[data-screen-mode="select"] .judgment-shares-panel,
-.screen-page-root[data-screen-mode="select"] .judgment-industry,
-.screen-page-root[data-screen-mode="select"] .judgment-stock,
-.screen-page-root[data-screen-mode="select"] .judgment-stock-board,
-.screen-page-root[data-screen-mode="select"] .judgment-query,
-.screen-page-root[data-screen-mode="select"] .screen-layout,
-.screen-page-root[data-screen-mode="select"] .rot-board,
-.screen-page-root:not([data-screen-mode="industry"]) .rot-board,
-.screen-page-root:not([data-screen-mode="stock"]) .judgment-stock-board,
-.screen-page-root:not([data-screen-mode="select"]) .judgment-select-board {
+.screen-page-root:not([data-screen-mode="industry"]) .rot-board {
   display: none;
-}
-
-.screen-page-root[data-screen-mode="stock"] .judgment-stock {
-  display: inline-flex;
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-eval-board,
-.screen-page-root[data-screen-mode="select"] .judgment-select-board {
-  display: flex;
-  flex: 1 1 0%;
-  min-height: 0;
-  min-width: 0;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-eval-pane,
-.screen-page-root[data-screen-mode="select"] .stock-eval-pane {
-  display: flex;
-  flex: 1 1 0%;
-  min-height: 0;
-  flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: calc(var(--radius) + 2px);
-  background: color-mix(in srgb, var(--bg-elevated) 55%, transparent);
-  overflow: hidden;
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-eval-scroll,
-.screen-page-root[data-screen-mode="select"] .stock-eval-scroll {
-  flex: 1 1 0%;
-  min-height: 0;
-  overflow: auto;
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table thead th,
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table thead th.num,
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table td,
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table td.num,
-.screen-page-root[data-screen-mode="select"] .stock-eval-table thead th,
-.screen-page-root[data-screen-mode="select"] .stock-eval-table thead th.num,
-.screen-page-root[data-screen-mode="select"] .stock-eval-table td,
-.screen-page-root[data-screen-mode="select"] .stock-eval-table td.num {
-  text-align: left;
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table th.is-sortable,
-.screen-page-root[data-screen-mode="select"] .stock-eval-table th.is-sortable {
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table th.is-sortable:hover,
-.screen-page-root[data-screen-mode="select"] .stock-eval-table th.is-sortable:hover {
-  color: var(--text);
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table th.is-sorted,
-.screen-page-root[data-screen-mode="select"] .stock-eval-table th.is-sorted {
-  color: var(--accent, #3d7eff);
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table tr.is-row,
-.screen-page-root[data-screen-mode="select"] .stock-eval-table tr.is-row {
-  cursor: pointer;
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table tr.is-row:hover,
-.screen-page-root[data-screen-mode="select"] .stock-eval-table tr.is-row:hover {
-  background: color-mix(in srgb, var(--accent, #3d7eff) 10%, transparent);
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table td[data-tone="up"],
-.screen-page-root[data-screen-mode="select"] .stock-eval-table td[data-tone="up"] {
-  color: var(--up, #d64545);
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table td[data-tone="down"],
-.screen-page-root[data-screen-mode="select"] .stock-eval-table td[data-tone="down"] {
-  color: var(--down, #1faa6e);
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-eval-table td.mono,
-.screen-page-root[data-screen-mode="select"] .stock-eval-table td.mono {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-path-cell {
-  min-width: 11.5rem;
-  white-space: normal;
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-path-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 2px;
-  margin: 1px 4px 1px 0;
-  font-size: 12px;
-  line-height: 1.35;
-  color: var(--text);
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-path-chip em {
-  font-style: normal;
-  opacity: 0.55;
-  margin-right: 1px;
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="??"] {
-  color: var(--up, #d64545);
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="??"] {
-  color: var(--down, #1faa6e);
-}
-
-.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="????"],
-.screen-page-root[data-screen-mode="stock"] .stock-path-chip[data-path="????"] {
-  color: color-mix(in srgb, var(--accent, #3d7eff) 80%, var(--text));
 }
 
 .screen-page-root[data-screen-mode="shares"] .judgment-query {
@@ -17554,5 +17401,402 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
 
   .speculation-chip-row {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ===== 行情研判 · 个股分析（区间回测） ===== */
+.judgment-shares {
+  flex: 1 1 0%;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.judgment-shares.hidden {
+  display: none;
+}
+
+/* 个股分析进度：行内提示，不使用通用 .loading 的整屏遮罩 */
+#shareLoading {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  display: block;
+  place-items: initial;
+  padding: 4px 2px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  pointer-events: none;
+}
+
+#shareLoading.hidden {
+  display: none;
+}
+
+#shareErrorBox {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  display: block;
+  place-items: initial;
+  margin: 0;
+  padding: 4px 2px;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 0.78rem;
+  color: var(--warn);
+}
+
+#shareErrorBox.hidden {
+  display: none;
+}
+
+/* 个股分析滚动条：与涨跌停/筛选页保持一致 */
+.judgment-shares-dates-scroll,
+.judgment-shares-pane-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(42, 212, 184, 0.45) rgba(7, 11, 18, 0.35);
+}
+
+.judgment-shares-dates-scroll::-webkit-scrollbar,
+.judgment-shares-pane-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.judgment-shares-dates-scroll::-webkit-scrollbar-thumb,
+.judgment-shares-pane-scroll::-webkit-scrollbar-thumb {
+  background: rgba(42, 212, 184, 0.4);
+  border-radius: 4px;
+}
+
+.judgment-shares-dates-scroll::-webkit-scrollbar-track,
+.judgment-shares-pane-scroll::-webkit-scrollbar-track {
+  background: rgba(7, 11, 18, 0.35);
+  border-radius: 4px;
+}
+
+/* 个股分析结果行可点击进入公司详情 */
+.judgment-shares-pane-scroll tr.is-clickable {
+  cursor: pointer;
+}
+.judgment-shares-pane-scroll tr.is-clickable:hover {
+  background: rgba(42, 212, 184, 0.08);
+}
+.judgment-shares-pane-scroll tr.is-clickable:hover .share-name strong {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.judgment-shares-panel {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.judgment-shares-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.judgment-shares-head h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.judgment-shares-hint {
+  font-size: 0.74rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70%;
+}
+
+.judgment-shares-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.judgment-shares-toolbar .field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.judgment-shares-toolbar .field-label {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.judgment-shares-toolbar .field-input {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(4, 8, 14, 0.65);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.judgment-shares-toolbar .field-input:focus {
+  border-color: var(--line-strong);
+}
+
+.judgment-shares-dates {
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  max-height: 168px;
+  overflow: hidden;
+}
+
+.judgment-shares-dates-head {
+  flex: none;
+  padding: 8px 12px 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.judgment-shares-dates-scroll {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.share-day {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 96px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.share-day:hover {
+  background: var(--accent-soft);
+}
+
+.share-day.is-active {
+  border-color: var(--line-strong);
+  background: color-mix(in srgb, var(--up) 12%, var(--bg-elevated));
+}
+
+.share-day-when {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.15;
+}
+
+.share-day b {
+  font-family: var(--display);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.share-day em {
+  font-style: normal;
+  font-size: 0.66rem;
+  color: var(--muted);
+}
+
+.share-day-n {
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--up);
+}
+
+.share-date-empty {
+  padding: 14px 10px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.judgment-shares-body {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.judgment-shares-row {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.judgment-shares-row[data-kind="near"] {
+  border-color: color-mix(in srgb, var(--accent-hot) 26%, var(--line));
+}
+
+.judgment-shares-row[data-kind="under"] {
+  border-color: color-mix(in srgb, var(--up) 26%, var(--line));
+}
+
+.judgment-shares-label {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  text-align: left;
+}
+
+.judgment-shares-row[data-kind="near"] .judgment-shares-label span:first-child {
+  color: var(--accent-hot);
+}
+
+.judgment-shares-row[data-kind="under"] .judgment-shares-label span:first-child {
+  color: var(--up);
+}
+
+.judgment-shares-row-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.judgment-shares-pane-scroll {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: auto;
+  display: block;
+}
+
+.judgment-shares-pane-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.76rem;
+}
+
+.judgment-shares-pane-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 7px 8px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.judgment-shares-pane-scroll tbody td {
+  padding: 7px 8px;
+  vertical-align: top;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.judgment-shares-pane-scroll tr.is-empty td {
+  padding: 18px 10px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.share-name strong {
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.share-code {
+  margin-top: 1px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.share-bool {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.share-kv {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.share-kv.muted {
+  color: var(--muted);
+}
+
+[data-tone="up"] {
+  color: var(--up);
+}
+
+[data-tone="down"] {
+  color: var(--down);
+}
+
+[data-tone="flat"] {
+  color: var(--ink);
+}
+
+@media (max-width: 720px) {
+  .judgment-shares-dates {
+    max-height: 120px;
+  }
+
+  .judgment-shares-body {
+    /* 窄屏堆叠，避免两张宽表并排溢出 */
+    gap: 8px;
+  }
+
+  .judgment-shares-pane-scroll {
+    overflow-x: auto;
+  }
+
+  .judgment-shares-pane-scroll table {
+    min-width: 640px;
   }
 }

@@ -233,6 +233,65 @@ def _same_sealed_bar(cached: dict[str, Any], remote: dict[str, Any]) -> bool:
     )
 
 
+def _is_price_adjust(adjust: str | int | None) -> bool:
+    """前/后复权（因子变化时历史价会整体重写）。"""
+    key = str(adjust if adjust is not None else "").strip().lower()
+    return key in {"1", "2", "qfq", "hfq", "forward", "backward"}
+
+
+# 相邻收盘推导涨跌幅 vs 源站 pct_chg：超过该百分点差视为复权接缝。
+_PCT_BASIS_TOL = 2.0
+# 无 pct_chg 时：日线相邻收盘跳动超过该比例才判接缝（高于 20% 板，避开普通涨跌停）。
+_CLOSE_JUMP_SEAM = 0.25
+
+
+def _bar_pct_basis_mismatch(
+    prev: dict[str, Any],
+    cur: dict[str, Any],
+    *,
+    tol: float = _PCT_BASIS_TOL,
+    jump: float = _CLOSE_JUMP_SEAM,
+) -> bool:
+    """相邻两根收盘价是否与 ``pct_chg`` 口径不一致（复权缓存接缝）。
+
+    不复权除权日：``pct_chg`` 本身就是大跌，implied ≈ pct，不会误判。
+    前复权接缝：旧历史未重算、新段已按新因子，implied 大跳而 ``pct_chg`` 仍是正常涨跌。
+    """
+    prev_c = to_float(prev.get("close"))
+    cur_c = to_float(cur.get("close"))
+    if prev_c is None or cur_c is None or prev_c == 0:
+        return False
+    implied = (cur_c / prev_c - 1.0) * 100.0
+    pct = to_float(cur.get("pct_chg"))
+    if pct is not None:
+        return abs(implied - pct) > tol
+    return abs(cur_c / prev_c - 1.0) > jump
+
+
+def _find_adjust_seam(items: list[dict[str, Any]]) -> str:
+    """日线序列上第一处复权接缝日期（后一根）；没有则空串。"""
+    prev: dict[str, Any] | None = None
+    for bar in items or []:
+        if prev is not None and _bar_pct_basis_mismatch(prev, bar):
+            return str(bar.get("time") or "")[:10]
+        prev = bar
+    return ""
+
+
+def _stored_adjust_seam(
+    stored: dict[str, Any] | None,
+    *,
+    adjust: str | int | None,
+    period: str,
+) -> str:
+    """磁盘包在前/后复权日线上若有接缝则返回接缝日，否则空串。"""
+    if not stored or not _is_price_adjust(adjust):
+        return ""
+    if (period or "").strip().lower() != "day":
+        return ""
+    return _find_adjust_seam(list(stored.get("items") or []))
+
+
 def _kline_disk_path(code: str, period: str, adjust: str):
     ensure_cache_dirs()
     name = (
@@ -273,7 +332,24 @@ def _load_kline_disk(code: str, period: str, adjust: str) -> dict[str, Any] | No
     }
 
 
-def _save_kline_disk(code: str, period: str, adjust: str, pack: dict[str, Any]) -> None:
+def _clear_kline_disk(code: str, period: str, adjust: str) -> None:
+    """删掉日 K 磁盘缓存（复权因子变化后旧历史不可复用）。"""
+    path = _kline_disk_path(code, period, adjust)
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError as exc:
+        logger.info("kline disk clear %s failed: %s", path, exc)
+
+
+def _save_kline_disk(
+    code: str,
+    period: str,
+    adjust: str,
+    pack: dict[str, Any],
+    *,
+    replace: bool = False,
+) -> None:
     items = pack.get("items") or []
     if not items:
         return
@@ -283,9 +359,10 @@ def _save_kline_disk(code: str, period: str, adjust: str, pack: dict[str, Any]) 
         old_items = (old_body.get("data") or {}).get("items") or []
     except Exception:
         old_body, old_items = {}, []
-    if old_items:
+    if old_items and not replace:
         # 防覆盖：新包只是一小段（如强制刷新 limit=320）时，与旧盘按日期并集，
         # 同日期新数据赢。这样再也不会把多年历史洗成 320 根。
+        # replace=True（复权重建）时跳过并集，避免旧因子残留在窗口外。
         by_time = {str(b.get("time") or "")[:10]: b for b in old_items if str(b.get("time") or "")[:10]}
         for b in items:
             t = str(b.get("time") or "")[:10]
@@ -614,6 +691,46 @@ def _resolve_source(stored_src: str, remote_src: str, added_new: bool) -> str:
     return remote_src or stored_src
 
 
+def _rebuild_adjusted_kline(
+    code: str,
+    *,
+    period: str,
+    adjust: str | int,
+    disk_adjust: str,
+    cap: int,
+    reason: str = "",
+) -> dict[str, Any]:
+    """复权因子变化：清空旧盘后整段重拉，避免新旧因子并集残留接缝。"""
+    logger.info("kline adjust rebuild %s %s: %s", code, period, reason or "adjust")
+    _clear_kline_disk(code, period, disk_adjust)
+    want = max(int(cap or 0), _DEFAULT_DAY_WINDOW, _FULL_HISTORY_LIMIT)
+    try:
+        pack = _fetch_full_history(code, period=period, adjust=adjust, cap=want)
+    except Exception as exc:
+        logger.info("kline adjust rebuild fetch %s failed: %s", code, exc)
+        return _empty_kline(code, period, disk_adjust)
+    items = list(pack.get("items") or [])
+    if not items:
+        return _kline_payload(pack) if pack else _empty_kline(code, period, disk_adjust)
+    # 重建后再扫一遍；仍有接缝说明源站本身不连续，原样落盘避免死循环。
+    seam = _find_adjust_seam(items) if (period or "").strip().lower() == "day" else ""
+    if seam:
+        logger.info("kline adjust rebuild %s still has seam@%s, keep remote", code, seam)
+    result = {
+        "code": pack.get("code") or code,
+        "name": pack.get("name") or "",
+        "period": pack.get("period") or period,
+        "adjust": pack.get("adjust") or disk_adjust,
+        "pre_price": pack.get("pre_price"),
+        "source": pack.get("source") or "",
+        "count": len(items),
+        "items": items,
+        "full_history": bool(pack.get("full_history")),
+    }
+    _save_kline_disk(code, period, disk_adjust, result, replace=True)
+    return _kline_payload(result)
+
+
 def _refresh_with_tail(
     stored: dict[str, Any],
     *,
@@ -625,6 +742,21 @@ def _refresh_with_tail(
 ) -> dict[str, Any]:
     """用最新几根更新缓存；对不上则整段重拉。尾盘失败则退回旧缓存。"""
     items = list(stored.get("items") or [])
+    period_key = (period or "day").strip().lower()
+    # 磁盘上已有复权接缝（除权后只刷了尾部）→ 直接整段重建，别再增量合并。
+    if _is_price_adjust(adjust) and period_key == "day":
+        seam = _find_adjust_seam(items)
+        if seam:
+            rebuilt = _rebuild_adjusted_kline(
+                code,
+                period=period_key,
+                adjust=adjust,
+                disk_adjust=disk_adjust,
+                cap=max(cap, len(items)),
+                reason=f"seam@{seam}",
+            )
+            if rebuilt.get("items"):
+                return rebuilt
     last_time = _bar_time(items[-1]) if items else ""
     tail_n, tail_beg = _tail_window(period, last_time)
     try:
@@ -653,8 +785,21 @@ def _refresh_with_tail(
             return _kline_payload(stored)
     merged, reason = _merge_tail(items, tail_items)
     if merged is None:
-        # 缺段只补缺段：gap/adjust 时用日期区间拉 [cached_last, today]，不整段 limit 重拉
         logger.info("kline cache refresh %s %s: %s", code, period, reason)
+        # 复权对不上：旧历史因子失效，必须整段重拉（不能只并尾段）。
+        if reason == "adjust" and _is_price_adjust(adjust):
+            rebuilt = _rebuild_adjusted_kline(
+                code,
+                period=period_key,
+                adjust=adjust,
+                disk_adjust=disk_adjust,
+                cap=max(cap, len(items)),
+                reason="tail-overlap",
+            )
+            if rebuilt.get("items"):
+                return rebuilt
+            return _kline_payload(stored)
+        # gap：只补缺段
         try:
             _seg_n, _seg_beg = _tail_window(period, _bar_time(items[-1]) if items else "")
             seg = _fetch_remote_kline(code, period=period, adjust=adjust, limit=_seg_n,
@@ -667,6 +812,19 @@ def _refresh_with_tail(
                     logger.info("kline seg overlap %s = %d, keep cache", code, _ov2)
                     return _kline_payload(stored)
                 fixed = _merge_sorted(items, seg_items)
+                if _is_price_adjust(adjust) and period_key == "day":
+                    seam = _find_adjust_seam(fixed)
+                    if seam:
+                        rebuilt = _rebuild_adjusted_kline(
+                            code,
+                            period=period_key,
+                            adjust=adjust,
+                            disk_adjust=disk_adjust,
+                            cap=max(cap, len(fixed)),
+                            reason=f"gap-seam@{seam}",
+                        )
+                        if rebuilt.get("items"):
+                            return rebuilt
                 result = dict(seg)
                 result["items"] = fixed
                 result["count"] = len(fixed)
@@ -697,6 +855,19 @@ def _refresh_with_tail(
     _gap_src = None
     if _needs_backfill:
         merged, _gap_src = _backfill_middle_gaps(merged, code=code, period=period, adjust=adjust, cap=cap, stored_source=str(stored.get("source") or ""))
+    if _is_price_adjust(adjust) and period_key == "day":
+        seam = _find_adjust_seam(merged)
+        if seam:
+            rebuilt = _rebuild_adjusted_kline(
+                code,
+                period=period_key,
+                adjust=adjust,
+                disk_adjust=disk_adjust,
+                cap=max(cap, len(merged)),
+                reason=f"merge-seam@{seam}",
+            )
+            if rebuilt.get("items"):
+                return rebuilt
     result = {
         "code": tail.get("code") or stored.get("code") or code,
         "name": tail.get("name") or stored.get("name") or "",
@@ -909,13 +1080,16 @@ def fetch_kline(
                         expect_day = ""
                     # 尾部未到当前交易日时不能当 sealed（午休/开盘空隙会一直停在昨日）
                     # 收盘后若 verified_at 仍早于本轮收盘（午前落盘），也不能 sealed
+                    # 复权接缝也不能 sealed，必须走尾刷/整段重建
                     tail_current = (not expect_day) or last_d >= expect_day
                     close_at = last_session_close()
+                    seam = _stored_adjust_seam(stored, adjust=fqt, period=period_key)
                     sealed = (
                         (not live)
                         and tail_current
                         and verified_at >= close_at.timestamp()
                         and cn_now() >= close_at
+                        and not seam
                     )
                     base = stored
                     if not sealed:
@@ -1052,6 +1226,7 @@ def fetch_kline(
                 (not live)
                 and verified_at >= close_at.timestamp()
                 and cn_now() >= close_at
+                and not _stored_adjust_seam(stored, adjust=fqt, period=period_key)
             ):
                 result = _kline_payload(stored)
                 _kline_live_cache.put(mem_key, result, cached_at=now)
@@ -1193,7 +1368,8 @@ def fetch_kline(
             and cn_now() >= close_at
             and verified_at < close_at.timestamp()
         )
-        if not live and tail_ok and not stale_after_close:
+        seam = _stored_adjust_seam(stored, adjust=fqt, period=period_key)
+        if not live and tail_ok and not stale_after_close and not seam:
             result = _kline_payload(stored)
             result["full_history"] = bool(stored.get("full_history"))
         else:

@@ -12371,7 +12371,7 @@ function setupBackLink() {
       href: `/fund?cat=${encodeURIComponent(fromCat || "gp")}`,
       label: "返回基金",
     },
-    screen: { href: "/analysis?view=limit", label: "返回研判" },
+    screen: { href: "/analysis", label: "返回研判" },
     analysis: { href: "/analysis", label: "返回研判" },
   };
   const fallback = industry
@@ -16532,7 +16532,7 @@ const LC_MACD_PARAM_PRESETS = [
   { key: "12,26,9", fast: 12, slow: 26, signal: 9 },
   { key: "10,20,7", fast: 10, slow: 20, signal: 7 },
 ];
-const LC_MACD_PARAM_DEFAULT = LC_MACD_PARAM_PRESETS[0];
+const LC_MACD_PARAM_DEFAULT = LC_MACD_PARAM_PRESETS[1];
 const LC_MACD_DIF_COLOR = "#f0b429";
 const LC_MACD_DEA_COLOR = "#7aa2f7";
 

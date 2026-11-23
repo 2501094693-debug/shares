@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from typing import Any
 
-from analysis.decline.bars import parse_bars
+from analysis.bars import parse_bars
 from analysis.rotation.config import (
     CAP_MID_YI,
     CAP_WEIGHT_YI,

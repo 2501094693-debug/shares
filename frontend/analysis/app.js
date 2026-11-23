@@ -1,101 +1,11 @@
 (() => {
   const POLL_MS = 1200;
   const WEEK = "日一二三四五六";
-  const VIEW_KEY = "orbit-judgment-view";
-  const VIEW_META = {
-    limit: {
-      title: "ORBIT · 行情研判",
-      sub: "按每日涨停池分批排名：阴跌 → 横盘 → 涨停，软评分排序并附日 K",
-      from: "screen",
-    },
-    industry: {
-      title: "ORBIT · 行情研判",
-      sub: "按交易日复盘申万三级行业轮动：上涨/待涨/领涨均按所选交易日切片；行情与主力净流入（当日/5日/10日）回溯至该日。点击行业进入行情树",
-      from: "analysis",
-    },
-    stock: {
-      title: "ORBIT · 行情研判",
-      sub: "非创业板、非科创板、非 ST · ±band 区间内个股/指数四价走势、股指偏离、低点评分；点列头切换排序，点击行进入个股",
-      from: "analysis",
-    },
-    select: {
-      title: "ORBIT · 行情研判",
-      sub: "非创业板、非科创板、非 ST、非退市 · 最新收盘/最低两价各自「最近最低」交易日数与间隔；默认按间隔升序，点列头切换排序，点击行进入个股",
-      from: "analysis",
-    },
-  };
-
-  const STOCK_SORT_KEYS = [
-    "code",
-    "name",
-    "beg",
-    "end",
-    "count",
-    "stock_path",
-    "index_path",
-    "divergence",
-    "low_score",
-    "low_date",
-  ];
-  const STOCK_SORT_LABELS = {
-    code: "代码",
-    name: "名称",
-    beg: "起始",
-    end: "结束",
-    count: "天数",
-    stock_path: "个股收盘",
-    index_path: "指数收盘",
-    divergence: "偏离",
-    low_score: "低点分",
-    low_date: "低点日",
-  };
-  const STOCK_INDEX_CODES = ["000001", "399001", "000300"];
-
-  const SELECT_SORT_KEYS = [
-    "code",
-    "name",
-    "date",
-    "close_price",
-    "low_price",
-    "close_days",
-    "low_days",
-    "gap",
-    "close_since",
-    "low_since",
-  ];
-  const SELECT_SORT_LABELS = {
-    code: "代码",
-    name: "名称",
-    date: "交易日",
-    close_price: "收盘",
-    low_price: "最低",
-    close_days: "收盘天数",
-    low_days: "最低天数",
-    gap: "间隔",
-    close_since: "收盘自",
-    low_since: "最低自",
-  };
-
-  const limit = {
-    days: 15,
-    top: 30,
-    status: "idle",
-    dayRows: [],
-    selectedDate: "",
-    updatedAt: "",
-    candidateCount: 0,
-    resultCount: 0,
-    analyzedCount: 0,
-    pollTimer: 0,
-    fetching: false,
-    started: false,
-    error: "",
-    message: "",
-  };
+  const PAGE_SUB =
+    "按交易日复盘申万三级行业轮动：上涨/待涨/领涨均按所选交易日切片；行情与主力净流入（当日/5日/10日）回溯至该日。点击行业进入行情树";
 
   const industry = {
     days: 20,
-    top: 0,
     status: "idle",
     dayRows: [],
     selectedDate: "",
@@ -114,47 +24,26 @@
     message: "",
   };
 
-  const stock = {
-    band: 0.09,
-    index: "000001",
-    factor: "close",
+  const shares = {
+    mode: false,
     status: "idle",
-    items: [],
-    candidateCount: 0,
-    analyzedCount: 0,
-    foundCount: 0,
-    errorCount: 0,
-    updatedAt: "",
-    params: null,
-    sortKey: "divergence",
-    sortDir: "desc",
+    start: "",
+    end: "",
+    asof: "",
+    dayRows: [],
+    selectedDate: "",
+    nearItems: [],
+    underItems: [],
+    nearCount: 0,
+    underCount: 0,
+    loading: false,
+    error: "",
+    message: "",
+    note: "",
     pollTimer: 0,
     fetching: false,
     started: false,
-    error: "",
-    message: "",
   };
-
-  const select = {
-    adjust: "qfq",
-    status: "idle",
-    items: [],
-    candidateCount: 0,
-    analyzedCount: 0,
-    foundCount: 0,
-    errorCount: 0,
-    updatedAt: "",
-    params: null,
-    sortKey: "gap",
-    sortDir: "asc",
-    pollTimer: 0,
-    fetching: false,
-    started: false,
-    error: "",
-    message: "",
-  };
-
-  let view = "industry";
 
   const $ = (id) => document.getElementById(id);
 
@@ -219,63 +108,17 @@
     return String(date || "").slice(5) || "—";
   }
 
-  function parseView(raw) {
-    const value = String(raw || "").toLowerCase();
-    if (["limit", "screen", "decline", "zt"].includes(value)) return "limit";
-    if (["industry", "rotation", "rot", "l3", "hy"].includes(value)) return "industry";
-    if (["stock", "evaluate", "eval", "gg"].includes(value)) return "stock";
-    if (["select", "recent-low", "recent_low", "rl", "sx"].includes(value)) return "select";
-    return "";
-  }
-
-  function parseSortKey(raw) {
-    const value = String(raw || "").toLowerCase();
-    if (value === "stock_path_close") return "stock_path";
-    if (value === "index_path_close") return "index_path";
-    return STOCK_SORT_KEYS.includes(value) ? value : "divergence";
-  }
-
-  function parseSelectSortKey(raw) {
-    const value = String(raw || "").toLowerCase();
-    return SELECT_SORT_KEYS.includes(value) ? value : "gap";
-  }
-
-  function pathLabelOf(row, which) {
-    const pack = row && typeof row === "object" ? row[which] : null;
-    if (!pack || typeof pack !== "object") return "";
-    return String(pack.close || "");
-  }
-
-  function fmtPathCell(paths) {
-    const pack = paths && typeof paths === "object" ? paths : {};
-    const text = pack.close || "—";
-    return `<span class="stock-path-chip" data-path="${esc(text)}">${esc(text)}</span>`;
-  }
-
-  function parseSortDir(raw) {
-    return String(raw || "").toLowerCase() === "asc" ? "asc" : "desc";
-  }
-
-  function current() {
-    if (view === "industry") return industry;
-    if (view === "stock") return stock;
-    if (view === "select") return select;
-    return limit;
-  }
-
-  function selectedLimitDay() {
-    return limit.dayRows.find((d) => d.date === limit.selectedDate) || limit.dayRows[0] || null;
+  function fmtShortDate(date) {
+    if (!date) return "—";
+    const m = String(date).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return date;
+    return `${m[2]}月${m[3]}日`;
   }
 
   function selectedIndustryDay() {
     return (
       industry.dayRows.find((d) => d.date === industry.selectedDate) || industry.dayRows[0] || null
     );
-  }
-
-  function resultItems() {
-    const day = selectedLimitDay();
-    return (day && day.items) || [];
   }
 
   function setLive(kind) {
@@ -302,65 +145,62 @@
   }
 
   function syncStatusUi() {
-    const st = current();
-    showError(st.error || "");
-    if (st.status === "running") {
-      showLoading(true, st.message || "正在分析…");
+    showError(industry.error || "");
+    if (industry.status === "running") {
+      showLoading(true, industry.message || "正在分析…");
       setLive("busy");
       return;
     }
     showLoading(false);
-    if (st.status === "done") setLive("live");
-    else if (st.status === "error") setLive("idle");
-    else setLive(st.started ? "live" : "idle");
-  }
-
-  function persistView() {
-    try {
-      sessionStorage.setItem(VIEW_KEY, view);
-    } catch {
-      /* ignore */
-    }
+    if (industry.status === "done") setLive("live");
+    else if (industry.status === "error") setLive("idle");
+    else setLive(industry.started ? "live" : "idle");
   }
 
   function syncUrl() {
     const url = new URL(location.href);
-    url.searchParams.set("view", view);
+    url.searchParams.delete("view");
+    url.searchParams.delete("mode");
     url.searchParams.delete("code");
-    if (view === "stock") {
-      url.searchParams.set("sort", stock.sortKey);
-      url.searchParams.set("order", stock.sortDir);
-      url.searchParams.set("band", String(stock.band));
-      url.searchParams.set("index", stock.index);
-      url.searchParams.delete("adjust");
-    } else if (view === "select") {
-      url.searchParams.set("sort", select.sortKey);
-      url.searchParams.set("order", select.sortDir);
-      url.searchParams.set("adjust", select.adjust);
-      url.searchParams.delete("band");
-      url.searchParams.delete("index");
-      url.searchParams.delete("factor");
-      url.searchParams.delete("path");
-    } else {
-      url.searchParams.delete("sort");
-      url.searchParams.delete("order");
-      url.searchParams.delete("band");
-      url.searchParams.delete("index");
-      url.searchParams.delete("factor");
-      url.searchParams.delete("path");
-      url.searchParams.delete("adjust");
-    }
+    url.searchParams.delete("sort");
+    url.searchParams.delete("order");
+    url.searchParams.delete("band");
+    url.searchParams.delete("index");
+    url.searchParams.delete("factor");
+    url.searchParams.delete("path");
+    url.searchParams.delete("adjust");
     history.replaceState({}, "", url);
   }
 
   function applyChrome() {
-    const meta = VIEW_META[view] || VIEW_META.industry;
-    document.title = meta.title;
-    $("pageSub").textContent = meta.sub;
-    document.body.dataset.screenMode = view;
-    persistView();
+    document.title = "ORBIT · 行情研判";
+    const board = $("rotBoard");
+    const sharesView = $("sharesView");
+    const modeBtn = $("modeShareBtn");
+    const isShares = shares.mode === true;
+    document.body.dataset.screenMode = isShares ? "shares" : "industry";
+    if (board) board.classList.toggle("hidden", isShares);
+    if (sharesView) sharesView.classList.toggle("hidden", !isShares);
+    if (modeBtn) {
+      modeBtn.textContent = isShares ? "行业轮动" : "个股分析";
+      modeBtn.classList.toggle("is-active", isShares);
+    }
+    if (isShares) {
+      stopPoll();
+      syncSharesDateInputs();
+      renderShareDays();
+      renderShareBoards();
+      renderShareStatus();
+      const summaryBar = $("summaryBar");
+      if (summaryBar) {
+        summaryBar.innerHTML = "";
+      }
+    } else {
+      stopSharesPoll();
+      syncStatusUi();
+      renderAll();
+    }
     syncUrl();
-    renderSeg();
   }
 
   function markSeg(rootId, key, value) {
@@ -374,83 +214,7 @@
   }
 
   function renderSeg() {
-    $("viewSeg").querySelectorAll("button[data-view]").forEach((btn) => {
-      const active = btn.dataset.view === view;
-      btn.classList.toggle("is-active", active);
-      btn.setAttribute("aria-selected", active ? "true" : "false");
-    });
-    markSeg("limitDaysSeg", "days", limit.days);
-    markSeg("limitTopSeg", "top", limit.top);
     markSeg("industryDaysSeg", "days", industry.days);
-    markSeg("stockBandSeg", "band", stock.band);
-    markSeg("stockIndexSeg", "index", stock.index);
-  }
-
-  function scoreChip(label, value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) {
-      return `<span class="screen-chip"><em>${esc(label)}</em>—</span>`;
-    }
-    const kind = n >= 70 ? "up" : n >= 45 ? "flat" : "down";
-    return `<span class="screen-chip" data-tone="${kind}"><em>${esc(label)}</em>${fmtNum(n, 0)}</span>`;
-  }
-
-  function klineBlock(code) {
-    return `<article class="chart-card chart-card--kline" data-kline-code="${esc(code)}">
-      <header class="chart-card__head">
-        <div class="chart-card__head-main">
-          <div class="chart-card__title">
-            <span class="chart-card__mark" aria-hidden="true"></span>
-            <h3>走势</h3>
-          </div>
-          <div class="chart-kline-hover chart-hover-card hidden" aria-hidden="true"></div>
-        </div>
-        <p class="chart-card__meta muted">日K · 前复权</p>
-        <div class="chart-card__controls">
-          <div class="chart-select-group">
-            <label class="chart-select-wrap" aria-label="周期">
-              <select class="chart-select" disabled>
-                <option selected>日K</option>
-              </select>
-            </label>
-            <label class="chart-select-wrap" aria-label="复权">
-              <select class="chart-select" disabled>
-                <option selected>前复权</option>
-              </select>
-            </label>
-          </div>
-        </div>
-      </header>
-      <div class="chart-card__stage">
-        <div class="chart-canvas-wrap">
-          <canvas width="960" height="360" aria-label="行情走势图"></canvas>
-          <p class="muted chart-empty hidden">暂无走势数据</p>
-        </div>
-      </div>
-      <footer class="chart-card__foot">
-        <div class="chart-axis-scroll is-disabled">
-          <input class="chart-scroll-bar" type="range" min="0" max="0" value="0" step="1" aria-label="时间轴滑动" disabled />
-        </div>
-      </footer>
-    </article>`;
-  }
-
-  function fromHref(code) {
-    return `/company.html?code=${encodeURIComponent(code || "")}&from=${encodeURIComponent(VIEW_META[view].from)}`;
-  }
-
-  function renderLimitSummary() {
-    const analyzed = limit.analyzedCount || 0;
-    const day = selectedLimitDay();
-    const dayN = day ? day.candidate_count || 0 : 0;
-    const dayDone = day ? day.analyzed_count || (day.items || []).length : 0;
-    $("summaryBar").innerHTML = `
-      <span>已分析 <b>${analyzed}</b> / ${limit.candidateCount || 0}</span>
-      <span>当日 <b>${dayDone}</b> / ${dayN}</span>
-      <span>展示 <b>${(day && day.items && day.items.length) || 0}</b></span>
-      <span>窗口 <b>${limit.days}</b> 交易日</span>
-    `;
-    $("marketMeta").textContent = limit.updatedAt || "";
   }
 
   function windowLabel(days) {
@@ -626,29 +390,6 @@
     $("marketMeta").textContent = "";
   }
 
-  function renderDayRail() {
-    const rail = $("dayRail");
-    if (!limit.dayRows.length) {
-      rail.innerHTML = `<p class="screen-empty muted">暂无交易日</p>`;
-      return;
-    }
-    rail.innerHTML = limit.dayRows
-      .map((day) => {
-        const active = day.date === limit.selectedDate ? " is-active" : "";
-        const total = day.candidate_count || 0;
-        const done = day.analyzed_count || (day.items || []).length || 0;
-        const countText = limit.status === "running" ? `${done}/${total}` : String(total);
-        return `<button type="button" class="screen-day-chip${active}" data-date="${esc(day.date)}">
-          <span class="screen-day-when">
-            <b>${esc(fmtMd(day.date))}</b>
-            <em>${esc(weekday(day.date))}</em>
-          </span>
-          <span class="screen-day-count" data-tone="up">${esc(countText)}</span>
-        </button>`;
-      })
-      .join("");
-  }
-
   function renderRotDays() {
     const rail = $("rotDayRail");
     const hint = $("rotDaysHint");
@@ -674,20 +415,6 @@
         </button>`;
       })
       .join("");
-  }
-
-  function renderDayHead(day) {
-    const head = $("dayHead");
-    if (!day) {
-      head.innerHTML = "";
-      return;
-    }
-    head.innerHTML = `
-      <div>
-        <h2>${esc(day.date)} ${esc(weekday(day.date))}</h2>
-        <p>当日涨停 <b>${day.candidate_count || 0}</b> · 已分析 <b>${day.analyzed_count || (day.items || []).length}</b> · 展示 <b>${(day.items || []).length}</b></p>
-      </div>
-    `;
   }
 
   function renderIndustryHead(day) {
@@ -834,368 +561,325 @@
     if (rankBody) rankBody.innerHTML = industryRows(ranking, "rank");
   }
 
-  function stockKey(row) {
-    return `${row.code || ""}|${row.limit_up_date || ""}`;
-  }
-
-  function limitCardHtml(row) {
-    const detected = row.detected || {};
-    const dec = detected.decline || {};
-    const cons = detected.consolidation || {};
-    const scores = row.scores || {};
-    const industry = [row.l1_name, row.l2_name, row.l3_name].filter(Boolean).join(" / ");
-    const badge = row.board_count ? `${row.board_count}板` : "—";
-    const err = row.error ? `<span class="screen-card-error">${esc(row.error)}</span>` : "";
-    const href = fromHref(row.code || "");
-    return `<article class="screen-card is-stock" data-code="${esc(row.code || "")}" data-key="${esc(stockKey(row))}" tabindex="0">
-      <a class="screen-card-head" href="${esc(href)}" title="打开公司详情">
-        <span class="screen-rank">${row.rank || ""}</span>
-        <div class="screen-card-name">
-          <strong>${esc(row.name || "")}</strong>
-          <span>${esc(row.code || "")}</span>
-          ${industry ? `<em>${esc(industry)}</em>` : ""}
-        </div>
-        <div class="screen-card-score">
-          <b>${fmtNum(scores.total, 1)}</b>
-          <span>${esc(badge)}</span>
-        </div>
-      </a>
-      ${klineBlock(row.code || "")}
-      <footer class="screen-card-meta">
-        <span>阴跌 <b>${dec.days ?? "—"}</b>天 <b data-tone="${tone(dec.total_pct)}">${fmtPct(dec.total_pct)}</b></span>
-        <span>横盘 <b>${cons.days ?? "—"}</b>天 幅 <b>${fmtNum(cons.range_pct, 1)}</b>%</span>
-        ${scoreChip("阴跌时长", scores.decline_duration)}
-        ${scoreChip("阴跌质量", scores.decline_quality)}
-        ${scoreChip("横盘时长", scores.consolidation_duration)}
-        ${scoreChip("横盘质量", scores.consolidation_quality)}
-        ${scoreChip("突破", scores.breakout)}
-        ${scoreChip("结构", scores.structure)}
-        ${err}
-      </footer>
-    </article>`;
-  }
-
-  function mountCardKline(card) {
-    const kline = card.querySelector(".chart-card--kline");
-    const code = kline && kline.dataset.klineCode;
-    if (kline && code && window.OrbitKline) window.OrbitKline.mount(kline, { code, carousel: true });
-  }
-
-  function htmlToCard(html) {
-    const wrap = document.createElement("div");
-    wrap.innerHTML = html.trim();
-    return wrap.firstElementChild;
-  }
-
-  function renderCards(items, keyOf, htmlOf, patchOf, emptyText, viewKey) {
-    const list = $("resultList");
-    if (!items.length) {
-      list.innerHTML = `<p class="screen-empty muted">${esc(emptyText)}</p>`;
-      return;
-    }
-
-    const empty = list.querySelector(".screen-empty");
-    if (empty) empty.remove();
-
-    if (list.dataset.date !== viewKey) {
-      list.scrollLeft = 0;
-      list.dataset.date = viewKey;
-    }
-
-    const prev = new Map();
-    list.querySelectorAll("article.is-stock").forEach((el) => {
-      prev.set(el.dataset.key, el);
-    });
-    const used = new Set();
-    const fresh = [];
-    items.forEach((row) => {
-      const key = keyOf(row);
-      used.add(key);
-      let el = prev.get(key);
-      if (!el) {
-        el = htmlToCard(htmlOf(row));
-        fresh.push(el);
-      } else {
-        patchOf(el, row);
-      }
-      list.appendChild(el);
-    });
-    prev.forEach((el, key) => {
-      if (!used.has(key)) el.remove();
-    });
-    if (fresh.length) {
-      requestAnimationFrame(() => fresh.forEach((card) => mountCardKline(card)));
-    }
-  }
-
-  function patchLimitCard(el, row) {
-    const rank = el.querySelector(".screen-rank");
-    if (rank) rank.textContent = String(row.rank || "");
-    const score = el.querySelector(".screen-card-score b");
-    if (score) score.textContent = fmtNum((row.scores || {}).total, 1);
-  }
-
-  function emptyHint(st, noneText) {
-    if (!st.started || st.status === "running") return "正在分析，结果会逐只出现…";
-    return noneText;
-  }
-
-  function renderLimitCards() {
-    renderCards(
-      resultItems(),
-      stockKey,
-      limitCardHtml,
-      patchLimitCard,
-      emptyHint(limit, "该日暂无结果"),
-      limit.selectedDate || "",
-    );
-  }
-
-  function sortedStockItems() {
-    const key = stock.sortKey;
-    const dir = stock.sortDir === "asc" ? 1 : -1;
-    const rows = [...(stock.items || [])];
-    rows.sort((a, b) => {
-      let av = a?.[key];
-      let bv = b?.[key];
-      if (key === "stock_path") {
-        av = pathLabelOf(a, "stock_path");
-        bv = pathLabelOf(b, "stock_path");
-      } else if (key === "index_path") {
-        av = pathLabelOf(a, "index_path");
-        bv = pathLabelOf(b, "index_path");
-      }
-      const aNil = av == null || av === "";
-      const bNil = bv == null || bv === "";
-      if (aNil && bNil) return String(a?.code || "").localeCompare(String(b?.code || ""));
-      if (aNil) return 1;
-      if (bNil) return -1;
-      if (typeof av === "number" || typeof bv === "number") {
-        const an = Number(av);
-        const bn = Number(bv);
-        if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return (an - bn) * dir;
-      }
-      const cmp = String(av).localeCompare(String(bv), "zh-CN");
-      if (cmp) return cmp * dir;
-      return String(a?.code || "").localeCompare(String(b?.code || ""));
-    });
-    return rows;
-  }
-
-  function renderStockSortHeaders() {
-    const table = $("stockEvalTable");
-    if (!table) return;
-    table.querySelectorAll("th[data-sort]").forEach((th) => {
-      const key = th.dataset.sort;
-      const active = key === stock.sortKey;
-      th.classList.toggle("is-sorted", active);
-      th.dataset.order = active ? stock.sortDir : "";
-      const base = STOCK_SORT_LABELS[key] || key;
-      th.textContent = active ? `${base}${stock.sortDir === "asc" ? " ↑" : " ↓"}` : base;
-    });
-  }
-
-  function renderStockSummary() {
-    const sortLabel = STOCK_SORT_LABELS[stock.sortKey] || stock.sortKey;
-    const orderLabel = stock.sortDir === "asc" ? "升序" : "降序";
-    const bandPct = `${Math.round(stock.band * 100)}%`;
-    $("summaryBar").innerHTML = `
-      <span>已分析 <b>${stock.analyzedCount || 0}</b> / ${stock.candidateCount || 0}</span>
-      <span>命中 <b>${stock.foundCount || 0}</b></span>
-      <span>失败 <b>${stock.errorCount || 0}</b></span>
-      <span>排序 <b>${esc(sortLabel)} · ${orderLabel}</b></span>
-      <span>带 <b>±${bandPct}</b></span>
-    `;
-    $("marketMeta").textContent = stock.message || stock.updatedAt || "";
-  }
-
-  function toneClass(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n) || n === 0) return "flat";
-    return n > 0 ? "up" : "down";
-  }
-
-  function renderStockTable() {
-    const body = $("stockEvalBody");
-    const hint = $("stockEvalHint");
-    if (!body) return;
-    renderStockSortHeaders();
-    const rows = sortedStockItems();
-    if (hint) {
-      hint.textContent = rows.length
-        ? `${rows.length} 只 · ${STOCK_SORT_LABELS[stock.sortKey] || stock.sortKey}${stock.sortDir === "asc" ? "↑" : "↓"}`
-        : stock.started
-          ? "暂无命中"
-          : "";
-    }
-    if (!rows.length) {
-      const msg = stock.error
-        ? esc(stock.error)
-        : stock.status === "running"
-          ? esc(stock.message || "正在分析…")
-          : stock.started
-            ? "暂无命中区间的标的"
-            : "点击「重新分析」开始全市场扫描";
-      body.innerHTML = `<tr><td colspan="10" class="muted">${msg}</td></tr>`;
-      return;
-    }
-    body.innerHTML = rows
-      .map((row) => {
-        const code = esc(row.code || "");
-        return `<tr class="is-row" data-code="${code}" tabindex="0">
-          <td class="mono">${code}</td>
-          <td>${esc(row.name || "—")}</td>
-          <td class="num">${esc(fmtMd(row.beg))}</td>
-          <td class="num">${esc(fmtMd(row.end))}</td>
-          <td class="num">${esc(row.count ?? "—")}</td>
-          <td class="stock-path-cell">${fmtPathCell(row.stock_path)}</td>
-          <td class="stock-path-cell">${fmtPathCell(row.index_path)}</td>
-          <td class="num">${esc(fmtNum(row.divergence, 1))}</td>
-          <td class="num">${esc(fmtNum(row.low_score, 1))}</td>
-          <td class="num">${esc(fmtMd(row.low_date))}</td>
-        </tr>`;
-      })
-      .join("");
-  }
-
-  function sortedSelectItems() {
-    const key = select.sortKey;
-    const dir = select.sortDir === "asc" ? 1 : -1;
-    const rows = [...(select.items || [])];
-    rows.sort((a, b) => {
-      const av = a?.[key];
-      const bv = b?.[key];
-      const aNil = av == null || av === "";
-      const bNil = bv == null || bv === "";
-      if (aNil && bNil) return String(a?.code || "").localeCompare(String(b?.code || ""));
-      if (aNil) return 1;
-      if (bNil) return -1;
-      if (typeof av === "number" || typeof bv === "number") {
-        const an = Number(av);
-        const bn = Number(bv);
-        if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return (an - bn) * dir;
-      }
-      const cmp = String(av).localeCompare(String(bv), "zh-CN");
-      if (cmp) return cmp * dir;
-      return String(a?.code || "").localeCompare(String(b?.code || ""));
-    });
-    return rows;
-  }
-
-  function renderSelectSortHeaders() {
-    const table = $("selectTable");
-    if (!table) return;
-    table.querySelectorAll("th[data-sort]").forEach((th) => {
-      const key = th.dataset.sort;
-      const active = key === select.sortKey;
-      th.classList.toggle("is-sorted", active);
-      th.dataset.order = active ? select.sortDir : "";
-      const base = SELECT_SORT_LABELS[key] || key;
-      th.textContent = active ? `${base}${select.sortDir === "asc" ? " ↑" : " ↓"}` : base;
-    });
-  }
-
-  function renderSelectSummary() {
-    const sortLabel = SELECT_SORT_LABELS[select.sortKey] || select.sortKey;
-    const orderLabel = select.sortDir === "asc" ? "升序" : "降序";
-    $("summaryBar").innerHTML = `
-      <span>已分析 <b>${select.analyzedCount || 0}</b> / ${select.candidateCount || 0}</span>
-      <span>命中 <b>${select.foundCount || 0}</b></span>
-      <span>失败 <b>${select.errorCount || 0}</b></span>
-      <span>排序 <b>${esc(sortLabel)} · ${orderLabel}</b></span>
-      <span>排除 <b>创业/科创/ST/退市</b></span>
-    `;
-    $("marketMeta").textContent = select.message || select.updatedAt || "";
-  }
-
-  function fmtDays(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return "—";
-    return String(Math.round(n));
-  }
-
-  function renderSelectTable() {
-    const body = $("selectBody");
-    const hint = $("selectHint");
-    if (!body) return;
-    renderSelectSortHeaders();
-    const rows = sortedSelectItems();
-    if (hint) {
-      hint.textContent = rows.length
-        ? `${rows.length} 只 · ${SELECT_SORT_LABELS[select.sortKey] || select.sortKey}${select.sortDir === "asc" ? "↑" : "↓"}`
-        : select.started
-          ? "暂无命中"
-          : "";
-    }
-    if (!rows.length) {
-      const msg = select.error
-        ? esc(select.error)
-        : select.status === "running"
-          ? esc(select.message || "正在分析…")
-          : select.started
-            ? "暂无有效回溯结果"
-            : "点击「重新分析」开始全市场扫描";
-      body.innerHTML = `<tr><td colspan="10" class="muted">${msg}</td></tr>`;
-      return;
-    }
-    body.innerHTML = rows
-      .map((row) => {
-        const code = esc(row.code || "");
-        return `<tr class="is-row" data-code="${code}" tabindex="0">
-          <td class="mono">${code}</td>
-          <td>${esc(row.name || "—")}</td>
-          <td class="num">${esc(fmtMd(row.date))}</td>
-          <td class="num">${esc(fmtNum(row.close_price, 2))}</td>
-          <td class="num">${esc(fmtNum(row.low_price, 2))}</td>
-          <td class="num">${esc(fmtDays(row.close_days))}</td>
-          <td class="num">${esc(fmtDays(row.low_days))}</td>
-          <td class="num">${esc(fmtDays(row.gap))}</td>
-          <td class="num">${esc(fmtMd(row.close_since))}</td>
-          <td class="num">${esc(fmtMd(row.low_since))}</td>
-        </tr>`;
-      })
-      .join("");
-  }
-
   function renderAll() {
     renderSeg();
-    if (view === "limit") {
-      renderLimitSummary();
-      renderDayRail();
-      renderDayHead(selectedLimitDay());
-      renderLimitCards();
-      window.OrbitPrefetch?.intent({ stocks: resultItems() });
+    renderIndustrySummary();
+    renderRotDays();
+    renderIndustryHead(selectedIndustryDay());
+    renderIndustry();
+  }
+
+  /* ---------- 个股分析：区间回测（参照涨跌停左右分栏） ---------- */
+
+  function localIso(date) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+
+  function syncSharesDateInputs() {
+    const now = new Date();
+    const today = localIso(now);
+    const monthAgo = localIso(new Date(now.getTime() - 30 * 86400000));
+    const startEl = $("shareStartDate");
+    const endEl = $("shareEndDate");
+    const asofEl = $("shareAsOfDate");
+    if (startEl && shares.start) startEl.value = shares.start;
+    else if (startEl && !startEl.value) startEl.value = monthAgo;
+    if (endEl && shares.end) endEl.value = shares.end;
+    else if (endEl && !endEl.value) endEl.value = today;
+    if (asofEl && shares.asof) asofEl.value = shares.asof;
+    else if (asofEl && !asofEl.value) asofEl.value = today;
+  }
+
+  function fmtGainPct(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    const pct = n * 100;
+    const sign = pct > 0 ? "+" : pct < 0 ? "-" : "";
+    return `${sign}${Math.abs(pct).toFixed(1)}%`;
+  }
+
+  function isNearSignal(row) {
+    const signals = Array.isArray(row.macd_signals) ? row.macd_signals : [];
+    const primary = String(row.macd_signal || "");
+    return signals.includes("即将水下金叉") || primary === "即将水下金叉";
+  }
+
+  function isUnderCross(row) {
+    const signals = Array.isArray(row.macd_signals) ? row.macd_signals : [];
+    const primary = String(row.macd_signal || "");
+    return signals.includes("水下金叉") || primary === "水下金叉";
+  }
+
+  function partitionShareItems(items) {
+    const near = [];
+    const under = [];
+    for (const row of items || []) {
+      if (!row || !row.code) continue;
+      if (isNearSignal(row)) near.push(row);
+      else if (isUnderCross(row)) under.push(row);
+    }
+    return { near, under };
+  }
+
+  function renderShareDays() {
+    const list = $("shareDateList");
+    if (!list) return;
+    if (!shares.dayRows.length) {
+      list.innerHTML = `<div class="share-date-empty">暂无交易日</div>`;
       return;
     }
-    if (view === "industry") {
-      renderIndustrySummary();
-      renderRotDays();
-      renderIndustryHead(selectedIndustryDay());
-      renderIndustry();
+    list.innerHTML = shares.dayRows
+      .map((day) => {
+        const active = day.date === shares.selectedDate ? " is-active" : "";
+        const n = Number(day.found_count || 0);
+        return `<button type="button" class="share-day${active}" data-date="${esc(day.date)}">
+          <span class="share-day-when">
+            <b>${esc(fmtMd(day.date))}</b>
+            <em>${esc(weekday(day.date))}</em>
+          </span>
+          <span class="share-day-n">${n}</span>
+        </button>`;
+      })
+      .join("");
+  }
+
+  function renderShareBoard(kind) {
+    const bodyId = kind === "near" ? "shareNearBody" : "shareUnderBody";
+    const items = kind === "near" ? shares.nearItems : shares.underItems;
+    const title = kind === "near" ? "即将水下金叉" : "水下金叉";
+    const body = $(bodyId);
+    if (!body) return;
+
+    const countEl = body.closest(".judgment-shares-row")?.querySelector(".judgment-shares-row-count");
+    if (countEl) countEl.textContent = items.length;
+
+    if (!items.length) {
+      body.innerHTML = `<tr class="is-empty"><td colspan="8">今天没有${title}股票</td></tr>`;
       return;
     }
-    if (view === "stock") {
-      renderStockSummary();
-      renderStockTable();
-      return;
+
+    body.innerHTML = items.map((row) => {
+      const gapOk = row.near_by_relative_gap === true;
+      const velOk = row.near_by_prediction === true;
+      const scoreClose = scoreTone(row.score_close);
+      const scoreLow = scoreTone(row.score_low);
+      const lastGain = fmtGainPct(row.last_close_gain);
+      const maxGain = fmtGainPct(row.max_close_gain);
+      const closeDate = row.low_close_date ? fmtShortDate(row.low_close_date) : "—";
+      const closePrice = Number.isFinite(row.low_close_price) ? row.low_close_price.toFixed(2) : "—";
+      const lowDate = row.low_low_date ? fmtShortDate(row.low_low_date) : "—";
+      const lowPrice = Number.isFinite(row.low_low_price) ? row.low_low_price.toFixed(2) : "—";
+      return `<tr class="is-row is-clickable" data-code="${esc(row.code)}" data-name="${esc(row.name || row.code)}" title="${esc(row.name || row.code)} 点击查看公司详情">
+        <td>
+          <div class="share-name"><strong>${esc(row.name || row.code)}</strong></div>
+          <div class="share-code">${esc(row.code)}</div>
+        </td>
+        <td class="share-bool" data-tone="${gapOk ? "up" : "down"}">${gapOk ? "满足" : "不满足"}</td>
+        <td class="share-bool" data-tone="${velOk ? "up" : "down"}">${velOk ? "满足" : "不满足"}</td>
+        <td>
+          <div class="share-kv">${esc(row.beg || "—")} → ${esc(row.end || "—")}</div>
+          <div class="share-kv muted">${Number(row.count || 0)} 日</div>
+        </td>
+        <td class="share-kv" data-tone="${tone(row.reverse_count)}">${row.reverse_count == null ? "—" : row.reverse_count}</td>
+        <td class="share-kv">${closeDate}<br>${closePrice}<br>${fmtScore(row.score_close)}</td>
+        <td class="share-kv">${lowDate}<br>${lowPrice}<br>${fmtScore(row.score_low)}</td>
+        <td class="share-kv" data-tone="${tone(row.max_close_gain)}">${maxGain}（${esc(row.max_close_date ? fmtShortDate(row.max_close_date) : "—")}）<br>${lastGain}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  function renderShareBoards() {
+    renderShareBoard("near");
+    renderShareBoard("under");
+  }
+
+  function renderShareStatus() {
+    const box = $("shareErrorBox");
+    const loading = $("shareLoading");
+    const live = $("liveDot");
+    const meta = $("marketMeta");
+    if (shares.error) {
+      box.textContent = shares.error;
+      box.classList.remove("hidden");
+    } else {
+      box.classList.add("hidden");
+      box.textContent = "";
     }
-    if (view === "select") {
-      renderSelectSummary();
-      renderSelectTable();
+    if (shares.status === "running") {
+      loading.textContent = shares.message || "正在分析…";
+      loading.classList.remove("hidden");
+      live.dataset.state = "busy";
+      live.textContent = "SYNC";
+    } else {
+      loading.classList.add("hidden");
+      if (shares.status === "done") {
+        live.dataset.state = "live";
+        live.textContent = "LIVE";
+      } else if (shares.status === "error") {
+        live.dataset.state = "idle";
+        live.textContent = "IDLE";
+      } else {
+        live.dataset.state = shares.started ? "live" : "idle";
+        live.textContent = "IDLE";
+      }
+    }
+    if (meta) meta.textContent = shares.message || "";
+    if (shares.note) {
+      const hint = $("sharesHint");
+      if (hint) hint.textContent = shares.note;
     }
   }
 
-  function applyLimitData(data) {
-    limit.dayRows = data.days || [];
-    if (!limit.dayRows.some((d) => d.date === limit.selectedDate)) {
-      limit.selectedDate = (limit.dayRows[0] && limit.dayRows[0].date) || "";
+  function stopSharesPoll() {
+    if (shares.pollTimer) {
+      clearTimeout(shares.pollTimer);
+      shares.pollTimer = 0;
     }
-    limit.updatedAt = data.updated_at || "";
-    limit.candidateCount = data.candidate_count || 0;
-    limit.resultCount = data.result_count || 0;
-    limit.analyzedCount = data.analyzed_count || data.result_count || 0;
-    if (view === "limit") renderAll();
   }
+
+  function scheduleSharesPoll() {
+    stopSharesPoll();
+    shares.pollTimer = setTimeout(() => loadShares(false), POLL_MS);
+  }
+
+  async function loadShares(force) {
+    if (shares.fetching && !force) return;
+    shares.fetching = true;
+    shares.started = true;
+    shares.error = "";
+    if (!boxHidden($("shareErrorBox"))) $("shareErrorBox").classList.add("hidden");
+
+    const qs = new URLSearchParams();
+    qs.set("start", shares.start);
+    if (shares.end) qs.set("end", shares.end);
+    if (shares.asof) qs.set("asof", shares.asof);
+    qs.set("cross_type", "under");
+    qs.set("refresh", force ? "1" : "0");
+
+    try {
+      const res = await fetch(`/api/screen/macd/range?${qs}`, { cache: "no-store" });
+      const json = await res.json();
+      if (!json.ok) {
+        throw new Error(json.error || "请求失败");
+      }
+      applySharesPayload(json.data || {});
+      if (shares.status === "running") scheduleSharesPoll();
+      else stopSharesPoll();
+    } catch (err) {
+      shares.error = err.message || String(err);
+      shares.status = "error";
+      renderShareStatus();
+      stopSharesPoll();
+    } finally {
+      shares.fetching = false;
+    }
+  }
+
+  function boxHidden(el) {
+    return el && el.classList.contains("hidden");
+  }
+
+  function applySharesPayload(payload) {
+    shares.status = payload.status || "idle";
+    if (payload.status === "done" && payload.data) {
+      shares.error = "";
+      shares.message = "";
+      applySharesData(payload.data);
+      renderShareStatus();
+      renderShareDays();
+      renderShareBoards();
+      return;
+    }
+    if (payload.status === "error") {
+      shares.error = payload.error || "分析失败";
+      shares.message = "";
+      renderShareStatus();
+      return;
+    }
+    if (payload.status === "running") {
+      if (payload.data) applySharesData(payload.data);
+      const progress = payload.progress || {};
+      const done = Number(progress.done || 0);
+      const total = Number(progress.total || 0);
+      const hit = (payload.data && payload.data.result_count) || 0;
+      shares.message = (progress.phase === "gains"
+        ? "正在计算事后最大涨幅…"
+        : total
+          ? `已分析 ${done}/${total}，命中 ${hit}`
+          : "正在准备区间回测…");
+      shares.error = "";
+      const partial = (shares.dayRows || []).length > 0;
+      const loading = $("shareLoading");
+      loading.textContent = shares.message;
+      loading.classList.remove("hidden");
+      $("liveDot").dataset.state = partial ? "live" : "busy";
+      $("liveDot").textContent = partial ? "LIVE" : "SYNC";
+      renderShareDays();
+      renderShareBoards();
+      $("marketMeta").textContent = shares.message;
+      scheduleSharesPoll();
+    }
+  }
+
+  function applySharesData(data) {
+    const dayRows = data.days || [];
+    shares.dayRows = dayRows;
+    const allItems = [];
+    for (const day of dayRows) {
+      for (const item of day.items || []) {
+        item._signal_day = day.date;
+        allItems.push(item);
+      }
+    }
+    // 事后涨幅字段已由接口回填到每行；直接按信号类别分区。
+    const parts = partitionShareItems(allItems);
+    shares.nearItems = parts.near;
+    shares.underItems = parts.under;
+    shares.nearCount = parts.near.length;
+    shares.underCount = parts.under.length;
+    shares.note = data.note || "";
+    shares.updatedAt = data.updated_at || "";
+
+    // 保留用户已选日期；仅当无有效选中时给默认值（区间为升序返回）。
+    const valid = shares.dayRows.some((d) => d.date === shares.selectedDate);
+    if (!valid) {
+      const lastDate = shares.dayRows[shares.dayRows.length - 1]?.date || "";
+      let chosen = "";
+      // 优先选最近一个「非最新交易日」的有命中日期，保证事后涨幅有统计窗口（否则当天信号涨幅必为 0）。
+      for (let i = shares.dayRows.length - 1; i >= 0; i--) {
+        const d = shares.dayRows[i];
+        if (Number(d.found_count || 0) > 0 && d.date !== lastDate) {
+          chosen = d.date;
+          break;
+        }
+      }
+      if (!chosen) {
+        for (let i = shares.dayRows.length - 1; i >= 0; i--) {
+          const d = shares.dayRows[i];
+          if (Number(d.found_count || 0) > 0) {
+            chosen = d.date;
+            break;
+          }
+        }
+      }
+      if (!chosen) {
+        chosen = lastDate;
+      }
+      shares.selectedDate = chosen;
+    }
+
+    if (shares.selectedDate) {
+      const day = shares.dayRows.find((d) => d.date === shares.selectedDate) || {};
+      const parts = partitionShareItems(day.items || []);
+      shares.nearItems = parts.near;
+      shares.underItems = parts.under;
+      shares.nearCount = parts.near.length;
+      shares.underCount = parts.under.length;
+    }
+  }
+
+  /* ---------- 个股分析 end ---------- */
 
   function applyIndustryData(data) {
     industry.dayRows = data.days || [];
@@ -1211,129 +895,68 @@
     industry.updatedAt = data.updated_at || "";
     industry.errors = data.errors || [];
     industry.error = industry.errors.join("；");
-    if (view === "industry") renderAll();
+    renderAll();
   }
 
-  function applyPayload(st, payload, applyData) {
-    st.status = payload.status || "idle";
+  function applyPayload(payload) {
+    industry.status = payload.status || "idle";
     const progress = payload.progress || {};
     if (progress.total) {
-      st.candidateCount = progress.total;
-      st.analyzedCount = progress.done || 0;
+      industry.candidateCount = progress.total;
+      industry.analyzedCount = progress.done || 0;
     }
 
     if (payload.status === "done" && payload.data) {
-      st.error = "";
-      st.message = "";
-      applyData(payload.data);
-      if (st === current()) {
-        showLoading(false);
-        showError(st.error || "");
-        setLive("live");
-      }
+      industry.error = "";
+      industry.message = "";
+      applyIndustryData(payload.data);
+      showLoading(false);
+      showError(industry.error || "");
+      setLive("live");
       return;
     }
 
     if (payload.status === "error") {
-      st.error = payload.error || "分析失败";
-      st.message = "";
-      if (st === current()) {
-        showLoading(false);
-        showError(st.error);
-        setLive("idle");
-      }
+      industry.error = payload.error || "分析失败";
+      industry.message = "";
+      showLoading(false);
+      showError(industry.error);
+      setLive("idle");
       return;
     }
 
     if (payload.status === "running") {
-      if (payload.data) applyData(payload.data);
+      if (payload.data) applyIndustryData(payload.data);
       const elapsed = payload.elapsed_sec ? ` · ${fmtNum(payload.elapsed_sec, 0)}s` : "";
-      st.message = `${payload.message || "正在分析…"}${elapsed}`;
-      st.error = "";
-      if (st === current()) {
-        const partialIndustry =
-          view === "industry" && (industry.dayRows || []).length > 0;
-        const partialStock =
-          view === "stock" && (stock.items || []).length > 0;
-        const partialSelect =
-          view === "select" && (select.items || []).length > 0;
-        const partial = partialIndustry || partialStock || partialSelect;
-        showLoading(!partial, st.message);
-        setLive(partial ? "live" : "busy");
-        if (partial) {
-          $("marketMeta").textContent = st.message;
-        }
+      industry.message = `${payload.message || "正在分析…"}${elapsed}`;
+      industry.error = "";
+      const partial = (industry.dayRows || []).length > 0;
+      showLoading(!partial, industry.message);
+      setLive(partial ? "live" : "busy");
+      if (partial) {
+        $("marketMeta").textContent = industry.message;
       }
     }
   }
 
-  function stopPoll(st) {
-    if (st.pollTimer) {
-      clearTimeout(st.pollTimer);
-      st.pollTimer = 0;
+  function stopPoll() {
+    if (industry.pollTimer) {
+      clearTimeout(industry.pollTimer);
+      industry.pollTimer = 0;
     }
   }
 
-  function schedulePoll(st, loader) {
-    stopPoll(st);
-    st.pollTimer = setTimeout(() => loader(false), POLL_MS);
+  function schedulePoll() {
+    stopPoll();
+    industry.pollTimer = setTimeout(() => loadIndustry(false), POLL_MS);
   }
-
-  async function loadLimit(force) {
-    if (limit.fetching && !force) return;
-    limit.fetching = true;
-    limit.started = true;
-    limit.error = "";
-    if (view === "limit") showError("");
-    if (force) {
-      limit.dayRows = [];
-      limit.resultCount = 0;
-      limit.analyzedCount = 0;
-      limit.selectedDate = "";
-      if (view === "limit") renderAll();
-      limit.message = "正在拉取涨停池…";
-      if (view === "limit") {
-        showLoading(true, limit.message);
-        setLive("busy");
-      }
-    }
-
-    const qs = new URLSearchParams({
-      days: String(limit.days),
-      top: String(limit.top),
-      refresh: force ? "1" : "0",
-    });
-
-    try {
-      const res = await fetch(`/api/screen/decline?${qs}`);
-      const json = await res.json();
-      if (!json.ok) {
-        throw new Error(json.error || "请求失败");
-      }
-      applyPayload(limit, json.data || {}, applyLimitData);
-      if (limit.status === "running") schedulePoll(limit, loadLimit);
-      else stopPoll(limit);
-    } catch (err) {
-      limit.error = err.message || String(err);
-      limit.status = "error";
-      if (view === "limit") {
-        showLoading(false);
-        showError(limit.error);
-        setLive("idle");
-      }
-      stopPoll(limit);
-    } finally {
-      limit.fetching = false;
-    }
-  }
-
 
   async function loadIndustry(force) {
     if (industry.fetching && !force) return;
     industry.fetching = true;
     industry.started = true;
     industry.error = "";
-    if (view === "industry") showError("");
+    showError("");
     if (force) {
       industry.dayRows = [];
       industry.untouched = [];
@@ -1341,12 +964,10 @@
       industry.coveredCount = 0;
       industry.untouchedCount = 0;
       industry.selectedDate = "";
-      if (view === "industry") renderAll();
+      renderAll();
       industry.message = "正在统计每天哪些三级轮到了…";
-      if (view === "industry") {
-        showLoading(true, industry.message);
-        setLive("busy");
-      }
+      showLoading(true, industry.message);
+      setLive("busy");
     }
 
     const qs = new URLSearchParams({
@@ -1360,291 +981,28 @@
       if (!json.ok) {
         throw new Error(json.error || "请求失败");
       }
-      applyPayload(industry, json.data || {}, applyIndustryData);
-      if (industry.status === "running") schedulePoll(industry, loadIndustry);
-      else stopPoll(industry);
+      applyPayload(json.data || {});
+      if (industry.status === "running") schedulePoll();
+      else stopPoll();
     } catch (err) {
       industry.error = err.message || String(err);
       industry.status = "error";
-      if (view === "industry") {
-        showLoading(false);
-        showError(industry.error);
-        setLive("idle");
-      }
-      stopPoll(industry);
+      showLoading(false);
+      showError(industry.error);
+      setLive("idle");
+      stopPoll();
     } finally {
       industry.fetching = false;
     }
   }
 
-  function applyStockData(data) {
-    stock.items = Array.isArray(data.items) ? data.items : [];
-    stock.candidateCount = data.candidate_count || 0;
-    stock.analyzedCount = data.analyzed_count || 0;
-    stock.foundCount = data.found_count || stock.items.length;
-    stock.errorCount = data.error_count || 0;
-    stock.updatedAt = data.updated_at || "";
-    stock.params = data.params || null;
-    if (view === "stock") renderAll();
-  }
-
-  async function loadStock(force) {
-    if (stock.fetching && !force) return;
-    stock.fetching = true;
-    stock.started = true;
-    stock.error = "";
-    if (view === "stock") showError("");
-    if (force) {
-      stock.items = [];
-      stock.analyzedCount = 0;
-      stock.foundCount = 0;
-      stock.errorCount = 0;
-      if (view === "stock") renderAll();
-      stock.message = "正在加载股票索引…";
-      if (view === "stock") {
-        showLoading(true, stock.message);
-        setLive("busy");
-      }
-    }
-
-    const qs = new URLSearchParams({
-      band: String(stock.band),
-      index: stock.index,
-      factor: stock.factor,
-      refresh: force ? "1" : "0",
-    });
-
-    try {
-      const res = await fetch(`/api/screen/evaluate?${qs}`, { cache: "no-store" });
-      const json = await res.json();
-      if (!json.ok) {
-        throw new Error(json.error || "请求失败");
-      }
-      applyPayload(stock, json.data || {}, applyStockData);
-      if (stock.status === "running") schedulePoll(stock, loadStock);
-      else stopPoll(stock);
-    } catch (err) {
-      stock.error = err.message || String(err);
-      stock.status = "error";
-      if (view === "stock") {
-        showLoading(false);
-        showError(stock.error);
-        setLive("idle");
-      }
-      stopPoll(stock);
-    } finally {
-      stock.fetching = false;
-    }
-  }
-
-  function applySelectData(data) {
-    select.items = Array.isArray(data.items) ? data.items : [];
-    select.candidateCount = data.candidate_count || 0;
-    select.analyzedCount = data.analyzed_count || 0;
-    select.foundCount = data.found_count || select.items.length;
-    select.errorCount = data.error_count || 0;
-    select.updatedAt = data.updated_at || "";
-    select.params = data.params || null;
-    if (view === "select") renderAll();
-  }
-
-  async function loadSelect(force) {
-    if (select.fetching && !force) return;
-    select.fetching = true;
-    select.started = true;
-    select.error = "";
-    if (view === "select") showError("");
-    if (force) {
-      select.items = [];
-      select.analyzedCount = 0;
-      select.foundCount = 0;
-      select.errorCount = 0;
-      if (view === "select") renderAll();
-      select.message = "正在加载股票索引…";
-      if (view === "select") {
-        showLoading(true, select.message);
-        setLive("busy");
-      }
-    }
-
-    const qs = new URLSearchParams({
-      adjust: select.adjust || "qfq",
-      refresh: force ? "1" : "0",
-    });
-
-    try {
-      const res = await fetch(`/api/screen/recent-low?${qs}`, { cache: "no-store" });
-      const json = await res.json();
-      if (!json.ok) {
-        throw new Error(json.error || "请求失败");
-      }
-      applyPayload(select, json.data || {}, applySelectData);
-      if (select.status === "running") schedulePoll(select, loadSelect);
-      else stopPoll(select);
-    } catch (err) {
-      select.error = err.message || String(err);
-      select.status = "error";
-      if (view === "select") {
-        showLoading(false);
-        showError(select.error);
-        setLive("idle");
-      }
-      stopPoll(select);
-    } finally {
-      select.fetching = false;
-    }
-  }
-
-  function load(force) {
-    if (view === "limit") return loadLimit(force);
-    if (view === "industry") return loadIndustry(force);
-    if (view === "stock") return loadStock(force);
-    if (view === "select") return loadSelect(force);
-  }
-
-  function openCompany(code) {
-    if (!code) return;
-    window.location.href = fromHref(code);
-  }
-
-  function resetList() {
-    const list = $("resultList");
-    list.innerHTML = `<p class="screen-empty muted">加载中…</p>`;
-    list.dataset.date = "";
-  }
-
-  function switchView(next) {
-    if (next !== "limit" && next !== "industry" && next !== "stock" && next !== "select") {
-      return;
-    }
-    if (next === view) return;
-    stopPoll(current());
-    view = next;
-    resetList();
-    applyChrome();
-    renderAll();
-    syncStatusUi();
-    const st = current();
-    if (!st.started) load(false);
-    else if (st.status === "running") load(false);
-  }
-
-  function bindListGestures(list) {
-    let swipe = null;
-    const canScrollX = () => list.scrollWidth > list.clientWidth + 1;
-
-    list.addEventListener(
-      "wheel",
-      (ev) => {
-        if (document.body.dataset.screenMode === "industry") return;
-        if (ev.ctrlKey) return;
-        if (ev.target.closest(".chart-canvas-wrap, canvas")) return;
-        if (!canScrollX()) return;
-        ev.preventDefault();
-        ev.stopPropagation();
-        const delta = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
-        list.scrollLeft += delta;
-      },
-      { passive: false, capture: true },
-    );
-
-    list.addEventListener(
-      "pointerdown",
-      (ev) => {
-        if (document.body.dataset.screenMode === "industry") return;
-        if (ev.button != null && ev.button !== 0) return;
-        if (ev.target.closest("input, select, button, a, .chart-scroll-bar, .chart-canvas-wrap, canvas")) return;
-        if (!canScrollX()) return;
-        swipe = {
-          id: ev.pointerId,
-          x: ev.clientX,
-          scroll: list.scrollLeft,
-          moved: false,
-        };
-        list.classList.add("is-swiping");
-      },
-      true,
-    );
-
-    list.addEventListener("pointermove", (ev) => {
-      if (!swipe || ev.pointerId !== swipe.id) return;
-      const dx = ev.clientX - swipe.x;
-      if (!swipe.moved && Math.abs(dx) < 6) return;
-      if (!swipe.moved) {
-        swipe.moved = true;
-        try {
-          list.setPointerCapture(ev.pointerId);
-        } catch {
-          /* ignore */
-        }
-      }
-      ev.preventDefault();
-      list.scrollLeft = swipe.scroll - dx;
-    });
-
-    const endSwipe = (ev) => {
-      if (!swipe || (ev && ev.pointerId !== swipe.id)) return;
-      const moved = swipe.moved;
-      swipe = null;
-      list.classList.remove("is-swiping");
-      list.dataset.swiped = moved ? "1" : "";
-    };
-    list.addEventListener("pointerup", endSwipe);
-    list.addEventListener("pointercancel", endSwipe);
-
-    list.addEventListener("click", (ev) => {
-      if (list.dataset.swiped === "1") {
-        list.dataset.swiped = "";
-        ev.preventDefault();
-        ev.stopPropagation();
-        return;
-      }
-      const head = ev.target.closest(".screen-card-head");
-      if (head) return;
-      if (ev.target.closest(".chart-card")) return;
-      const card = ev.target.closest("article.is-stock[data-code]");
-      if (!card) return;
-      openCompany(card.dataset.code);
-    });
-
-    list.addEventListener("keydown", (ev) => {
-      if (ev.key !== "Enter" && ev.key !== " ") return;
-      const card = ev.target.closest("article.is-stock[data-code]");
-      if (!card) return;
-      ev.preventDefault();
-      openCompany(card.dataset.code);
-    });
-  }
-
   function bindEvents() {
-    $("viewSeg").addEventListener("click", (ev) => {
-      const btn = ev.target.closest("button[data-view]");
-      if (!btn) return;
-      switchView(btn.dataset.view);
-    });
-
     $("refreshBtn").addEventListener("click", () => {
-      load(true);
-    });
-
-    $("limitDaysSeg").addEventListener("click", (ev) => {
-      const btn = ev.target.closest("button[data-days]");
-      if (!btn) return;
-      const days = Number(btn.dataset.days);
-      if (days === limit.days) return;
-      limit.days = days;
-      renderSeg();
-      if (view === "limit") loadLimit(false);
-    });
-
-    $("limitTopSeg").addEventListener("click", (ev) => {
-      const btn = ev.target.closest("button[data-top]");
-      if (!btn) return;
-      const top = Number(btn.dataset.top);
-      if (top === limit.top) return;
-      limit.top = top;
-      renderSeg();
-      if (view === "limit") loadLimit(false);
+      if (shares.mode) {
+        startSharesAnalysis(true);
+      } else {
+        loadIndustry(true);
+      }
     });
 
     $("industryDaysSeg").addEventListener("click", (ev) => {
@@ -1654,100 +1012,7 @@
       if (days === industry.days) return;
       industry.days = days;
       renderSeg();
-      if (view === "industry") loadIndustry(true);
-    });
-
-    $("stockBandSeg")?.addEventListener("click", (ev) => {
-      const btn = ev.target.closest("button[data-band]");
-      if (!btn) return;
-      const band = Number(btn.dataset.band);
-      if (!Number.isFinite(band) || band === stock.band) return;
-      stock.band = band;
-      renderSeg();
-      syncUrl();
-      if (view === "stock") renderStockSummary();
-    });
-
-    $("stockIndexSeg")?.addEventListener("click", (ev) => {
-      const btn = ev.target.closest("button[data-index]");
-      if (!btn) return;
-      const index = String(btn.dataset.index || "");
-      if (!index || index === stock.index) return;
-      stock.index = index;
-      renderSeg();
-      syncUrl();
-      if (view === "stock") renderStockSummary();
-    });
-
-    $("stockEvalTable")?.addEventListener("click", (ev) => {
-      const th = ev.target.closest("th[data-sort]");
-      if (th && $("stockEvalTable").contains(th)) {
-        const key = parseSortKey(th.dataset.sort);
-        if (key === stock.sortKey) {
-          stock.sortDir = stock.sortDir === "asc" ? "desc" : "asc";
-        } else {
-          stock.sortKey = key;
-          stock.sortDir =
-            key === "code" ||
-            key === "name" ||
-            key === "beg" ||
-            key === "end" ||
-            key === "low_date" ||
-            key === "stock_path" ||
-            key === "index_path"
-              ? "asc"
-              : "desc";
-        }
-        syncUrl();
-        if (view === "stock") renderStockTable();
-        renderStockSummary();
-        return;
-      }
-      const row = ev.target.closest("tr.is-row[data-code]");
-      if (row) openCompany(row.dataset.code);
-    });
-
-    $("stockEvalBody")?.addEventListener("keydown", (ev) => {
-      if (ev.key !== "Enter" && ev.key !== " ") return;
-      const row = ev.target.closest("tr.is-row[data-code]");
-      if (!row) return;
-      ev.preventDefault();
-      openCompany(row.dataset.code);
-    });
-
-    $("selectTable")?.addEventListener("click", (ev) => {
-      const th = ev.target.closest("th[data-sort]");
-      if (th && $("selectTable").contains(th)) {
-        const key = parseSelectSortKey(th.dataset.sort);
-        if (key === select.sortKey) {
-          select.sortDir = select.sortDir === "asc" ? "desc" : "asc";
-        } else {
-          select.sortKey = key;
-          select.sortDir =
-            key === "code" ||
-            key === "name" ||
-            key === "date" ||
-            key === "close_since" ||
-            key === "low_since" ||
-            key === "gap"
-              ? "asc"
-              : "desc";
-        }
-        syncUrl();
-        if (view === "select") renderSelectTable();
-        renderSelectSummary();
-        return;
-      }
-      const row = ev.target.closest("tr.is-row[data-code]");
-      if (row) openCompany(row.dataset.code);
-    });
-
-    $("selectBody")?.addEventListener("keydown", (ev) => {
-      if (ev.key !== "Enter" && ev.key !== " ") return;
-      const row = ev.target.closest("tr.is-row[data-code]");
-      if (!row) return;
-      ev.preventDefault();
-      openCompany(row.dataset.code);
+      loadIndustry(true);
     });
 
     function openIndustry(row) {
@@ -1777,65 +1042,91 @@
       const date = btn.dataset.date;
       if (!date || date === industry.selectedDate) return;
       industry.selectedDate = date;
-      if (view === "industry") renderAll();
+      renderAll();
     });
 
-    $("dayRail").addEventListener("click", (ev) => {
+    $("modeShareBtn").addEventListener("click", () => {
+      shares.mode = !shares.mode;
+      applyChrome();
+      if (shares.mode && !shares.started) {
+        startSharesAnalysis(true);
+      }
+    });
+
+    $("shareRefreshBtn").addEventListener("click", () => {
+      startSharesAnalysis(true);
+    });
+
+    $("shareStartDate").addEventListener("change", (ev) => {
+      shares.start = ev.target.value || "";
+    });
+    $("shareEndDate").addEventListener("change", (ev) => {
+      shares.end = ev.target.value || "";
+    });
+    $("shareAsOfDate").addEventListener("change", (ev) => {
+      shares.asof = ev.target.value || "";
+    });
+
+    $("shareDateList").addEventListener("click", (ev) => {
       const btn = ev.target.closest("button[data-date]");
       if (!btn) return;
       const date = btn.dataset.date;
-      if (!date) return;
-      if (date === limit.selectedDate) return;
-      limit.selectedDate = date;
-      if (view === "limit") renderAll();
+      if (!date || date === shares.selectedDate) return;
+      shares.selectedDate = date;
+      const day = shares.dayRows.find((d) => d.date === date) || {};
+      const parts = partitionShareItems(day.items || []);
+      shares.nearItems = parts.near;
+      shares.underItems = parts.under;
+      renderShareDays();
+      renderShareBoards();
     });
 
-    bindListGestures($("resultList"));
+    ["shareNearBody", "shareUnderBody"].forEach((id) => {
+      const body = $(id);
+      if (!body) return;
+      body.addEventListener("click", (ev) => {
+        const tr = ev.target.closest("tr.is-row");
+        if (!tr) return;
+        const code = (tr.dataset.code || "").trim();
+        if (!code) return;
+        const name = tr.dataset.name || code;
+        const url = `/company?${new URLSearchParams({ code, name, from: "analysis" }).toString()}`;
+        if (ev.metaKey || ev.ctrlKey) window.open(url, "_blank");
+        else window.location.href = url;
+      });
+    });
   }
 
-  function initialView() {
-    const params = new URLSearchParams(location.search);
-    const fromQuery = parseView(params.get("view") || params.get("mode"));
-    if (fromQuery) return fromQuery;
-    try {
-      const saved = parseView(sessionStorage.getItem(VIEW_KEY));
-      if (saved) return saved;
-    } catch {
-      /* ignore */
+  function startSharesAnalysis(force) {
+    const startEl = $("shareStartDate");
+    const endEl = $("shareEndDate");
+    const asofEl = $("shareAsOfDate");
+    shares.start = (startEl && startEl.value) || shares.start;
+    shares.end = (endEl && endEl.value) || "";
+    shares.asof = (asofEl && asofEl.value) || "";
+    if (!shares.start) {
+      shares.error = "请选择起始日";
+      renderShareStatus();
+      return;
     }
-    return "industry";
-  }
-
-  function hydrateStockParams() {
-    const params = new URLSearchParams(location.search);
-    const band = Number(params.get("band"));
-    if ([0.05, 0.09, 0.12].includes(band)) stock.band = band;
-    const index = String(params.get("index") || "");
-    if (STOCK_INDEX_CODES.includes(index)) stock.index = index;
-    stock.factor = "close";
-    stock.sortKey = parseSortKey(params.get("sort"));
-    stock.sortDir = parseSortDir(params.get("order"));
-  }
-
-  function hydrateSelectParams() {
-    const params = new URLSearchParams(location.search);
-    const adjust = String(params.get("adjust") || "").toLowerCase();
-    if (["qfq", "hfq", "none"].includes(adjust)) select.adjust = adjust;
-    select.sortKey = parseSelectSortKey(params.get("sort"));
-    const order = params.get("order");
-    if (order) {
-      select.sortDir = parseSortDir(order);
-    } else {
-      select.sortDir = select.sortKey === "gap" ? "asc" : "desc";
+    if (force) {
+      shares.dayRows = [];
+      shares.nearItems = [];
+      shares.underItems = [];
+      shares.nearCount = 0;
+      shares.underCount = 0;
+      shares.selectedDate = "";
+      renderShareDays();
+      renderShareBoards();
+      $("shareLoading").textContent = "正在准备区间回测…";
+      $("shareLoading").classList.remove("hidden");
     }
+    loadShares(force);
   }
 
-  view = initialView();
-  hydrateStockParams();
-  hydrateSelectParams();
   applyChrome();
   bindEvents();
-  window.OrbitPrefetch?.bindHover($("resultList"), "article.is-stock[data-code]");
   window.OrbitPrefetch?.boot("analysis");
-  load(false);
+  syncStatusUi();
+  loadIndustry(false);
 })();

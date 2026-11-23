@@ -4,6 +4,7 @@
     python -m analysis.macd --band 0.09 --json
     python -m analysis.macd --codes 600519,000001
     python -m analysis.macd --end 2026-11-20
+    python -m analysis.macd --start 2026-11-10 --end 2026-11-20
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from analysis.macd.config import (
     DEFAULT_WORKERS,
 )
 from analysis.macd.mine import default_group_name, write_mine_group
+from analysis.macd.range_scan import screen_macd_range
 from analysis.macd.screen import cross_type_matches, screen_macd_stable, slim_row
 from company.analysis.line.undulate.service import _iso, _today_iso
 
@@ -82,25 +84,48 @@ def _print_hit(row: dict[str, Any], *, prefix: str = "命中") -> None:
     )
 
 
+def _fmt_pct(value: Any) -> str:
+    if isinstance(value, (int, float)):
+        return f"{float(value) * 100:+.1f}%"
+    return "—"
+
+
 def _print_table(items: list[dict[str, Any]], *, limit: int = 50) -> None:
     if not items:
         _log("  无结果")
         return
-    _log(
-        f"  {'#':>3} {'代码':<8} {'名称':<10} {'信号':<10} "
-        f"{'总分':>6} {'前低':>6} {'反向':>4} {'天数':>4}"
-    )
-    for i, row in enumerate(items[:limit], 1):
-        name = str(row.get("name") or "")[:10]
-        sig = str(row.get("macd_signal") or "")[:10]
-        total_s = _fmt_score(row.get("score_total"))
-        prior_s = _fmt_score(row.get("score_prior"))
-        rev = row.get("reverse_count")
-        rev_s = str(rev) if rev is not None else "—"
+    has_gain = any(r.get("max_close_gain") is not None for r in items[:limit])
+    if has_gain:
         _log(
-            f"  {i:>3} {row.get('code', ''):<8} {name:<10} {sig:<10} "
-            f"{total_s:>6} {prior_s:>6} {rev_s:>4} {row.get('count') or 0:>4}"
+            f"  {'#':>3} {'信号日':<10} {'代码':<8} {'名称':<8} {'信号':<8} "
+            f"{'收盘最大':>8} {'最高最大':>8} {'总分':>6}"
         )
+        for i, row in enumerate(items[:limit], 1):
+            name = str(row.get("name") or "")[:8]
+            sig = str(row.get("macd_signal") or "")[:8]
+            _log(
+                f"  {i:>3} {str(row.get('signal_day') or '')[:10]:<10} "
+                f"{row.get('code', ''):<8} {name:<8} {sig:<8} "
+                f"{_fmt_pct(row.get('max_close_gain')):>8} "
+                f"{_fmt_pct(row.get('max_high_gain')):>8} "
+                f"{_fmt_score(row.get('score_total')):>6}"
+            )
+    else:
+        _log(
+            f"  {'#':>3} {'代码':<8} {'名称':<10} {'信号':<10} "
+            f"{'总分':>6} {'前低':>6} {'反向':>4} {'天数':>4}"
+        )
+        for i, row in enumerate(items[:limit], 1):
+            name = str(row.get("name") or "")[:10]
+            sig = str(row.get("macd_signal") or "")[:10]
+            total_s = _fmt_score(row.get("score_total"))
+            prior_s = _fmt_score(row.get("score_prior"))
+            rev = row.get("reverse_count")
+            rev_s = str(rev) if rev is not None else "—"
+            _log(
+                f"  {i:>3} {row.get('code', ''):<8} {name:<10} {sig:<10} "
+                f"{total_s:>6} {prior_s:>6} {rev_s:>4} {row.get('count') or 0:>4}"
+            )
     if len(items) > limit:
         _log(f"  … 共 {len(items)} 条，仅显示前 {limit}")
 
@@ -116,7 +141,7 @@ def _print_miss(code: str, pack: dict[str, Any]) -> None:
 
 
 class _ProgressPrinter:
-    """全市场扫描：进度 + 新命中明细。"""
+    """全市场扫描 / 区间回测：进度 + 新命中明细。"""
 
     def __init__(self) -> None:
         self._started = time.time()
@@ -124,20 +149,41 @@ class _ProgressPrinter:
         self._last_analyzed = -1
 
     def __call__(self, payload: dict[str, Any]) -> None:
+        items = list(payload.get("items") or [])
+        for row in items:
+            code = str(row.get("code") or "")
+            sig_day = str(row.get("signal_day") or "")
+            key = f"{sig_day}:{code}" if sig_day else code
+            if not code or key in self._seen:
+                continue
+            self._seen.add(key)
+            _print_hit(row)
+
+        days_total = int(payload.get("days_total") or 0)
+        if days_total:
+            analyzed = int(payload.get("analyzed_count") or 0)
+            candidates = int(payload.get("candidate_count") or 0)
+            phase = str(payload.get("phase") or "")
+            found = int(payload.get("result_count") or 0)
+            if analyzed == self._last_analyzed and phase == "screening":
+                return
+            self._last_analyzed = analyzed
+            elapsed = time.time() - self._started
+            pct = (analyzed / candidates * 100.0) if candidates else 0.0
+            _log(
+                f"[区间] 股票 {analyzed}/{candidates} ({pct:.1f}%)  "
+                f"交易日×{days_total} 共用日线  "
+                f"phase={phase or '—'}  "
+                f"命中 {found}  "
+                f"耗时 {elapsed:.0f}s"
+            )
+            return
+
         analyzed = int(payload.get("analyzed_count") or 0)
         total = int(payload.get("candidate_count") or 0)
         found = int(payload.get("found_count") or 0)
         errors = int(payload.get("error_count") or 0)
-        items = list(payload.get("items") or [])
 
-        for row in items:
-            code = str(row.get("code") or "")
-            if not code or code in self._seen:
-                continue
-            self._seen.add(code)
-            _print_hit(row)
-
-        # 避免同一进度重复刷屏（on_update 可能在 found 变化时也触发）
         if analyzed == self._last_analyzed and analyzed not in (0, total):
             return
         self._last_analyzed = analyzed
@@ -175,10 +221,22 @@ def main() -> None:
         "--lookback", type=int, default=DEFAULT_LOOKBACK_DAYS, help="回溯自然日"
     )
     parser.add_argument(
+        "--start",
+        type=_end_arg,
+        default="",
+        help="区间起始日；与 --end 联用进入区间回测（逐日金叉+事后涨幅）",
+    )
+    parser.add_argument(
         "--end",
         type=_end_arg,
         default="",
         help="截止交易日 YYYY-MM-DD/YYYYMMDD；空=最新交易日",
+    )
+    parser.add_argument(
+        "--asof",
+        type=_end_arg,
+        default="",
+        help="事后涨幅统计截止日；空=最新交易日（仅区间模式）",
     )
     parser.add_argument(
         "--near-ratio",
@@ -198,7 +256,7 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     parser.add_argument("--codes", type=str, default="", help="逗号分隔代码，仅测这些")
     parser.add_argument("--json", action="store_true")
-    parser.add_argument("--top", type=int, default=50, help="表格展示条数")
+    parser.add_argument("--top", type=int, default=50, help="表格展示条数（不影响写入分组）")
     parser.add_argument(
         "--quiet",
         action="store_true",
@@ -207,7 +265,7 @@ def main() -> None:
     parser.add_argument(
         "--to-mine",
         action="store_true",
-        help="把命中结果写入「我的」分组（默认名 MACD金叉_YYYY-MM-DD）",
+        help="把全部命中结果写入「我的」分组（默认名 MACD金叉_YYYY-MM-DD）",
     )
     parser.add_argument(
         "--group",
@@ -225,13 +283,21 @@ def main() -> None:
     codes = [c.strip() for c in str(args.codes or "").split(",") if c.strip()]
 
     if not args.json and not args.quiet:
+        range_hint = (
+            f"start={args.start} end={args.end or _today_iso()} asof={args.asof or _today_iso()} "
+            if args.start
+            else f"end={args.end or _today_iso()} "
+        )
         _log(
             f"参数 band={args.band} index={args.index} factor={args.factor} "
-            f"lookback={args.lookback} end={args.end or _today_iso()} "
+            f"lookback={args.lookback} {range_hint}"
             f"near_ratio={args.near_ratio} "
             f"w_prior={args.w_prior} w_div={args.w_div} "
             f"cross_type={args.cross_type} workers={args.workers}"
         )
+
+    if args.start and codes:
+        parser.error("--start 区间模式与 --codes 不能同时使用")
 
     if codes:
         if not args.json and not args.quiet:
@@ -297,6 +363,25 @@ def main() -> None:
             "result_count": len(items),
             "items": items,
         }
+    elif args.start:
+        on_update = None if (args.json or args.quiet) else _ProgressPrinter()
+        if not args.json and not args.quiet:
+            _log("区间回测开始（逐日金叉 + 事后最大涨幅）…")
+        data = screen_macd_range(
+            start=args.start,
+            end=args.end,
+            asof=args.asof,
+            band=args.band,
+            index=args.index,
+            factor=args.factor,
+            lookback_days=args.lookback,
+            near_ratio=args.near_ratio,
+            w_prior=args.w_prior,
+            w_div=args.w_div,
+            cross_type=args.cross_type,
+            workers=args.workers,
+            on_update=on_update,
+        )
     else:
         on_update = None if (args.json or args.quiet) else _ProgressPrinter()
         if not args.json and not args.quiet:
@@ -327,7 +412,7 @@ def main() -> None:
             items,
             group_name=group_name,
             replace=not args.no_replace,
-            limit=max(0, int(args.top)) if int(args.top) > 0 else 0,
+            limit=0,  # 全部命中写入；--top 只控制表格展示
         )
         if written is None:
             _log(f"分组「{group_name}」无命中，跳过写入")
