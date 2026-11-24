@@ -98,7 +98,7 @@ def _print_table(items: list[dict[str, Any]], *, limit: int = 50) -> None:
     if has_gain:
         _log(
             f"  {'#':>3} {'信号日':<10} {'代码':<8} {'名称':<8} {'信号':<8} "
-            f"{'收盘最大':>8} {'最高最大':>8} {'总分':>6}"
+            f"{'收盘最大涨':>10} {'收盘最大跌':>10} {'最高最大':>8} {'总分':>6}"
         )
         for i, row in enumerate(items[:limit], 1):
             name = str(row.get("name") or "")[:8]
@@ -106,7 +106,8 @@ def _print_table(items: list[dict[str, Any]], *, limit: int = 50) -> None:
             _log(
                 f"  {i:>3} {str(row.get('signal_day') or '')[:10]:<10} "
                 f"{row.get('code', ''):<8} {name:<8} {sig:<8} "
-                f"{_fmt_pct(row.get('max_close_gain')):>8} "
+                f"{_fmt_pct(row.get('max_close_gain')):>10} "
+                f"{_fmt_pct(row.get('max_close_drop')):>10} "
                 f"{_fmt_pct(row.get('max_high_gain')):>8} "
                 f"{_fmt_score(row.get('score_total')):>6}"
             )

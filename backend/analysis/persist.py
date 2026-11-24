@@ -107,6 +107,15 @@ def save_disk(kind: str, key: str, data: dict[str, Any]) -> None:
         return
 
 
+def clear_disk(kind: str, key: str) -> None:
+    """删除落盘缓存；强制重跑时调用，避免中途读到旧结果。"""
+    path = _disk_path(kind, key)
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        return
+
+
 def _disk_path(kind: str, key: str):
     ensure_cache_dirs()
     safe = _SAFE.sub("_", key).strip("_")[:80] or "default"

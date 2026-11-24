@@ -12372,7 +12372,7 @@ function setupBackLink() {
       label: "返回基金",
     },
     screen: { href: "/analysis", label: "返回研判" },
-    analysis: { href: "/analysis", label: "返回研判" },
+    analysis: { href: "/analysis?restore=shares", label: "返回研判" },
   };
   const fallback = industry
     ? { href: industryHref, label: "返回行业树" }

@@ -23,7 +23,14 @@ from analysis.macd.config import (
     RANGE_CACHE_TAG,
 )
 from analysis.macd.range_scan import screen_macd_range
-from analysis.persist import KIND_MACD_RANGE, JobSlot, is_fresh, load_disk, save_disk
+from analysis.persist import (
+    KIND_MACD_RANGE,
+    JobSlot,
+    clear_disk,
+    is_fresh,
+    load_disk,
+    save_disk,
+)
 from company.analysis.line.undulate.service import _iso
 
 
@@ -159,7 +166,13 @@ class MacdRangeScreenService:
 
         with self._lock:
             slot = self._slots.get(key)
-            if slot and slot.status == "running" and slot.run_id:
+            # 非强制：已有进行中的任务则直接轮询；强制重跑则落到下方抬 run_id 重启
+            if (
+                not force
+                and slot
+                and slot.status == "running"
+                and slot.run_id
+            ):
                 return self._snapshot(slot)
             if (
                 not force
@@ -169,13 +182,17 @@ class MacdRangeScreenService:
                 and is_fresh(slot.finished_at)
             ):
                 return self._snapshot(slot)
-            need_disk = slot is None or slot.result is None
+            need_disk = (not force) and (slot is None or slot.result is None)
 
         packed = load_disk(KIND_MACD_RANGE, key) if need_disk else None
 
         with self._lock:
             slot = self._slots.get(key) or JobSlot()
-            if slot.status == "running" and slot.run_id:
+            if (
+                not force
+                and slot.status == "running"
+                and slot.run_id
+            ):
                 return self._snapshot(slot)
             if packed and slot.result is None:
                 cached_at, data = packed
@@ -196,9 +213,14 @@ class MacdRangeScreenService:
             run_id = slot.run_id
             slot.status = "running"
             slot.error = None
+            # 强制重跑：内存结果清空；落盘在锁外删除
+            slot.result = None
             slot.started_at = time.time()
             slot.finished_at = 0.0
             self._slots[key] = slot
+
+        if force:
+            clear_disk(KIND_MACD_RANGE, key)
 
         thread = threading.Thread(
             target=self._worker,

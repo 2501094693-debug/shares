@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=20261124-company-link" />
+  <link rel="stylesheet" href="/css/style.css?v=20261124-mode-seg" />
 </head>
 <body class="app-shell company-page-root market-page-root screen-page-root analysis-page" data-nav="analysis" data-screen-mode="industry">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
@@ -22,8 +22,11 @@
           </div>
         </div>
         <div class="top-actions">
+          <div id="modeSeg" class="market-seg analysis-mode-seg" role="tablist" aria-label="研判模式">
+            <button type="button" id="modeIndustryBtn" data-mode="industry" class="is-active" role="tab" aria-selected="true">行业轮动</button>
+            <button type="button" id="modeShareBtn" data-mode="shares" role="tab" aria-selected="false">个股分析</button>
+          </div>
           <button id="refreshBtn" class="btn ghost" type="button">重新分析</button>
-          <button id="modeShareBtn" class="btn ghost" type="button">个股分析</button>
         </div>
       </header>
 
@@ -163,7 +166,7 @@
                     <th class="num">反向日</th>
                     <th>收盘价低点</th>
                     <th>最低价低点</th>
-                    <th>事后涨幅</th>
+                    <th>事后涨跌</th>
                   </tr>
                 </thead>
                 <tbody id="shareNearBody"></tbody>
@@ -186,7 +189,7 @@
                     <th class="num">反向日</th>
                     <th>收盘价低点</th>
                     <th>最低价低点</th>
-                    <th>事后涨幅</th>
+                    <th>事后涨跌</th>
                   </tr>
                 </thead>
                 <tbody id="shareUnderBody"></tbody>
@@ -203,6 +206,6 @@
   <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
   <script src="/js/shared/orbit-prefetch.js?v=futures-20260923"></script>
   <script src="/js/shared/nav.js?v=20261123-industry-only"></script>
-  <script src="/js/analysis.js?v=20261124-company-link"></script>
+  <script src="/js/analysis.js?v=20261124-start-vs-refresh"></script>
 </body>
 </html>

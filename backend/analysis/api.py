@@ -166,7 +166,10 @@ def get_macd_range_screen(
         MACD_CROSS_TYPE,
         description="信号类别：all=全部 / under=水下类 / over=水上类",
     ),
-    refresh: str = Query("0", description="1=强制重算"),
+    refresh: str = Query(
+        "0",
+        description="0=开始分析（参数未变且有新鲜缓存则直接返回）；1=重新分析（清缓存强制重跑）",
+    ),
     workers: int = Query(
         MACD_WORKERS,
         ge=MACD_MIN_WORKERS,
@@ -174,9 +177,9 @@ def get_macd_range_screen(
         description="并发线程数",
     ),
 ):
-    """区间内逐日 MACD 金叉筛选，并统计信号日至 asof 的最大收盘/最高价涨幅。
+    """区间内逐日 MACD 金叉筛选，并统计信号日至 asof 的最大收盘涨/跌幅。
 
-    涨幅基准为信号日收盘价。
+    涨幅基准为信号日收盘价。``refresh=0`` 复用同参数新鲜结果；``refresh=1`` 清缓存重跑。
     """
     band_abs = abs(float(band))
     if band_abs not in MACD_ALLOWED_BANDS:

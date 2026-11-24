@@ -1,8 +1,10 @@
 (() => {
   const POLL_MS = 1200;
   const WEEK = "日一二三四五六";
-  const PAGE_SUB =
+  const PAGE_SUB_INDUSTRY =
     "按交易日复盘申万三级行业轮动：上涨/待涨/领涨均按所选交易日切片；行情与主力净流入（当日/5日/10日）回溯至该日。点击行业进入行情树";
+  const PAGE_SUB_SHARES =
+    "按区间回测 MACD 水下金叉 / 即将水下金叉：稳定区间、股指反向日与价格前低综合分；点击股票进入公司详情";
 
   const industry = {
     days: 20,
@@ -43,6 +45,8 @@
     pollTimer: 0,
     fetching: false,
     started: false,
+    /** 请求代数：强制重跑时递增，丢弃过期轮询响应 */
+    reqGen: 0,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -123,12 +127,14 @@
 
   function setLive(kind) {
     const el = $("liveDot");
+    if (!el) return;
     el.dataset.state = kind;
     el.textContent = kind === "live" ? "LIVE" : kind === "busy" ? "SYNC" : "IDLE";
   }
 
   function showError(message) {
     const box = $("errorBox");
+    if (!box) return;
     if (!message) {
       box.classList.add("hidden");
       box.textContent = "";
@@ -140,21 +146,32 @@
 
   function showLoading(show, text) {
     const el = $("loading");
+    if (!el) return;
     el.textContent = text || "正在分析…";
     el.classList.toggle("hidden", !show);
   }
 
-  function syncStatusUi() {
+  /** 行业轮动顶栏进度；个股模式下绝不改 liveDot / marketMeta / loading。 */
+  function syncIndustryStatusUi() {
+    if (shares.mode) return;
     showError(industry.error || "");
     if (industry.status === "running") {
       showLoading(true, industry.message || "正在分析…");
       setLive("busy");
+      const meta = $("marketMeta");
+      if (meta) meta.textContent = industry.message || "";
       return;
     }
     showLoading(false);
     if (industry.status === "done") setLive("live");
     else if (industry.status === "error") setLive("idle");
     else setLive(industry.started ? "live" : "idle");
+    const meta = $("marketMeta");
+    if (meta && industry.status !== "running") meta.textContent = "";
+  }
+
+  function syncStatusUi() {
+    syncIndustryStatusUi();
   }
 
   function syncUrl() {
@@ -172,32 +189,57 @@
     history.replaceState({}, "", url);
   }
 
+  function setAnalysisMode(nextShares) {
+    const wantShares = nextShares === true;
+    if (shares.mode === wantShares) return;
+    shares.mode = wantShares;
+    applyChrome();
+    // 个股分析不自动开跑：仅「开始分析」触发；切回时若用户已开跑且仍在跑则续轮询
+    if (shares.mode) {
+      if (shares.started && shares.status === "running") scheduleSharesPoll();
+    } else if (industry.status === "running") {
+      schedulePoll();
+    }
+  }
+
   function applyChrome() {
     document.title = "ORBIT · 行情研判";
     const board = $("rotBoard");
     const sharesView = $("sharesView");
-    const modeBtn = $("modeShareBtn");
+    const pageSub = $("pageSub");
     const isShares = shares.mode === true;
     document.body.dataset.screenMode = isShares ? "shares" : "industry";
     if (board) board.classList.toggle("hidden", isShares);
     if (sharesView) sharesView.classList.toggle("hidden", !isShares);
-    if (modeBtn) {
-      modeBtn.textContent = isShares ? "行业轮动" : "个股分析";
-      modeBtn.classList.toggle("is-active", isShares);
+    document.querySelectorAll("#modeSeg [data-mode]").forEach((btn) => {
+      const on = (btn.dataset.mode === "shares") === isShares;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    if (pageSub) {
+      pageSub.textContent = isShares ? PAGE_SUB_SHARES : PAGE_SUB_INDUSTRY;
     }
     if (isShares) {
       stopPoll();
+      // 清掉行业轮动遗留的全局进度，避免叠在个股视图上
+      showLoading(false);
+      showError("");
       syncSharesDateInputs();
       renderShareDays();
       renderShareBoards();
       renderShareStatus();
       const summaryBar = $("summaryBar");
-      if (summaryBar) {
-        summaryBar.innerHTML = "";
-      }
+      if (summaryBar) summaryBar.innerHTML = "";
     } else {
       stopSharesPoll();
-      syncStatusUi();
+      const shareLoading = $("shareLoading");
+      if (shareLoading) shareLoading.classList.add("hidden");
+      const shareErr = $("shareErrorBox");
+      if (shareErr) {
+        shareErr.classList.add("hidden");
+        shareErr.textContent = "";
+      }
+      syncIndustryStatusUi();
       renderAll();
     }
     syncUrl();
@@ -387,7 +429,10 @@
       <span>待涨 <b>${leftN}</b></span>
       <span>窗口 <b>${windowLabel(industry.days)}</b></span>
     `;
-    $("marketMeta").textContent = "";
+    if (!shares.mode) {
+      const meta = $("marketMeta");
+      if (meta && industry.status !== "running") meta.textContent = "";
+    }
   }
 
   function renderRotDays() {
@@ -666,6 +711,7 @@
       const scoreLow = scoreTone(row.score_low);
       const lastGain = fmtGainPct(row.last_close_gain);
       const maxGain = fmtGainPct(row.max_close_gain);
+      const maxDrop = fmtGainPct(row.max_close_drop);
       const closeDate = row.low_close_date ? fmtShortDate(row.low_close_date) : "—";
       const closePrice = Number.isFinite(row.low_close_price) ? row.low_close_price.toFixed(2) : "—";
       const lowDate = row.low_low_date ? fmtShortDate(row.low_low_date) : "—";
@@ -684,7 +730,11 @@
         <td class="share-kv" data-tone="${tone(row.reverse_count)}">${row.reverse_count == null ? "—" : row.reverse_count}</td>
         <td class="share-kv">${closeDate}<br>${closePrice}<br>${fmtScore(row.score_close)}</td>
         <td class="share-kv">${lowDate}<br>${lowPrice}<br>${fmtScore(row.score_low)}</td>
-        <td class="share-kv" data-tone="${tone(row.max_close_gain)}">${maxGain}（${esc(row.max_close_date ? fmtShortDate(row.max_close_date) : "—")}）<br>${lastGain}</td>
+        <td class="share-kv">
+          <span data-tone="${tone(row.max_close_gain)}">涨 ${maxGain}（${esc(row.max_close_date ? fmtShortDate(row.max_close_date) : "—")}）</span><br>
+          <span data-tone="${tone(row.max_close_drop)}">跌 ${maxDrop}（${esc(row.max_close_drop_date ? fmtShortDate(row.max_close_drop_date) : "—")}）</span><br>
+          <span class="muted">最新 ${lastGain}</span>
+        </td>
       </tr>`;
     }).join("");
   }
@@ -697,34 +747,37 @@
   function renderShareStatus() {
     const box = $("shareErrorBox");
     const loading = $("shareLoading");
-    const live = $("liveDot");
-    const meta = $("marketMeta");
-    if (shares.error) {
-      box.textContent = shares.error;
-      box.classList.remove("hidden");
-    } else {
-      box.classList.add("hidden");
-      box.textContent = "";
-    }
-    if (shares.status === "running") {
-      loading.textContent = shares.message || "正在分析…";
-      loading.classList.remove("hidden");
-      live.dataset.state = "busy";
-      live.textContent = "SYNC";
-    } else {
-      loading.classList.add("hidden");
-      if (shares.status === "done") {
-        live.dataset.state = "live";
-        live.textContent = "LIVE";
-      } else if (shares.status === "error") {
-        live.dataset.state = "idle";
-        live.textContent = "IDLE";
+    if (box) {
+      if (shares.error) {
+        box.textContent = shares.error;
+        box.classList.remove("hidden");
       } else {
-        live.dataset.state = shares.started ? "live" : "idle";
-        live.textContent = "IDLE";
+        box.classList.add("hidden");
+        box.textContent = "";
       }
     }
-    if (meta) meta.textContent = shares.message || "";
+    if (loading) {
+      if (shares.status === "running") {
+        loading.textContent = shares.message || "正在分析…";
+        loading.classList.remove("hidden");
+      } else {
+        loading.classList.add("hidden");
+      }
+    }
+    // 顶栏 liveDot / marketMeta 仅在个股模式下由本函数接管
+    if (shares.mode) {
+      if (shares.status === "running") {
+        setLive("busy");
+      } else if (shares.status === "done") {
+        setLive("live");
+      } else if (shares.status === "error") {
+        setLive("idle");
+      } else {
+        setLive(shares.started ? "live" : "idle");
+      }
+      const meta = $("marketMeta");
+      if (meta) meta.textContent = shares.message || "";
+    }
     if (shares.note) {
       const hint = $("sharesHint");
       if (hint) hint.textContent = shares.note;
@@ -744,7 +797,9 @@
   }
 
   async function loadShares(force) {
-    if (shares.fetching && !force) return;
+    // 非强制轮询：已有请求在飞则跳过；强制重跑始终发出并作废旧响应
+    if (!force && shares.fetching) return;
+    const gen = force ? ++shares.reqGen : shares.reqGen;
     shares.fetching = true;
     shares.started = true;
     shares.error = "";
@@ -760,19 +815,21 @@
     try {
       const res = await fetch(`/api/screen/macd/range?${qs}`, { cache: "no-store" });
       const json = await res.json();
+      if (gen !== shares.reqGen) return;
       if (!json.ok) {
         throw new Error(json.error || "请求失败");
       }
       applySharesPayload(json.data || {});
-      if (shares.status === "running") scheduleSharesPoll();
+      if (shares.status === "running" && shares.mode) scheduleSharesPoll();
       else stopSharesPoll();
     } catch (err) {
+      if (gen !== shares.reqGen) return;
       shares.error = err.message || String(err);
       shares.status = "error";
-      renderShareStatus();
+      if (shares.mode) renderShareStatus();
       stopSharesPoll();
     } finally {
-      shares.fetching = false;
+      if (gen === shares.reqGen) shares.fetching = false;
     }
   }
 
@@ -786,15 +843,17 @@
       shares.error = "";
       shares.message = "";
       applySharesData(payload.data);
-      renderShareStatus();
-      renderShareDays();
-      renderShareBoards();
+      if (shares.mode) {
+        renderShareStatus();
+        renderShareDays();
+        renderShareBoards();
+      }
       return;
     }
     if (payload.status === "error") {
       shares.error = payload.error || "分析失败";
       shares.message = "";
-      renderShareStatus();
+      if (shares.mode) renderShareStatus();
       return;
     }
     if (payload.status === "running") {
@@ -809,16 +868,14 @@
           ? `已分析 ${done}/${total}，命中 ${hit}`
           : "正在准备区间回测…");
       shares.error = "";
+      if (!shares.mode) return;
       const partial = (shares.dayRows || []).length > 0;
-      const loading = $("shareLoading");
-      loading.textContent = shares.message;
-      loading.classList.remove("hidden");
-      $("liveDot").dataset.state = partial ? "live" : "busy";
-      $("liveDot").textContent = partial ? "LIVE" : "SYNC";
+      renderShareStatus();
+      if (partial) setLive("live");
+      else setLive("busy");
       renderShareDays();
       renderShareBoards();
-      $("marketMeta").textContent = shares.message;
-      scheduleSharesPoll();
+      if (shares.mode) scheduleSharesPoll();
     }
   }
 
@@ -906,36 +963,63 @@
       industry.analyzedCount = progress.done || 0;
     }
 
+    // 个股模式下只更新行业状态数据，不碰顶栏/全局 loading（避免进度串台）
+    const paint = !shares.mode;
+
     if (payload.status === "done" && payload.data) {
       industry.error = "";
       industry.message = "";
-      applyIndustryData(payload.data);
-      showLoading(false);
-      showError(industry.error || "");
-      setLive("live");
+      if (paint) applyIndustryData(payload.data);
+      else {
+        industry.dayRows = payload.data.days || industry.dayRows;
+        industry.untouched = payload.data.untouched || industry.untouched;
+        industry.ranking = payload.data.ranking || payload.data.covered || industry.ranking;
+        industry.universe = payload.data.universe_count || industry.universe;
+        industry.coveredCount = payload.data.covered_count || industry.coveredCount;
+        industry.untouchedCount =
+          payload.data.untouched_count ||
+          (payload.data.untouched || []).length ||
+          industry.untouchedCount;
+        industry.note = payload.data.note || industry.note;
+        industry.updatedAt = payload.data.updated_at || industry.updatedAt;
+        industry.errors = payload.data.errors || [];
+        industry.error = industry.errors.join("；");
+      }
+      if (paint) {
+        showLoading(false);
+        showError(industry.error || "");
+        setLive("live");
+      }
       return;
     }
 
     if (payload.status === "error") {
       industry.error = payload.error || "分析失败";
       industry.message = "";
-      showLoading(false);
-      showError(industry.error);
-      setLive("idle");
+      if (paint) {
+        showLoading(false);
+        showError(industry.error);
+        setLive("idle");
+      }
       return;
     }
 
     if (payload.status === "running") {
-      if (payload.data) applyIndustryData(payload.data);
+      if (payload.data) {
+        if (paint) applyIndustryData(payload.data);
+        else {
+          industry.dayRows = payload.data.days || industry.dayRows;
+        }
+      }
       const elapsed = payload.elapsed_sec ? ` · ${fmtNum(payload.elapsed_sec, 0)}s` : "";
       industry.message = `${payload.message || "正在分析…"}${elapsed}`;
       industry.error = "";
+      if (!paint) return;
       const partial = (industry.dayRows || []).length > 0;
       showLoading(!partial, industry.message);
       setLive(partial ? "live" : "busy");
-      if (partial) {
-        $("marketMeta").textContent = industry.message;
-      }
+      const meta = $("marketMeta");
+      if (meta) meta.textContent = partial ? industry.message : "";
     }
   }
 
@@ -964,10 +1048,12 @@
       industry.coveredCount = 0;
       industry.untouchedCount = 0;
       industry.selectedDate = "";
-      renderAll();
       industry.message = "正在统计每天哪些三级轮到了…";
-      showLoading(true, industry.message);
-      setLive("busy");
+      if (!shares.mode) {
+        renderAll();
+        showLoading(true, industry.message);
+        setLive("busy");
+      }
     }
 
     const qs = new URLSearchParams({
@@ -982,14 +1068,16 @@
         throw new Error(json.error || "请求失败");
       }
       applyPayload(json.data || {});
-      if (industry.status === "running") schedulePoll();
+      if (industry.status === "running" && !shares.mode) schedulePoll();
       else stopPoll();
     } catch (err) {
       industry.error = err.message || String(err);
       industry.status = "error";
-      showLoading(false);
-      showError(industry.error);
-      setLive("idle");
+      if (!shares.mode) {
+        showLoading(false);
+        showError(industry.error);
+        setLive("idle");
+      }
       stopPoll();
     } finally {
       industry.fetching = false;
@@ -1045,16 +1133,15 @@
       renderAll();
     });
 
-    $("modeShareBtn").addEventListener("click", () => {
-      shares.mode = !shares.mode;
-      applyChrome();
-      if (shares.mode && !shares.started) {
-        startSharesAnalysis(true);
-      }
+    $("modeSeg").addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-mode]");
+      if (!btn) return;
+      setAnalysisMode(btn.dataset.mode === "shares");
     });
 
     $("shareRefreshBtn").addEventListener("click", () => {
-      startSharesAnalysis(true);
+      // 开始分析：有缓存且参数未变则直接返回，否则按参数开跑
+      startSharesAnalysis(false);
     });
 
     $("shareStartDate").addEventListener("change", (ev) => {
@@ -1090,6 +1177,20 @@
         const code = (tr.dataset.code || "").trim();
         if (!code) return;
         const name = tr.dataset.name || code;
+        try {
+          const sEl = $("shareStartDate");
+          const eEl = $("shareEndDate");
+          const aEl = $("shareAsOfDate");
+          sessionStorage.setItem(
+            "orbit:analysis-shares",
+            JSON.stringify({
+              start: (sEl && sEl.value) || shares.start || "",
+              end: (eEl && eEl.value) || shares.end || "",
+              asof: (aEl && aEl.value) || shares.asof || "",
+              selectedDate: shares.selectedDate || "",
+            })
+          );
+        } catch (_) {}
         const url = `/company?${new URLSearchParams({ code, name, from: "analysis" }).toString()}`;
         if (ev.metaKey || ev.ctrlKey) window.open(url, "_blank");
         else window.location.href = url;
@@ -1098,6 +1199,7 @@
   }
 
   function startSharesAnalysis(force) {
+    syncSharesDateInputs();
     const startEl = $("shareStartDate");
     const endEl = $("shareEndDate");
     const asofEl = $("shareAsOfDate");
@@ -1109,24 +1211,63 @@
       renderShareStatus();
       return;
     }
+    stopSharesPoll();
+    shares.error = "";
     if (force) {
+      // 重新分析：清空本地展示，强制后端清缓存重跑
       shares.dayRows = [];
       shares.nearItems = [];
       shares.underItems = [];
       shares.nearCount = 0;
       shares.underCount = 0;
       shares.selectedDate = "";
+      shares.status = "running";
+      shares.message = "正在强制重跑…";
+      shares.note = "";
       renderShareDays();
       renderShareBoards();
-      $("shareLoading").textContent = "正在准备区间回测…";
-      $("shareLoading").classList.remove("hidden");
+    } else {
+      // 开始分析：保留已有表格；无数据时显示加载，有缓存则后端直接返回
+      shares.status = shares.dayRows.length ? shares.status : "running";
+      shares.message = shares.dayRows.length
+        ? "正在确认缓存…"
+        : "正在准备区间回测…";
     }
-    loadShares(force);
+    renderShareStatus();
+    loadShares(!!force);
   }
 
+  // 从公司详情页返回时，按保存的个股分析状态还原（区间/选中日期），并复用后端缓存。
+  function restoreSharesState() {
+    let restore = "";
+    try {
+      restore = new URLSearchParams(window.location.search).get("restore") || "";
+    } catch (_) {
+      return false;
+    }
+    if (restore !== "shares") return false;
+    let st = null;
+    try {
+      st = JSON.parse(sessionStorage.getItem("orbit:analysis-shares") || "null");
+    } catch (_) {
+      st = null;
+    }
+    if (!st || typeof st !== "object") return false;
+    shares.mode = true;
+    if (st.start) shares.start = st.start;
+    if (st.end) shares.end = st.end;
+    if (st.asof) shares.asof = st.asof;
+    if (st.selectedDate) shares.selectedDate = st.selectedDate;
+    return true;
+  }
+
+  const restoredShares = restoreSharesState();
   applyChrome();
   bindEvents();
   window.OrbitPrefetch?.boot("analysis");
-  syncStatusUi();
-  loadIndustry(false);
+  // 个股不自动分析；从公司页返回只还原区间/模式，等用户点「开始分析」
+  if (!restoredShares) {
+    syncStatusUi();
+    loadIndustry(false);
+  }
 })();

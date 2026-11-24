@@ -1,4 +1,4 @@
-"""信号日后最大收盘涨幅 / 最高价涨幅（纯函数 + 拉数）。
+"""信号日后最大收盘涨幅 / 最大收盘跌幅 / 最高价涨幅（纯函数 + 拉数）。
 
 基准：信号日收盘价。
 区间：信号日（含）→ 最新交易日（或指定 asof）。
@@ -19,9 +19,10 @@ def max_forward_gains_from_bars(
     signal_date: str,
     asof: str = "",
 ) -> dict[str, Any]:
-    """在已排序日线上算最大收盘/最高价涨幅。
+    """在已排序日线上算最大收盘涨/跌幅与最高价涨幅。
 
     - ``max_close_gain`` = max(close / base − 1)
+    - ``max_close_drop`` = min(close / base − 1)（最大收盘跌幅，通常 ≤ 0）
     - ``max_high_gain``  = max(high / base − 1)
     - ``base`` = 信号日收盘
     """
@@ -37,6 +38,9 @@ def max_forward_gains_from_bars(
         "max_close_gain": None,
         "max_close_date": None,
         "max_close_price": None,
+        "max_close_drop": None,
+        "max_close_drop_date": None,
+        "max_close_drop_price": None,
         "max_high_gain": None,
         "max_high_date": None,
         "max_high_price": None,
@@ -69,6 +73,9 @@ def max_forward_gains_from_bars(
     max_close_gain: float | None = None
     max_close_date: str | None = None
     max_close_price: float | None = None
+    max_close_drop: float | None = None
+    max_close_drop_date: str | None = None
+    max_close_drop_price: float | None = None
     max_high_gain: float | None = None
     max_high_date: str | None = None
     max_high_price: float | None = None
@@ -83,6 +90,10 @@ def max_forward_gains_from_bars(
                 max_close_gain = g
                 max_close_date = d
                 max_close_price = close
+            if max_close_drop is None or g < max_close_drop:
+                max_close_drop = g
+                max_close_drop_date = d
+                max_close_drop_price = close
         if high is not None:
             g = high / base - 1.0
             if max_high_gain is None or g > max_high_gain:
@@ -107,6 +118,11 @@ def max_forward_gains_from_bars(
         "max_close_gain": _r(max_close_gain),
         "max_close_date": max_close_date,
         "max_close_price": None if max_close_price is None else round(max_close_price, 4),
+        "max_close_drop": _r(max_close_drop),
+        "max_close_drop_date": max_close_drop_date,
+        "max_close_drop_price": (
+            None if max_close_drop_price is None else round(max_close_drop_price, 4)
+        ),
         "max_high_gain": _r(max_high_gain),
         "max_high_date": max_high_date,
         "max_high_price": None if max_high_price is None else round(max_high_price, 4),

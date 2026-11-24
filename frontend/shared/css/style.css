@@ -9967,6 +9967,11 @@ body.app-shell.screen-page-root .screen-page.market-page {
   display: none;
 }
 
+/* 个股模式下隐藏行业轮动全局进度条，避免与 shareLoading 叠在一起 */
+.screen-page-root[data-screen-mode="shares"] .loading.screen-progress {
+  display: none !important;
+}
+
 .screen-page-root[data-screen-mode="shares"] .judgment-query {
   display: inline-flex;
 }
@@ -17402,6 +17407,16 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   .speculation-chip-row {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+/* ===== 行情研判 · 模式切换（行业轮动 / 个股分析 并存） ===== */
+.analysis-page .analysis-mode-seg {
+  flex: 0 0 auto;
+}
+
+.analysis-page .top-actions {
+  align-items: center;
+  gap: 10px;
 }
 
 /* ===== 行情研判 · 个股分析（区间回测） ===== */
