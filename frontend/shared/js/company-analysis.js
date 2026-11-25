@@ -573,48 +573,108 @@
     return `${cardsHtml}${formulaHtml}`;
   }
 
+  function zvScoreToneClass(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "is-neutral";
+    if (n >= 80) return "is-good";
+    if (n >= 60) return "is-mid";
+    return "is-bad";
+  }
+
+  function zvRoundScore(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return null;
+    return Math.max(0, Math.min(100, Math.round(n)));
+  }
+
+  function zvSubScoreBadge(label, value) {
+    const s = zvRoundScore(value);
+    if (s == null) return "";
+    return `<span class="zv-sum-subscore"><i>${esc(label)}</i><b>${s}</b></span>`;
+  }
+
+  function zvSubScorePair(level, change) {
+    const levelHtml = zvSubScoreBadge("自身", level);
+    const changeHtml = zvSubScoreBadge("同比", change);
+    if (!levelHtml && !changeHtml) return "";
+    return `<span class="zv-sum-subscores">${levelHtml}${changeHtml}</span>`;
+  }
+
   function zhangSummaryBody(view) {
+    const aspects = Array.isArray(view.aspects) ? view.aspects : [];
     const dims = Array.isArray(view.dimensions) ? view.dimensions : [];
     const weights = Array.isArray(view.score_weights) ? view.score_weights : [];
     const score = view.score_total;
     let scoreHtml = "";
     if (Number.isFinite(Number(score))) {
-      const s = Math.max(0, Math.min(100, Math.round(Number(score))));
-      const cls = s >= 80 ? "is-good" : (s >= 60 ? "is-mid" : "is-bad");
-      scoreHtml = `<div class="zv-sum-score ${cls}"><span class="zv-sum-score-num">${s}</span><span class="zv-sum-score-label">综合评分 / 100</span></div>`;
+      const s = zvRoundScore(score);
+      const cls = zvScoreToneClass(s);
+      const subPair = zvSubScorePair(view.score_level_total, view.score_change_total);
+      scoreHtml = `<div class="zv-sum-score ${cls}">`
+        + `<span class="zv-sum-score-num">${s}</span>`
+        + `<span class="zv-sum-score-meta"><span class="zv-sum-score-label">综合评分 / 100</span>${subPair}</span>`
+        + `</div>`;
     }
-    const cardsHtml = dims.length
-      ? `<div class="zv-sum-list">${dims.map(([aspect, evaluation, evidence], i) => {
-          let cls = "is-neutral";
-          if (evaluation === "优") cls = "is-good";
-          else if (evaluation === "中") cls = "is-mid";
-          else if (evaluation === "差") cls = "is-bad";
-          else {
-            const n = Number(evaluation);
-            if (Number.isFinite(n)) {
-              cls = n >= 80 ? "is-good" : (n >= 60 ? "is-mid" : "is-bad");
-            }
-          }
-          const w = Number(weights[i]) > 0 ? ` · ${weights[i]}%` : "";
-          const headTitle = `${esc(aspect || "")}<span class="zv-sum-weight">${esc(w)}</span>`;
+    const cardsHtml = aspects.length
+      ? `<div class="zv-sum-list">${aspects.map((asp, i) => {
+          const aspect = asp?.name || "";
+          const evaluation = asp?.evaluation;
+          const evidence = asp?.evidence || "";
+          const scoreNum = zvRoundScore(asp?.score ?? evaluation);
+          const cls = scoreNum != null
+            ? zvScoreToneClass(scoreNum)
+            : (evaluation === "优" ? "is-good" : evaluation === "中" ? "is-mid" : evaluation === "差" ? "is-bad" : "is-neutral");
+          const w = Number(asp?.weight ?? weights[i]) > 0 ? ` · ${asp?.weight ?? weights[i]}%` : "";
+          const headTitle = `${esc(aspect)}<span class="zv-sum-weight">${esc(w)}</span>`;
           let evidenceHtml = "";
           if (evidence) {
-            if (String(aspect || "").includes("七看") || String(aspect || "").includes("八看")) {
-              const items = String(evidence).split("；").map((s) => s.trim()).filter(Boolean);
-              evidenceHtml = `<ul class="zv-sum-risk">${items.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>`;
+            if (String(aspect).includes("七看") || String(aspect).includes("八看")) {
+              const items = String(evidence).split("；").map((t) => t.trim()).filter(Boolean);
+              evidenceHtml = `<ul class="zv-sum-risk">${items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`;
             } else {
               evidenceHtml = `<div class="zv-sum-evidence">${esc(evidence)}</div>`;
             }
           }
-          const badge = Number.isFinite(Number(evaluation)) && String(evaluation).trim() !== ""
-            ? `${esc(String(evaluation))}分`
-            : esc(evaluation || "—");
+          const subPair = zvSubScorePair(asp?.level_score, asp?.change_score);
+          const badge = scoreNum != null
+            ? `<span class="zv-sum-badge">${scoreNum}分</span>`
+            : `<span class="zv-sum-badge">${esc(evaluation || "—")}</span>`;
           return `<div class="zv-sum-card ${cls}">`
-            + `<div class="zv-sum-head"><strong>${headTitle}</strong><span class="zv-sum-badge">${badge}</span></div>`
+            + `<div class="zv-sum-head"><strong>${headTitle}</strong>${badge}</div>`
+            + (subPair ? `<div class="zv-sum-subrow">${subPair}</div>` : "")
             + evidenceHtml
             + `</div>`;
         }).join("")}</div>`
-      : "";
+      : (dims.length
+        ? `<div class="zv-sum-list">${dims.map(([aspect, evaluation, evidence], i) => {
+            let cls = "is-neutral";
+            if (evaluation === "优") cls = "is-good";
+            else if (evaluation === "中") cls = "is-mid";
+            else if (evaluation === "差") cls = "is-bad";
+            else {
+              const n = Number(evaluation);
+              if (Number.isFinite(n)) cls = zvScoreToneClass(n);
+            }
+            const w = Number(weights[i]) > 0 ? ` · ${weights[i]}%` : "";
+            const headTitle = `${esc(aspect || "")}<span class="zv-sum-weight">${esc(w)}</span>`;
+            let evidenceHtml = "";
+            if (evidence) {
+              if (String(aspect || "").includes("七看") || String(aspect || "").includes("八看")) {
+                const items = String(evidence).split("；").map((t) => t.trim()).filter(Boolean);
+                evidenceHtml = `<ul class="zv-sum-risk">${items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`;
+              } else {
+                evidenceHtml = `<div class="zv-sum-evidence">${esc(evidence)}</div>`;
+              }
+            }
+            const badge = Number.isFinite(Number(evaluation)) && String(evaluation).trim() !== ""
+              ? `${esc(String(evaluation))}分`
+              : esc(evaluation || "—");
+            return `<div class="zv-sum-card ${cls}">`
+              + `<div class="zv-sum-head"><strong>${headTitle}</strong><span class="zv-sum-badge">${badge}</span></div>`
+              + evidenceHtml
+              + `</div>`;
+          }).join("")}</div>`
+        : "");
     const fs = Array.isArray(view.formulas) ? view.formulas : [];
     const formulaHtml = fs.length
       ? `<h4>判定口径</h4><ul class="zv-formula">${fs.map((f) => {

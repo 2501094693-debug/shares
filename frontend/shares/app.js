@@ -1036,6 +1036,7 @@
 
   state.industry = readIndustryFromUrl();
   expandSelectedPath();
+  updateIndustryTrigger();
   bind();
   window.OrbitPrefetch?.boot("shares");
   void load().then(() => {

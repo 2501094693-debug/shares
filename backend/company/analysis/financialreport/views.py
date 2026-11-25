@@ -1095,6 +1095,8 @@ def build_summary(
         "dimensions": rows,
         "aspects": aspects,
         "score_total": score_total,
+        "score_level_total": scored.get("score_level_total"),
+        "score_change_total": scored.get("score_change_total"),
         "score_weights": score_weights,
         "score_weights_effective": scored.get("score_weights_effective"),
         "coverage": coverage,

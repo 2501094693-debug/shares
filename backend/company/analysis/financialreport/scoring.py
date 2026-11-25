@@ -198,6 +198,39 @@ def _fmt_score(s: float | None) -> str:
     return f"{round(s)}"
 
 
+def _aspect_sub_scores(metrics: list[dict[str, Any]]) -> tuple[float | None, float | None]:
+    """从指标列表汇总方面的自身分（水平）与同比分（变化）。"""
+    levels = [m["level_score"] for m in metrics if m.get("level_score") is not None]
+    changes = [m["change_score"] for m in metrics if m.get("change_score") is not None]
+    lv = None if not levels else round(sum(levels) / len(levels), 2)
+    ch = None if not changes else round(sum(changes) / len(changes), 2)
+    return lv, ch
+
+
+def _attach_sub_scores(aspects: list[dict[str, Any]]) -> None:
+    """为各方面标注 level_score（自身）/ change_score（同比）。"""
+    for asp in aspects:
+        key = asp.get("key")
+        if key == "strategy":
+            asp["level_score"] = None
+            asp["change_score"] = None
+        elif key == "risk":
+            # 风险是当期触达状态，归入自身分
+            asp["level_score"] = asp.get("score")
+            asp["change_score"] = None
+        elif key == "outlook":
+            # 前景只看同比
+            asp["level_score"] = None
+            asp["change_score"] = asp.get("score")
+            for m in asp.get("metrics") or []:
+                if m.get("change_score") is None and m.get("score") is not None:
+                    m["change_score"] = m["score"]
+        else:
+            lv, ch = _aspect_sub_scores(asp.get("metrics") or [])
+            asp["level_score"] = lv
+            asp["change_score"] = ch
+
+
 def compute_scores(
     series: list[dict[str, Any]],
     bundle: dict[str, Any],
@@ -552,9 +585,9 @@ def compute_scores(
             "score": None if s8 is None else round(s8, 2),
             "weight": ASPECT_WEIGHTS[7],
             "metrics": [
-                _metric("营收同比", value=rev_y, score=rev_s, note=rev_n),
-                _metric("核心利润同比", value=core_y, score=core_s8, note=core_n),
-                _metric("经营现金流同比", value=ocf_y, score=ocf_s8, note=ocf_n),
+                _metric("营收同比", value=rev_y, change=rev_s, score=rev_s, note=rev_n),
+                _metric("核心利润同比", value=core_y, change=core_s8, score=core_s8, note=core_n),
+                _metric("经营现金流同比", value=ocf_y, change=ocf_s8, score=ocf_s8, note=ocf_n),
             ],
             "evaluation": _fmt_score(s8),
             "evidence": (
@@ -571,13 +604,21 @@ def compute_scores(
         }
     )
 
-    # 总分：二~八看
+    _attach_sub_scores(aspects)
+
+    # 总分：二~八看；自身/同比小分按同权权重（缺项剔除后重归一）
     scored = [a["score"] for a in aspects[1:]]
+    level_scored = [a.get("level_score") for a in aspects[1:]]
+    change_scored = [a.get("change_score") for a in aspects[1:]]
     total = weighted_total(scored, ASPECT_WEIGHTS)
+    level_total = weighted_total(level_scored, ASPECT_WEIGHTS)
+    change_total = weighted_total(change_scored, ASPECT_WEIGHTS)
 
     return {
         "aspects": aspects,
         "score_total": total,
+        "score_level_total": level_total,
+        "score_change_total": change_total,
         "score_weights": list(ASPECT_WEIGHTS),
         "score_weights_effective": _effective_weights(scored),
     }

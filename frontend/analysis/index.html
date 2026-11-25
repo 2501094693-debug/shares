@@ -140,6 +140,13 @@
               <input type="date" id="shareAsOfDate" class="field-input" />
             </label>
             <label class="field">
+              <span class="field-label">MACD</span>
+              <select id="shareMacdSelect" class="field-input" aria-label="MACD 参数">
+                <option value="10,20,7">10 / 20 / 7</option>
+                <option value="12,26,9">12 / 26 / 9</option>
+              </select>
+            </label>
+            <label class="field">
               <span class="field-label">排序</span>
               <select id="shareSortSelect" class="field-input" aria-label="股票列表排序">
                 <option value="default">默认顺序</option>
@@ -214,6 +221,6 @@
   <script src="/js/shared/orbit-http.js?v=prefetch-20260912"></script>
   <script src="/js/shared/orbit-prefetch.js?v=futures-20260923"></script>
   <script src="/js/shared/nav.js?v=20261123-industry-only"></script>
-  <script src="/js/analysis.js?v=20261124-start-vs-refresh"></script>
+  <script src="/js/analysis.js?v=20261125-macd-preset"></script>
 </body>
 </html>

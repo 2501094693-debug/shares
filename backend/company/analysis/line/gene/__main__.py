@@ -62,12 +62,27 @@ def _print_text(pack: dict) -> None:
             open_mark = "…" if ev.get("dif_above_open_ended") else ""
             cross = ev.get("cross_date")
             cross_txt = f" 翻正@{cross}" if cross else ""
+            brk = ev.get("break_date")
+            brk_txt = (
+                f" 跌破@{brk} {_pct(ev.get('break_close_chg'))}"
+                if brk
+                else " 未跌破"
+            )
             span = (
                 f"后续 {ev.get('dif_above_beg')}→{ev.get('dif_above_end')}"
-                f"{open_mark} ({ev.get('dif_above_count')}日){cross_txt}"
+                f"{open_mark} ({ev.get('dif_above_count')}日){cross_txt}{brk_txt}"
             )
         else:
             span = "未形成后续区间"
+        pe = ev.get("prior_extrema") or {}
+        closer = pe.get("closer_label") or pe.get("closer")
+        if closer:
+            prior = (
+                f"近{closer}@{pe.get('closer_date') or '—'} "
+                f"价{pe.get('closer_price')} 差距 {_pct(pe.get('gap_pct'))}"
+            )
+        else:
+            prior = "无此前峰谷"
         print(
             f"  {ev.get('date')}  {ev.get('signal')}  "
             f"DIF={ev.get('dif')} DEA={ev.get('dea')}  "
@@ -75,7 +90,7 @@ def _print_text(pack: dict) -> None:
             f"最大涨 {_pct(ev.get('max_close_gain'))}"
             f"@{ev.get('max_close_date') or '—'}  "
             f"最大跌 {_pct(ev.get('max_close_drop'))}"
-            f"@{ev.get('max_close_drop_date') or '—'}"
+            f"@{ev.get('max_close_drop_date') or '—'}  |  {prior}"
         )
 
 

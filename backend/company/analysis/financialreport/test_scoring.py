@@ -198,6 +198,16 @@ class ComputeScoresIntegrationTests(unittest.TestCase):
         value = next(a for a in out["aspects"] if a["key"] == "value")
         self.assertIsNotNone(value["metrics"][0]["change_score"])
         self.assertGreater(value["metrics"][0]["change_score"], 50.0)
+        self.assertIsNotNone(value["level_score"])
+        self.assertIsNotNone(value["change_score"])
+        self.assertIsNotNone(out["score_level_total"])
+        self.assertIsNotNone(out["score_change_total"])
+        outlook = next(a for a in out["aspects"] if a["key"] == "outlook")
+        self.assertIsNone(outlook["level_score"])
+        self.assertIsNotNone(outlook["change_score"])
+        risk = next(a for a in out["aspects"] if a["key"] == "risk")
+        self.assertIsNotNone(risk["level_score"])
+        self.assertIsNone(risk["change_score"])
 
     def test_risk_hits_deduct(self) -> None:
         from company.analysis.financialreport.metrics import compute_bundle
@@ -239,6 +249,8 @@ class ComputeScoresIntegrationTests(unittest.TestCase):
         bundle = compute_bundle(series)
         summary = build_summary(series, bundle, coverage="同口径2期年报")
         self.assertIsNotNone(summary["score_total"])
+        self.assertIsNotNone(summary["score_level_total"])
+        self.assertIsNotNone(summary["score_change_total"])
         self.assertEqual(len(summary["dimensions"]), 8)
         self.assertEqual(len(summary["aspects"]), 8)
         # 评价列应为数字分（一看除外）

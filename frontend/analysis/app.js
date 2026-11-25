@@ -5,6 +5,11 @@
     "按交易日复盘申万三级行业轮动：上涨/待涨/领涨均按所选交易日切片；行情与主力净流入（当日/5日/10日）回溯至该日。点击行业进入行情树";
   const PAGE_SUB_SHARES =
     "按区间回测 MACD 水下金叉 / 即将水下金叉：稳定区间、股指反向日与价格前低综合分；点击股票进入公司详情";
+  const SHARE_MACD_PRESETS = [
+    { key: "10,20,7", fast: 10, slow: 20, signal: 7 },
+    { key: "12,26,9", fast: 12, slow: 26, signal: 9 },
+  ];
+  const SHARE_MACD_DEFAULT = SHARE_MACD_PRESETS[0];
 
   const industry = {
     days: 20,
@@ -35,6 +40,10 @@
     dayRows: [],
     selectedDate: "",
     sort: "default",
+    macdKey: SHARE_MACD_DEFAULT.key,
+    fast: SHARE_MACD_DEFAULT.fast,
+    slow: SHARE_MACD_DEFAULT.slow,
+    signal: SHARE_MACD_DEFAULT.signal,
     nearItems: [],
     underItems: [],
     nearCount: 0,
@@ -49,6 +58,20 @@
     /** 请求代数：强制重跑时递增，丢弃过期轮询响应 */
     reqGen: 0,
   };
+
+  function resolveShareMacdPreset(raw) {
+    const key = String(raw || "").trim();
+    return SHARE_MACD_PRESETS.find((p) => p.key === key) || SHARE_MACD_DEFAULT;
+  }
+
+  function applyShareMacdPreset(raw) {
+    const preset = resolveShareMacdPreset(raw);
+    shares.macdKey = preset.key;
+    shares.fast = preset.fast;
+    shares.slow = preset.slow;
+    shares.signal = preset.signal;
+    return preset;
+  }
 
   const $ = (id) => document.getElementById(id);
 
@@ -190,12 +213,11 @@
     history.replaceState({}, "", url);
   }
 
-  function setAnalysisMode(nextShares) {
-    const wantShares = nextShares === true;
+  function setAnalysisMode(nextMode) {
+    const wantShares = nextMode === true || nextMode === "shares";
     if (shares.mode === wantShares) return;
     shares.mode = wantShares;
     applyChrome();
-    // 个股分析不自动开跑：仅「开始分析」触发；切回时若用户已开跑且仍在跑则续轮询
     if (shares.mode) {
       if (shares.started && shares.status === "running") scheduleSharesPoll();
     } else if (industry.status === "running") {
@@ -625,12 +647,14 @@
   function syncSharesDateInputs() {
     const now = new Date();
     const today = localIso(now);
-    const monthAgo = localIso(new Date(now.getTime() - 30 * 86400000));
+    const twoMonthsAgoDate = new Date(now);
+    twoMonthsAgoDate.setMonth(twoMonthsAgoDate.getMonth() - 2);
+    const twoMonthsAgo = localIso(twoMonthsAgoDate);
     const startEl = $("shareStartDate");
     const endEl = $("shareEndDate");
     const asofEl = $("shareAsOfDate");
     if (startEl && shares.start) startEl.value = shares.start;
-    else if (startEl && !startEl.value) startEl.value = monthAgo;
+    else if (startEl && !startEl.value) startEl.value = twoMonthsAgo;
     if (endEl && shares.end) endEl.value = shares.end;
     else if (endEl && !endEl.value) endEl.value = today;
     if (asofEl && shares.asof) asofEl.value = shares.asof;
@@ -856,6 +880,9 @@
     qs.set("start", shares.start);
     if (shares.end) qs.set("end", shares.end);
     if (shares.asof) qs.set("asof", shares.asof);
+    qs.set("fast", String(shares.fast));
+    qs.set("slow", String(shares.slow));
+    qs.set("signal", String(shares.signal));
     qs.set("cross_type", "under");
     qs.set("refresh", force ? "1" : "0");
 
@@ -1176,7 +1203,7 @@
     $("modeSeg").addEventListener("click", (ev) => {
       const btn = ev.target.closest("button[data-mode]");
       if (!btn) return;
-      setAnalysisMode(btn.dataset.mode === "shares");
+      setAnalysisMode(btn.dataset.mode);
     });
 
     $("shareRefreshBtn").addEventListener("click", () => {
@@ -1193,6 +1220,14 @@
     $("shareAsOfDate").addEventListener("change", (ev) => {
       shares.asof = ev.target.value || "";
     });
+
+    const shareMacdSelect = $("shareMacdSelect");
+    if (shareMacdSelect) {
+      shareMacdSelect.value = shares.macdKey;
+      shareMacdSelect.addEventListener("change", (ev) => {
+        applyShareMacdPreset(ev.target.value);
+      });
+    }
 
     const shareSortSelect = $("shareSortSelect");
     if (shareSortSelect) {
@@ -1235,6 +1270,7 @@
               end: (eEl && eEl.value) || shares.end || "",
               asof: (aEl && aEl.value) || shares.asof || "",
               selectedDate: shares.selectedDate || "",
+              macdKey: shares.macdKey || SHARE_MACD_DEFAULT.key,
             })
           );
         } catch (_) {}
@@ -1250,9 +1286,11 @@
     const startEl = $("shareStartDate");
     const endEl = $("shareEndDate");
     const asofEl = $("shareAsOfDate");
+    const macdEl = $("shareMacdSelect");
     shares.start = (startEl && startEl.value) || shares.start;
     shares.end = (endEl && endEl.value) || "";
     shares.asof = (asofEl && asofEl.value) || "";
+    applyShareMacdPreset((macdEl && macdEl.value) || shares.macdKey);
     if (!shares.start) {
       shares.error = "请选择起始日";
       renderShareStatus();
@@ -1305,6 +1343,7 @@
     if (st.end) shares.end = st.end;
     if (st.asof) shares.asof = st.asof;
     if (st.selectedDate) shares.selectedDate = st.selectedDate;
+    if (st.macdKey) applyShareMacdPreset(st.macdKey);
     return true;
   }
 

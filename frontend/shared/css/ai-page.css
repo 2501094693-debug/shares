@@ -552,8 +552,8 @@ body.app-shell.ai-page-root .ai-page {
 /* 综合诊断：八个方面卡片（区别于各看的表格式布局） */
 .engine-section .zv-sum-score {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
   margin: 0 0 12px;
   padding: 12px 16px;
   border-radius: 8px;
@@ -566,9 +566,49 @@ body.app-shell.ai-page-root .ai-page {
   line-height: 1;
 }
 
+.engine-section .zv-sum-score-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
 .engine-section .zv-sum-score-label {
   color: var(--muted);
   font-size: 13px;
+}
+
+.engine-section .zv-sum-subscores {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.engine-section .zv-sum-subscore {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(138, 148, 166, 0.12);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.engine-section .zv-sum-subscore i {
+  font-style: normal;
+  color: var(--muted);
+}
+
+.engine-section .zv-sum-subscore b {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.engine-section .zv-sum-subrow {
+  margin-top: 6px;
 }
 
 .engine-section .zv-sum-score.is-good .zv-sum-score-num {

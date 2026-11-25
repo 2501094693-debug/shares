@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=mine-add-create-20260930" />
+  <link rel="stylesheet" href="/css/style.css?v=market-shares-jump-20261125" />
 </head>
 <body class="app-shell company-page-root market-page-root" data-nav="market">
   <nav class="app-rail" id="appRail" aria-label="主导航"></nav>
@@ -46,7 +46,10 @@
       <div class="market-board market-board-tree">
         <section class="market-pane" data-level="1">
           <header class="market-pane-head">
-            <h2>一级行业</h2>
+            <div class="market-pane-title">
+              <h2>一级行业</h2>
+              <button type="button" class="market-shares-jump" data-shares-level="1" disabled title="跳转到个股行情并选中该行业">个股</button>
+            </div>
             <span id="l1Hint" class="market-pane-hint">按涨跌</span>
           </header>
           <div class="market-pane-scroll">
@@ -72,7 +75,10 @@
         </section>
         <section class="market-pane" data-level="2">
           <header class="market-pane-head">
-            <h2>二级行业</h2>
+            <div class="market-pane-title">
+              <h2>二级行业</h2>
+              <button type="button" class="market-shares-jump" data-shares-level="2" disabled title="跳转到个股行情并选中该行业">个股</button>
+            </div>
             <span id="l2Hint" class="market-pane-hint">点一级后展开</span>
           </header>
           <div class="market-pane-scroll">
@@ -98,7 +104,10 @@
         </section>
         <section class="market-pane" data-level="3">
           <header class="market-pane-head">
-            <h2>三级行业</h2>
+            <div class="market-pane-title">
+              <h2>三级行业</h2>
+              <button type="button" class="market-shares-jump" data-shares-level="3" disabled title="跳转到个股行情并选中该行业">个股</button>
+            </div>
             <span id="l3Hint" class="market-pane-hint">点二级后展开</span>
           </header>
           <div class="market-pane-scroll">
@@ -124,7 +133,10 @@
         </section>
         <section class="market-pane" data-level="4">
           <header class="market-pane-head">
-            <h2>成分股</h2>
+            <div class="market-pane-title">
+              <h2>成分股</h2>
+              <button type="button" class="market-shares-jump" data-shares-level="4" disabled title="跳转到个股行情并选中该行业">个股</button>
+            </div>
             <span id="l4Hint" class="market-pane-hint">点三级后展开</span>
           </header>
           <div class="market-pane-scroll">
@@ -152,6 +164,6 @@
   <script src="/js/shared/orbit-prefetch.js?v=futures-20260923"></script>
   <script src="/js/shared/nav.js?v=nav-industry-20261001"></script>
   <script src="/js/shared/mine-add-group.js?v=mine-add-fix-20261023"></script>
-  <script src="/js/market.js?v=mine-add-create-20260930"></script>
+  <script src="/js/market.js?v=market-shares-jump-20261125"></script>
 </body>
 </html>

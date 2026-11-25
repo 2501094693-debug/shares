@@ -23,9 +23,17 @@ ALLOWED_PRESETS: tuple[str, ...] = tuple(MACD_PRESETS.keys())
 DEFAULT_ADJUST = "qfq"
 DEFAULT_PRICE = "close"
 
+# 金叉相对峰谷：区间内三级交替峰谷（与 evaluate / local_extrema 默认一致）
+DEFAULT_EXTREMA_LAYERS = 3
+DEFAULT_EXTREMA_SERIES = "close"
+DEFAULT_EXTREMA_SMOOTH = 1
+
 __all__ = [
     "ALLOWED_PRESETS",
     "DEFAULT_ADJUST",
+    "DEFAULT_EXTREMA_LAYERS",
+    "DEFAULT_EXTREMA_SERIES",
+    "DEFAULT_EXTREMA_SMOOTH",
     "DEFAULT_NEAR_RATIO",
     "DEFAULT_PRESET",
     "DEFAULT_PRICE",

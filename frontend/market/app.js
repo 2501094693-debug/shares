@@ -228,6 +228,43 @@
     window.history.replaceState(null, "", url);
   }
 
+  function selectedIndustryNames(level) {
+    const depth = Math.min(Math.max(Number(level) || 0, 0), 3);
+    if (depth < 1) return null;
+    const l1 = find(state.tree, state.l1);
+    if (!l1?.name) return null;
+    const out = { l1: l1.name };
+    if (depth < 2) return out;
+    const l2 = find(l1.children, state.l2);
+    if (!l2?.name) return null;
+    out.l2 = l2.name;
+    if (depth < 3) return out;
+    const l3 = find(l2.children, state.l3);
+    if (!l3?.name) return null;
+    out.l3 = l3.name;
+    return out;
+  }
+
+  function sharesHref(level) {
+    const names = selectedIndustryNames(level >= 4 ? 3 : level);
+    if (!names) return "";
+    const qs = new URLSearchParams();
+    if (names.l1) qs.set("l1", names.l1);
+    if (names.l2) qs.set("l2", names.l2);
+    if (names.l3) qs.set("l3", names.l3);
+    const suffix = qs.toString();
+    return suffix ? `/shares?${suffix}` : "/shares";
+  }
+
+  function syncSharesJumps() {
+    document.querySelectorAll("[data-shares-level]").forEach((btn) => {
+      const level = Number(btn.dataset.sharesLevel) || 0;
+      const href = sharesHref(level);
+      btn.disabled = !href;
+      btn.dataset.href = href || "";
+    });
+  }
+
   function render() {
     const l1Items = state.tree || [];
     $("l1Body").innerHTML = industryRows(l1Items, state.l1);
@@ -261,6 +298,7 @@
         ? `${l3.name} · 无历史成分股行情`
         : `${l3.name} · ${stocks.length} 只`
       : "点三级后展开";
+    syncSharesJumps();
   }
 
   function selectL1(code) {
@@ -465,6 +503,14 @@
     $("l3Body").addEventListener("click", (ev) => {
       const row = ev.target.closest("tr[data-code]");
       if (row) selectL3(row.dataset.code);
+    });
+    document.querySelector(".market-board-tree")?.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("[data-shares-level]");
+      if (!btn || btn.disabled) return;
+      const href = btn.dataset.href || sharesHref(Number(btn.dataset.sharesLevel) || 0);
+      if (!href) return;
+      window.OrbitPrefetch?.navHover?.("shares");
+      window.location.href = href;
     });
     window.OrbitPrefetch?.bindHover($("l4Body"), "tr.is-stock[data-code]");
     window.OrbitMineAdd?.bindRoot($("l4Body"));

@@ -15,11 +15,15 @@ from company.analysis.line.MACD.service import (
 )
 from company.analysis.line.gene.config import (
     DEFAULT_ADJUST,
+    DEFAULT_EXTREMA_LAYERS,
+    DEFAULT_EXTREMA_SERIES,
+    DEFAULT_EXTREMA_SMOOTH,
     DEFAULT_NEAR_RATIO,
     DEFAULT_PRESET,
     DEFAULT_PRICE,
 )
 from company.analysis.line.gene.core import analyze_gene_from_macd, resolve_preset
+from company.analysis.line.local_extrema.service import compute_alternating_extrema
 
 
 def _iso(value: str) -> str:
@@ -47,6 +51,20 @@ def _closes_by_date(bars: list[dict[str, Any]]) -> dict[str, float]:
     return out
 
 
+def _bars_in_range(
+    bars: list[dict[str, Any]],
+    beg_iso: str,
+    end_iso: str,
+) -> list[dict[str, Any]]:
+    """截取 ``[beg, end]`` 内交易日，供三级峰谷序列使用。"""
+    out: list[dict[str, Any]] = []
+    for bar in bars:
+        d = _bar_date(bar)
+        if d and beg_iso <= d <= end_iso:
+            out.append(bar)
+    return out
+
+
 def analyze_gene(
     code: str,
     beg: str,
@@ -56,10 +74,15 @@ def analyze_gene(
     near_ratio: float = DEFAULT_NEAR_RATIO,
     adjust: str = DEFAULT_ADJUST,
     price: str = DEFAULT_PRICE,
+    extrema_layers: int = DEFAULT_EXTREMA_LAYERS,
+    extrema_series: str = DEFAULT_EXTREMA_SERIES,
+    extrema_smooth: int = DEFAULT_EXTREMA_SMOOTH,
 ) -> dict[str, Any]:
     """主入口：日线 + 指定 MACD 预设，输出区间内每个金叉日相关数据。
 
     ``preset``：``10,20,7`` 或 ``12,26,9``。
+    另在区间日线上算 ``extrema_layers``（默认 3）级交替峰谷，给每个金叉附带
+    此前最近峰/谷贴近度统计。
     """
     norm = normalize_code(code)
     if not norm:
@@ -99,12 +122,28 @@ def analyze_gene(
         signal=signal,
         price=price,
     )
+
+    layers = max(1, int(extrema_layers or DEFAULT_EXTREMA_LAYERS))
+    range_bars = _bars_in_range(bars, beg_iso, end_iso)
+    extrema_pack: dict[str, Any] = {}
+    extrema_seq: list[dict[str, Any]] = []
+    if len(range_bars) >= 3:
+        extrema_pack = compute_alternating_extrema(
+            range_bars,
+            layers=layers,
+            series=extrema_series or DEFAULT_EXTREMA_SERIES,
+            smooth_window=max(1, int(extrema_smooth or DEFAULT_EXTREMA_SMOOTH)),
+        )
+        extrema_seq = list(extrema_pack.get("extrema") or [])
+
     gene = analyze_gene_from_macd(
         list(macd.get("items") or []),
         beg_iso,
         end_iso,
         near_ratio=near_ratio,
         closes_by_date=_closes_by_date(bars),
+        extrema=extrema_seq,
+        extrema_layers=layers,
         preset=preset_key,
         fast=fast,
         slow=slow,
@@ -116,5 +155,9 @@ def analyze_gene(
         "source": str(hist.get("source") or ""),
         "adjust": adjust,
         "price": price,
+        "extrema_series": extrema_pack.get("series") or extrema_series,
+        "extrema_smooth": extrema_pack.get("smooth_window") or extrema_smooth,
+        "extrema_peak_count": extrema_pack.get("peak_count"),
+        "extrema_trough_count": extrema_pack.get("trough_count"),
         **gene,
     }

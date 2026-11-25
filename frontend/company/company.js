@@ -1506,7 +1506,7 @@ function renderDealCapitalPanel() {
       };
       const chipRows = [];
       if (data.turnover != null) chipRows.push(chip("成交额", data.turnover));
-      else if (data.net != null) chipRows.push(chip("主力净流入", data.net));
+      else if (data.main_net != null) chipRows.push(chip("主力净流入", data.main_net));
       chips.innerHTML = chipRows.join("");
     }
   }
@@ -5916,7 +5916,19 @@ const speculationState = {
   error: "",
   data: null,
   bootstrapped: false,
+  gene: null,
+  geneLoading: false,
+  geneError: "",
 };
+
+const SPECULATION_GENE_CHARTS = [
+  { key: "水下金叉", title: "水下金叉" },
+  { key: "即将水下金叉", title: "即将水下金叉" },
+  { key: "水上金叉", title: "水上金叉" },
+  { key: "即将水上金叉", title: "即将水上金叉" },
+];
+
+const SPECULATION_GENE_LOOKBACK_YEARS = 3;
 
 function speculationEls() {
   return {
@@ -5925,6 +5937,85 @@ function speculationEls() {
     error: document.getElementById("speculationError"),
     body: document.getElementById("speculationBody"),
     refresh: document.getElementById("speculationRefreshBtn"),
+  };
+}
+
+function speculationGeneBegIso() {
+  const listRaw = String(metricsStock?.list_date || "").trim();
+  const digits = listRaw.replace(/\D/g, "");
+  let listIso = "";
+  if (digits.length >= 8) {
+    listIso = `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  }
+  const now = new Date();
+  const floor = new Date(now.getFullYear() - SPECULATION_GENE_LOOKBACK_YEARS, now.getMonth(), now.getDate());
+  const floorIso = `${floor.getFullYear()}-${String(floor.getMonth() + 1).padStart(2, "0")}-${String(floor.getDate()).padStart(2, "0")}`;
+  if (listIso && listIso > floorIso) return listIso;
+  return floorIso;
+}
+
+function speculationGenePct(v, digits = 2) {
+  if (v == null || !Number.isFinite(Number(v))) return "—";
+  return `${(Number(v) * 100).toFixed(digits)}%`;
+}
+
+function speculationGeneAbsGapText(pt) {
+  if (!pt || pt.closer == null) return "—";
+  if (pt.absGapPct != null && Number.isFinite(pt.absGapPct)) {
+    return speculationGenePct(pt.absGapPct, 1);
+  }
+  if (pt.absGap != null && Number.isFinite(pt.absGap)) {
+    return String(Number(pt.absGap).toFixed(2));
+  }
+  return "—";
+}
+
+function speculationGeneCloserLabel(closer) {
+  if (closer === "peak") return "近峰";
+  if (closer === "trough") return "近谷";
+  return "—";
+}
+
+function speculationGeneEventsBySignal(pack, signal) {
+  const events = Array.isArray(pack?.events) ? pack.events : [];
+  return events.filter((ev) => String(ev?.signal || "") === signal);
+}
+
+function speculationGenePointFromEvent(ev) {
+  const pe = ev?.prior_extrema || {};
+  const closer = pe.closer === "peak" || pe.closer === "trough" ? pe.closer : null;
+  const absGap = pe.abs_gap == null || !Number.isFinite(Number(pe.abs_gap))
+    ? null
+    : Number(pe.abs_gap);
+  const absGapPct = pe.abs_gap_pct == null || !Number.isFinite(Number(pe.abs_gap_pct))
+    ? null
+    : Number(pe.abs_gap_pct);
+  const breakChg = ev?.break_close_chg == null || !Number.isFinite(Number(ev.break_close_chg))
+    ? null
+    : Number(ev.break_close_chg);
+  return {
+    date: String(ev?.date || ""),
+    gain: ev?.max_close_gain == null || !Number.isFinite(Number(ev.max_close_gain))
+      ? null
+      : Number(ev.max_close_gain),
+    drop: ev?.max_close_drop == null || !Number.isFinite(Number(ev.max_close_drop))
+      ? null
+      : Number(ev.max_close_drop),
+    baseClose: ev?.base_close,
+    failed: Boolean(ev?.judgment_failed),
+    breakDate: ev?.break_date || null,
+    breakClose: ev?.break_close == null ? null : Number(ev.break_close),
+    breakChg,
+    openEnded: Boolean(ev?.dif_above_open_ended),
+    closer,
+    closerLabel: pe.closer_label || speculationGeneCloserLabel(closer),
+    closerDate: pe.closer_date || null,
+    closerPrice: pe.closer_price == null ? null : Number(pe.closer_price),
+    absGap,
+    absGapPct,
+    gapPct: pe.gap_pct == null || !Number.isFinite(Number(pe.gap_pct))
+      ? null
+      : Number(pe.gap_pct),
   };
 }
 
@@ -6103,7 +6194,359 @@ function renderSpeculation(data) {
         ${speculationHeatColumn("tonghuashun", heat.tonghuashun)}
         ${speculationHeatColumn("xueqiu", heat.xueqiu)}
       </div>
+    </section>
+
+    ${speculationGeneSectionHtml()}`;
+  paintSpeculationGene();
+}
+
+function speculationGeneSectionHtml() {
+  const cards = SPECULATION_GENE_CHARTS.map(
+    (cfg) => `<article class="speculation-gene-card" data-signal="${escapeHtml(cfg.key)}">
+      <header class="speculation-gene-card-head">
+        <h4>${escapeHtml(cfg.title)}</h4>
+        <p class="muted" data-gene-count>—</p>
+      </header>
+      <div class="speculation-gene-legend">
+        <span><i style="background:var(--up,#ff5d6c)"></i>最大涨幅</span>
+        <span><i style="background:var(--down,#3dd68c)"></i>最大跌幅</span>
+        <span class="speculation-gene-legend-mark is-peak">▲近峰</span>
+        <span class="speculation-gene-legend-mark is-trough">▼近谷</span>
+      </div>
+      <div class="speculation-gene-chart-wrap">
+        <canvas data-gene-canvas="${escapeHtml(cfg.key)}" role="img" aria-label="${escapeHtml(cfg.title)}：横轴金叉日期，纵轴最大涨跌幅，标注近峰/近谷与绝对差距"></canvas>
+        <div class="speculation-gene-tip" hidden></div>
+      </div>
+    </article>`
+  ).join("");
+  return `<section class="speculation-section" aria-label="MACD 金叉股性">
+      <header class="speculation-section-head">
+        <h3>MACD 金叉股性</h3>
+        <p class="muted" id="speculationGeneMeta">横轴=金叉日 · 纵轴=后续 DIF≥DEA 段最大涨/跌幅 · 默认近 ${SPECULATION_GENE_LOOKBACK_YEARS} 年</p>
+      </header>
+      <div id="speculationGeneSummary" class="speculation-gene-summary"></div>
+      <div id="speculationGeneBody" class="speculation-gene-grid">${cards}</div>
     </section>`;
+}
+
+function speculationGeneTipEl(wrap) {
+  let tip = wrap?.querySelector(":scope > .speculation-gene-tip");
+  if (!tip && wrap) {
+    tip = document.createElement("div");
+    tip.className = "speculation-gene-tip";
+    tip.hidden = true;
+    wrap.appendChild(tip);
+  }
+  return tip;
+}
+
+function bindSpeculationGeneCanvas(canvas) {
+  if (!canvas || canvas.dataset.geneBound === "1") return;
+  canvas.dataset.geneBound = "1";
+  const wrap = canvas.parentElement;
+  const onMove = (ev) => {
+    const geom = canvas._geneGeom;
+    const points = canvas._genePoints;
+    if (!geom || !points?.length) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = ev.clientX - rect.left;
+    const idx = Math.round((x - geom.padL) / geom.step);
+    if (idx < 0 || idx >= points.length) {
+      const tip = speculationGeneTipEl(wrap);
+      if (tip) tip.hidden = true;
+      canvas._geneHover = -1;
+      drawSpeculationGeneChart(canvas, points, canvas._geneTitle || "");
+      return;
+    }
+    canvas._geneHover = idx;
+    drawSpeculationGeneChart(canvas, points, canvas._geneTitle || "");
+    const tip = speculationGeneTipEl(wrap);
+    if (!tip) return;
+    const pt = points[idx];
+    const colors = chartColors();
+    const closerTxt = pt.closer
+      ? `${speculationGeneCloserLabel(pt.closer)} · 绝对差距 ${speculationGeneAbsGapText(pt)}`
+      : "无此前峰谷";
+    const closerDetail = pt.closer
+      ? `${pt.closerDate || "—"} @ ${pt.closerPrice == null ? "—" : pt.closerPrice}`
+      : "—";
+    const breakTxt = pt.breakDate
+      ? `${pt.breakDate} · ${speculationGenePct(pt.breakChg)}`
+      : pt.openEnded
+        ? "未跌破（区间未结束）"
+        : "—";
+    tip.innerHTML = `<div class="speculation-gene-tip-date">${escapeHtml(pt.date)}</div>
+      <div class="speculation-gene-tip-row"><span><i style="background:${colors.up}"></i>最大涨</span><b>${escapeHtml(speculationGenePct(pt.gain))}</b></div>
+      <div class="speculation-gene-tip-row"><span><i style="background:${colors.down}"></i>最大跌</span><b>${escapeHtml(speculationGenePct(pt.drop))}</b></div>
+      <div class="speculation-gene-tip-row"><span>收盘</span><b>${escapeHtml(pt.baseClose == null ? "—" : String(pt.baseClose))}</b></div>
+      <div class="speculation-gene-tip-row"><span>跌破日</span><b>${escapeHtml(breakTxt)}</b></div>
+      <div class="speculation-gene-tip-row"><span>峰谷</span><b>${escapeHtml(closerTxt)}</b></div>
+      <div class="speculation-gene-tip-row"><span>参照</span><b>${escapeHtml(closerDetail)}</b></div>`;
+    tip.hidden = false;
+    const tipW = tip.offsetWidth || 150;
+    const tipH = tip.offsetHeight || 70;
+    let left = ev.clientX - rect.left + 12;
+    let top = ev.clientY - rect.top + 12;
+    if (left + tipW > rect.width - 4) left = Math.max(4, rect.width - tipW - 4);
+    if (top + tipH > rect.height - 4) top = Math.max(4, ev.clientY - rect.top - tipH - 8);
+    tip.style.left = `${left}px`;
+    tip.style.top = `${top}px`;
+  };
+  const onLeave = () => {
+    canvas._geneHover = -1;
+    const tip = speculationGeneTipEl(wrap);
+    if (tip) tip.hidden = true;
+    drawSpeculationGeneChart(canvas, canvas._genePoints || [], canvas._geneTitle || "");
+  };
+  canvas.addEventListener("mousemove", onMove);
+  canvas.addEventListener("mouseleave", onLeave);
+}
+
+function drawSpeculationGenePeakMark(ctx, x, y, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y - 5);
+  ctx.lineTo(x + 4.5, y + 3.5);
+  ctx.lineTo(x - 4.5, y + 3.5);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawSpeculationGeneTroughMark(ctx, x, y, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y + 5);
+  ctx.lineTo(x + 4.5, y - 3.5);
+  ctx.lineTo(x - 4.5, y - 3.5);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawSpeculationGeneChart(canvas, points, title) {
+  if (!canvas) return;
+  const wrap = canvas.parentElement;
+  const colors = chartColors();
+  const peakColor = colors.avg || "#f0b429";
+  const troughColor = "#6ea8fe";
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = Math.max(240, wrap?.clientWidth || canvas.clientWidth || 320);
+  const cssH = Math.max(210, wrap?.clientHeight || 240);
+  canvas.style.width = "100%";
+  canvas.style.height = `${cssH}px`;
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  canvas._genePoints = points;
+  canvas._geneTitle = title;
+
+  if (!points.length) {
+    ctx.fillStyle = colors.muted;
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("区间内无此类信号", cssW / 2, cssH / 2);
+    canvas._geneGeom = null;
+    return;
+  }
+
+  const pad = { l: 44, r: 12, t: 28, b: 28 };
+  const W = cssW - pad.l - pad.r;
+  const H = cssH - pad.t - pad.b;
+  const vals = [];
+  for (const pt of points) {
+    if (pt.gain != null) vals.push(pt.gain);
+    if (pt.drop != null) vals.push(pt.drop);
+  }
+  let lo = vals.length ? Math.min(...vals, 0) : -0.05;
+  let hi = vals.length ? Math.max(...vals, 0) : 0.05;
+  if (lo === hi) {
+    lo -= 0.05;
+    hi += 0.05;
+  }
+  const span = hi - lo || 0.1;
+  lo -= span * 0.08;
+  hi += span * 0.1;
+  const yAt = (v) => pad.t + ((hi - v) / (hi - lo)) * H;
+  const step = points.length <= 1 ? W : W / (points.length - 1);
+  const xAt = (i) => pad.l + i * step;
+  canvas._geneGeom = { padL: pad.l, step, cssW: W };
+
+  ctx.strokeStyle = colors.grid;
+  ctx.lineWidth = 1;
+  ctx.fillStyle = colors.muted;
+  ctx.font = "10px sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let g = 0; g <= 4; g += 1) {
+    const v = hi - ((hi - lo) * g) / 4;
+    const y = pad.t + (H * g) / 4;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(pad.l + W, y);
+    ctx.stroke();
+    ctx.fillText(`${(v * 100).toFixed(0)}%`, pad.l - 6, y);
+  }
+
+  const yZero = yAt(0);
+  ctx.save();
+  ctx.strokeStyle = colors.ref;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.moveTo(pad.l, yZero);
+  ctx.lineTo(pad.l + W, yZero);
+  ctx.stroke();
+  ctx.restore();
+
+  const drawSeries = (key, color) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    let started = false;
+    points.forEach((pt, i) => {
+      const v = pt[key];
+      if (v == null) {
+        started = false;
+        return;
+      }
+      const x = xAt(i);
+      const y = yAt(v);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    ctx.stroke();
+    points.forEach((pt, i) => {
+      const v = pt[key];
+      if (v == null) return;
+      const x = xAt(i);
+      const y = yAt(v);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  };
+  drawSeries("gain", colors.up);
+  drawSeries("drop", colors.down);
+
+  const hover = typeof canvas._geneHover === "number" ? canvas._geneHover : -1;
+  if (hover >= 0 && hover < points.length) {
+    const x = xAt(hover);
+    ctx.save();
+    ctx.strokeStyle = colors.cross;
+    ctx.beginPath();
+    ctx.moveTo(x, pad.t);
+    ctx.lineTo(x, pad.t + H);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 近峰/近谷标记 + 绝对差距标注
+  const annotateStep = points.length <= 10
+    ? 1
+    : Math.max(1, Math.ceil(points.length / 10));
+  points.forEach((pt, i) => {
+    if (!pt.closer) return;
+    const x = xAt(i);
+    const markY = pad.t - 10;
+    const markColor = pt.closer === "peak" ? peakColor : troughColor;
+    if (pt.closer === "peak") drawSpeculationGenePeakMark(ctx, x, markY, markColor);
+    else drawSpeculationGeneTroughMark(ctx, x, markY, markColor);
+
+    const showLabel = i % annotateStep === 0 || i === points.length - 1 || i === hover;
+    if (!showLabel) return;
+    const gapTxt = speculationGeneAbsGapText(pt);
+    if (gapTxt === "—") return;
+    const tag = pt.closer === "peak" ? "峰" : "谷";
+    ctx.fillStyle = markColor;
+    ctx.font = i === hover ? "bold 10px sans-serif" : "9px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    const yLabel = markY - 6;
+    // 交错避免重叠：奇数点略高
+    const yOff = points.length > 8 && i % 2 === 1 ? -8 : 0;
+    ctx.fillText(`${tag}${gapTxt}`, x, yLabel + yOff);
+  });
+
+  ctx.fillStyle = colors.muted;
+  ctx.font = "10px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const labelStep = Math.max(1, Math.ceil(points.length / 6));
+  points.forEach((pt, i) => {
+    if (i % labelStep !== 0 && i !== points.length - 1) return;
+    const d = String(pt.date || "");
+    const label = d.length >= 10 ? d.slice(5) : d;
+    ctx.fillText(label, xAt(i), pad.t + H + 8);
+  });
+}
+
+function paintSpeculationGene() {
+  const metaEl = document.getElementById("speculationGeneMeta");
+  const summaryEl = document.getElementById("speculationGeneSummary");
+  const st = speculationState;
+  const pack = st.gene;
+
+  if (metaEl) {
+    if (st.geneLoading && !pack) metaEl.textContent = "正在加载 MACD 金叉股性…";
+    else if (st.geneError && !pack) metaEl.textContent = `金叉股性加载失败：${st.geneError}`;
+    else if (pack) {
+      metaEl.textContent =
+        `MACD ${pack.preset || "10,20,7"} · ${pack.beg || ""} → ${pack.end || ""} · ` +
+        `事件 ${pack.event_count ?? 0} 条 · 标注近峰/近谷与绝对差距`;
+    } else {
+      metaEl.textContent =
+        `横轴=金叉日 · 纵轴=最大涨跌幅 · ▲近峰 / ▼近谷 + 绝对差距 · 默认近 ${SPECULATION_GENE_LOOKBACK_YEARS} 年`;
+    }
+  }
+
+  if (summaryEl) {
+    if (!pack) {
+      summaryEl.innerHTML = st.geneLoading
+        ? `<span>加载中…</span>`
+        : st.geneError
+          ? `<span>${escapeHtml(st.geneError)}</span>`
+          : "";
+    } else {
+      const by = pack.summary?.by_signal || {};
+      const priorAll = pack.summary?.prior_extrema || {};
+      const head = priorAll.closer_peak_count != null
+        ? `<span>近峰 <strong>${Number(priorAll.closer_peak_count || 0)}</strong> · 近谷 <strong>${Number(
+            priorAll.closer_trough_count || 0
+          )}</strong> · 均绝对差距 ${escapeHtml(
+            speculationGenePct(priorAll.avg_abs_gap_pct)
+          )}</span>`
+        : "";
+      const rows = SPECULATION_GENE_CHARTS.map((cfg) => {
+        const bucket = by[cfg.key] || {};
+        const n = Number(bucket.count || speculationGeneEventsBySignal(pack, cfg.key).length || 0);
+        return `<span>${escapeHtml(cfg.title)} <strong>${n}</strong> 次 · 均涨 ${escapeHtml(
+          speculationGenePct(bucket.avg_max_close_gain)
+        )} · 均跌 ${escapeHtml(speculationGenePct(bucket.avg_max_close_drop))} · 近峰 ${Number(
+          bucket.closer_peak_count || 0
+        )} / 近谷 ${Number(bucket.closer_trough_count || 0)}</span>`;
+      }).join("");
+      summaryEl.innerHTML = `${head}${rows}`;
+    }
+  }
+
+  SPECULATION_GENE_CHARTS.forEach((cfg) => {
+    const card = document.querySelector(`.speculation-gene-card[data-signal="${cfg.key}"]`);
+    const canvas = document.querySelector(`canvas[data-gene-canvas="${cfg.key}"]`);
+    const countEl = card?.querySelector("[data-gene-count]");
+    const events = pack ? speculationGeneEventsBySignal(pack, cfg.key) : [];
+    if (countEl) countEl.textContent = pack ? `${events.length} 次` : st.geneLoading ? "…" : "—";
+    if (!canvas) return;
+    const points = events.map(speculationGenePointFromEvent);
+    bindSpeculationGeneCanvas(canvas);
+    drawSpeculationGeneChart(canvas, points, cfg.title);
+  });
 }
 
 function paintSpeculation() {
@@ -6111,19 +6554,22 @@ function paintSpeculation() {
   const st = speculationState;
   if (ui.meta) {
     if (st.loading && !st.data) ui.meta.textContent = "正在加载…";
-    else if (st.loading) ui.meta.textContent = `刷新中… · ${st.data?.as_of || ""}`;
+    else if (st.loading || st.geneLoading) ui.meta.textContent = `刷新中… · ${st.data?.as_of || ""}`;
     else if (st.error && !st.data) ui.meta.textContent = "加载失败";
     else {
       const bits = [st.data?.name || "", st.data?.code || "", st.data?.as_of ? `截至 ${st.data.as_of}` : ""]
         .filter(Boolean);
-      ui.meta.textContent = bits.join(" · ") || "筹码门槛 · 十大股东 · 三源热度";
+      ui.meta.textContent = bits.join(" · ") || "筹码门槛 · 十大股东 · 三源热度 · MACD 金叉股性";
     }
   }
   if (ui.error) {
-    ui.error.textContent = st.error || "";
-    ui.error.classList.toggle("hidden", !st.error);
+    const msg = [st.error, st.geneError && !st.gene ? `金叉股性：${st.geneError}` : ""]
+      .filter(Boolean)
+      .join(" · ");
+    ui.error.textContent = msg;
+    ui.error.classList.toggle("hidden", !msg);
   }
-  if (ui.refresh) ui.refresh.disabled = st.loading;
+  if (ui.refresh) ui.refresh.disabled = st.loading || st.geneLoading;
   if (st.loading && !st.data) {
     if (ui.body) ui.body.innerHTML = `<p class="muted speculation-empty">正在加载炒作分析…</p>`;
     return;
@@ -6134,11 +6580,45 @@ function paintSpeculation() {
   }
 }
 
+async function loadSpeculationGene({ refresh = false } = {}) {
+  if (!code) return;
+  if (speculationState.geneLoading) return;
+  if (speculationState.gene && !refresh) {
+    paintSpeculationGene();
+    return;
+  }
+  speculationState.geneLoading = true;
+  speculationState.geneError = "";
+  paintSpeculation();
+  try {
+    const qs = new URLSearchParams({
+      code,
+      beg: speculationGeneBegIso(),
+      preset: "10,20,7",
+    });
+    const json = await api(`/api/stocks/line-gene?${qs.toString()}`, {
+      bypassCache: refresh,
+      writeCache: true,
+    });
+    if (json && json.ok === false) {
+      throw new Error(json.error || json.message || "金叉股性失败");
+    }
+    speculationState.gene = json.data || null;
+  } catch (err) {
+    speculationState.geneError = err?.message || String(err);
+  } finally {
+    speculationState.geneLoading = false;
+    paintSpeculation();
+  }
+}
+
 async function loadSpeculation({ refresh = false } = {}) {
   if (!code) return;
   if (speculationState.loading) return;
   if (speculationState.bootstrapped && speculationState.data && !refresh) {
     paintSpeculation();
+    if (!speculationState.gene) loadSpeculationGene({ refresh: false });
+    else paintSpeculationGene();
     return;
   }
   speculationState.loading = true;
@@ -6160,6 +6640,7 @@ async function loadSpeculation({ refresh = false } = {}) {
   } finally {
     speculationState.loading = false;
     paintSpeculation();
+    loadSpeculationGene({ refresh });
   }
 }
 

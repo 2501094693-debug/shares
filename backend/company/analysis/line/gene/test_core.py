@@ -13,6 +13,7 @@ from company.analysis.line.gene.core import (
     analyze_gene_from_macd,
     find_dif_above_span,
     interval_close_extremes,
+    nearest_prior_extrema,
     resolve_preset,
 )
 
@@ -57,6 +58,8 @@ class DifAboveSpanTests(unittest.TestCase):
         self.assertEqual(span["end"], "2026-01-10")
         self.assertEqual(span["count"], 2)
         self.assertFalse(span["open_ended"])
+        self.assertEqual(span["break_date"], "2026-01-11")
+        self.assertEqual(span["observe_end_idx"], span["break_idx"])
 
     def test_from_near_improves_then_cross(self) -> None:
         # 信号日 spread=-0.05；次日 -0.02（仍<0 但更大）→ 继续；再下日翻正
@@ -75,6 +78,7 @@ class DifAboveSpanTests(unittest.TestCase):
         self.assertEqual(span["cross_date"], "2026-01-11")
         self.assertEqual(span["end"], "2026-01-12")
         self.assertFalse(span["open_ended"])
+        self.assertEqual(span["break_date"], "2026-01-13")
 
     def test_from_near_fails_when_macd_worsens(self) -> None:
         # 信号日 spread=-0.05；次日 -0.08 → 走弱失败
@@ -119,8 +123,13 @@ class AnalyzeGeneFromMacdTests(unittest.TestCase):
         self.assertEqual(ev["signal"], SIGNAL_UNDER_CROSS)
         self.assertEqual(ev["dif_above_beg"], "2026-01-09")
         self.assertEqual(ev["dif_above_end"], "2026-01-10")
+        self.assertEqual(ev["break_date"], "2026-01-11")
+        self.assertEqual(ev["break_close"], 9.5)
+        self.assertAlmostEqual(ev["break_close_chg"], -0.05, places=6)
         self.assertAlmostEqual(ev["max_close_gain"], 0.1, places=6)
-        self.assertAlmostEqual(ev["max_close_drop"], 0.0, places=6)
+        # 观察终点含跌破日 9.5 → 最大跌 -5%
+        self.assertAlmostEqual(ev["max_close_drop"], -0.05, places=6)
+        self.assertEqual(ev["max_close_drop_date"], "2026-01-11")
 
     def test_under_near_then_cross(self) -> None:
         items = [
@@ -139,6 +148,9 @@ class AnalyzeGeneFromMacdTests(unittest.TestCase):
         self.assertEqual(near["dif_above_beg"], "2026-01-09")
         self.assertEqual(near["cross_date"], "2026-01-10")
         self.assertEqual(near["dif_above_end"], "2026-01-11")
+        self.assertTrue(near["dif_above_open_ended"])
+        self.assertIsNone(near["break_date"])
+        self.assertIsNone(near["break_close_chg"])
         self.assertAlmostEqual(near["max_close_gain"], 0.1, places=6)
 
     def test_under_near_judgment_failed(self) -> None:
@@ -165,6 +177,63 @@ class AnalyzeGeneFromMacdTests(unittest.TestCase):
         pack = analyze_gene_from_macd(items, "2026-01-08", "2026-01-10")
         self.assertEqual(pack["events"][0]["signal"], SIGNAL_OVER_CROSS)
         self.assertTrue(pack["events"][0]["dif_above_open_ended"])
+
+    def test_prior_extrema_attached(self) -> None:
+        items = [
+            _row("2026-01-08", -1.2, -1.0, 10.0),
+            _row("2026-01-09", -0.9, -1.0, 10.5),  # 水下金叉
+            _row("2026-01-10", -0.8, -0.95, 11.0),
+            _row("2026-01-11", -1.1, -1.0, 9.5),
+        ]
+        extrema = [
+            {"type": "trough", "date": "2026-01-05", "price": 9.0},
+            {"type": "peak", "date": "2026-01-07", "price": 12.0},
+            {"type": "trough", "date": "2026-01-10", "price": 8.0},  # 金叉后，应忽略
+        ]
+        pack = analyze_gene_from_macd(
+            items, "2026-01-08", "2026-01-11", extrema=extrema, extrema_layers=3
+        )
+        ev = pack["events"][0]
+        pe = ev["prior_extrema"]
+        self.assertEqual(pe["peak_date"], "2026-01-07")
+        self.assertEqual(pe["trough_date"], "2026-01-05")
+        # |10.5-12|=1.5，|10.5-9|=1.5 → 相等，峰日期更近 → 近峰
+        self.assertEqual(pe["closer"], "peak")
+        self.assertAlmostEqual(pe["gap"], 10.5 - 12.0, places=6)
+        self.assertEqual(pack["summary"]["prior_extrema"]["closer_peak_count"], 1)
+
+
+class NearestPriorExtremaTests(unittest.TestCase):
+    def test_closer_to_trough(self) -> None:
+        extrema = [
+            {"type": "peak", "date": "2026-01-01", "price": 20.0},
+            {"type": "trough", "date": "2026-01-05", "price": 10.0},
+            {"type": "peak", "date": "2026-01-08", "price": 15.0},
+        ]
+        out = nearest_prior_extrema(10.5, "2026-01-10", extrema)
+        self.assertEqual(out["peak_date"], "2026-01-08")
+        self.assertEqual(out["trough_date"], "2026-01-05")
+        self.assertEqual(out["closer"], "trough")
+        self.assertEqual(out["closer_label"], "波谷")
+        self.assertAlmostEqual(out["gap"], 0.5, places=6)
+        self.assertAlmostEqual(out["gap_pct"], 0.05, places=6)
+
+    def test_ignores_same_day_and_later(self) -> None:
+        extrema = [
+            {"type": "trough", "date": "2026-01-09", "price": 9.0},
+            {"type": "peak", "date": "2026-01-10", "price": 12.0},
+            {"type": "trough", "date": "2026-01-11", "price": 8.0},
+        ]
+        out = nearest_prior_extrema(10.0, "2026-01-10", extrema)
+        self.assertEqual(out["trough_date"], "2026-01-09")
+        self.assertIsNone(out["peak_date"])
+        self.assertEqual(out["closer"], "trough")
+
+    def test_empty_when_no_prior(self) -> None:
+        extrema = [{"type": "peak", "date": "2026-01-12", "price": 12.0}]
+        out = nearest_prior_extrema(10.0, "2026-01-10", extrema)
+        self.assertIsNone(out["closer"])
+        self.assertIsNone(out["gap"])
 
 
 if __name__ == "__main__":

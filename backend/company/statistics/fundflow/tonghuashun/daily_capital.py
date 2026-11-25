@@ -178,10 +178,12 @@ def _from_eastmoney_snapshot(code: str) -> dict[str, Any]:
         "mid": _empty_tier(snap.get("mid_net")),
         "small": _empty_tier(snap.get("small_net")),
     }
+    # 合计 = 超大+大+中+小四档净流入之和（理论上≈0）；主力净流入单独保留
+    tier_nets = [tiers[k]["net"] for k, _ in _TIERS if tiers[k]["net"] is not None]
+    tier_sum = round(sum(float(v) for v in tier_nets), 2) if tier_nets else None
     main_net = snap.get("main_net")
-    if main_net is None:
-        parts = [tiers[k]["net"] for k, _ in _TIERS if tiers[k]["net"] is not None]
-        main_net = round(sum(float(v) for v in parts), 2) if parts else None
+    if main_net is not None:
+        main_net = round(float(main_net), 2)
     return {
         "code": code,
         "name": str(snap.get("name") or ""),
@@ -199,7 +201,8 @@ def _from_eastmoney_snapshot(code: str) -> dict[str, Any]:
         "passive_net": None,
         "buy": None,
         "sell": None,
-        "net": None if main_net is None else round(float(main_net), 2),
+        "net": tier_sum,
+        "main_net": main_net,
         "super_net": tiers["super"]["net"],
         "big_net": tiers["big"]["net"],
         "mid_net": tiers["mid"]["net"],
@@ -214,6 +217,7 @@ def _from_eastmoney_snapshot(code: str) -> dict[str, Any]:
         },
         "notes": [
             "同花顺资金流通道不可用，已降级东财档位净流入（无主动/被动拆分）",
+            "net 为四档净流入之和；main_net 为东财主力净流入（超大+大）",
             "金额单位元；口径与同花顺主动/被动矩阵不同，仅作对照",
         ],
     }

@@ -7324,11 +7324,18 @@ body.market-page-root {
 .market-pane-head {
   flex: none;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   padding: 10px 12px 8px;
   border-bottom: 1px solid var(--line);
+}
+
+.market-pane-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .market-pane-head h2 {
@@ -7337,6 +7344,32 @@ body.market-page-root {
   font-size: 0.82rem;
   font-weight: 600;
   letter-spacing: 0.08em;
+}
+
+.market-shares-jump {
+  flex: none;
+  margin: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(42, 212, 184, 0.06);
+  color: var(--accent);
+  font-family: var(--display);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.market-shares-jump:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: rgba(42, 212, 184, 0.14);
+}
+
+.market-shares-jump:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .market-pane-hint {
@@ -17439,10 +17472,147 @@ html.company-charts-on .company-panel[data-panel="judgment"] .judgment-view > .d
   text-align: center;
 }
 
+.speculation-gene-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 0.82rem;
+  color: var(--muted, #6b7280);
+}
+
+.speculation-gene-summary strong {
+  color: inherit;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.speculation-gene-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.speculation-gene-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 10px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.015);
+}
+
+.speculation-gene-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.speculation-gene-card-head h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.speculation-gene-card-head .muted {
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.speculation-gene-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  font-size: 0.72rem;
+  color: var(--muted, #6b7280);
+}
+
+.speculation-gene-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+  border-radius: 1px;
+}
+
+.speculation-gene-legend-mark.is-peak {
+  color: var(--accent-hot, #f0b429);
+}
+
+.speculation-gene-legend-mark.is-trough {
+  color: #6ea8fe;
+}
+
+.speculation-gene-chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 240px;
+}
+
+.speculation-gene-chart-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.speculation-gene-tip {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  min-width: 140px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(18, 24, 34, 0.92);
+  color: #e8eef7;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.speculation-gene-tip[hidden] {
+  display: none;
+}
+
+.speculation-gene-tip-date {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.speculation-gene-tip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.speculation-gene-tip-row i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+}
+
+.speculation-gene-tip-row b {
+  font-variant-numeric: tabular-nums;
+}
+
+.speculation-gene-empty {
+  margin: 0;
+  padding: 36px 8px;
+  text-align: center;
+  font-size: 0.82rem;
+}
+
 @media (max-width: 960px) {
   .speculation-holders-grid,
   .speculation-heat-grid,
-  .speculation-fund-summary {
+  .speculation-fund-summary,
+  .speculation-gene-grid {
     grid-template-columns: 1fr;
   }
 
