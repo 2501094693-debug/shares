@@ -32,12 +32,13 @@ DEFAULT_WORKERS = 16
 MIN_WORKERS = 1
 MAX_WORKERS = 32
 
-PROGRESS_EVERY = 20
+# 进度推送间隔（完成 N 只推一次）；过大会让前端长时间停在 1/总数
+PROGRESS_EVERY = 5
 
 # 区间回测：最多覆盖的交易日数（逐日全市场扫描很重；约覆盖默认「最近两个月」）
 MAX_RANGE_DAYS = 50
 # 区间回测落盘键版本
-RANGE_CACHE_TAG = "r3"
+RANGE_CACHE_TAG = "r4"
 
 # 落盘键版本，算法变更后与旧缓存隔离
 CACHE_TAG = "m3"

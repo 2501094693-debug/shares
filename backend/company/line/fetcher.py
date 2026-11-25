@@ -394,8 +394,10 @@ def _save_kline_disk(
         "full_history": bool(pack.get("full_history")),
         "data": data,
     }
+    # dumps 放锁外，避免 16 路并发区间扫描时长时间占住全局写锁拖死 HTTP
+    text = json.dumps(body, ensure_ascii=False)
     with _kline_disk_lock:
-        path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+        path.write_text(text, encoding="utf-8")
 
 
 # 按优先级排列的 K 线源。腾讯优先，东财其次，同花顺最后兜底。

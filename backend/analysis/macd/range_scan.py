@@ -34,6 +34,7 @@ from analysis.macd.config import (
 )
 from analysis.macd.forward import max_forward_gains_from_bars
 from analysis.macd.screen import cross_type_matches, slim_row
+from analysis.macd.signals import classify_macd_cross
 from analysis.universe import is_eligible_stock
 from company.analysis.line.evaluate.service import EXTREMA_LOOKBACK_DAYS
 from company.analysis.line.MACD.core import compute_macd
@@ -210,7 +211,25 @@ def _scan_one_stock(
 
     macd_items = list(macd_pack.get("items") or [])
     hits: list[dict[str, Any]] = []
+    # days 升序：单指针推进，O(n) 完成逐日 MACD 前缀，避免反复整表扫描
+    macd_i = 0
+    n_macd = len(macd_items)
     for day in days:
+        while macd_i < n_macd and str(macd_items[macd_i].get("date") or "")[:10] <= day:
+            macd_i += 1
+        if macd_i <= 0:
+            continue
+        macd_prefix = macd_items[:macd_i]
+        # 先廉价判金叉 + 类别过滤，避免对每个交易日都跑稳定区间/三级峰谷打分
+        try:
+            cross = classify_macd_cross(macd_prefix, near_ratio=near_ratio)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("range day classify failed %s %s: %s", code, day, exc)
+            continue
+        if not cross.get("matched"):
+            continue
+        if not cross_type_matches(cross, cross_type):
+            continue
         try:
             analyzed = analyze_macd_stable_on_bars(
                 code,
@@ -237,9 +256,6 @@ def _scan_one_stock(
             continue
 
         if not analyzed.get("found"):
-            continue
-        cross = ((analyzed.get("macd") or {}).get("cross") or {})
-        if not cross_type_matches(cross, cross_type):
             continue
         row = slim_row(analyzed, meta=meta)
         if not row:
