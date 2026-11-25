@@ -34,6 +34,7 @@
     asof: "",
     dayRows: [],
     selectedDate: "",
+    sort: "default",
     nearItems: [],
     underItems: [],
     nearCount: 0,
@@ -656,15 +657,61 @@
     return signals.includes("水下金叉") || primary === "水下金叉";
   }
 
+  function shareSortNumber(value) {
+    if (value == null || value === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function compareShareSortValues(a, b) {
+    const av = shareSortNumber(a);
+    const bv = shareSortNumber(b);
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return bv - av;
+  }
+
+  function sortShareItems(items) {
+    const mode = shares.sort || "default";
+    if (mode !== "max_close_gain_desc" && mode !== "max_close_drop_desc") return items || [];
+    const list = [...(items || [])];
+    list.sort((a, b) => {
+      let diff = 0;
+      if (mode === "max_close_gain_desc") {
+        diff = compareShareSortValues(a.max_close_gain, b.max_close_gain);
+      } else if (mode === "max_close_drop_desc") {
+        const aDrop = shareSortNumber(a.max_close_drop);
+        const bDrop = shareSortNumber(b.max_close_drop);
+        diff = compareShareSortValues(
+          aDrop == null ? null : Math.abs(aDrop),
+          bDrop == null ? null : Math.abs(bDrop)
+        );
+      }
+      if (diff) return diff;
+      return String(a.code || "").localeCompare(String(b.code || ""));
+    });
+    return list;
+  }
+
   function partitionShareItems(items) {
     const near = [];
     const under = [];
-    for (const row of items || []) {
+    for (const row of sortShareItems(items)) {
       if (!row || !row.code) continue;
       if (isNearSignal(row)) near.push(row);
       else if (isUnderCross(row)) under.push(row);
     }
     return { near, under };
+  }
+
+  function applySelectedSharesDay() {
+    const day = shares.dayRows.find((d) => d.date === shares.selectedDate) || {};
+    const parts = partitionShareItems(day.items || []);
+    shares.nearItems = parts.near;
+    shares.underItems = parts.under;
+    shares.nearCount = parts.near.length;
+    shares.underCount = parts.under.length;
   }
 
   function renderShareDays() {
@@ -889,7 +936,7 @@
         allItems.push(item);
       }
     }
-    // 事后涨幅字段已由接口回填到每行；直接按信号类别分区。
+    // 后期涨跌字段已由接口回填到每行；先按当前排序，再按信号类别分区。
     const parts = partitionShareItems(allItems);
     shares.nearItems = parts.near;
     shares.underItems = parts.under;
@@ -926,14 +973,7 @@
       shares.selectedDate = chosen;
     }
 
-    if (shares.selectedDate) {
-      const day = shares.dayRows.find((d) => d.date === shares.selectedDate) || {};
-      const parts = partitionShareItems(day.items || []);
-      shares.nearItems = parts.near;
-      shares.underItems = parts.under;
-      shares.nearCount = parts.near.length;
-      shares.underCount = parts.under.length;
-    }
+    applySelectedSharesDay();
   }
 
   /* ---------- 个股分析 end ---------- */
@@ -1154,16 +1194,23 @@
       shares.asof = ev.target.value || "";
     });
 
+    const shareSortSelect = $("shareSortSelect");
+    if (shareSortSelect) {
+      shareSortSelect.value = shares.sort;
+      shareSortSelect.addEventListener("change", (ev) => {
+        shares.sort = ev.target.value || "default";
+        applySelectedSharesDay();
+        renderShareBoards();
+      });
+    }
+
     $("shareDateList").addEventListener("click", (ev) => {
       const btn = ev.target.closest("button[data-date]");
       if (!btn) return;
       const date = btn.dataset.date;
       if (!date || date === shares.selectedDate) return;
       shares.selectedDate = date;
-      const day = shares.dayRows.find((d) => d.date === date) || {};
-      const parts = partitionShareItems(day.items || []);
-      shares.nearItems = parts.near;
-      shares.underItems = parts.under;
+      applySelectedSharesDay();
       renderShareDays();
       renderShareBoards();
     });

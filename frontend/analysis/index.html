@@ -139,6 +139,14 @@
               <span class="field-label">涨幅截止</span>
               <input type="date" id="shareAsOfDate" class="field-input" />
             </label>
+            <label class="field">
+              <span class="field-label">排序</span>
+              <select id="shareSortSelect" class="field-input" aria-label="股票列表排序">
+                <option value="default">默认顺序</option>
+                <option value="max_close_gain_desc">最大收盘涨幅降序</option>
+                <option value="max_close_drop_desc">最大收盘跌幅降序</option>
+              </select>
+            </label>
             <button type="button" id="shareRefreshBtn" class="btn">开始分析</button>
           </div>
           <div id="shareErrorBox" class="error hidden"></div>
@@ -166,7 +174,7 @@
                     <th class="num">反向日</th>
                     <th>收盘价低点</th>
                     <th>最低价低点</th>
-                    <th>事后涨跌</th>
+                    <th>后期涨跌</th>
                   </tr>
                 </thead>
                 <tbody id="shareNearBody"></tbody>
@@ -189,7 +197,7 @@
                     <th class="num">反向日</th>
                     <th>收盘价低点</th>
                     <th>最低价低点</th>
-                    <th>事后涨跌</th>
+                    <th>后期涨跌</th>
                   </tr>
                 </thead>
                 <tbody id="shareUnderBody"></tbody>

@@ -16468,6 +16468,8 @@ const lcEls = {
   chartHoverCard: document.getElementById("lcChartHoverCard"),
   chartAxisScroll: document.getElementById("lcChartAxisScroll"),
   chartScrollBar: document.getElementById("lcChartScrollBar"),
+  chartStepPrev: document.getElementById("lcChartStepPrev"),
+  chartStepNext: document.getElementById("lcChartStepNext"),
   indexChart: document.getElementById("lcIndexChart"),
   indexChartWrap: document.getElementById("lcIndexChartWrap"),
   indexChartEmpty: document.getElementById("lcIndexChartEmpty"),
@@ -18944,6 +18946,14 @@ function syncLcChartScrollBar() {
   };
   apply(lcEls.chartScrollBar, lcEls.chartAxisScroll);
   apply(lcEls.indexChartScrollBar, lcEls.indexChartAxisScroll);
+  const hasBars = total > 0;
+  if (lcEls.chartStepPrev) {
+    lcEls.chartStepPrev.disabled =
+      !hasBars || lcChartState.historyLoading || (start <= 0 && lcChartState.historyExhausted);
+  }
+  if (lcEls.chartStepNext) {
+    lcEls.chartStepNext.disabled = !hasBars || start >= maxStart;
+  }
 }
 
 function resetLcChartViewport(allItems) {
@@ -18976,6 +18986,25 @@ function setLcChartViewStart(nextStart, { render = true, hoverIndex = null } = {
   if (start <= 15) void loadOlderLcKline();
   scheduleLcUndulate();
   return start;
+}
+
+async function stepLcChartByBar(delta) {
+  const win = lcChartViewWindow();
+  if (!win.total) return;
+  hideLcHoverCard();
+  hideLcIndexHoverPair();
+  const step = Number(delta) < 0 ? -1 : 1;
+  const next = win.start + step;
+  if (next >= 0 && next <= win.maxStart) {
+    setLcChartViewStart(next);
+    return;
+  }
+  if (step < 0 && !lcChartState.historyExhausted && !lcChartState.historyLoading) {
+    const before = win.total;
+    await loadOlderLcKline();
+    const added = (lcChartState.allItems || []).length - before;
+    if (added > 0) setLcChartViewStart(Math.max(0, added - 1));
+  }
 }
 
 function zoomLcChartViewport(anchorRatio, factor, { render = true } = {}) {
@@ -19925,6 +19954,9 @@ function setupLcChart() {
   if (!lcEls.priceChart || lcChartState.bound) return;
   lcChartState.bound = true;
   bindLcSigma();
+
+  lcEls.chartStepPrev?.addEventListener("click", () => void stepLcChartByBar(-1));
+  lcEls.chartStepNext?.addEventListener("click", () => void stepLcChartByBar(1));
 
   lcEls.comboMetricSelect?.addEventListener("change", () => {
     applyLcComboMetric(lcEls.comboMetricSelect.value);
