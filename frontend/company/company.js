@@ -17010,6 +17010,7 @@ const lcChartState = {
 
 let lcComboMetricState = "macd";
 
+const LC_MACD_FAMILY = new Set(["macd", "macdp"]);
 const LC_MACD_PRICE_OPTS = new Set(["close", "open", "high", "low"]);
 const LC_MACD_PARAM_PRESETS = [
   { key: "12,26,9", fast: 12, slow: 26, signal: 9 },
@@ -17019,7 +17020,16 @@ const LC_MACD_PARAM_DEFAULT = LC_MACD_PARAM_PRESETS[1];
 const LC_MACD_DIF_COLOR = "#f0b429";
 const LC_MACD_DEA_COLOR = "#7aa2f7";
 
+function isLcMacdFamily(metric = lcComboMetricState) {
+  return LC_MACD_FAMILY.has(metric);
+}
+
+function lcMacdFamilyLabel(metric = lcComboMetricState) {
+  return metric === "macdp" ? "MACDP" : "MACD";
+}
+
 const lcMacdState = {
+  variant: "macd",
   fast: LC_MACD_PARAM_DEFAULT.fast,
   slow: LC_MACD_PARAM_DEFAULT.slow,
   signal: LC_MACD_PARAM_DEFAULT.signal,
@@ -17061,31 +17071,40 @@ const lcIndexState = {
 function syncLcComboLegend() {
   const card = lcEls.priceChart?.closest(".chart-card--kline");
   const metric = lcComboMetricState;
-  const macd = metric === "macd";
+  const macdFamily = isLcMacdFamily(metric);
   if (card) card.classList.toggle("is-combo", true);
   if (lcEls.comboMetricWrap) lcEls.comboMetricWrap.classList.remove("hidden");
   if (lcEls.compareIndexWrap) lcEls.compareIndexWrap.classList.toggle("hidden", metric !== "compare");
   if (lcEls.compareFactorWrap) lcEls.compareFactorWrap.classList.toggle("hidden", metric !== "compare");
-  if (lcEls.macdPriceWrap) lcEls.macdPriceWrap.classList.toggle("hidden", !macd);
-  if (lcEls.macdParamsWrap) lcEls.macdParamsWrap.classList.toggle("hidden", !macd);
+  // 价格字段仅标准 MACD；参数快慢信号 MACD / MACDP 共用
+  if (lcEls.macdPriceWrap) lcEls.macdPriceWrap.classList.toggle("hidden", metric !== "macd");
+  if (lcEls.macdParamsWrap) lcEls.macdParamsWrap.classList.toggle("hidden", !macdFamily);
   if (lcEls.peLegendWrap) lcEls.peLegendWrap.classList.toggle("hidden", metric !== "pe");
   if (lcEls.fundflowLegendWrap) lcEls.fundflowLegendWrap.classList.toggle("hidden", metric !== "fundflow");
   if (lcEls.marginLegendWrap) lcEls.marginLegendWrap.classList.toggle("hidden", metric !== "margin");
 }
 
-function readLcMacdParamsFromUi() {
+function readLcMacdParamsFromUi(variant = lcComboMetricState) {
+  const preset = resolveLcMacdParamPreset(
+    lcEls.macdParamsSelect?.value || lcMacdParamsKey(lcMacdState)
+  );
+  if (variant === "macdp") {
+    return { fast: preset.fast, slow: preset.slow, signal: preset.signal, price: "avg" };
+  }
   const priceRaw = String(lcEls.macdPriceSelect?.value || lcMacdState.price || "close")
     .trim()
     .toLowerCase();
   const price = LC_MACD_PRICE_OPTS.has(priceRaw) ? priceRaw : "close";
-  const preset = resolveLcMacdParamPreset(
-    lcEls.macdParamsSelect?.value || lcMacdParamsKey(lcMacdState)
-  );
   return { fast: preset.fast, slow: preset.slow, signal: preset.signal, price };
 }
 
 function syncLcMacdParamsUi(params = lcMacdState) {
-  if (lcEls.macdPriceSelect && lcEls.macdPriceSelect.value !== params.price) {
+  if (
+    params.price &&
+    params.price !== "avg" &&
+    lcEls.macdPriceSelect &&
+    lcEls.macdPriceSelect.value !== params.price
+  ) {
     lcEls.macdPriceSelect.value = params.price;
   }
   const key = lcMacdParamsKey(params);
@@ -17094,8 +17113,9 @@ function syncLcMacdParamsUi(params = lcMacdState) {
   }
 }
 
-function lcMacdCacheKey(stock, beg, end, params) {
+function lcMacdCacheKey(stock, beg, end, params, variant = "macd") {
   return [
+    variant || "macd",
     stock || "",
     beg || "",
     end || "",
@@ -17118,13 +17138,16 @@ function abortLcMacd() {
 }
 
 async function refreshLcMacd({ force = false } = {}) {
-  if (lcComboMetricState !== "macd") return null;
+  if (!isLcMacdFamily()) return null;
+  const variant = lcComboMetricState === "macdp" ? "macdp" : "macd";
+  const label = lcMacdFamilyLabel(variant);
   const stock = String(code || "").trim();
   const all = lcChartState.allItems || [];
   if (!stock || !all.length) {
     lcMacdState.items = [];
     lcMacdState.key = "";
     lcMacdState.error = "";
+    lcMacdState.variant = variant;
     renderLcChart();
     return null;
   }
@@ -17136,14 +17159,15 @@ async function refreshLcMacd({ force = false } = {}) {
     return null;
   }
 
-  const params = readLcMacdParamsFromUi();
+  const params = readLcMacdParamsFromUi(variant);
+  lcMacdState.variant = variant;
   lcMacdState.fast = params.fast;
   lcMacdState.slow = params.slow;
   lcMacdState.signal = params.signal;
   lcMacdState.price = params.price;
   syncLcMacdParamsUi(params);
 
-  const key = lcMacdCacheKey(stock, beg, end, params);
+  const key = lcMacdCacheKey(stock, beg, end, params, variant);
   if (lcMacdState.loading && lcMacdState.key === key && !force) {
     return lcMacdState.items || null;
   }
@@ -17171,10 +17195,12 @@ async function refreshLcMacd({ force = false } = {}) {
       fast: String(params.fast),
       slow: String(params.slow),
       signal: String(params.signal),
-      price: params.price,
       adjust: "qfq",
     });
-    const json = await api(`/api/stocks/line-macd?${qs.toString()}`, {
+    if (variant === "macd") qs.set("price", params.price);
+    const path =
+      variant === "macdp" ? "/api/stocks/line-macdp" : "/api/stocks/line-macd";
+    const json = await api(`${path}?${qs.toString()}`, {
       signal: ac?.signal,
     });
     if (gen !== lcMacdState.gen) return null;
@@ -17190,7 +17216,7 @@ async function refreshLcMacd({ force = false } = {}) {
     if (gen !== lcMacdState.gen) return null;
     lcMacdState.items = [];
     lcMacdState.key = "";
-    lcMacdState.error = err?.message || String(err);
+    lcMacdState.error = err?.message || String(err) || `${label} 加载失败`;
     return null;
   } finally {
     if (gen === lcMacdState.gen) {
@@ -17341,9 +17367,12 @@ function fmtMacdNum(n) {
   return v.toFixed(3);
 }
 
-function macdHoverRows(hit, row) {
+function macdHoverRows(hit, row, { histLabel = "MACD" } = {}) {
   if (!hit) return [];
   const rows = [];
+  if (hit.price != null && Number.isFinite(Number(hit.price)) && histLabel === "MACDP") {
+    rows.push(row("均价", escapeHtml(fmtMacdNum(hit.price))));
+  }
   if (hit.dif != null && Number.isFinite(Number(hit.dif))) {
     rows.push(
       row("DIF", `<span style="color:${LC_MACD_DIF_COLOR}">${escapeHtml(fmtMacdNum(hit.dif))}</span>`)
@@ -17357,7 +17386,7 @@ function macdHoverRows(hit, row) {
   if (hit.macd != null && Number.isFinite(Number(hit.macd))) {
     const n = Number(hit.macd);
     const cls = n > 0 ? "change-up" : n < 0 ? "change-down" : "";
-    rows.push(row("MACD", `<span class="${cls}">${escapeHtml(fmtMacdNum(n))}</span>`));
+    rows.push(row(histLabel, `<span class="${cls}">${escapeHtml(fmtMacdNum(n))}</span>`));
   }
   return rows;
 }
@@ -17695,7 +17724,10 @@ function syncLcJettonGeometry() {
 
   const metric = lcComboMetricState;
   const fundflow =
-    metric === "fundflow" || metric === "margin" || metric === "compare" || metric === "macd";
+    metric === "fundflow" ||
+    metric === "margin" ||
+    metric === "compare" ||
+    isLcMacdFamily(metric);
   const layout = chartLayout(dw, dh, { combo: true, fundflow });
   const price = layout?.price;
   const volume = layout?.volume;
@@ -19527,7 +19559,7 @@ function zoomLcChartViewport(anchorRatio, factor, { render = true } = {}) {
           syncLcChartScrollBar();
           refreshLcChartWindowStatus();
           if (lcComboMetricState === "compare") await refreshLcComparePane();
-          else if (lcComboMetricState === "macd") await refreshLcMacd();
+          else if (isLcMacdFamily()) await refreshLcMacd();
           else renderLcChart();
         }
       });
@@ -19588,7 +19620,7 @@ async function loadOlderLcKline() {
         } catch {
           renderLcChart();
         }
-      } else if (lcComboMetricState === "macd") {
+      } else if (isLcMacdFamily()) {
         try {
           await refreshLcMacd();
         } catch {
@@ -19770,7 +19802,10 @@ function syncLcIndexCanvasAspect() {
 
   const metric = lcComboMetricState;
   const fundflow =
-    metric === "fundflow" || metric === "margin" || metric === "compare" || metric === "macd";
+    metric === "fundflow" ||
+    metric === "margin" ||
+    metric === "compare" ||
+    isLcMacdFamily(metric);
   const dayLayout = chartLayout(dw, dh, { combo: true, fundflow });
   // 日K：画布顶≈表头底 → 成交量底；指数非 combo 时成交量底 = h - pad.bottom
   const daySpan = dayLayout.volume.y + dayLayout.volume.h;
@@ -20084,10 +20119,10 @@ function renderLcChart(hoverIndex = null) {
   const fundflow = metric === "fundflow";
   const margin = metric === "margin";
   const compare = metric === "compare";
-  const macd = metric === "macd";
+  const macdFamily = isLcMacdFamily(metric);
   const layout = chartLayout(cssW, cssH, {
     combo: true,
-    fundflow: fundflow || margin || compare || macd,
+    fundflow: fundflow || margin || compare || macdFamily,
   });
   const maBundle = getKlineMaBundle(
     lcChartState.allItems,
@@ -20125,14 +20160,17 @@ function renderLcChart(hoverIndex = null) {
     price: layout.pe,
     volume: { x: layout.pe.x, y: layout.pe.y + layout.pe.h, w: layout.pe.w, h: 0 },
   };
-  if (macd) {
+  if (macdFamily) {
+    const macdLabel = lcMacdFamilyLabel(metric);
     const macdItems = alignMetricsToKline(items, lcMacdState.items);
     const painted = drawMacdPane(ctx, metricPane, macdItems, metricColors, hoverIndex);
     if (!painted) {
       drawPaneCenterLabel(
         ctx,
         layout.pe,
-        lcMacdState.loading ? "MACD 加载中…" : lcMacdState.error || "暂无 MACD",
+        lcMacdState.loading
+          ? `${macdLabel} 加载中…`
+          : lcMacdState.error || `暂无 ${macdLabel}`,
         metricColors
       );
     }
@@ -20268,9 +20306,13 @@ function fillLcKlineQuoteCard(absIndex) {
     const hit = window.LineCompare?.paneAtDate?.(d.time);
     if (hit) auxRows.push(...compareHoverRows(hit, row));
     auxRows.push(...undulateHoverRows(d.time, row));
-  } else if (lcComboMetricState === "macd") {
+  } else if (isLcMacdFamily()) {
     const hit = alignMetricsToKline([d], lcMacdState.items)[0];
-    if (hit) auxRows.push(...macdHoverRows(hit, row));
+    if (hit) {
+      auxRows.push(
+        ...macdHoverRows(hit, row, { histLabel: lcMacdFamilyLabel() })
+      );
+    }
   } else {
     const peRow = alignMetricsToKline([d], peState.allItems)[0];
     if (peRow) auxRows.push(...peHoverRows(peRow, row));
@@ -20332,7 +20374,7 @@ function panLcChartByPixels(dx, canvasWidth) {
 
 function applyLcComboMetric(metric) {
   if (
-    !["pe", "fundflow", "margin", "compare", "macd"].includes(metric) ||
+    !["pe", "fundflow", "margin", "compare", "macd", "macdp"].includes(metric) ||
     metric === lcComboMetricState
   ) {
     return;
@@ -20349,7 +20391,7 @@ function applyLcComboMetric(metric) {
   } else if (metric === "compare") {
     void refreshLcComparePane();
     return;
-  } else if (metric === "macd") {
+  } else if (isLcMacdFamily(metric)) {
     void refreshLcMacd();
     return;
   }
@@ -20408,7 +20450,7 @@ async function loadLcChart({ force = false } = {}) {
     void refreshLcJetton({ force: true });
     if (lcComboMetricState === "compare") {
       await refreshLcComparePane();
-    } else if (lcComboMetricState === "macd") {
+    } else if (isLcMacdFamily()) {
       await refreshLcMacd();
     } else {
       renderLcChart();
@@ -20457,7 +20499,7 @@ function setupLcChart() {
     hideLcHoverCard();
   });
   const onLcMacdParamChange = () => {
-    if (lcComboMetricState !== "macd") return;
+    if (!isLcMacdFamily()) return;
     void refreshLcMacd({ force: true });
   };
   lcEls.macdPriceSelect?.addEventListener("change", onLcMacdParamChange);

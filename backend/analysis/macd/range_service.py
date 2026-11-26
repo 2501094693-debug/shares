@@ -44,7 +44,6 @@ class MacdRangeScreenService:
         *,
         start: str,
         end: str,
-        asof: str,
         band: float,
         index: str,
         factor: str,
@@ -64,10 +63,9 @@ class MacdRangeScreenService:
         wd = f"{float(w_div):.2g}".replace(".", "p")
         start_s = str(start or "").strip() or "na"
         end_s = str(end or "").strip() or "latest"
-        asof_s = str(asof or "").strip() or "latest"
         ct_s = str(cross_type or "").strip().lower() or DEFAULT_CROSS_TYPE
         return (
-            f"s{start_s}_e{end_s}_a{asof_s}_b{band_s}_i{index}_f{factor}"
+            f"s{start_s}_e{end_s}_b{band_s}_i{index}_f{factor}"
             f"_l{lookback}_adj{adjust}_n{near_s}_m{fast}-{slow}-{signal}"
             f"_w{wp}-{wd}_ct{ct_s}_{RANGE_CACHE_TAG}"
         )
@@ -127,7 +125,6 @@ class MacdRangeScreenService:
         *,
         start: str,
         end: str = "",
-        asof: str = "",
         band: float = DEFAULT_BAND,
         index: str = DEFAULT_INDEX,
         factor: str = DEFAULT_FACTOR,
@@ -145,11 +142,9 @@ class MacdRangeScreenService:
     ) -> dict[str, Any]:
         start_key = _iso(start)
         end_key = _iso(end) if str(end or "").strip() else ""
-        asof_key = _iso(asof) if str(asof or "").strip() else ""
         key = self._make_key(
             start=start_key,
             end=end_key,
-            asof=asof_key,
             band=band,
             index=index,
             factor=factor,
@@ -228,7 +223,6 @@ class MacdRangeScreenService:
                 key,
                 start_key,
                 end_key,
-                asof_key,
                 band,
                 index,
                 factor,
@@ -257,7 +251,6 @@ class MacdRangeScreenService:
         key: str,
         start: str,
         end: str,
-        asof: str,
         band: float,
         index: str,
         factor: str,
@@ -285,7 +278,6 @@ class MacdRangeScreenService:
             result = screen_macd_range(
                 start=start,
                 end=end,
-                asof=asof,
                 band=band,
                 index=index,
                 factor=factor,

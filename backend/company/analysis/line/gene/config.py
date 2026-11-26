@@ -5,12 +5,14 @@
 
 from __future__ import annotations
 
-from analysis.macd.config import DEFAULT_NEAR_RATIO
 from company.analysis.line.MACD.core import (
     DEFAULT_FAST,
     DEFAULT_SIGNAL,
     DEFAULT_SLOW,
 )
+
+# 与 analysis.macd.config 一致；本地自持，避免 gene↔analysis 循环导入
+DEFAULT_NEAR_RATIO = 0.10
 
 # key → (fast, slow, signal)
 MACD_PRESETS: dict[str, tuple[int, int, int]] = {

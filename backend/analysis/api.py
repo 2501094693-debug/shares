@@ -147,7 +147,6 @@ def get_macd_range_screen(
         description=f"区间起始交易日 YYYY-MM-DD（最多 {MACD_MAX_RANGE_DAYS} 个交易日）",
     ),
     end: str = Query("", description="区间结束交易日；空=最新交易日"),
-    asof: str = Query("", description="涨幅统计截止日；空=最新交易日"),
     band: float = Query(MACD_BAND, description="波动带（小数，0.09=±9%）"),
     index: str = Query(MACD_INDEX, description="对比指数公开码"),
     factor: str = Query(MACD_FACTOR, description="波动口径：open/high/low/close/all"),
@@ -177,9 +176,11 @@ def get_macd_range_screen(
         description="并发线程数",
     ),
 ):
-    """区间内逐日 MACD 金叉筛选，并统计信号日至 asof 的最大收盘涨/跌幅。
+    """区间内逐日 MACD 金叉筛选，并统计 DIF≥DEA 段事后最大收盘涨/跌幅。
 
-    涨幅基准为信号日收盘价。``refresh=0`` 复用同参数新鲜结果；``refresh=1`` 清缓存重跑。
+    涨跌基准为信号日收盘；截止日为金叉后首次 DIF<DEA（无则最新日）。
+    即将金叉若后续未真正金叉则标无效。``refresh=0`` 复用同参数新鲜结果；
+    ``refresh=1`` 清缓存重跑。
     """
     band_abs = abs(float(band))
     if band_abs not in MACD_ALLOWED_BANDS:
@@ -203,12 +204,6 @@ def get_macd_range_screen(
             end_key = _iso(end_key)
         except ValueError as exc:
             return err(f"end 格式错误：{exc}", 400)
-    asof_key = str(asof or "").strip()
-    if asof_key:
-        try:
-            asof_key = _iso(asof_key)
-        except ValueError as exc:
-            return err(f"asof 格式错误：{exc}", 400)
     if end_key and start_key > end_key:
         return err("start 不能晚于 end", 400)
     if lookback < 60 or lookback > EVALUATE_MAX_LOOKBACK:
@@ -227,7 +222,6 @@ def get_macd_range_screen(
         payload = macd_range_service.run_or_poll(
             start=start_key,
             end=end_key,
-            asof=asof_key,
             band=band_abs,
             index=index_code,
             factor=factor_key,

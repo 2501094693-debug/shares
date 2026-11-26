@@ -50,6 +50,7 @@ from company.analysis.line.undulate.api import router as line_undulate_router
 from company.analysis.line.section.api import router as line_section_router
 from company.analysis.line.T.api import router as line_trader_router
 from company.analysis.line.MACD.api import router as line_macd_router
+from company.analysis.line.MACDP.api import router as line_macdp_router
 from company.analysis.line.gene.api import router as line_gene_router
 from company.analysis.line.chip.api import router as line_chip_router
 from company.analysis.line.chip.v2_api import router as line_chip_v2_router
@@ -234,6 +235,7 @@ app.include_router(line_undulate_router)
 app.include_router(line_section_router)
 app.include_router(line_trader_router)
 app.include_router(line_macd_router)
+app.include_router(line_macdp_router)
 app.include_router(line_gene_router)
 app.include_router(line_chip_router)
 app.include_router(line_chip_v2_router)

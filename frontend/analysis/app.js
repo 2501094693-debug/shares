@@ -4,7 +4,7 @@
   const PAGE_SUB_INDUSTRY =
     "按交易日复盘申万三级行业轮动：上涨/待涨/领涨均按所选交易日切片；行情与主力净流入（当日/5日/10日）回溯至该日。点击行业进入行情树";
   const PAGE_SUB_SHARES =
-    "按区间回测 MACD 水下金叉 / 即将水下金叉：稳定区间、股指反向日与价格前低综合分；点击股票进入公司详情";
+    "按区间回测 MACD 水下金叉 / 即将水下金叉：涨跌截至 DIF≥DEA 后首个 DIF<DEA；即将金叉未成立则标无效；点击股票进入公司详情";
   const SHARE_MACD_PRESETS = [
     { key: "10,20,7", fast: 10, slow: 20, signal: 7 },
     { key: "12,26,9", fast: 12, slow: 26, signal: 9 },
@@ -36,7 +36,6 @@
     status: "idle",
     start: "",
     end: "",
-    asof: "",
     dayRows: [],
     selectedDate: "",
     sort: "default",
@@ -652,13 +651,10 @@
     const twoMonthsAgo = localIso(twoMonthsAgoDate);
     const startEl = $("shareStartDate");
     const endEl = $("shareEndDate");
-    const asofEl = $("shareAsOfDate");
     if (startEl && shares.start) startEl.value = shares.start;
     else if (startEl && !startEl.value) startEl.value = twoMonthsAgo;
     if (endEl && shares.end) endEl.value = shares.end;
     else if (endEl && !endEl.value) endEl.value = today;
-    if (asofEl && shares.asof) asofEl.value = shares.asof;
-    else if (asofEl && !asofEl.value) asofEl.value = today;
   }
 
   function fmtGainPct(value) {
@@ -778,16 +774,21 @@
     body.innerHTML = items.map((row) => {
       const gapOk = row.near_by_relative_gap === true;
       const velOk = row.near_by_prediction === true;
-      const scoreClose = scoreTone(row.score_close);
-      const scoreLow = scoreTone(row.score_low);
-      const lastGain = fmtGainPct(row.last_close_gain);
+      const invalid = row.valid === false || row.judgment_failed === true;
+      const endGain = fmtGainPct(row.end_close_gain);
       const maxGain = fmtGainPct(row.max_close_gain);
       const maxDrop = fmtGainPct(row.max_close_drop);
       const closeDate = row.low_close_date ? fmtShortDate(row.low_close_date) : "—";
       const closePrice = Number.isFinite(row.low_close_price) ? row.low_close_price.toFixed(2) : "—";
       const lowDate = row.low_low_date ? fmtShortDate(row.low_low_date) : "—";
       const lowPrice = Number.isFinite(row.low_low_price) ? row.low_low_price.toFixed(2) : "—";
-      return `<tr class="is-row is-clickable" data-code="${esc(row.code)}" data-name="${esc(row.name || row.code)}" title="${esc(row.name || row.code)} 点击查看公司详情">
+      const endLabel = row.end_date ? fmtShortDate(row.end_date) : "—";
+      const gainCell = invalid
+        ? `<span data-tone="down">无效</span><br><span class="muted">金叉未成立</span>`
+        : `<span data-tone="${tone(row.max_close_gain)}">涨 ${maxGain}（${esc(row.max_close_date ? fmtShortDate(row.max_close_date) : "—")}）</span><br>
+          <span data-tone="${tone(row.max_close_drop)}">跌 ${maxDrop}（${esc(row.max_close_drop_date ? fmtShortDate(row.max_close_drop_date) : "—")}）</span><br>
+          <span class="muted">截止 ${endGain}（${esc(endLabel)}）</span>`;
+      return `<tr class="is-row is-clickable${invalid ? " is-invalid" : ""}" data-code="${esc(row.code)}" data-name="${esc(row.name || row.code)}" title="${esc(row.name || row.code)} 点击查看公司详情">
         <td>
           <div class="share-name"><strong>${esc(row.name || row.code)}</strong></div>
           <div class="share-code">${esc(row.code)}</div>
@@ -801,11 +802,7 @@
         <td class="share-kv" data-tone="${tone(row.reverse_count)}">${row.reverse_count == null ? "—" : row.reverse_count}</td>
         <td class="share-kv">${closeDate}<br>${closePrice}<br>${fmtScore(row.score_close)}</td>
         <td class="share-kv">${lowDate}<br>${lowPrice}<br>${fmtScore(row.score_low)}</td>
-        <td class="share-kv">
-          <span data-tone="${tone(row.max_close_gain)}">涨 ${maxGain}（${esc(row.max_close_date ? fmtShortDate(row.max_close_date) : "—")}）</span><br>
-          <span data-tone="${tone(row.max_close_drop)}">跌 ${maxDrop}（${esc(row.max_close_drop_date ? fmtShortDate(row.max_close_drop_date) : "—")}）</span><br>
-          <span class="muted">最新 ${lastGain}</span>
-        </td>
+        <td class="share-kv">${gainCell}</td>
       </tr>`;
     }).join("");
   }
@@ -879,7 +876,6 @@
     const qs = new URLSearchParams();
     qs.set("start", shares.start);
     if (shares.end) qs.set("end", shares.end);
-    if (shares.asof) qs.set("asof", shares.asof);
     qs.set("fast", String(shares.fast));
     qs.set("slow", String(shares.slow));
     qs.set("signal", String(shares.signal));
@@ -1217,9 +1213,6 @@
     $("shareEndDate").addEventListener("change", (ev) => {
       shares.end = ev.target.value || "";
     });
-    $("shareAsOfDate").addEventListener("change", (ev) => {
-      shares.asof = ev.target.value || "";
-    });
 
     const shareMacdSelect = $("shareMacdSelect");
     if (shareMacdSelect) {
@@ -1262,13 +1255,11 @@
         try {
           const sEl = $("shareStartDate");
           const eEl = $("shareEndDate");
-          const aEl = $("shareAsOfDate");
           sessionStorage.setItem(
             "orbit:analysis-shares",
             JSON.stringify({
               start: (sEl && sEl.value) || shares.start || "",
               end: (eEl && eEl.value) || shares.end || "",
-              asof: (aEl && aEl.value) || shares.asof || "",
               selectedDate: shares.selectedDate || "",
               macdKey: shares.macdKey || SHARE_MACD_DEFAULT.key,
             })
@@ -1285,11 +1276,9 @@
     syncSharesDateInputs();
     const startEl = $("shareStartDate");
     const endEl = $("shareEndDate");
-    const asofEl = $("shareAsOfDate");
     const macdEl = $("shareMacdSelect");
     shares.start = (startEl && startEl.value) || shares.start;
     shares.end = (endEl && endEl.value) || "";
-    shares.asof = (asofEl && asofEl.value) || "";
     applyShareMacdPreset((macdEl && macdEl.value) || shares.macdKey);
     if (!shares.start) {
       shares.error = "请选择起始日";
@@ -1341,7 +1330,6 @@
     shares.mode = true;
     if (st.start) shares.start = st.start;
     if (st.end) shares.end = st.end;
-    if (st.asof) shares.asof = st.asof;
     if (st.selectedDate) shares.selectedDate = st.selectedDate;
     if (st.macdKey) applyShareMacdPreset(st.macdKey);
     return true;

@@ -1,70 +1,120 @@
-"""事后最大涨幅纯函数单测。"""
+"""信号后 DIF≥DEA 段涨跌纯函数单测。"""
 
 from __future__ import annotations
 
 import unittest
 
-from analysis.macd.forward import max_forward_gains_from_bars
+from analysis.macd.forward import forward_gains_after_signal
 
 
-def _bar(date: str, *, o: float, h: float, l: float, c: float) -> dict:
-    return {"time": date, "open": o, "high": h, "low": l, "close": c}
+def _macd(
+    date: str,
+    *,
+    dif: float,
+    dea: float,
+    close: float,
+) -> dict:
+    return {
+        "date": date,
+        "dif": dif,
+        "dea": dea,
+        "macd": 2.0 * (dif - dea),
+        "price": close,
+        "close": close,
+    }
 
 
-class MaxForwardGainsTests(unittest.TestCase):
-    def test_basic(self) -> None:
-        bars = [
-            _bar("2026-01-08", o=10, h=10.5, l=9.8, c=10.0),
-            _bar("2026-01-09", o=10.1, h=11.0, l=10.0, c=10.5),  # signal
-            _bar("2026-01-10", o=10.6, h=12.0, l=10.4, c=11.5),
-            _bar("2026-01-13", o=11.2, h=11.8, l=10.9, c=11.0),
+class ForwardGainsAfterSignalTests(unittest.TestCase):
+    def test_cross_until_first_dif_below(self) -> None:
+        # 金叉日 01-09 DIF>=DEA，01-10 仍上，01-13 首次 DIF<DEA → 截止
+        items = [
+            _macd("2026-01-08", dif=-0.2, dea=-0.1, close=9.5),
+            _macd("2026-01-09", dif=0.1, dea=0.0, close=10.0),  # signal
+            _macd("2026-01-10", dif=0.2, dea=0.05, close=11.0),
+            _macd("2026-01-13", dif=-0.1, dea=0.0, close=10.5),  # break
+            _macd("2026-01-14", dif=-0.2, dea=-0.05, close=12.0),  # 之后不计
         ]
-        out = max_forward_gains_from_bars(bars, signal_date="2026-01-09")
-        self.assertEqual(out["base_close"], 10.5)
+        out = forward_gains_after_signal(
+            items, signal_date="2026-01-09", is_near=False
+        )
+        self.assertTrue(out["valid"])
+        self.assertEqual(out["end_date"], "2026-01-13")
+        self.assertEqual(out["end_source"], "break")
         self.assertEqual(out["hold_days"], 3)
-        # max close = 11.5 → 11.5/10.5 - 1
-        self.assertAlmostEqual(out["max_close_gain"], 11.5 / 10.5 - 1.0, places=6)
+        self.assertAlmostEqual(out["max_close_gain"], 0.1, places=6)  # 11/10-1
         self.assertEqual(out["max_close_date"], "2026-01-10")
-        # 区间内收盘最低相对基准：信号日自身 0（11.0、11.5 均高于基）
         self.assertAlmostEqual(out["max_close_drop"], 0.0, places=6)
-        self.assertEqual(out["max_close_drop_date"], "2026-01-09")
-        # max high = 12.0
-        self.assertAlmostEqual(out["max_high_gain"], 12.0 / 10.5 - 1.0, places=6)
-        self.assertEqual(out["max_high_date"], "2026-01-10")
+        self.assertAlmostEqual(out["end_close_gain"], 0.05, places=6)  # 10.5/10-1
 
-    def test_max_close_drop(self) -> None:
-        bars = [
-            _bar("2026-01-09", o=10, h=10.5, l=9.5, c=10.0),  # signal
-            _bar("2026-01-10", o=10, h=11.0, l=8.0, c=8.5),
-            _bar("2026-01-13", o=8.5, h=12.0, l=8.4, c=11.5),
+    def test_open_ended_uses_latest(self) -> None:
+        items = [
+            _macd("2026-01-09", dif=0.1, dea=0.0, close=10.0),
+            _macd("2026-01-10", dif=0.2, dea=0.05, close=10.5),
+            _macd("2026-01-13", dif=0.3, dea=0.1, close=11.0),
         ]
-        out = max_forward_gains_from_bars(bars, signal_date="2026-01-09")
-        self.assertAlmostEqual(out["max_close_gain"], 0.15, places=6)
-        self.assertEqual(out["max_close_date"], "2026-01-13")
-        self.assertAlmostEqual(out["max_close_drop"], -0.15, places=6)
-        self.assertEqual(out["max_close_drop_date"], "2026-01-10")
-        self.assertEqual(out["max_close_drop_price"], 8.5)
+        out = forward_gains_after_signal(
+            items, signal_date="2026-01-09", is_near=False
+        )
+        self.assertTrue(out["valid"])
+        self.assertTrue(out["open_ended"])
+        self.assertEqual(out["end_source"], "latest")
+        self.assertEqual(out["end_date"], "2026-01-13")
+        self.assertAlmostEqual(out["max_close_gain"], 0.1, places=6)
+        self.assertAlmostEqual(out["end_close_gain"], 0.1, places=6)
+
+    def test_near_ok_then_break(self) -> None:
+        # 即将：01-09 DIF<DEA；01-10 金叉；01-13 跌破
+        items = [
+            _macd("2026-01-08", dif=-0.3, dea=-0.1, close=9.8),
+            _macd("2026-01-09", dif=-0.05, dea=0.0, close=10.0),  # near
+            _macd("2026-01-10", dif=0.1, dea=0.0, close=10.8),  # cross
+            _macd("2026-01-13", dif=-0.05, dea=0.0, close=10.2),  # break
+        ]
+        out = forward_gains_after_signal(
+            items, signal_date="2026-01-09", is_near=True
+        )
+        self.assertTrue(out["valid"])
+        self.assertTrue(out["near_ok"])
+        self.assertEqual(out["cross_date"], "2026-01-10")
+        self.assertEqual(out["end_date"], "2026-01-13")
+        self.assertAlmostEqual(out["max_close_gain"], 0.08, places=6)
+        self.assertAlmostEqual(out["end_close_gain"], 0.02, places=6)
+
+    def test_near_fail_invalid(self) -> None:
+        # 即将后缺口继续扩大 → 无效
+        items = [
+            _macd("2026-01-09", dif=-0.05, dea=0.0, close=10.0),
+            _macd("2026-01-10", dif=-0.2, dea=0.0, close=10.5),
+        ]
+        out = forward_gains_after_signal(
+            items, signal_date="2026-01-09", is_near=True
+        )
+        self.assertFalse(out["valid"])
+        self.assertFalse(out["near_ok"])
+        self.assertTrue(out["judgment_failed"])
+        self.assertIsNone(out["max_close_gain"])
+        self.assertIsNone(out["end_close_gain"])
+
+    def test_near_pending_invalid(self) -> None:
+        # 数据用尽仍未分胜负 → 无效
+        items = [
+            _macd("2026-01-09", dif=-0.05, dea=0.0, close=10.0),
+            _macd("2026-01-10", dif=-0.04, dea=0.0, close=10.2),
+        ]
+        out = forward_gains_after_signal(
+            items, signal_date="2026-01-09", is_near=True
+        )
+        self.assertFalse(out["valid"])
+        self.assertTrue(out["judgment_failed"])
+        self.assertIsNone(out["max_close_gain"])
 
     def test_missing_signal_day(self) -> None:
-        bars = [_bar("2026-01-10", o=10, h=11, l=9, c=10.5)]
-        out = max_forward_gains_from_bars(bars, signal_date="2026-01-09")
-        self.assertIsNone(out["max_close_gain"])
-        self.assertIsNone(out["max_close_drop"])
-        self.assertEqual(out["hold_days"], 0)
-
-    def test_asof_clips(self) -> None:
-        bars = [
-            _bar("2026-01-09", o=10, h=10.2, l=9.9, c=10.0),
-            _bar("2026-01-10", o=10, h=13.0, l=10, c=12.0),
-            _bar("2026-01-13", o=12, h=15.0, l=12, c=14.0),
-        ]
-        out = max_forward_gains_from_bars(
-            bars, signal_date="2026-01-09", asof="2026-01-10"
+        items = [_macd("2026-01-10", dif=0.1, dea=0.0, close=10.0)]
+        out = forward_gains_after_signal(
+            items, signal_date="2026-01-09", is_near=False
         )
-        self.assertEqual(out["hold_days"], 2)
-        self.assertAlmostEqual(out["max_close_gain"], 0.2, places=6)
-        self.assertAlmostEqual(out["max_close_drop"], 0.0, places=6)
-        self.assertAlmostEqual(out["max_high_gain"], 0.3, places=6)
+        self.assertFalse(out["valid"])
+        self.assertEqual(out["hold_days"], 0)
 
 
 if __name__ == "__main__":

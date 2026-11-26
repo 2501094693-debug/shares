@@ -245,6 +245,39 @@ def _request(urls: list[str], param: str) -> dict[str, Any]:
 # 3. 数据解析
 # ---------------------------------------------------------------------------
 
+def _parse_amount(row: list[Any] | tuple[Any, ...], *, minute: bool) -> float | None:
+    """解析成交额（统一为元）。
+
+    日/周/月常见两种形态（末尾可能再跟复权因子 dict，需跳过）::
+
+        [时间, 开, 收, 高, 低, 量]
+        [时间, 开, 收, 高, 低, 量, 换手率, 成交额(万元)]
+
+    分钟线多为 ``[..., 量, 额]``，额已是元或与量同量纲；有第 8 列时仍按万元×10000。
+    """
+    # 去掉尾部 dict（复权因子等），避免占位导致读错列
+    cols = [cell for cell in row if not isinstance(cell, dict)]
+    if len(cols) >= 8:
+        raw = to_float(cols[7])
+        if raw is None or raw <= 0:
+            return None
+        # 日K 第 8 列为万元；分钟偶发同样加长时也按万元更稳
+        return float(raw) * 10000.0
+    if len(cols) >= 7:
+        raw = to_float(cols[6])
+        if raw is None or raw <= 0:
+            return None
+        if minute:
+            return float(raw)
+        # 仅 7 列的日K：cols[6] 可能是换手率（通常 < 100）而非成交额
+        # 换手率无法还原成交额，直接放弃，避免把 2.5% 当成 2.5 元额
+        if raw < 100:
+            return None
+        # 偏大时按「已是元」收下（少数镜像站）
+        return float(raw)
+    return None
+
+
 def _parse_row(row: Any, *, minute: bool) -> dict[str, Any] | None:
     if not isinstance(row, (list, tuple)) or len(row) < 5:
         return None
@@ -259,7 +292,6 @@ def _parse_row(row: Any, *, minute: bool) -> dict[str, Any] | None:
         time_s = f"{raw_time[0:4]}-{raw_time[4:6]}-{raw_time[6:8]} {raw_time[8:10]}:{raw_time[10:12]}"
     else:
         time_s = raw_time[:19]
-    amount = to_float(row[6]) if len(row) > 6 and not isinstance(row[6], dict) else None
     return {
         "time": time_s,
         "open": open_,
@@ -267,7 +299,7 @@ def _parse_row(row: Any, *, minute: bool) -> dict[str, Any] | None:
         "high": high,
         "low": low,
         "volume": to_float(row[5]) if len(row) > 5 else None,
-        "amount": amount,
+        "amount": _parse_amount(row, minute=minute),
     }
 
 
@@ -294,7 +326,7 @@ def _parse(payload: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
 
         {"data": {"sh600519": {
             "qt": {"sh600519": ["...", "贵州茅台", ...]},
-            "qfqday": [[时间, 开, 收, 高, 低, 量, 额], ...],
+            "qfqday": [[时间, 开, 收, 高, 低, 量, 换手?, 额(万元)?], ...],
             "m5":     [[时间, 开, 收, 高, 低, 量, 额], ...],
         }}}
 

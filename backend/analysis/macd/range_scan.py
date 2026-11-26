@@ -32,9 +32,13 @@ from analysis.macd.config import (
     MAX_WORKERS,
     PROGRESS_EVERY,
 )
-from analysis.macd.forward import max_forward_gains_from_bars
+from analysis.macd.forward import forward_gains_after_signal
 from analysis.macd.screen import cross_type_matches, slim_row
-from analysis.macd.signals import classify_macd_cross
+from analysis.macd.signals import (
+    SIGNAL_OVER_NEAR,
+    SIGNAL_UNDER_NEAR,
+    classify_macd_cross,
+)
 from analysis.universe import is_eligible_stock
 from company.analysis.line.evaluate.service import EXTREMA_LOOKBACK_DAYS
 from company.analysis.line.MACD.core import compute_macd
@@ -96,15 +100,22 @@ def _gain_fields(gain: dict[str, Any]) -> dict[str, Any]:
     return {
         "base_close": gain.get("base_close"),
         "hold_days": gain.get("hold_days"),
+        "valid": gain.get("valid"),
+        "near_ok": gain.get("near_ok"),
+        "judgment_failed": gain.get("judgment_failed"),
+        "end_date": gain.get("end_date"),
+        "end_source": gain.get("end_source"),
+        "open_ended": gain.get("open_ended"),
+        "break_date": gain.get("break_date"),
+        "cross_date": gain.get("cross_date"),
         "max_close_gain": gain.get("max_close_gain"),
         "max_close_date": gain.get("max_close_date"),
         "max_close_price": gain.get("max_close_price"),
         "max_close_drop": gain.get("max_close_drop"),
         "max_close_drop_date": gain.get("max_close_drop_date"),
         "max_close_drop_price": gain.get("max_close_drop_price"),
-        "max_high_gain": gain.get("max_high_gain"),
-        "max_high_date": gain.get("max_high_date"),
-        "max_high_price": gain.get("max_high_price"),
+        "end_close": gain.get("end_close"),
+        "end_close_gain": gain.get("end_close_gain"),
         "last_close": gain.get("last_close"),
         "last_close_gain": gain.get("last_close_gain"),
         "last_date": gain.get("last_date"),
@@ -114,15 +125,19 @@ def _gain_fields(gain: dict[str, Any]) -> dict[str, Any]:
 def _hist_span(
     *,
     start: str,
-    asof: str,
+    end: str,
     lookback_days: int,
 ) -> tuple[str, str]:
-    """区间扫描共用日线窗口：[start−lookback/extrema, asof]。"""
+    """区间扫描共用日线窗口：[start−lookback/extrema, max(end, 今日)]。
+
+    终点取到最新，以便信号日后能找到 DIF≥DEA 段的跌破日。
+    """
     pad = max(int(lookback_days), int(EXTREMA_LOOKBACK_DAYS), 60)
     beg = (
         datetime.strptime(_iso(start), "%Y-%m-%d") - timedelta(days=pad)
     ).strftime("%Y-%m-%d")
-    return beg, _iso(asof)
+    end_iso = _iso(end) if str(end or "").strip() else _today_iso()
+    return beg, max(end_iso, _today_iso())
 
 
 def _prefetch_index(
@@ -143,11 +158,13 @@ def _prefetch_index(
 
 def _sort_key(row: dict[str, Any]) -> tuple:
     close_g = row.get("max_close_gain")
-    high_g = row.get("max_high_gain")
+    end_g = row.get("end_close_gain")
     total = row.get("score_total")
+    valid = 0 if row.get("valid") is False else 1
     return (
+        -valid,
         -(close_g if close_g is not None else -1.0),
-        -(high_g if high_g is not None else -1.0),
+        -(end_g if end_g is not None else -1.0),
         -(total if total is not None else -1.0),
         str(row.get("signal_day") or ""),
         str(row.get("code") or ""),
@@ -160,7 +177,6 @@ def _scan_one_stock(
     days: list[str],
     hist_beg: str,
     hist_end: str,
-    asof: str,
     band: float,
     index: str,
     factor: str,
@@ -176,7 +192,7 @@ def _scan_one_stock(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]] | None, str | None]:
     """返回 ``(命中行, 日线bars或None, 错误)``。
 
-    命中行在扫描阶段就用地已拉到的日线算好事后涨幅，running 推送即完整。
+    命中行在扫描阶段就用已拉到的日线/MACD 算好事后涨跌，running 推送即完整。
     """
     code = normalize_code(str(meta.get("code") or ""))
     if not code:
@@ -210,6 +226,16 @@ def _scan_one_stock(
         return [], bars, None
 
     macd_items = list(macd_pack.get("items") or [])
+    closes_by_date: dict[str, float] = {}
+    for bar in bars:
+        d = _bar_date(bar)
+        if not d:
+            continue
+        try:
+            closes_by_date[d] = float(bar.get("close"))
+        except (TypeError, ValueError):
+            continue
+
     hits: list[dict[str, Any]] = []
     # days 升序：单指针推进，O(n) 完成逐日 MACD 前缀，避免反复整表扫描
     macd_i = 0
@@ -261,7 +287,14 @@ def _scan_one_stock(
         if not row:
             continue
         row["signal_day"] = day
-        gain = max_forward_gains_from_bars(bars, signal_date=day, asof=asof)
+        primary = str(cross.get("primary") or row.get("macd_signal") or "")
+        is_near = primary in (SIGNAL_UNDER_NEAR, SIGNAL_OVER_NEAR)
+        gain = forward_gains_after_signal(
+            macd_items,
+            signal_date=day,
+            is_near=is_near,
+            closes_by_date=closes_by_date,
+        )
         row.update(_gain_fields(gain))
         hits.append(row)
     return hits, bars, None
@@ -285,17 +318,17 @@ def screen_macd_range(
     cross_type: str = DEFAULT_CROSS_TYPE,
     workers: int = DEFAULT_WORKERS,
     force: bool = False,
-    asof: str = "",
     on_update: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    """对 ``[start, end]`` 每个交易日筛金叉，并附带事后最大涨幅。
+    """对 ``[start, end]`` 每个交易日筛金叉，并附带 DIF≥DEA 段事后涨跌。
 
+    涨跌截止日 = 金叉后首次 ``DIF < DEA``；找不到则用最新交易日。
+    即将金叉若后续未真正金叉，则标 ``valid=False``。
     ``force`` 保留兼容（区间结果由 range_service 缓存）；本函数每次现算。
     """
     _ = force
     beg_iso = _iso(start)
     end_iso = _iso(end) if str(end or "").strip() else _today_iso()
-    asof_iso = _iso(asof) if str(asof or "").strip() else _today_iso()
     days = trade_dates_in_range(beg_iso, end_iso)
     if not days:
         raise ValueError(f"区间 [{beg_iso}, {end_iso}] 内无交易日")
@@ -309,7 +342,6 @@ def screen_macd_range(
     params = {
         "start": beg_iso,
         "end": end_iso,
-        "asof": asof_iso,
         "band": float(band),
         "index": str(index or DEFAULT_INDEX).strip() or DEFAULT_INDEX,
         "factor": str(factor or DEFAULT_FACTOR).strip().lower() or DEFAULT_FACTOR,
@@ -324,6 +356,7 @@ def screen_macd_range(
         "cross_type": cross_type_key,
         "day_count": len(days),
         "shared_bars": True,
+        "gain_until": "first_dif_below",
     }
 
     industry_service.stocks.ensure_populated()
@@ -334,12 +367,11 @@ def screen_macd_range(
     ]
     total = len(stocks)
     hist_beg, hist_end = _hist_span(
-        start=beg_iso, asof=asof_iso, lookback_days=params["lookback"]
+        start=beg_iso, end=end_iso, lookback_days=params["lookback"]
     )
-    # 指数覆盖：历史窗起点 → 区间末日（稳定区间/反向日）+ asof
-    index_end = max(end_iso, asof_iso)
+    # 指数覆盖：历史窗起点 → 日线终点（含信号日后观察）
     index_hist = _prefetch_index(
-        params["index"], beg_iso=hist_beg, end_iso=index_end
+        params["index"], beg_iso=hist_beg, end_iso=hist_end
     )
 
     def _assemble(
@@ -368,7 +400,8 @@ def screen_macd_range(
             "note": (
                 f"区间 [{beg_iso}, {end_iso}] 共 {len(days)} 个交易日；"
                 "股票池/日线/指数/MACD 共用，按日切片判金叉；"
-                f"涨幅基准=信号日收盘，统计至 {asof_iso}"
+                "涨跌基准=信号日收盘，截止=DIF≥DEA 后首个 DIF<DEA（无则最新日）；"
+                "即将金叉未真正金叉则标无效"
             ),
         }
 
@@ -407,7 +440,6 @@ def screen_macd_range(
                 days=days,
                 hist_beg=hist_beg,
                 hist_end=hist_end,
-                asof=asof_iso,
                 band=params["band"],
                 index=params["index"],
                 factor=params["factor"],

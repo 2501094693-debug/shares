@@ -5,6 +5,7 @@
     python -m analysis.macd --codes 600519,000001
     python -m analysis.macd --end 2026-11-20
     python -m analysis.macd --start 2026-11-10 --end 2026-11-20
+    # 区间回测涨跌截止 = DIF≥DEA 后首个 DIF<DEA（无则最新日）
 """
 
 from __future__ import annotations
@@ -94,21 +95,28 @@ def _print_table(items: list[dict[str, Any]], *, limit: int = 50) -> None:
     if not items:
         _log("  无结果")
         return
-    has_gain = any(r.get("max_close_gain") is not None for r in items[:limit])
+    has_gain = any(
+        r.get("max_close_gain") is not None or r.get("valid") is False
+        for r in items[:limit]
+    )
     if has_gain:
         _log(
             f"  {'#':>3} {'信号日':<10} {'代码':<8} {'名称':<8} {'信号':<8} "
-            f"{'收盘最大涨':>10} {'收盘最大跌':>10} {'最高最大':>8} {'总分':>6}"
+            f"{'收盘最大涨':>10} {'收盘最大跌':>10} {'截止日涨跌':>10} {'总分':>6}"
         )
         for i, row in enumerate(items[:limit], 1):
             name = str(row.get("name") or "")[:8]
             sig = str(row.get("macd_signal") or "")[:8]
+            if row.get("valid") is False:
+                end_s = "无效"
+            else:
+                end_s = _fmt_pct(row.get("end_close_gain"))
             _log(
                 f"  {i:>3} {str(row.get('signal_day') or '')[:10]:<10} "
                 f"{row.get('code', ''):<8} {name:<8} {sig:<8} "
                 f"{_fmt_pct(row.get('max_close_gain')):>10} "
                 f"{_fmt_pct(row.get('max_close_drop')):>10} "
-                f"{_fmt_pct(row.get('max_high_gain')):>8} "
+                f"{end_s:>10} "
                 f"{_fmt_score(row.get('score_total')):>6}"
             )
     else:
@@ -225,19 +233,13 @@ def main() -> None:
         "--start",
         type=_end_arg,
         default="",
-        help="区间起始日；与 --end 联用进入区间回测（逐日金叉+事后涨幅）",
+        help="区间起始日；与 --end 联用进入区间回测（逐日金叉+DIF≥DEA段涨跌）",
     )
     parser.add_argument(
         "--end",
         type=_end_arg,
         default="",
         help="截止交易日 YYYY-MM-DD/YYYYMMDD；空=最新交易日",
-    )
-    parser.add_argument(
-        "--asof",
-        type=_end_arg,
-        default="",
-        help="事后涨幅统计截止日；空=最新交易日（仅区间模式）",
     )
     parser.add_argument(
         "--near-ratio",
@@ -285,7 +287,7 @@ def main() -> None:
 
     if not args.json and not args.quiet:
         range_hint = (
-            f"start={args.start} end={args.end or _today_iso()} asof={args.asof or _today_iso()} "
+            f"start={args.start} end={args.end or _today_iso()} "
             if args.start
             else f"end={args.end or _today_iso()} "
         )
@@ -367,11 +369,10 @@ def main() -> None:
     elif args.start:
         on_update = None if (args.json or args.quiet) else _ProgressPrinter()
         if not args.json and not args.quiet:
-            _log("区间回测开始（逐日金叉 + 事后最大涨幅）…")
+            _log("区间回测开始（逐日金叉 + DIF≥DEA 段涨跌）…")
         data = screen_macd_range(
             start=args.start,
             end=args.end,
-            asof=args.asof,
             band=args.band,
             index=args.index,
             factor=args.factor,
