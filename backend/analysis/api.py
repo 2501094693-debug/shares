@@ -176,11 +176,12 @@ def get_macd_range_screen(
         description="并发线程数",
     ),
 ):
-    """区间内逐日 MACD 金叉筛选，并统计 DIF≥DEA 段事后最大收盘涨/跌幅。
+    """区间内逐日 MACD 金叉筛选。
 
-    涨跌基准为信号日收盘；截止日为金叉后首次 DIF<DEA（无则最新日）。
-    即将金叉若后续未真正金叉则标无效。``refresh=0`` 复用同参数新鲜结果；
-    ``refresh=1`` 清缓存重跑。
+    命中后对金叉前连续 DIF<DEA 段做 prior_below 加速度；并统计 DIF≥DEA
+    段事后最大收盘涨/跌幅。涨跌基准为信号日收盘；截止日为金叉后首次
+    DIF<DEA（无则最新日）。即将金叉若后续未真正金叉则标无效。
+    ``refresh=0`` 复用同参数新鲜结果；``refresh=1`` 清缓存重跑。
     """
     band_abs = abs(float(band))
     if band_abs not in MACD_ALLOWED_BANDS:

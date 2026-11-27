@@ -81,12 +81,12 @@ class DifBelowSpanTests(unittest.TestCase):
 
 class AnalyzePriorBelowTests(unittest.TestCase):
     def test_under_cross_down_accel_positive(self) -> None:
-        # 先高位盘，后砸到谷，再稍抬 → 下跌腿中间偏高 → down_accel>0
+        # 先猛砸后磨到谷：下跌腿中间偏低 → s_down<0 → down_accel=-s>0（企稳）
         items = [
             _row("2026-01-05", -0.4, -0.5, 12.0),  # 上一段
             _row("2026-01-06", -1.20, -1.0, 10.0),
-            _row("2026-01-07", -1.25, -1.0, 9.7),
-            _row("2026-01-08", -1.30, -1.0, 9.5),
+            _row("2026-01-07", -1.25, -1.0, 8.2),  # 早段已接近谷
+            _row("2026-01-08", -1.30, -1.0, 8.1),
             _row("2026-01-09", -1.35, -1.0, 8.0),  # 谷
             _row("2026-01-10", -1.10, -1.0, 8.5),
             _row("2026-01-11", -0.90, -1.0, 9.0),  # 金叉
@@ -98,6 +98,7 @@ class AnalyzePriorBelowTests(unittest.TestCase):
         self.assertEqual(out["trough_date"], "2026-01-09")
         self.assertEqual(out["end"], "2026-01-10")
         self.assertTrue(out["down"]["found"])
+        self.assertLess(out["down"]["sum_dev"], 0.0)
         self.assertGreater(out["down_accel"], 0.0)
 
     def test_up_accel_sign_flip(self) -> None:

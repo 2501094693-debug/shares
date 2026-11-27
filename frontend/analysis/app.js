@@ -778,10 +778,10 @@
       const endGain = fmtGainPct(row.end_close_gain);
       const maxGain = fmtGainPct(row.max_close_gain);
       const maxDrop = fmtGainPct(row.max_close_drop);
-      const closeDate = row.low_close_date ? fmtShortDate(row.low_close_date) : "—";
-      const closePrice = Number.isFinite(row.low_close_price) ? row.low_close_price.toFixed(2) : "—";
-      const lowDate = row.low_low_date ? fmtShortDate(row.low_low_date) : "—";
-      const lowPrice = Number.isFinite(row.low_low_price) ? row.low_low_price.toFixed(2) : "—";
+      const troughDate = row.trough_date ? fmtShortDate(row.trough_date) : "—";
+      const troughClose = Number.isFinite(row.trough_close) ? Number(row.trough_close).toFixed(2) : "—";
+      const downAccel = Number.isFinite(row.down_accel) ? Number(row.down_accel).toFixed(4) : "—";
+      const upAccel = Number.isFinite(row.up_accel) ? Number(row.up_accel).toFixed(4) : "—";
       const endLabel = row.end_date ? fmtShortDate(row.end_date) : "—";
       const gainCell = invalid
         ? `<span data-tone="down">无效</span><br><span class="muted">金叉未成立</span>`
@@ -799,9 +799,9 @@
           <div class="share-kv">${esc(row.beg || "—")} → ${esc(row.end || "—")}</div>
           <div class="share-kv muted">${Number(row.count || 0)} 日</div>
         </td>
-        <td class="share-kv" data-tone="${tone(row.reverse_count)}">${row.reverse_count == null ? "—" : row.reverse_count}</td>
-        <td class="share-kv">${closeDate}<br>${closePrice}<br>${fmtScore(row.score_close)}</td>
-        <td class="share-kv">${lowDate}<br>${lowPrice}<br>${fmtScore(row.score_low)}</td>
+        <td class="share-kv">${troughDate}<br>${troughClose}</td>
+        <td class="num" data-tone="${tone(row.down_accel)}">${esc(downAccel)}</td>
+        <td class="num" data-tone="${tone(row.up_accel)}">${esc(upAccel)}</td>
         <td class="share-kv">${gainCell}</td>
       </tr>`;
     }).join("");

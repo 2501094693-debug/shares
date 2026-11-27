@@ -5,7 +5,8 @@
 1. 以收盘最低日为谷底，劈成下跌腿、上涨腿；
 2. 每腿按对数直线做「按比例匀速」参考价；
 3. 主指标 ``s = Σ(ln P − ln P_匀)``（不除以天数）；
-4. ``down_accel = s_down``，``up_accel = −s_up``（正数表示后程更急）。
+4. ``down_accel = −s_down``（正数=前程更急 / 先砸后磨），
+   ``up_accel = −s_up``（正数=后程更急 / 先磨后拉）。
 """
 
 from __future__ import annotations
@@ -363,7 +364,7 @@ def analyze_prior_below(
         items,
         beg_idx,
         trough_idx,
-        accel_sign=1.0,
+        accel_sign=-1.0,  # down_accel = −s_down：正=先砸后磨
         min_bars=min_bars,
         min_log_move=min_log_move,
     )
@@ -371,7 +372,7 @@ def analyze_prior_below(
         items,
         trough_idx,
         end_idx,
-        accel_sign=-1.0,
+        accel_sign=-1.0,  # up_accel = −s_up：正=先磨后拉
         min_bars=min_bars,
         min_log_move=min_log_move,
     )

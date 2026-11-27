@@ -37,8 +37,8 @@ PROGRESS_EVERY = 5
 
 # 区间回测：最多覆盖的交易日数（逐日全市场扫描很重；约覆盖默认「最近两个月」）
 MAX_RANGE_DAYS = 50
-# 区间回测落盘键版本
-RANGE_CACHE_TAG = "r5"
+# 区间回测落盘键版本（r7：down_accel=−s_down，正=先砸后磨）
+RANGE_CACHE_TAG = "r7"
 
 # 落盘键版本，算法变更后与旧缓存隔离
 CACHE_TAG = "m3"

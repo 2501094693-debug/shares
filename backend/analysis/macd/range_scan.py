@@ -1,7 +1,8 @@
 """区间内逐交易日 MACD 筛选 + 事后最大涨幅。
 
-股票池 / 日线 / 指数 / MACD 序列在区间内共用：每只股票只拉一次 K 线、
-只算一次 MACD，再按交易日切片判定金叉与稳定区间。
+股票池 / 日线 / MACD 序列在区间内共用：每只股票只拉一次 K 线、
+只算一次 MACD，再按交易日切片判定金叉；命中后对金叉前 DIF<DEA 段
+做对数匀速偏离加速度（``prior_below``），并统计事后涨跌。
 """
 
 from __future__ import annotations
@@ -13,7 +14,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Any
 
-from analysis.macd.analyze import analyze_macd_stable_on_bars
 from analysis.macd.config import (
     DEFAULT_ADJUST,
     DEFAULT_BAND,
@@ -33,24 +33,20 @@ from analysis.macd.config import (
     PROGRESS_EVERY,
 )
 from analysis.macd.forward import forward_gains_after_signal
-from analysis.macd.screen import cross_type_matches, slim_row
+from analysis.macd.screen import cross_type_matches
 from analysis.macd.signals import (
     SIGNAL_OVER_NEAR,
     SIGNAL_UNDER_NEAR,
     classify_macd_cross,
 )
 from analysis.universe import is_eligible_stock
-from company.analysis.line.evaluate.service import EXTREMA_LOOKBACK_DAYS
 from company.analysis.line.MACD.core import compute_macd
+from company.analysis.line.MACD.prior_below import analyze_prior_below
 from company.analysis.line.undulate.service import (
     _bar_date,
     _fetch_day_range,
     _iso,
     _today_iso,
-)
-from company.analysis.line.undulate.volatility import (
-    _fetch_index_day_range,
-    _norm_index_code,
 )
 from core.codes import normalize_code
 from market.industry.service import service as industry_service
@@ -122,17 +118,27 @@ def _gain_fields(gain: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _num(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return None
+    return n if n == n else None
+
+
 def _hist_span(
     *,
     start: str,
     end: str,
     lookback_days: int,
 ) -> tuple[str, str]:
-    """区间扫描共用日线窗口：[start−lookback/extrema, max(end, 今日)]。
+    """区间扫描共用日线窗口：[start−lookback, max(end, 今日)]。
 
     终点取到最新，以便信号日后能找到 DIF≥DEA 段的跌破日。
     """
-    pad = max(int(lookback_days), int(EXTREMA_LOOKBACK_DAYS), 60)
+    pad = max(int(lookback_days), 60)
     beg = (
         datetime.strptime(_iso(start), "%Y-%m-%d") - timedelta(days=pad)
     ).strftime("%Y-%m-%d")
@@ -140,35 +146,61 @@ def _hist_span(
     return beg, max(end_iso, _today_iso())
 
 
-def _prefetch_index(
-    index: str,
-    *,
-    beg_iso: str,
-    end_iso: str,
-) -> dict[str, Any] | None:
-    index_code = _norm_index_code(index) or str(index or "").strip()
-    if not index_code:
-        return None
-    try:
-        return _fetch_index_day_range(index_code, beg_iso=beg_iso, end_iso=end_iso)
-    except Exception as exc:  # noqa: BLE001
-        logger.info("index prefetch failed %s: %s", index_code, exc)
-        return None
-
-
 def _sort_key(row: dict[str, Any]) -> tuple:
     close_g = row.get("max_close_gain")
     end_g = row.get("end_close_gain")
-    total = row.get("score_total")
+    down = row.get("down_accel")
+    up = row.get("up_accel")
     valid = 0 if row.get("valid") is False else 1
     return (
         -valid,
         -(close_g if close_g is not None else -1.0),
         -(end_g if end_g is not None else -1.0),
-        -(total if total is not None else -1.0),
+        -(down if down is not None else -1e9),
+        -(up if up is not None else -1e9),
         str(row.get("signal_day") or ""),
         str(row.get("code") or ""),
     )
+
+
+def _build_hit_row(
+    *,
+    code: str,
+    name: str,
+    day: str,
+    cross: dict[str, Any],
+    prior: dict[str, Any],
+    gain: dict[str, Any],
+) -> dict[str, Any]:
+    primary = str(cross.get("primary") or "")
+    latest_dif = _num(cross.get("dif"))
+    latest_dea = _num(cross.get("dea"))
+    return {
+        "code": code,
+        "name": name,
+        "signal_day": day,
+        "macd_signal": primary,
+        "macd_signals": list(cross.get("signals") or []),
+        "macd_date": str(cross.get("date") or "")[:10] or None,
+        "gap_velocity": _num(cross.get("gap_velocity")),
+        "pred_next_gap": _num(cross.get("pred_next_gap")),
+        "pred_next_cross": cross.get("pred_next_cross"),
+        "near_by_prediction": cross.get("near_by_prediction"),
+        "near_by_relative_gap": cross.get("near_by_relative_gap"),
+        "dif": latest_dif,
+        "dea": latest_dea,
+        "underwater": cross.get("underwater"),
+        # 金叉前 DIF<DEA 段（prior_below）
+        "beg": str(prior.get("beg") or "")[:10] or None,
+        "end": str(prior.get("end") or "")[:10] or None,
+        "count": int(prior.get("count") or 0),
+        "include_signal": prior.get("include_signal"),
+        "trough_date": str(prior.get("trough_date") or "")[:10] or None,
+        "trough_close": _num(prior.get("trough_close")),
+        "down_accel": _num(prior.get("down_accel")),
+        "up_accel": _num(prior.get("up_accel")),
+        **_gain_fields(gain),
+    }
 
 
 def _scan_one_stock(
@@ -177,22 +209,16 @@ def _scan_one_stock(
     days: list[str],
     hist_beg: str,
     hist_end: str,
-    band: float,
-    index: str,
-    factor: str,
     adjust: str,
     near_ratio: float,
     fast: int,
     slow: int,
     signal: int,
-    w_prior: float,
-    w_div: float,
     cross_type: str,
-    index_hist: dict[str, Any] | None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]] | None, str | None]:
     """返回 ``(命中行, 日线bars或None, 错误)``。
 
-    命中行在扫描阶段就用已拉到的日线/MACD 算好事后涨跌，running 推送即完整。
+    命中行在扫描阶段就用已拉到的日线/MACD 算好 prior_below 与事后涨跌。
     """
     code = normalize_code(str(meta.get("code") or ""))
     if not code:
@@ -207,7 +233,6 @@ def _scan_one_stock(
         return [], None, None
 
     name = str(pack.get("name") or meta.get("name") or "")
-    source = str(pack.get("source") or "")
     bar_dates = [d for d in (_bar_date(b) for b in bars) if d]
     if not bar_dates:
         return [], bars, None
@@ -236,8 +261,14 @@ def _scan_one_stock(
         except (TypeError, ValueError):
             continue
 
+    # prior_below / 事后涨跌都需要收盘价；compute_macd 已有 price，再补 close
+    for row in macd_items:
+        d = str(row.get("date") or "")[:10]
+        if d in closes_by_date:
+            row["close"] = closes_by_date[d]
+
     hits: list[dict[str, Any]] = []
-    # days 升序：单指针推进，O(n) 完成逐日 MACD 前缀，避免反复整表扫描
+    # days 升序：单指针推进，O(n) 完成逐日 MACD 前缀
     macd_i = 0
     n_macd = len(macd_items)
     for day in days:
@@ -246,7 +277,6 @@ def _scan_one_stock(
         if macd_i <= 0:
             continue
         macd_prefix = macd_items[:macd_i]
-        # 先廉价判金叉 + 类别过滤，避免对每个交易日都跑稳定区间/三级峰谷打分
         try:
             cross = classify_macd_cross(macd_prefix, near_ratio=near_ratio)
         except Exception as exc:  # noqa: BLE001
@@ -256,38 +286,21 @@ def _scan_one_stock(
             continue
         if not cross_type_matches(cross, cross_type):
             continue
+
+        primary = str(cross.get("primary") or "")
+        signal_idx = len(macd_prefix) - 1
         try:
-            analyzed = analyze_macd_stable_on_bars(
-                code,
-                bars,
-                end=day,
-                name=name,
-                source=source,
-                factor=factor,
-                band=band,
-                index=index,
-                adjust=adjust,
-                near_ratio=near_ratio,
-                fast=fast,
-                slow=slow,
-                signal=signal,
-                w_prior=w_prior,
-                w_div=w_div,
-                index_hist=index_hist,
-                macd_items=macd_items,
-                allow_fetch_more=False,
+            prior = analyze_prior_below(
+                macd_prefix,
+                signal_idx,
+                signal=primary,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.info("range day analyze failed %s %s: %s", code, day, exc)
+            logger.info("range day prior_below failed %s %s: %s", code, day, exc)
+            continue
+        if not prior.get("found"):
             continue
 
-        if not analyzed.get("found"):
-            continue
-        row = slim_row(analyzed, meta=meta)
-        if not row:
-            continue
-        row["signal_day"] = day
-        primary = str(cross.get("primary") or row.get("macd_signal") or "")
         is_near = primary in (SIGNAL_UNDER_NEAR, SIGNAL_OVER_NEAR)
         gain = forward_gains_after_signal(
             macd_items,
@@ -295,8 +308,16 @@ def _scan_one_stock(
             is_near=is_near,
             closes_by_date=closes_by_date,
         )
-        row.update(_gain_fields(gain))
-        hits.append(row)
+        hits.append(
+            _build_hit_row(
+                code=code,
+                name=name,
+                day=day,
+                cross=cross,
+                prior=prior,
+                gain=gain,
+            )
+        )
     return hits, bars, None
 
 
@@ -322,11 +343,15 @@ def screen_macd_range(
 ) -> dict[str, Any]:
     """对 ``[start, end]`` 每个交易日筛金叉，并附带 DIF≥DEA 段事后涨跌。
 
+    命中后对金叉前连续 ``DIF < DEA`` 段计算 ``prior_below`` 加速度；
     涨跌截止日 = 金叉后首次 ``DIF < DEA``；找不到则用最新交易日。
     即将金叉若后续未真正金叉，则标 ``valid=False``。
+
+    ``band`` / ``index`` / ``factor`` / ``w_prior`` / ``w_div`` 保留入参以兼容
+    API 缓存键，区间回测路径不再使用稳定区间与股指反向打分。
     ``force`` 保留兼容（区间结果由 range_service 缓存）；本函数每次现算。
     """
-    _ = force
+    _ = force, band, index, factor, w_prior, w_div
     beg_iso = _iso(start)
     end_iso = _iso(end) if str(end or "").strip() else _today_iso()
     days = trade_dates_in_range(beg_iso, end_iso)
@@ -356,6 +381,7 @@ def screen_macd_range(
         "cross_type": cross_type_key,
         "day_count": len(days),
         "shared_bars": True,
+        "score": "prior_below",
         "gain_until": "first_dif_below",
     }
 
@@ -368,10 +394,6 @@ def screen_macd_range(
     total = len(stocks)
     hist_beg, hist_end = _hist_span(
         start=beg_iso, end=end_iso, lookback_days=params["lookback"]
-    )
-    # 指数覆盖：历史窗起点 → 日线终点（含信号日后观察）
-    index_hist = _prefetch_index(
-        params["index"], beg_iso=hist_beg, end_iso=hist_end
     )
 
     def _assemble(
@@ -399,7 +421,8 @@ def screen_macd_range(
             "updated_at": _now_iso(),
             "note": (
                 f"区间 [{beg_iso}, {end_iso}] 共 {len(days)} 个交易日；"
-                "股票池/日线/指数/MACD 共用，按日切片判金叉；"
+                "股票池/日线/MACD 共用，按日切片判金叉；"
+                "得分=金叉前 DIF<DEA 段对数匀速偏离加速度（prior_below）；"
                 "涨跌基准=信号日收盘，截止=DIF≥DEA 后首个 DIF<DEA（无则最新日）；"
                 "即将金叉未真正金叉则标无效"
             ),
@@ -440,18 +463,12 @@ def screen_macd_range(
                 days=days,
                 hist_beg=hist_beg,
                 hist_end=hist_end,
-                band=params["band"],
-                index=params["index"],
-                factor=params["factor"],
                 adjust=params["adjust"],
                 near_ratio=params["near_ratio"],
                 fast=params["fast"],
                 slow=params["slow"],
                 signal=params["signal"],
-                w_prior=params["w_prior"],
-                w_div=params["w_div"],
                 cross_type=params["cross_type"],
-                index_hist=index_hist,
             ): meta
             for meta in stocks
         }
@@ -488,7 +505,6 @@ def screen_macd_range(
                     )
                 )
 
-    # 命中行在扫描阶段已带上事后涨幅，这里按日分组收尾即可。
     by_day_final: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in flat:
         by_day_final[str(row.get("signal_day") or "")].append(row)

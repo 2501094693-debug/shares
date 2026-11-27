@@ -5,7 +5,7 @@
     python -m analysis.macd --codes 600519,000001
     python -m analysis.macd --end 2026-11-20
     python -m analysis.macd --start 2026-11-10 --end 2026-11-20
-    # 区间回测涨跌截止 = DIF≥DEA 后首个 DIF<DEA（无则最新日）
+    # 区间回测：金叉前 DIF<DEA 段 prior_below + 事后涨跌
 """
 
 from __future__ import annotations
@@ -71,7 +71,26 @@ def _fmt_score(value: Any) -> str:
     return "—"
 
 
+def _fmt_accel(value: Any) -> str:
+    if isinstance(value, (int, float)):
+        return f"{float(value):+.4f}"
+    return "—"
+
+
 def _print_hit(row: dict[str, Any], *, prefix: str = "命中") -> None:
+    # 区间回测：prior_below；全市场截止日：稳定区间综合分
+    if row.get("signal_day") or row.get("down_accel") is not None or row.get("up_accel") is not None:
+        _log(
+            f"  [{prefix}] {row.get('code')} {row.get('name') or ''}  "
+            f"信号日={row.get('signal_day') or '—'}  "
+            f"信号={row.get('macd_signal') or '—'}  "
+            f"DIF<DEA={row.get('beg') or '—'}~{row.get('end') or '—'} "
+            f"({row.get('count') or 0}日)  "
+            f"谷底={row.get('trough_date') or '—'}@{_fmt_score(row.get('trough_close'))}  "
+            f"跌加速={_fmt_accel(row.get('down_accel'))}  "
+            f"涨加速={_fmt_accel(row.get('up_accel'))}"
+        )
+        return
     _log(
         f"  [{prefix}] {row.get('code')} {row.get('name') or ''}  "
         f"信号={row.get('macd_signal') or '—'}  "
@@ -102,7 +121,8 @@ def _print_table(items: list[dict[str, Any]], *, limit: int = 50) -> None:
     if has_gain:
         _log(
             f"  {'#':>3} {'信号日':<10} {'代码':<8} {'名称':<8} {'信号':<8} "
-            f"{'收盘最大涨':>10} {'收盘最大跌':>10} {'截止日涨跌':>10} {'总分':>6}"
+            f"{'收盘最大涨':>10} {'收盘最大跌':>10} {'截止日涨跌':>10} "
+            f"{'跌加速':>9} {'涨加速':>9}"
         )
         for i, row in enumerate(items[:limit], 1):
             name = str(row.get("name") or "")[:8]
@@ -117,7 +137,8 @@ def _print_table(items: list[dict[str, Any]], *, limit: int = 50) -> None:
                 f"{_fmt_pct(row.get('max_close_gain')):>10} "
                 f"{_fmt_pct(row.get('max_close_drop')):>10} "
                 f"{end_s:>10} "
-                f"{_fmt_score(row.get('score_total')):>6}"
+                f"{_fmt_accel(row.get('down_accel')):>9} "
+                f"{_fmt_accel(row.get('up_accel')):>9}"
             )
     else:
         _log(
@@ -362,7 +383,11 @@ def main() -> None:
                 "cross_type": args.cross_type,
                 "codes": codes,
             },
-            "found_count": sum(1 for r in items if r.get("score_total") is not None),
+            "found_count": sum(
+                1
+                for r in items
+                if r.get("score_total") is not None or r.get("beg")
+            ),
             "result_count": len(items),
             "items": items,
         }
@@ -402,10 +427,12 @@ def main() -> None:
             on_update=on_update,
         )
 
+    def _qualified(r: dict[str, Any]) -> bool:
+        # 截止日筛选有综合分；区间回测有 DIF<DEA 段即可写入
+        return r.get("score_total") is not None or bool(r.get("signal_day") and r.get("beg"))
+
     items = [
-        r
-        for r in list(data.get("items") or [])
-        if isinstance(r, dict) and r.get("score_total") is not None
+        r for r in list(data.get("items") or []) if isinstance(r, dict) and _qualified(r)
     ]
 
     if args.to_mine or args.group:
